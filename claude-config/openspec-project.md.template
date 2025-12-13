@@ -1,0 +1,43 @@
+# {{PROJECT_NAME}} - OpenSpec Project
+
+## App Vision
+
+{{PROJECT_DESCRIPTION}}
+
+## Target Platforms
+
+- iOS {{IOS_MIN_VERSION}}+
+- {{ADDITIONAL_PLATFORMS}}
+
+## Core Features
+
+### Primary Features
+- {{PRIMARY_FEATURE_1}}
+- {{PRIMARY_FEATURE_2}}
+
+### Support Features
+- {{SUPPORT_FEATURE_1}}
+
+### Passive Features
+- {{PASSIVE_FEATURE_1}}
+
+## Technical Stack
+
+- **Language:** Swift {{SWIFT_VERSION}}
+- **UI Framework:** SwiftUI
+- **Dependencies:** {{DEPENDENCIES}}
+
+## Feature Categories
+
+| Feature | Category | Priority |
+|---------|----------|----------|
+| {{FEATURE_1}} | Primary | High |
+| {{FEATURE_2}} | Support | Medium |
+
+## Spec Index
+
+All feature specifications are in `specs/`:
+
+- `features/` - Feature specifications
+- `integrations/` - Integration specifications (HealthKit, etc.)
+- `platforms/` - Platform-specific specs (Watch, Widget)
