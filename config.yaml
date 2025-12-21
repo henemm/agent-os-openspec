@@ -1,0 +1,135 @@
+# OpenSpec Framework Configuration
+# ================================
+# Central configuration for the 4-phase workflow enforcement system.
+#
+# Copy this file to your project root and customize.
+
+# Project Information
+project:
+  name: "My Project"
+  base_path: "/path/to/project"  # Will be auto-detected if not set
+
+# Workflow Configuration
+workflow:
+  # Phase names and order (customize if needed)
+  phases:
+    - idle
+    - analyse_done
+    - spec_written
+    - spec_approved
+    - implemented
+    - validated
+
+  # Phrases that trigger spec approval (case-insensitive)
+  approval_phrases:
+    - "approved"
+    - "freigabe"
+    - "spec ok"
+    - "lgtm"
+    - "looks good"
+
+# File Protection Rules
+# Files matching these patterns REQUIRE the full workflow
+protected_paths:
+  # Pattern -> Spec category mapping
+  - pattern: "src/.*\\.py$"
+    spec_type: "modules"
+  - pattern: "src/.*\\.ts$"
+    spec_type: "modules"
+  - pattern: "tests/.*\\.py$"
+    spec_type: "tests"
+
+# Files that are ALWAYS allowed without workflow
+always_allowed:
+  - "\\.claude/"
+  - "docs/"
+  - "\\.md$"
+  - "\\.gitignore"
+  - "README"
+
+# Specs Configuration
+specs:
+  base_path: "docs/specs"  # Relative to project root
+  template_file: "docs/specs/_template.md"
+
+  # Categories and their entity extraction patterns
+  categories:
+    modules:
+      pattern: "^class\\s+(\\w+)"  # Extract class names
+      path: "modules"
+    functions:
+      pattern: "^def\\s+(\\w+)"    # Extract function names
+      path: "functions"
+    tests:
+      pattern: "^def\\s+test_(\\w+)"
+      path: "tests"
+
+# CLAUDE.md Protection
+claude_md:
+  max_lines: 600
+  forbidden_patterns:
+    - pattern: "### \\[\\d{4}-\\d{2}-\\d{2}.*\\] Attempt #\\d+"
+      message: "Solution Attempts belong in docs/project/solution_attempts.md"
+    - pattern: "```(?:yaml|python|bash)\\n(?:.*\\n){20,}```"
+      message: "Long code examples belong in docs/reference/"
+
+# Active Modules
+# Enable/disable optional functionality
+modules:
+  # Core modules (always active)
+  core:
+    workflow_gate: true
+    spec_enforcement: true
+    claude_md_protection: true
+    notification: true
+
+  # Optional generic modules
+  generic:
+    bug_fix_blocker: false     # Require test before bug fix
+    test_before_commit: false  # Require all spec tests pass
+    scope_drift_guard: false   # Prevent off-topic edits
+
+  # Domain-specific modules
+  ios_swiftui:
+    enabled: false
+    analysis_first: true       # Enforce analysis before fixes
+    tdd_workflow: true         # RED-GREEN-REFACTOR cycle
+    localization: true         # DE/EN localization support
+    scoping_limits: true       # Max 4-5 files, +/-250 LoC
+
+  home_assistant:
+    enabled: false
+    config_validation: true    # check_config before restart
+    dashboard_screenshots: true # Screenshot QA for Lovelace
+    automation_testing: true   # Test automations with mock states
+
+# Agent Configuration
+agents:
+  # Model preferences for agents
+  default_model: "sonnet"
+
+  # Agent-specific overrides
+  spec_writer:
+    model: "haiku"
+    enabled: true
+  spec_validator:
+    model: "haiku"
+    enabled: true
+  docs_updater:
+    model: "sonnet"
+    enabled: true
+  bug_intake:
+    model: "sonnet"
+    enabled: true
+
+# Hooks Configuration
+hooks:
+  # Timeout in seconds for hook execution
+  timeout: 5
+
+  # Hook execution order (lower = earlier)
+  priority:
+    workflow_gate: 10
+    spec_enforcement: 20
+    module_hooks: 50
+    notification: 100

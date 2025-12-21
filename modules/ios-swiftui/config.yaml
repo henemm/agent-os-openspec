@@ -1,0 +1,73 @@
+# iOS/SwiftUI Module Configuration
+# =================================
+# Module-specific settings for iOS and SwiftUI development.
+
+module:
+  name: "ios-swiftui"
+  description: "iOS and SwiftUI development standards, agents, and workflows"
+  version: "1.0.0"
+
+# Protected paths specific to iOS projects
+protected_paths:
+  - pattern: ".*\\.swift$"
+    spec_type: "swift"
+  - pattern: ".*\\.xib$"
+    spec_type: "ui"
+  - pattern: ".*\\.storyboard$"
+    spec_type: "ui"
+
+# iOS-specific always allowed paths
+always_allowed:
+  - ".*\\.xcstrings$"
+  - ".*\\.xcassets/"
+  - "Localizable\\.strings$"
+
+# Standards to copy during installation
+standards:
+  - source: "standards/global/"
+    destination: ".agent-os/standards/global/"
+  - source: "standards/swiftui/"
+    destination: ".agent-os/standards/swiftui/"
+
+# Agents provided by this module
+agents:
+  bug_investigator:
+    file: "agents/bug-investigator.md"
+    description: "Bug analysis with Analysis-First principle"
+  feature_planner:
+    file: "agents/feature-planner.md"
+    description: "Feature planning with Spec-First approach"
+  localizer:
+    file: "agents/localizer.md"
+    description: "DE/EN localization management"
+  test_runner:
+    file: "agents/test-runner.md"
+    description: "Unit test execution and verification"
+
+# Workflows provided by this module
+workflows:
+  bug_fix:
+    file: "workflows/bug-fix-workflow.md"
+    description: "Complete bug fix process"
+  feature:
+    file: "workflows/feature-workflow.md"
+    description: "Feature development with TDD"
+  release:
+    file: "workflows/release-workflow.md"
+    description: "Version bump and deployment"
+
+# Slash commands to install
+commands:
+  - name: "bug"
+    file: "commands/bug.md"
+  - name: "feature"
+    file: "commands/feature.md"
+  - name: "test"
+    file: "commands/test.md"
+  - name: "localize"
+    file: "commands/localize.md"
+
+# Build configuration templates
+build:
+  ios_simulator: "iPhone 16 Pro"
+  xcode_destination: "platform=iOS Simulator,name=iPhone 16 Pro"
