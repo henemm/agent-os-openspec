@@ -5,7 +5,9 @@
 
 set -e
 
-TEMPLATE_DIR="$HOME/.agent-os-templates"
+# Detect script directory to find templates (works when run from any location)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TEMPLATE_DIR="$SCRIPT_DIR"
 TARGET_DIR="$1"
 PROJECT_NAME="$2"
 

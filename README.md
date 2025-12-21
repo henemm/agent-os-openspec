@@ -5,8 +5,11 @@ Templates fuer die Migration von iOS-Projekten zu Agent OS + OpenSpec.
 ## Schnellstart
 
 ```bash
-# Migration starten
-~/.agent-os-templates/migrate-project.sh /path/to/project "ProjectName"
+# Clone/download the templates
+git clone https://github.com/your-org/ios-agent-os-starter.git
+
+# Run migration from any location
+./ios-agent-os-starter/migrate-project.sh /path/to/project "ProjectName"
 ```
 
 ## Was enthalten ist
