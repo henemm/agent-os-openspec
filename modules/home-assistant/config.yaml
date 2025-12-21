@@ -1,0 +1,100 @@
+# Home Assistant Module Configuration
+# ====================================
+# Add this to your main config.yaml under modules.home_assistant
+# or include as separate file.
+
+# Enable Home Assistant specific features
+enabled: true
+
+# Docker container name
+container_name: "homeassistant"
+
+# Config validation command
+check_config_command: "docker exec {container} python -m homeassistant --script check_config --config /config"
+
+# Restart command
+restart_command: "docker restart {container}"
+
+# Log command
+log_command: "docker logs {container} 2>&1 | tail -100"
+
+# Protected paths specific to Home Assistant
+protected_paths:
+  - pattern: "templates/.*\\.yaml$"
+    spec_type: "sensors"
+  - pattern: "automations/.*\\.yaml$"
+    spec_type: "automations"
+  - pattern: "lovelace/.*\\.yaml$"
+    spec_type: "dashboards"
+  - pattern: "input_number\\.yaml$"
+    spec_type: "input_numbers"
+  - pattern: "input_boolean\\.yaml$"
+    spec_type: "input_booleans"
+  - pattern: "utility_meter\\.yaml$"
+    spec_type: "utility_meters"
+  - pattern: "customize\\.yaml$"
+    spec_type: "customizations"
+
+# Entity extraction patterns
+entity_patterns:
+  sensors:
+    pattern: "^\\s*-\\s*name:\\s*[\"']?([^\"'\\n]+)[\"']?"
+    id_prefix: "sensor."
+  automations:
+    pattern: "^\\s*-\\s*id:\\s*[\"']?([^\"'\\n]+)[\"']?"
+    id_prefix: "automation."
+  utility_meters:
+    pattern: "^([a-z][a-z0-9_]+):\\s*$"
+    id_prefix: "sensor."
+  input_numbers:
+    pattern: "^([a-z][a-z0-9_]+):\\s*$"
+    id_prefix: "input_number."
+  input_booleans:
+    pattern: "^([a-z][a-z0-9_]+):\\s*$"
+    id_prefix: "input_boolean."
+
+# Lovelace screenshot settings
+lovelace:
+  screenshot_tool: "tools/lovelace_screenshot.py"
+  before_dir: "/tmp"
+  after_dir: "/tmp"
+  max_screenshot_age_minutes: 30
+  default_viewport:
+    width: 1400
+    height: 900
+
+# Spec categories for HA entities
+spec_categories:
+  sensors:
+    path: "sensors"
+    subdirs:
+      - energy
+      - forecast
+      - heatpump
+      - ventilation
+      - system
+  automations:
+    path: "automations"
+    subdirs:
+      - ventilation
+      - energy
+      - notifications
+  utility_meters:
+    path: "utility_meters"
+  input_numbers:
+    path: "input_numbers"
+  input_booleans:
+    path: "input_booleans"
+  dashboards:
+    path: "dashboards"
+
+# Validation settings
+validation:
+  # Time window for config validation lock (seconds)
+  config_lock_timeout: 600
+
+  # Required validation before restart
+  require_check_config: true
+
+  # Screenshot required before Lovelace changes
+  require_before_screenshot: true

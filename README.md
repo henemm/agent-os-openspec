@@ -1,139 +1,296 @@
-# Agent OS + OpenSpec Templates
+# Agent OS + OpenSpec Framework
 
-Templates fuer die Migration von iOS-Projekten zu Agent OS + OpenSpec.
+A modular workflow enforcement system for Claude Code that ensures quality through spec-first development, automated validation, and domain-specific standards.
 
-## Schnellstart
+## What is Agent OS + OpenSpec?
+
+This framework combines two complementary approaches to AI-assisted development:
+
+- **Agent OS**: Domain-specific standards, agents, and workflows (iOS/SwiftUI, Home Assistant, etc.)
+- **OpenSpec**: 4-phase workflow enforcement with Python hooks
+
+Together they provide:
+- **4-Phase Workflow**: analyse → write-spec → implement → validate
+- **Spec-First Development**: No code without specifications
+- **Hook Enforcement**: Automated blocking of rule violations
+- **Modular Design**: Core system + domain-specific modules
+- **Best Practices**: Curated standards for each domain
+
+## Why Use This?
+
+Without guardrails, AI coding assistants can:
+- Start implementing before understanding the problem
+- Create code without documentation
+- Skip validation steps
+- Forget edge cases
+
+OpenSpec prevents these issues through **technical enforcement**, not just documentation.
+
+## Quick Start
 
 ```bash
-# Migration starten
-~/.agent-os-templates/migrate-project.sh /path/to/project "ProjectName"
+# Clone the framework
+git clone https://github.com/henemm/agent-os-openspec.git
+
+# Install for your project (core only)
+cd agent-os-openspec
+python3 setup.py /path/to/your/project
+
+# With iOS/SwiftUI module
+python3 setup.py /path/to/your/project --module ios-swiftui
+
+# With Home Assistant module
+python3 setup.py /path/to/your/project --module home-assistant
 ```
 
-## Was enthalten ist
-
-### Standards (`standards/`)
-
-Wiederverwendbare Coding-Standards:
-
-| Standard | Beschreibung |
-|----------|--------------|
-| `global/analysis-first.md` | Erst analysieren, dann fixen |
-| `global/scoping-limits.md` | Max 4-5 Dateien, +/-250 LoC |
-| `global/documentation-rules.md` | Dokumentations-Pflichten |
-| `swiftui/lifecycle-patterns.md` | SwiftUI Guard Flag Pattern etc. |
-| `swiftui/localization.md` | Lokalisierungs-Best Practices |
-| `swiftui/state-management.md` | State & Modal Patterns |
-
-### Agents (`agents/`)
-
-Spezialisierte Agenten mit injizierten Standards:
-
-| Agent | Zweck |
-|-------|-------|
-| `bug-investigator.md` | Bug-Analyse nach Analysis-First |
-| `feature-planner.md` | Feature-Planung mit Spec-First |
-| `localizer.md` | DE/EN Lokalisierung |
-| `test-runner.md` | Unit Test Ausfuehrung |
-
-### Workflows (`workflows/`)
-
-Komplette Arbeitsablaeufe:
-
-| Workflow | Beschreibung |
-|----------|--------------|
-| `bug-fix-workflow.md` | Bug-Fix von Analyse bis Test |
-| `feature-workflow.md` | Feature mit TDD |
-| `release-workflow.md` | Version Bump und Deploy |
-
-### Slash Commands (`slash-commands/`)
-
-Claude Code Slash Commands:
-
-| Command | Zweck |
-|---------|-------|
-| `/bug [desc]` | Bug analysieren |
-| `/feature [name]` | Feature planen |
-| `/test` | Tests ausfuehren |
-| `/localize` | Lokalisierung pruefen |
-
-## Nach der Migration
-
-### 1. CLAUDE.md anpassen
-
-Ersetze alle `{{PLACEHOLDER}}` mit projektspezifischen Werten:
-
-- `{{PROJECT_NAME}}` - Projektname
-- `{{PROJECT_DESCRIPTION}}` - Kurzbeschreibung
-- `{{VERSION}}` - Aktuelle Version
-- `{{PROJECT_FILE}}` - z.B. `MyApp.xcodeproj`
-- `{{MAIN_SCHEME}}` - z.B. `MyApp`
-- `{{TEST_SCHEME}}` - z.B. `MyAppTests`
-- etc.
-
-### 2. Workflows anpassen
-
-In `.agent-os/workflows/*.md`:
-
-- `{{PROJECT_FILE}}` ersetzen
-- `{{TEST_SCHEME}}` ersetzen
-- `{{MAIN_SCHEME}}` ersetzen
-
-### 3. OpenSpec erstellen
-
-1. `openspec/project.md` ausfuellen
-2. Feature Specs in `openspec/specs/features/` erstellen
-
-### 4. Projekt-spezifische Standards
-
-Falls benoetigt, zusaetzliche Standards hinzufuegen:
-
-- `standards/healthkit/` - HealthKit-spezifisch
-- `standards/audio/` - Audio-Handling
-- etc.
-
-## Struktur nach Migration
+## The 4-Phase Workflow
 
 ```
-YourProject/
-├── .agent-os/
-│   ├── standards/
-│   │   ├── global/
-│   │   │   ├── analysis-first.md
-│   │   │   ├── scoping-limits.md
-│   │   │   └── documentation-rules.md
-│   │   └── swiftui/
-│   │       ├── lifecycle-patterns.md
-│   │       ├── localization.md
-│   │       └── state-management.md
+User Request
+     │
+     ▼
+┌─────────────┐
+│  /analyse   │ ← Understand request, research codebase
+└─────────────┘
+     │
+     ▼
+┌─────────────┐
+│ /write-spec │ ← Create specification document
+└─────────────┘
+     │
+     ▼
+┌─────────────┐
+│  "approved" │ ← User reviews and approves spec
+└─────────────┘
+     │
+     ▼
+┌─────────────┐
+│ /implement  │ ← NOW you can write code
+└─────────────┘
+     │
+     ▼
+┌─────────────┐
+│  /validate  │ ← Test and verify implementation
+└─────────────┘
+     │
+     ▼
+   Commit
+```
+
+## Project Structure
+
+```
+openspec-framework/
+├── config.yaml              # Configuration template
+├── setup.py                 # Installation tool
+├── README.md
+│
+├── core/                    # Core components (always installed)
+│   ├── hooks/
+│   │   ├── config_loader.py      # Shared configuration
+│   │   ├── workflow_gate.py      # Enforce 4-phase workflow
+│   │   ├── workflow_state_updater.py  # Handle approvals
+│   │   ├── spec_enforcement.py   # Require specs
+│   │   ├── claude_md_protection.py    # Prevent bloat
+│   │   └── notify_sound.py       # Notifications
+│   │
 │   ├── agents/
-│   │   ├── bug-investigator.md
-│   │   ├── feature-planner.md
-│   │   ├── localizer.md
-│   │   └── test-runner.md
-│   └── workflows/
-│       ├── bug-fix-workflow.md
-│       ├── feature-workflow.md
-│       └── release-workflow.md
-├── .claude/
-│   ├── commands/
-│   │   ├── bug.md
-│   │   ├── feature.md
-│   │   ├── test.md
-│   │   └── localize.md
-│   └── settings.local.json
-├── openspec/
-│   ├── project.md
-│   ├── specs/
-│   │   ├── features/
-│   │   └── integrations/
-│   └── changes/
-├── DOCS/
-│   ├── ACTIVE-todos.md
-│   └── ACTIVE-roadmap.md
-└── CLAUDE.md
+│   │   ├── spec-writer.md        # Create specifications
+│   │   ├── spec-validator.md     # Validate specs
+│   │   ├── docs-updater.md       # Update documentation
+│   │   └── bug-intake.md         # Structured bug reports
+│   │
+│   └── commands/
+│       ├── analyse.md
+│       ├── write-spec.md
+│       ├── implement.md
+│       └── validate.md
+│
+├── modules/                 # Optional domain-specific modules
+│   ├── ios-swiftui/         # iOS/SwiftUI development
+│   │   ├── config.yaml
+│   │   ├── standards/
+│   │   │   ├── global/      # Analysis-First, Scoping, Documentation
+│   │   │   └── swiftui/     # Lifecycle, Localization, State
+│   │   ├── agents/
+│   │   │   ├── bug-investigator.md
+│   │   │   ├── feature-planner.md
+│   │   │   ├── localizer.md
+│   │   │   └── test-runner.md
+│   │   ├── workflows/
+│   │   │   ├── bug-fix-workflow.md
+│   │   │   ├── feature-workflow.md
+│   │   │   └── release-workflow.md
+│   │   ├── commands/
+│   │   │   ├── bug.md
+│   │   │   ├── feature.md
+│   │   │   ├── test.md
+│   │   │   └── localize.md
+│   │   └── templates/
+│   │
+│   ├── home-assistant/      # Home Assistant configuration
+│   │   ├── config.yaml
+│   │   ├── hooks/
+│   │   │   ├── check_ha_restart.py
+│   │   │   └── lovelace_screenshot_gate.py
+│   │   └── agents/
+│   │       ├── ha-validator.md
+│   │       ├── lovelace-validator.md
+│   │       ├── automation-tester.md
+│   │       └── implementation-validator.md
+│   │
+│   └── generic/             # Generic optional hooks
+│
+├── docs/
+│   └── specs/
+│       └── _template.md
+│
+├── templates/               # Configuration templates
+└── examples/               # Example projects
 ```
 
-## Globale Regeln
+## Available Modules
 
-Die globalen Zusammenarbeits-Regeln bleiben in `~/.claude/CLAUDE.md`.
-Diese gelten fuer ALLE Projekte und muessen nicht kopiert werden.
+### Core (Always Installed)
+- 4-phase workflow enforcement
+- Spec-first development
+- CLAUDE.md size protection
+- Notification system
+
+### iOS/SwiftUI Module
+Standards and best practices for iOS development:
+- **Analysis-First**: No quick fixes, understand before changing
+- **Scoping Limits**: Max 4-5 files, +/-250 LoC per change
+- **TDD Workflow**: RED → GREEN → REFACTOR cycle
+- **Localization**: DE/EN support with proper patterns
+- **SwiftUI Patterns**: Lifecycle, state management, guard flags
+
+Agents:
+- `bug-investigator` - Systematic bug analysis
+- `feature-planner` - Spec-first feature planning
+- `localizer` - Localization management
+- `test-runner` - Unit test execution
+
+### Home Assistant Module
+- Config validation before restart
+- Screenshot-based dashboard QA
+- Automation testing
+- Edge case detection
+
+## Configuration
+
+After installation, customize `openspec.yaml` in your project:
+
+```yaml
+# Protected paths that require the workflow
+protected_paths:
+  - pattern: ".*\\.swift$"
+    spec_type: "swift"
+  - pattern: "src/.*\\.py$"
+    spec_type: "modules"
+
+# Paths that are always allowed
+always_allowed:
+  - "\\.claude/"
+  - "docs/"
+  - "\\.md$"
+
+# Enable modules
+modules:
+  ios_swiftui:
+    enabled: true
+  home_assistant:
+    enabled: false
+```
+
+## How Hooks Work
+
+Hooks are Python scripts that run before Claude executes tools:
+
+| Hook | Trigger | Purpose |
+|------|---------|---------|
+| workflow_gate.py | Edit/Write | Block if workflow phase is wrong |
+| spec_enforcement.py | Edit/Write | Block if spec missing |
+| workflow_state_updater.py | UserPromptSubmit | Detect approval phrases |
+| check_ha_restart.py | Bash | Block restart without config check |
+
+When a hook returns exit code 2, the tool call is blocked and the error message is shown to Claude.
+
+## Writing Specs
+
+Every entity/component needs a spec before implementation:
+
+```markdown
+---
+entity_id: user_authentication
+type: module
+created: 2025-12-21
+status: draft
+---
+
+# User Authentication
+
+## Approval
+
+- [ ] Approved
+
+## Purpose
+
+Handles user login and session management.
+
+## Dependencies
+
+| Entity | Type | Purpose |
+|--------|------|---------|
+| database | module | Store user data |
+
+## Implementation Details
+
+[Details here]
+```
+
+## Workflow State
+
+The workflow state is tracked in `.claude/workflow_state.json`:
+
+```json
+{
+  "current_phase": "spec_approved",
+  "feature_name": "User Authentication",
+  "spec_file": "docs/specs/modules/user_authentication.md",
+  "spec_approved": true,
+  "implementation_done": false,
+  "validation_done": false
+}
+```
+
+## iOS/SwiftUI Specific Commands
+
+When using the ios-swiftui module:
+
+| Command | Agent | Purpose |
+|---------|-------|---------|
+| `/bug [desc]` | bug-investigator | Analyze bug with Analysis-First |
+| `/feature [name]` | feature-planner | Plan feature with OpenSpec |
+| `/test` | test-runner | Run unit tests |
+| `/localize` | localizer | Check/add localizations |
+
+## Contributing
+
+Contributions welcome! Areas of interest:
+- New domain modules (Web development, Python, Rust, etc.)
+- Additional validation hooks
+- Improved spec templates
+- Documentation
+
+## License
+
+MIT License - See LICENSE file.
+
+## Credits
+
+This framework combines:
+- **OpenSpec Framework** - Hook-based workflow enforcement
+- **Agent OS** - iOS/SwiftUI standards and best practices
+
+Developed from real-world usage enforcing quality in iOS and Home Assistant projects.
