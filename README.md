@@ -1,15 +1,20 @@
-# OpenSpec Framework
+# Agent OS + OpenSpec Framework
 
-A modular workflow enforcement system for Claude Code that ensures quality through spec-first development and automated validation.
+A modular workflow enforcement system for Claude Code that ensures quality through spec-first development, automated validation, and domain-specific standards.
 
-## What is OpenSpec?
+## What is Agent OS + OpenSpec?
 
-OpenSpec is a framework that adds guardrails to Claude Code sessions, preventing common mistakes and enforcing best practices:
+This framework combines two complementary approaches to AI-assisted development:
 
+- **Agent OS**: Domain-specific standards, agents, and workflows (iOS/SwiftUI, Home Assistant, etc.)
+- **OpenSpec**: 4-phase workflow enforcement with Python hooks
+
+Together they provide:
 - **4-Phase Workflow**: analyse → write-spec → implement → validate
 - **Spec-First Development**: No code without specifications
 - **Hook Enforcement**: Automated blocking of rule violations
 - **Modular Design**: Core system + domain-specific modules
+- **Best Practices**: Curated standards for each domain
 
 ## Why Use This?
 
@@ -25,10 +30,10 @@ OpenSpec prevents these issues through **technical enforcement**, not just docum
 
 ```bash
 # Clone the framework
-git clone https://github.com/henemm/openspec-framework.git
+git clone https://github.com/henemm/agent-os-openspec.git
 
 # Install for your project (core only)
-cd openspec-framework
+cd agent-os-openspec
 python3 setup.py /path/to/your/project
 
 # With iOS/SwiftUI module
