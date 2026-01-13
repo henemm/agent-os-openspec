@@ -9,16 +9,31 @@ project:
   name: "My Project"
   base_path: "/path/to/project"  # Will be auto-detected if not set
 
-# Workflow Configuration
+# Workflow Configuration (v2.0)
 workflow:
-  # Phase names and order (customize if needed)
+  # Phase names and order
+  # 8 phases with clear numbering for parallel workflow support
   phases:
-    - idle
-    - analyse_done
-    - spec_written
-    - spec_approved
-    - implemented
-    - validated
+    - phase0_idle
+    - phase1_context
+    - phase2_analyse
+    - phase3_spec
+    - phase4_approved
+    - phase5_tdd_red
+    - phase6_implement
+    - phase7_validate
+    - phase8_complete
+
+  # Phases that allow code modification
+  code_modify_phases:
+    - phase6_implement
+    - phase7_validate
+    - phase8_complete
+
+  # Phases that require TDD artifacts
+  tdd_required_phases:
+    - phase6_implement
+    - phase7_validate
 
   # Phrases that trigger spec approval (case-insensitive)
   approval_phrases:
@@ -28,6 +43,33 @@ workflow:
     - "lgtm"
     - "looks good"
 
+# TDD Enforcement
+tdd:
+  # Minimum requirements for RED phase
+  min_artifacts: 1
+  max_artifact_age_hours: 24
+
+  # Valid artifact types
+  artifact_types:
+    - screenshot
+    - email
+    - api_response
+    - log
+    - file
+    - test_output
+    - video
+    - audio
+
+  # Minimum file sizes (bytes) to prove non-empty
+  min_sizes:
+    screenshot: 1000
+    email: 100
+    api_response: 10
+    log: 10
+    test_output: 10
+    video: 10000
+    audio: 1000
+
 # File Protection Rules
 # Files matching these patterns REQUIRE the full workflow
 protected_paths:
@@ -36,12 +78,31 @@ protected_paths:
     spec_type: "modules"
   - pattern: "src/.*\\.ts$"
     spec_type: "modules"
+  - pattern: "src/.*\\.js$"
+    spec_type: "modules"
+  - pattern: "src/.*\\.swift$"
+    spec_type: "modules"
+  - pattern: "lib/.*\\.py$"
+    spec_type: "modules"
+  - pattern: "app/.*\\.py$"
+    spec_type: "modules"
   - pattern: "tests/.*\\.py$"
     spec_type: "tests"
+  - pattern: "tests/.*\\.ts$"
+    spec_type: "tests"
+  - pattern: "spec/.*\\.ts$"
+    spec_type: "tests"
+  # E2E validators - MUST NOT be changed to "pass" broken code!
+  - pattern: "core/tools/output_validator\\.py$"
+    spec_type: "e2e_validators"
+  - pattern: "core/tools/e2e_test_harness\\.py$"
+    spec_type: "e2e_validators"
 
 # Files that are ALWAYS allowed without workflow
 always_allowed:
-  - "\\.claude/"
+  - "\\.claude/workflow_state"  # State files need frequent updates
+  - "\\.claude/validation_state"
+  - "\\.claude/session_"
   - "docs/"
   - "\\.md$"
   - "\\.gitignore"
@@ -73,14 +134,44 @@ claude_md:
     - pattern: "```(?:yaml|python|bash)\\n(?:.*\\n){20,}```"
       message: "Long code examples belong in docs/reference/"
 
+# Secrets Guard - Prevents accidental exposure of sensitive files
+secrets_guard:
+  enabled: true
+  staging_mode: false  # Enable via: touch .claude/staging
+  sensitive_patterns:
+    - "\\.env"
+    - "credentials\\.json"
+    - "service[_-]?account.*\\.json"
+    - "_key"
+    - "_secret"
+    - "\\.pem$"
+    - "\\.key$"
+  always_blocked:  # Even in staging mode
+    - "credentials\\.json"
+    - "service[_-]?account.*\\.json"
+    - "_key"
+    - "_secret"
+    - "\\.pem$"
+    - "\\.key$"
+
+# Scoping Limits - Keep changes small and focused
+scoping:
+  enabled: true
+  max_files: 5        # Maximum files per change
+  max_lines: 250      # Maximum lines changed
+  warn_only: true     # Warn but don't block (set false to enforce)
+
 # Active Modules
 # Enable/disable optional functionality
 modules:
   # Core modules (always active)
   core:
     workflow_gate: true
+    workflow_state_multi: true  # Multi-workflow support (v2.0)
+    tdd_enforcement: true       # TDD with real artifacts (v2.0)
     spec_enforcement: true
     claude_md_protection: true
+    secrets_guard: true         # Prevent secret exposure (v2.0)
     notification: true
 
   # Optional generic modules
@@ -122,6 +213,75 @@ agents:
     model: "sonnet"
     enabled: true
 
+# Domain Pattern Guards
+# Enforce Single Source of Truth architectural patterns
+domain_guards:
+  # Example: Weather service pattern guard
+  # weather_service:
+  #   description: "Weather calculations must use WeatherMetricsService"
+  #   source_of_truth: "src/services/weather_metrics.py"
+  #   allowed_files:
+  #     - "weather_metrics.py"
+  #     - "test_weather_*.py"
+  #   violations:
+  #     - pattern: "cloud_pct\\s*[<>=]"
+  #       message: "Direct cloud percentage comparison"
+  #       fix: "Use WeatherMetricsService.calculate_sunny_hours()"
+
+# E2E Test Configuration
+e2e_tests:
+  base_url: "http://localhost:8080"
+  default_timeout: 10  # seconds
+  screenshot_dir: ".claude/artifacts/screenshots"
+  headless: true
+  browser: "chromium"  # chromium, firefox, webkit
+
+# Output Format Validation Specs
+output_specs:
+  # Example: Email format spec
+  # email_v1:
+  #   description: "Standard email format"
+  #   type: "html"
+  #   fetch_method: "imap"  # or "file", "http"
+  #   imap:
+  #     host: "imap.gmail.com"
+  #     folder: "[Gmail]/Sent Mail"
+  #   validations:
+  #     - type: "structure"
+  #       rules:
+  #         - pattern: "<table.*?</table>"
+  #           count: 2
+  #           message: "Must have exactly 2 tables"
+  #     - type: "required_sections"
+  #       sections:
+  #         - "Summary"
+  #         - "Details"
+
+# Pre-commit Gate Configuration
+pre_commit:
+  enabled: true
+  test_command: ["pytest", "--tb=line", "-q"]
+  timeout: 120
+  allow_amend: true
+  ui_patterns:
+    - "web/pages/"
+    - "templates/"
+    - "components/"
+    - ".vue"
+    - ".tsx"
+    - ".jsx"
+    - ".svelte"
+  screenshot_reminder: true
+
+# Validation Tool Configuration
+validation:
+  checks:
+    - syntax
+    - imports
+    # - server_startup  # optional
+  source_dir: "src"
+  import_command: "python3 -c"  # or "uv run python -c"
+
 # Hooks Configuration
 hooks:
   # Timeout in seconds for hook execution
@@ -129,7 +289,12 @@ hooks:
 
   # Hook execution order (lower = earlier)
   priority:
+    secrets_guard: 5          # First! Block sensitive file access
     workflow_gate: 10
     spec_enforcement: 20
+    domain_pattern_guard: 25
+    track_changes: 30
+    tdd_enforcement: 35
     module_hooks: 50
+    pre_commit_gate: 90
     notification: 100

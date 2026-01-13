@@ -4,15 +4,23 @@ OpenSpec Framework - Configuration Loader
 
 Shared module for loading and accessing framework configuration.
 All hooks import this to get consistent config access.
+
+Supports:
+- openspec.yaml / config.yaml - Main configuration
+- settings.local.json - Local overrides (NOT in git, for credentials etc.)
 """
 
 import os
+import json
 import yaml
 from pathlib import Path
 from functools import lru_cache
 
 # Config file search order
 CONFIG_NAMES = ["openspec.yaml", "config.yaml", ".openspec.yaml"]
+
+# Local override file (should be in .gitignore)
+LOCAL_OVERRIDE_NAMES = ["settings.local.json", ".settings.local.json"]
 
 
 @lru_cache(maxsize=1)
@@ -39,10 +47,17 @@ def find_project_root() -> Path:
 
 @lru_cache(maxsize=1)
 def load_config() -> dict:
-    """Load configuration from project root."""
+    """
+    Load configuration from project root.
+
+    Load order (later overrides earlier):
+    1. Default config (built-in)
+    2. openspec.yaml / config.yaml (project config)
+    3. settings.local.json (local overrides, NOT in git)
+    """
     root = find_project_root()
 
-    # Search for config file
+    # Search for main config file
     config_path = None
     for config_name in CONFIG_NAMES:
         candidate = root / config_name
@@ -54,15 +69,54 @@ def load_config() -> dict:
             config_path = candidate
             break
 
-    if not config_path:
-        return get_default_config()
+    # Start with defaults
+    config = get_default_config()
 
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f) or {}
+    # Merge main config if found
+    if config_path:
+        with open(config_path, 'r') as f:
+            file_config = yaml.safe_load(f) or {}
+        config = deep_merge(config, file_config)
 
-    # Merge with defaults
-    defaults = get_default_config()
-    return deep_merge(defaults, config)
+    # Load local overrides (settings.local.json)
+    local_config = load_local_overrides(root)
+    if local_config:
+        config = deep_merge(config, local_config)
+
+    return config
+
+
+def load_local_overrides(root: Path) -> dict | None:
+    """
+    Load local override settings.
+
+    These are for:
+    - API keys and credentials
+    - Local paths
+    - Developer-specific preferences
+
+    Should be in .gitignore!
+    """
+    for override_name in LOCAL_OVERRIDE_NAMES:
+        # Check in .claude/
+        candidate = root / ".claude" / override_name
+        if candidate.exists():
+            try:
+                with open(candidate, 'r') as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, Exception):
+                pass
+
+        # Check in root
+        candidate = root / override_name
+        if candidate.exists():
+            try:
+                with open(candidate, 'r') as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, Exception):
+                pass
+
+    return None
 
 
 def get_default_config() -> dict:

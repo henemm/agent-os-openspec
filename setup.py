@@ -6,6 +6,7 @@ Installs and configures the OpenSpec framework for a new project.
 
 Usage:
     python3 setup.py /path/to/project [--module home-assistant]
+    python3 setup.py /path/to/project --update
     python3 setup.py --help
 
 This tool:
@@ -14,6 +15,7 @@ This tool:
 3. Optionally installs module-specific components
 4. Generates settings.json with hook configuration
 5. Creates initial docs/ structure
+6. Can update existing installations with --update
 """
 
 import argparse
@@ -23,19 +25,51 @@ import shutil
 import sys
 from pathlib import Path
 from datetime import datetime
+import hashlib
 
 
+FRAMEWORK_VERSION = "2.0.0"
 FRAMEWORK_ROOT = Path(__file__).parent
 CORE_DIR = FRAMEWORK_ROOT / "core"
 MODULES_DIR = FRAMEWORK_ROOT / "modules"
 
 
+def get_file_hash(path: Path) -> str:
+    """Get MD5 hash of a file for comparison."""
+    if not path.exists():
+        return ""
+    return hashlib.md5(path.read_bytes()).hexdigest()
+
+
+def should_update_file(src: Path, dst: Path, force: bool = False) -> tuple[bool, str]:
+    """
+    Determine if a file should be updated.
+    Returns (should_update, reason).
+    """
+    if not dst.exists():
+        return True, "new file"
+
+    if force:
+        return True, "forced update"
+
+    src_hash = get_file_hash(src)
+    dst_hash = get_file_hash(dst)
+
+    if src_hash != dst_hash:
+        return True, "content changed"
+
+    return False, "unchanged"
+
+
 def create_directory_structure(project_path: Path):
-    """Create the .claude/ and docs/ directory structure."""
+    """Create the .claude/, .agent-os/, and docs/ directory structure."""
     dirs = [
         ".claude/hooks",
         ".claude/agents",
         ".claude/commands",
+        ".claude/tools",
+        ".claude/artifacts/screenshots",
+        ".agent-os/standards/global",
         "docs/specs",
         "docs/reference",
         "docs/features",
@@ -48,7 +82,7 @@ def create_directory_structure(project_path: Path):
 
 
 def copy_core_components(project_path: Path):
-    """Copy core hooks, agents, and commands."""
+    """Copy core hooks, agents, commands, and tools."""
     # Copy hooks
     hooks_src = CORE_DIR / "hooks"
     hooks_dst = project_path / ".claude" / "hooks"
@@ -72,6 +106,29 @@ def copy_core_components(project_path: Path):
     for cmd_file in commands_src.glob("*.md"):
         shutil.copy(cmd_file, commands_dst / cmd_file.name)
         print(f"  Copied command: {cmd_file.name}")
+
+    # Copy tools (v2.0 - validation, E2E testing, output validation)
+    tools_src = CORE_DIR / "tools"
+    tools_dst = project_path / ".claude" / "tools"
+
+    if tools_src.exists():
+        tools_dst.mkdir(parents=True, exist_ok=True)
+        for tool_file in tools_src.glob("*.py"):
+            shutil.copy(tool_file, tools_dst / tool_file.name)
+            print(f"  Copied tool: {tool_file.name}")
+
+    # Copy standards (v2.0 - scoping limits, testing, etc.)
+    standards_src = CORE_DIR / "standards"
+    standards_dst = project_path / ".agent-os" / "standards"
+
+    if standards_src.exists():
+        for subdir in standards_src.iterdir():
+            if subdir.is_dir():
+                dst_subdir = standards_dst / subdir.name
+                dst_subdir.mkdir(parents=True, exist_ok=True)
+                for std_file in subdir.glob("*.md"):
+                    shutil.copy(std_file, dst_subdir / std_file.name)
+                    print(f"  Copied standard: {subdir.name}/{std_file.name}")
 
 
 def install_module(project_path: Path, module_name: str):
@@ -163,6 +220,7 @@ def generate_settings_json(project_path: Path, modules: list):
     # Collect all hooks
     edit_write_hooks = []
     bash_hooks = []
+    read_hooks = []
     stop_hooks = []
     user_prompt_hooks = []
 
@@ -171,16 +229,52 @@ def generate_settings_json(project_path: Path, modules: list):
         hook_path = str(hooks_dir / hook_name)
 
         # Categorize hooks based on their purpose
-        if hook_name in ["workflow_gate.py", "spec_enforcement.py", "claude_md_protection.py"]:
+        # Edit/Write hooks - block file modifications based on workflow state
+        if hook_name in [
+            # Core workflow hooks
+            "workflow_gate.py",
+            "spec_enforcement.py",
+            "claude_md_protection.py",
+            # TDD enforcement (v2.0)
+            "tdd_enforcement.py",
+            "red_test_gate.py",
+            # Quality gates (v2.0 - from Home Assistant)
+            "post_implementation_gate.py",
+            "scope_guard.py",
+            "plan_validator.py",
+            # UI validation
+            "ui_screenshot_gate.py",
+            "lovelace_screenshot_gate.py",
+            # Architecture enforcement (v2.0 - from gregor_zwanziger)
+            "domain_pattern_guard.py",
+            # Change tracking (runs on Edit/Write but never blocks)
+            "track_changes.py",
+        ]:
             edit_write_hooks.append(hook_path)
-        elif hook_name in ["check_ha_restart.py"]:
+        # Bash hooks - validate shell commands
+        elif hook_name in [
+            "check_ha_restart.py",
+            # Commit gate (v2.0 - from gregor_zwanziger)
+            "pre_commit_gate.py",
+            # Secrets guard (v2.0 - from helix-mvp) - blocks sensitive file access
+            "secrets_guard.py",
+        ]:
             bash_hooks.append(hook_path)
-        elif hook_name == "lovelace_screenshot_gate.py":
-            edit_write_hooks.append(hook_path)
+        # Read hooks - validate file reads (v2.0)
+        elif hook_name in [
+            # Secrets guard - blocks reading sensitive files
+            "secrets_guard.py",
+        ]:
+            read_hooks.append(hook_path)
+        # Stop hooks - run when Claude stops responding
         elif hook_name in ["notify_sound.py", "check_claude_md.py"]:
             stop_hooks.append(hook_path)
+        # UserPromptSubmit hooks - process user input
         elif hook_name == "workflow_state_updater.py":
             user_prompt_hooks.append(hook_path)
+        # Libraries (imported by hooks, not run directly):
+        # - workflow_state_multi.py
+        # - config_loader.py
 
     settings = {
         "permissions": {
@@ -212,6 +306,16 @@ def generate_settings_json(project_path: Path, modules: list):
             "hooks": [
                 {"type": "command", "command": f"python3 {h}", "timeout": 5}
                 for h in bash_hooks
+            ]
+        })
+
+    # Add Read hooks (v2.0 - secrets guard)
+    if read_hooks:
+        settings["hooks"]["PreToolUse"].append({
+            "matcher": "Read",
+            "hooks": [
+                {"type": "command", "command": f"python3 {h}", "timeout": 5}
+                for h in read_hooks
             ]
         })
 
@@ -406,15 +510,144 @@ Generated by OpenSpec Framework on {datetime.now().strftime("%Y-%m-%d")}
         print(f"  Skipped: CLAUDE.md (already exists)")
 
 
+def update_project(project_path: Path, modules: list, force: bool = False):
+    """Update an existing project installation."""
+    print(f"\nOpenSpec Framework Update")
+    print(f"=========================")
+    print(f"Framework version: {FRAMEWORK_VERSION}")
+    print(f"Project: {project_path}")
+    print()
+
+    # Track changes
+    updated = []
+    skipped = []
+    new_files = []
+
+    # Update core hooks
+    hooks_src = CORE_DIR / "hooks"
+    hooks_dst = project_path / ".claude" / "hooks"
+
+    if hooks_dst.exists():
+        for hook_file in hooks_src.glob("*.py"):
+            dst = hooks_dst / hook_file.name
+            should_update, reason = should_update_file(hook_file, dst, force)
+
+            if should_update:
+                shutil.copy(hook_file, dst)
+                if reason == "new file":
+                    new_files.append(f"hook: {hook_file.name}")
+                else:
+                    updated.append(f"hook: {hook_file.name}")
+            else:
+                skipped.append(f"hook: {hook_file.name}")
+
+    # Update core commands
+    commands_src = CORE_DIR / "commands"
+    commands_dst = project_path / ".claude" / "commands"
+
+    if commands_dst.exists():
+        for cmd_file in commands_src.glob("*.md"):
+            dst = commands_dst / cmd_file.name
+            should_update, reason = should_update_file(cmd_file, dst, force)
+
+            if should_update:
+                shutil.copy(cmd_file, dst)
+                if reason == "new file":
+                    new_files.append(f"command: {cmd_file.name}")
+                else:
+                    updated.append(f"command: {cmd_file.name}")
+            else:
+                skipped.append(f"command: {cmd_file.name}")
+
+    # Update core agents
+    agents_src = CORE_DIR / "agents"
+    agents_dst = project_path / ".claude" / "agents"
+
+    if agents_dst.exists():
+        for agent_file in agents_src.glob("*.md"):
+            dst = agents_dst / agent_file.name
+            should_update, reason = should_update_file(agent_file, dst, force)
+
+            if should_update:
+                shutil.copy(agent_file, dst)
+                if reason == "new file":
+                    new_files.append(f"agent: {agent_file.name}")
+                else:
+                    updated.append(f"agent: {agent_file.name}")
+            else:
+                skipped.append(f"agent: {agent_file.name}")
+
+    # Update core tools (v2.0)
+    tools_src = CORE_DIR / "tools"
+    tools_dst = project_path / ".claude" / "tools"
+
+    if tools_src.exists():
+        tools_dst.mkdir(parents=True, exist_ok=True)
+        for tool_file in tools_src.glob("*.py"):
+            dst = tools_dst / tool_file.name
+            should_update, reason = should_update_file(tool_file, dst, force)
+
+            if should_update:
+                shutil.copy(tool_file, dst)
+                if reason == "new file":
+                    new_files.append(f"tool: {tool_file.name}")
+                else:
+                    updated.append(f"tool: {tool_file.name}")
+            else:
+                skipped.append(f"tool: {tool_file.name}")
+
+    # Update modules
+    for module in modules:
+        module_dir = MODULES_DIR / module
+        if module_dir.exists():
+            print(f"\nUpdating module: {module}...")
+            # Similar logic for module files...
+            install_module(project_path, module)
+
+    # Update version tracking
+    version_file = project_path / ".claude" / "framework_version.json"
+    version_info = {
+        "framework_version": FRAMEWORK_VERSION,
+        "last_updated": datetime.now().isoformat(),
+        "installed_modules": modules,
+    }
+    with open(version_file, 'w') as f:
+        json.dump(version_info, f, indent=2)
+
+    # Print summary
+    print("\n" + "=" * 50)
+    print("Update Summary")
+    print("=" * 50)
+
+    if new_files:
+        print(f"\nNew files ({len(new_files)}):")
+        for f in new_files:
+            print(f"  + {f}")
+
+    if updated:
+        print(f"\nUpdated ({len(updated)}):")
+        for f in updated:
+            print(f"  ~ {f}")
+
+    if skipped and not force:
+        print(f"\nUnchanged ({len(skipped)}): Use --force to overwrite all")
+
+    print(f"\nFramework updated to version {FRAMEWORK_VERSION}")
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Install OpenSpec Framework for a project",
+        description="Install or update OpenSpec Framework for a project",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  # Fresh installation
   python3 setup.py /path/to/project
   python3 setup.py /path/to/project --module home-assistant
-  python3 setup.py . --module home-assistant
+
+  # Update existing installation
+  python3 setup.py /path/to/project --update
+  python3 setup.py /path/to/project --update --force
 
 Available modules:
   ios-swiftui     - iOS/SwiftUI standards, agents, and workflows
@@ -437,9 +670,27 @@ Available modules:
     )
 
     parser.add_argument(
+        "--update", "-u",
+        action="store_true",
+        help="Update existing installation instead of fresh install"
+    )
+
+    parser.add_argument(
+        "--force", "-f",
+        action="store_true",
+        help="Force overwrite all files during update"
+    )
+
+    parser.add_argument(
         "--skip-hooks",
         action="store_true",
         help="Skip generating settings.json hooks configuration"
+    )
+
+    parser.add_argument(
+        "--version", "-v",
+        action="version",
+        version=f"OpenSpec Framework {FRAMEWORK_VERSION}"
     )
 
     args = parser.parse_args()
@@ -450,14 +701,27 @@ Available modules:
         print(f"ERROR: Project path does not exist: {project_path}")
         sys.exit(1)
 
+    # Update mode
+    if args.update:
+        update_project(project_path, args.modules, args.force)
+        return
+
+    # Fresh installation
     print(f"\nOpenSpec Framework Setup")
     print(f"========================")
+    print(f"Framework version: {FRAMEWORK_VERSION}")
     print(f"Project: {project_path}")
     print(f"Modules: {args.modules or ['core only']}")
     print()
 
     print("Creating directory structure...")
     create_directory_structure(project_path)
+
+    # Also create artifacts directory for TDD
+    (project_path / "docs" / "artifacts").mkdir(parents=True, exist_ok=True)
+    (project_path / "docs" / "context").mkdir(parents=True, exist_ok=True)
+    print("  Created: docs/artifacts/")
+    print("  Created: docs/context/")
 
     print("\nCopying core components...")
     copy_core_components(project_path)
@@ -471,6 +735,17 @@ Available modules:
     create_spec_template(project_path)
     create_workflow_state(project_path)
 
+    # Save version info
+    version_file = project_path / ".claude" / "framework_version.json"
+    version_info = {
+        "framework_version": FRAMEWORK_VERSION,
+        "installed": datetime.now().isoformat(),
+        "installed_modules": args.modules,
+    }
+    with open(version_file, 'w') as f:
+        json.dump(version_info, f, indent=2)
+    print("  Created: .claude/framework_version.json")
+
     if not args.skip_hooks:
         generate_settings_json(project_path, args.modules)
 
@@ -481,15 +756,23 @@ Available modules:
     print("Setup complete!")
     print("=" * 50)
     print(f"""
+Framework version: {FRAMEWORK_VERSION}
+
+New Workflow (v2.0):
+  /context   -> Gather relevant context (Phase 1)
+  /analyse   -> Analyse requirements (Phase 2)
+  /write-spec -> Create specification (Phase 3)
+  "approved" -> User approval (Phase 4)
+  /tdd-red   -> Write failing tests (Phase 5)
+  /implement -> Make tests pass (Phase 6)
+  /validate  -> Manual testing (Phase 7)
+
+Parallel workflows supported! Use /workflow to manage.
+
 Next steps:
 1. Review openspec.yaml and customize for your project
 2. Update protected_paths to match your project structure
 3. Add specs to docs/specs/ as you develop
-
-Workflow:
-  /analyse -> /write-spec -> "approved" -> /implement -> /validate
-
-For more info: https://github.com/your-repo/openspec-framework
 """)
 
 

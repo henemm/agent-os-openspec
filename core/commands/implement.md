@@ -1,44 +1,117 @@
-# Phase 3: Implementation
+# Phase 6: Implementation (TDD GREEN)
 
-You are starting the **Implementation Phase**.
+You are in **Phase 6 - Implementation / TDD GREEN Phase**.
 
-## Prerequisites:
+## Purpose
 
-Check `.claude/workflow_state.json`:
-- `current_phase` must be `spec_approved`
-- `spec_approved` must be `true`
+Write the **minimal code** to make failing tests pass. No more, no less.
 
-If not, the `workflow_gate` hook will block your edits!
+## Prerequisites
 
-## Your Tasks:
+- Spec approved (`phase4_approved`)
+- TDD RED complete (`phase5_tdd_red`)
+- Test artifacts registered showing failures
 
-1. **Read the approved spec** - Follow it exactly
-2. **Implement step by step:**
-   - Create/modify files as specified
-   - Run validation after each change (if applicable)
-   - Test incrementally
-3. **Document any deviations** - If you must deviate from spec, note why
-
-## Implementation Order (recommended):
-
-1. Core functionality first
-2. Tests second
-3. Documentation third
-4. Integration last
-
-## Update Workflow State:
-
-After completing implementation:
-```json
-{
-  "current_phase": "implemented",
-  "implementation_done": true,
-  "last_updated": "[ISO timestamp]"
-}
+Check status:
+```bash
+python3 .claude/hooks/workflow_state_multi.py status
 ```
 
-## Next Step:
+**If TDD RED artifacts are missing, the `tdd_enforcement` hook will BLOCK your edits!**
 
-> "Implementation complete. Next step: `/validate` to verify everything works."
+## Your Tasks
 
-**IMPORTANT:** Do NOT commit without running `/validate` first!
+### 1. Verify RED Phase Complete
+
+```bash
+python3 -c "
+import sys; sys.path.insert(0, '.claude/hooks')
+from workflow_state_multi import get_active_workflow
+
+w = get_active_workflow()
+if w:
+    artifacts = [a for a in w.get('test_artifacts', []) if a.get('phase') == 'phase5_tdd_red']
+    print(f'RED artifacts: {len(artifacts)}')
+    for a in artifacts:
+        print(f'  - {a[\"type\"]}: {a[\"description\"][:50]}...')
+"
+```
+
+### 2. Read the Spec
+
+Open and follow the approved spec exactly:
+- Implementation details
+- Affected files
+- Expected behavior
+
+### 3. Implement - Make Tests GREEN
+
+Write code to make tests pass:
+
+```python
+# Implement the minimal code to satisfy tests
+def feature_that_was_missing():
+    # Now it exists!
+    return expected_value
+```
+
+**TDD GREEN Rules:**
+- Only write code that makes a test pass
+- Don't add features not covered by tests
+- Don't optimize prematurely
+- Don't refactor yet
+
+### 4. Run Tests - MUST BE GREEN
+
+```bash
+pytest tests/test_[feature].py -v
+```
+
+**Expected:** All tests PASS.
+
+### 5. Capture GREEN Artifacts
+
+```bash
+pytest tests/ -v > docs/artifacts/[workflow]/test-green-output.txt 2>&1
+
+python3 -c "
+import sys; sys.path.insert(0, '.claude/hooks')
+from workflow_state_multi import add_test_artifact, load_state
+
+state = load_state()
+active = state['active_workflow']
+
+add_test_artifact(active, {
+    'type': 'test_output',
+    'path': 'docs/artifacts/[workflow]/test-green-output.txt',
+    'description': 'All tests PASSED: 5 passed in 0.3s',
+    'phase': 'phase6_implement'
+})
+"
+```
+
+### 6. Update Workflow State
+
+```bash
+python3 .claude/hooks/workflow_state_multi.py phase phase7_validate
+```
+
+## Implementation Constraints
+
+Follow scoping limits:
+- **Max 4-5 files** per change
+- **Max +/-250 LoC** total
+- **Functions ≤50 LoC**
+- **No side effects** outside spec scope
+
+## Next Step
+
+After implementation:
+> "Implementation complete. All [N] tests pass. Ready for `/validate` for manual testing."
+
+## Common Mistakes
+
+❌ **Adding unrequested features** → Scope creep
+❌ **Skipping tests** → Not TDD
+❌ **Large functions** → Hard to test/maintain
+❌ **Not running tests** → Might still be RED
