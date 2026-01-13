@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Backlog Status Tracking (v2.1)
+
+**New Feature: "Spec Ready" Status**
+- Separate backlog status tracking (`open`, `spec_ready`, `in_progress`, `done`, `blocked`)
+- Prevents false "Done" marking when user pauses after spec approval
+- Auto-derives status from phase (can be overridden)
+- Pause detection for German/English phrases ("ich höre hier auf", "später implementieren", etc.)
+
+**New CLI Commands:**
+- `workflow_state_multi.py backlog <status>` - Set backlog status explicitly
+- `workflow_state_multi.py pause` - Pause workflow with appropriate status
+
+**New Functions in `workflow_state_multi.py`:**
+- `get_backlog_status()` - Get current backlog status
+- `set_backlog_status()` - Explicitly set status
+- `pause_workflow()` - Pause with smart status setting
+- `is_pause_message()` - Detect pause intent
+- `derive_backlog_status()` - Map phase to status
+- `sync_backlog_status_from_phase()` - Auto-sync on phase change
+
+**Updated Templates:**
+- `ACTIVE-roadmap.md` - New "Spec Ready" section, status legend
+- `ACTIVE-todos.md` - New "Spec Ready" section, status legend
+
+**Updated Documentation:**
+- `workflow.md` - Backlog status section with mapping table
+
 ### Added - Core Improvements
 
 **Multi-Workflow Support:**

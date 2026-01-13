@@ -64,6 +64,51 @@ python3 .claude/hooks/workflow_state_multi.py phase phase4_approved
 | `phase7_validate` | Validation | Manual testing |
 | `phase8_complete` | Complete | Ready for commit |
 
+## Backlog Status (v2.1)
+
+Separate from workflow phase - tracks the overall feature status for project planning.
+
+| Status | Meaning | When Set |
+|--------|---------|----------|
+| `open` | Work not started or in early phases | phase0-3 |
+| `spec_ready` | Spec approved, implementation pending | phase4 or on pause |
+| `in_progress` | Active implementation | phase5-7 |
+| `done` | Feature complete | phase8 |
+| `blocked` | Cannot proceed (manual) | Set explicitly |
+
+### Commands
+
+```bash
+# Check current backlog status
+python3 .claude/hooks/workflow_state_multi.py status
+
+# Set backlog status explicitly
+python3 .claude/hooks/workflow_state_multi.py backlog spec_ready
+
+# Pause workflow (sets appropriate status)
+python3 .claude/hooks/workflow_state_multi.py pause
+```
+
+### Phase vs. Backlog Status
+
+**Phase** = Where you are in the workflow process
+**Backlog Status** = Feature readiness for project tracking
+
+Example: A feature in `phase4_approved` has backlog status `spec_ready` - the spec is done but implementation hasn't started.
+
+### Pause Behavior
+
+When user indicates they want to pause (phrases like "ich höre hier auf", "später implementieren", "nur die spec"):
+
+- If in phase4+ (spec approved): Status → `spec_ready`
+- If in phase0-3: Status → `open`
+- **Never** → `done` (unless phase8_complete reached)
+
+**IMPORTANT for AI assistants:**
+- "Spec fertig" ≠ "Feature fertig"
+- Only `phase8_complete` = `done`
+- Workflow pause after spec approval = `spec_ready`
+
 ## Parallel Workflows
 
 You can work on multiple features simultaneously:

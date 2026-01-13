@@ -71,6 +71,47 @@ PHASE_NAMES = {
     "phase8_complete": "Complete",
 }
 
+# Backlog status options
+BACKLOG_STATUSES = ["open", "spec_ready", "in_progress", "done", "blocked"]
+
+# Human-readable backlog status names
+BACKLOG_STATUS_NAMES = {
+    "open": "Open",
+    "spec_ready": "Spec Ready",
+    "in_progress": "In Progress",
+    "done": "Done",
+    "blocked": "Blocked",
+}
+
+# Automatic mapping: Phase -> Backlog Status
+PHASE_TO_BACKLOG_STATUS = {
+    "phase0_idle": "open",
+    "phase1_context": "open",
+    "phase2_analyse": "open",
+    "phase3_spec": "open",
+    "phase4_approved": "spec_ready",
+    "phase5_tdd_red": "in_progress",
+    "phase6_implement": "in_progress",
+    "phase7_validate": "in_progress",
+    "phase8_complete": "done",
+}
+
+# Phrases that indicate user wants to pause (not complete)
+PAUSE_PHRASES = [
+    "ich höre hier auf",
+    "das reicht für heute",
+    "implementation später",
+    "nur die spec",
+    "pause",
+    "später weitermachen",
+    "für heute fertig",
+    "rest später",
+    "spec reicht erstmal",
+    "stop here",
+    "pause workflow",
+    "continue later",
+]
+
 # Phases that allow code modification
 CODE_MODIFY_PHASES = ["phase6_implement", "phase7_validate", "phase8_complete"]
 
@@ -180,6 +221,9 @@ def create_workflow(name: str) -> dict:
         "analysis_findings": None,
         # Phases completed history
         "phases_completed": [],
+        # Backlog status (v2.1) - separate from phase
+        # open | spec_ready | in_progress | done | blocked
+        "backlog_status": "open",
     }
 
 
@@ -300,9 +344,14 @@ def get_workflow_status(name: str = None) -> str:
     phase = workflow["current_phase"]
     phase_name = PHASE_NAMES.get(phase, phase)
 
+    # Get backlog status (explicit or derived)
+    backlog = workflow.get("backlog_status") or derive_backlog_status(phase)
+    backlog_name = BACKLOG_STATUS_NAMES.get(backlog, backlog)
+
     lines = [
         f"Workflow: {workflow_name}",
         f"Phase: {phase_name}",
+        f"Backlog Status: {backlog_name}",
         f"Spec: {workflow.get('spec_file') or 'Not created'}",
         f"Approved: {'Yes' if workflow.get('spec_approved') else 'No'}",
         f"Test Artifacts: {len(workflow.get('test_artifacts', []))}",
@@ -312,16 +361,21 @@ def get_workflow_status(name: str = None) -> str:
 
 
 def list_workflows() -> list:
-    """List all workflows with their current phase."""
+    """List all workflows with their current phase and backlog status."""
     state = load_state()
     active = state.get("active_workflow")
 
     result = []
     for name, workflow in state.get("workflows", {}).items():
+        # Get backlog status (explicit or derived from phase)
+        backlog = workflow.get("backlog_status") or derive_backlog_status(workflow["current_phase"])
+
         result.append({
             "name": name,
             "phase": workflow["current_phase"],
             "phase_name": PHASE_NAMES.get(workflow["current_phase"], "Unknown"),
+            "backlog_status": backlog,
+            "backlog_status_name": BACKLOG_STATUS_NAMES.get(backlog, backlog),
             "is_active": name == active,
             "last_updated": workflow.get("last_updated"),
         })
@@ -368,6 +422,7 @@ def complete_workflow(name: str) -> bool:
         return False
 
     state["workflows"][name]["current_phase"] = "phase8_complete"
+    state["workflows"][name]["backlog_status"] = "done"  # Explicitly set to done
     state["workflows"][name]["last_updated"] = datetime.now().isoformat()
 
     # If this was the active workflow, clear it
@@ -474,13 +529,148 @@ def get_tdd_status(workflow_name: str = None) -> dict:
     }
 
 
+def derive_backlog_status(phase: str) -> str:
+    """
+    Derive the appropriate backlog status from a workflow phase.
+
+    Returns the backlog status that corresponds to the given phase.
+    """
+    return PHASE_TO_BACKLOG_STATUS.get(phase, "open")
+
+
+def get_backlog_status(workflow_name: str = None) -> str:
+    """
+    Get the backlog status for a workflow.
+
+    Returns the explicit backlog_status if set, otherwise derives from phase.
+    """
+    state = load_state()
+
+    name = workflow_name or state.get("active_workflow")
+    if not name or name not in state["workflows"]:
+        return "open"
+
+    workflow = state["workflows"][name]
+
+    # Return explicit status if set
+    if workflow.get("backlog_status"):
+        return workflow["backlog_status"]
+
+    # Otherwise derive from phase
+    return derive_backlog_status(workflow["current_phase"])
+
+
+def set_backlog_status(status: str, workflow_name: str = None) -> bool:
+    """
+    Explicitly set the backlog status for a workflow.
+
+    Args:
+        status: One of: open, spec_ready, in_progress, done, blocked
+        workflow_name: Name of workflow (uses active if None)
+
+    Returns:
+        True if successful, False otherwise.
+    """
+    if status not in BACKLOG_STATUSES:
+        return False
+
+    state = load_state()
+
+    name = workflow_name or state.get("active_workflow")
+    if not name or name not in state["workflows"]:
+        return False
+
+    state["workflows"][name]["backlog_status"] = status
+    state["workflows"][name]["last_updated"] = datetime.now().isoformat()
+    save_state(state)
+    return True
+
+
+def is_pause_message(message: str) -> bool:
+    """
+    Check if a message indicates the user wants to pause the workflow.
+
+    Returns True if pause intent detected.
+    """
+    message_lower = message.lower().strip()
+
+    for phrase in PAUSE_PHRASES:
+        if phrase in message_lower:
+            return True
+
+    return False
+
+
+def pause_workflow(workflow_name: str = None) -> tuple[bool, str]:
+    """
+    Pause a workflow and set appropriate backlog status.
+
+    If the workflow is in phase4_approved or later (but not complete),
+    sets status to 'spec_ready'. Otherwise keeps current status.
+
+    Returns:
+        (success, message) tuple
+    """
+    state = load_state()
+
+    name = workflow_name or state.get("active_workflow")
+    if not name or name not in state["workflows"]:
+        return False, "No active workflow to pause."
+
+    workflow = state["workflows"][name]
+    phase = workflow["current_phase"]
+    phase_index = PHASES.index(phase) if phase in PHASES else 0
+
+    # Determine appropriate backlog status based on progress
+    if phase == "phase8_complete":
+        return False, "Workflow already complete."
+    elif phase_index >= PHASES.index("phase4_approved"):
+        # Spec is approved but not implemented -> spec_ready
+        workflow["backlog_status"] = "spec_ready"
+        status_msg = "spec_ready"
+    else:
+        # Still in early phases -> open
+        workflow["backlog_status"] = "open"
+        status_msg = "open"
+
+    workflow["last_updated"] = datetime.now().isoformat()
+    save_state(state)
+
+    return True, f"Workflow '{name}' paused. Backlog status: {status_msg}"
+
+
+def sync_backlog_status_from_phase(workflow_name: str = None) -> bool:
+    """
+    Synchronize backlog status based on current phase.
+
+    Call this when phase changes to keep backlog status in sync
+    (unless manually overridden).
+    """
+    state = load_state()
+
+    name = workflow_name or state.get("active_workflow")
+    if not name or name not in state["workflows"]:
+        return False
+
+    workflow = state["workflows"][name]
+    phase = workflow["current_phase"]
+
+    # Only auto-sync if not manually set to blocked
+    if workflow.get("backlog_status") != "blocked":
+        workflow["backlog_status"] = derive_backlog_status(phase)
+        workflow["last_updated"] = datetime.now().isoformat()
+        save_state(state)
+
+    return True
+
+
 if __name__ == "__main__":
     # CLI interface for testing
     import sys
 
     if len(sys.argv) < 2:
         print("Usage: workflow_state_multi.py <command> [args]")
-        print("Commands: status, list, start <name>, switch <name>, advance, phase <phase>")
+        print("Commands: status, list, start <name>, switch <name>, advance, phase <phase>, backlog <status>, pause")
         sys.exit(1)
 
     cmd = sys.argv[1]
@@ -490,7 +680,7 @@ if __name__ == "__main__":
     elif cmd == "list":
         for w in list_workflows():
             marker = "→ " if w["is_active"] else "  "
-            print(f"{marker}{w['name']}: {w['phase_name']}")
+            print(f"{marker}{w['name']}: {w['phase_name']} [{w['backlog_status_name']}]")
     elif cmd == "start" and len(sys.argv) > 2:
         start_workflow(sys.argv[2])
         print(f"Started workflow: {sys.argv[2]}")
@@ -509,8 +699,20 @@ if __name__ == "__main__":
         state = load_state()
         active = state.get("active_workflow")
         if active and set_phase(active, sys.argv[2]):
+            # Sync backlog status when phase changes
+            sync_backlog_status_from_phase(active)
             print(f"Set phase to: {sys.argv[2]}")
         else:
             print(f"Failed to set phase: {sys.argv[2]}")
+    elif cmd == "backlog" and len(sys.argv) > 2:
+        status = sys.argv[2]
+        if set_backlog_status(status):
+            print(f"Set backlog status to: {BACKLOG_STATUS_NAMES.get(status, status)}")
+        else:
+            print(f"Failed to set backlog status: {status}")
+            print(f"Valid options: {', '.join(BACKLOG_STATUSES)}")
+    elif cmd == "pause":
+        success, message = pause_workflow()
+        print(message)
     else:
         print(f"Unknown command: {cmd}")

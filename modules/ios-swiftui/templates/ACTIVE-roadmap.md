@@ -6,11 +6,44 @@
 
 ---
 
+## Status-Legende
+
+| Status | Bedeutung |
+|--------|-----------|
+| **Open** | Noch nicht begonnen |
+| **Spec Ready** | Spec geschrieben & approved, Implementation ausstehend |
+| **In Progress** | Aktive Implementation |
+| **Done** | Fertig (Phase 8 complete) |
+| **Blocked** | Kann nicht fortgesetzt werden |
+
+**WICHTIG:** "Spec Ready" ≠ "Done"! Ein Feature mit fertiger Spec ist NICHT abgeschlossen.
+
+---
+
+## Spec Ready
+
+<!-- Features mit fertiger Spec, Implementation noch ausstehend -->
+
+<!-- Beispiel-Format:
+### [Feature Name]
+**Status:** Spec Ready
+**Spec:** docs/specs/[category]/[name].md
+**Prioritaet:** Hoch / Mittel / Niedrig
+
+**Kurzbeschreibung:**
+[1-2 Saetze was das Feature tut]
+-->
+
+_Keine Features mit fertiger Spec_
+
+---
+
 ## In Arbeit
 
 <!-- Beispiel-Format:
 ### [Feature Name]
-**Status:** In Arbeit
+**Status:** In Progress
+**Phase:** TDD RED / Implementation / Validation
 **Prioritaet:** Hoch / Mittel / Niedrig
 **Kategorie:** Primary / Support / Passive Feature
 **Aufwand:** Klein / Mittel / Gross
@@ -27,13 +60,13 @@ _Keine Features in Arbeit_
 
 ---
 
-## Geplant
+## Geplant (Open)
 
 _Keine Features geplant_
 
 ---
 
-## Abgeschlossen
+## Abgeschlossen (Done)
 
 <!-- Archiv der abgeschlossenen Features -->
 
