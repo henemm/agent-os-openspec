@@ -14,51 +14,46 @@ python3 .claude/hooks/workflow_state_multi.py status
 
 ## Your Tasks
 
-### 1. Create Specification
+### Step 1: Vorbereitung
 
-Use `docs/specs/_template.md` as base.
+Lies die Analyse-Ergebnisse aus `docs/context/[workflow-name].md` und das Template aus `docs/specs/_template.md`.
 
-Create spec at `docs/specs/[category]/[entity_id].md`:
+### Step 2: Spec erstellen (general-purpose/Sonnet)
 
-```markdown
----
-entity_id: [unique-id]
-type: feature|bugfix|refactor
-created: [ISO date]
-status: draft
-workflow: [workflow-name]
----
+Dispatche einen **general-purpose/Sonnet Subagenten** mit den spec-writer Instruktionen:
 
-# [Title]
+```
+Task (general-purpose/sonnet): "Du bist der spec-writer Agent.
 
-- [ ] Approved for implementation
+  Input:
+  - feature_name: [Name]
+  - analysis_summary: [Zusammenfassung aus Phase 2]
+  - affected_files: [Liste aus Analyse]
+  - dependencies: [Liste aus Analyse]
+  - workflow_name: [Workflow-Name]
 
-## Purpose
-[1-2 sentences: what and why]
-
-## Scope
-- Files: [list affected files]
-- Estimated: +[N]/-[N] LoC
-
-## Implementation Details
-[Technical approach from analysis]
-
-## Test Plan
-
-### Automated Tests (TDD RED)
-- [ ] Test 1: GIVEN... WHEN... THEN... (expected to FAIL initially)
-- [ ] Test 2: ...
-
-### Manual Tests
-- [ ] Manual test 1
-- [ ] Manual test 2
-
-## Acceptance Criteria
-- [ ] Criterion 1
-- [ ] Criterion 2
+  Erstelle eine vollstaendige Spec in docs/specs/[category]/[entity].md
+  nach dem spec-writer Workflow. Beachte alle Qualitaetsregeln."
 ```
 
-### 2. Update Workflow State
+### Step 3: Spec validieren (spec-validator/Haiku)
+
+Dispatche den **spec-validator/Haiku** zur Validierung:
+
+```
+Task (general-purpose/haiku): "Du bist der spec-validator Agent.
+
+  Validiere die Spec: docs/specs/[category]/[entity].md
+  Pruefe alle Required Fields, Sections, Placeholders.
+  Output: VALID oder INVALID mit Details."
+```
+
+**Bei INVALID:**
+1. Behebe die gemeldeten Fehler in der Spec
+2. Dispatche spec-validator erneut
+3. Wiederhole bis VALID
+
+### Step 4: Workflow State aktualisieren
 
 ```bash
 # Update spec file path in workflow
@@ -80,11 +75,11 @@ python3 .claude/hooks/workflow_state_multi.py phase phase3_spec
 
 Present the spec and request approval:
 
-> "Spec created: `docs/specs/[path]`
+> "Spec erstellt und validiert: `docs/specs/[path]`
 >
-> Please review:
-> - Scope: [N] files, ~[N] LoC
-> - Test plan: [N] automated, [N] manual tests
+> Scope: [N] files, ~[N] LoC
+> Test plan: [N] automated tests
+> Validation: VALID
 >
 > Confirm with 'approved', 'freigabe', or 'lgtm' to proceed."
 

@@ -1,22 +1,32 @@
+---
+name: docs-updater
+description: Aktualisiert Dokumentation nach Code-Aenderungen
+model: sonnet
+tools:
+  - Read
+  - Glob
+  - Grep
+  - Edit
+  - Write
+---
+
 # Docs Updater Agent
 
-Updates documentation after code changes to maintain consistency.
+Aktualisiert Dokumentation nach Code-Aenderungen fuer Konsistenz.
 
-## Purpose
+## Input Contract
 
-Use this agent after significant changes to update related documentation.
+Dieser Agent erwartet folgende Informationen:
 
-## Tools Available
-
-- Read - Read existing docs
-- Glob - Find doc files
-- Grep - Search for patterns
-- Edit - Update existing docs
-- Write - Create new docs (rare)
+| Parameter | Required | Beschreibung |
+|-----------|----------|--------------|
+| changed_files | Ja | Liste der geaenderten Dateien mit Aenderungstyp |
+| feature_summary | Ja | Kurzbeschreibung was geaendert wurde |
+| spec_file_path | Nein | Pfad zur zugehoerigen Spec-Datei |
 
 ## Documentation Locations
 
-**NEVER violate these rules:**
+**NIEMALS diese Regeln verletzen:**
 
 | Content Type | Location |
 |--------------|----------|
@@ -30,13 +40,13 @@ Use this agent after significant changes to update related documentation.
 
 ## CLAUDE.md Rules
 
-CLAUDE.md should ONLY contain:
+CLAUDE.md darf NUR enthalten:
 - Project overview
 - Quick navigation links
 - Essential commands
 - High-level workflow summary
 
-CLAUDE.md should NOT contain:
+CLAUDE.md darf NICHT enthalten:
 - Feature documentation (-> docs/features/)
 - Solution attempts (-> docs/project/)
 - Code examples >20 lines (-> docs/reference/)
@@ -44,35 +54,45 @@ CLAUDE.md should NOT contain:
 
 ## Update Workflow
 
-1. **Identify what changed** - Feature, bugfix, config?
-2. **Find related docs** - Which docs reference this?
-3. **Update affected docs:**
-   - Spec files if behavior changed
-   - Feature docs if functionality changed
-   - Reference docs if API changed
-   - Known issues if bug fixed
-4. **Update changelog** in relevant specs
-5. **Verify links** still work
+### Step 1: Aenderungen verstehen
+
+Lies die `changed_files` und `feature_summary` um den Scope zu verstehen.
+
+### Step 2: Betroffene Docs finden
+
+Suche nach Dokumentation die die geaenderten Dateien referenziert:
+- Spec-Dateien
+- Feature-Docs
+- API-Referenzen
+- Known Issues
+
+### Step 3: Docs aktualisieren
+
+Fuer jede betroffene Dok-Datei:
+1. Lies den aktuellen Inhalt
+2. Aktualisiere die relevanten Abschnitte
+3. Fuege Changelog-Eintraege hinzu (YYYY-MM-DD Format)
+4. Verifiziere dass Links noch funktionieren
+
+### Step 4: CHANGELOG.md
+
+Falls noch nicht geschehen, fuege einen Eintrag unter `[Unreleased]` hinzu.
 
 ## Documentation Standards
 
-- Use clear, concise language
-- Include code examples where helpful
-- Keep formatting consistent
-- Date all entries (YYYY-MM-DD)
-- Link to related docs
+- Klare, praegnante Sprache
+- Code-Beispiele wo hilfreich
+- Konsistente Formatierung
+- Alle Eintraege mit Datum (YYYY-MM-DD)
+- Verlinke zu verwandten Docs
 
-## Example Task
+## Output
+
+Fasse zusammen welche Docs aktualisiert wurden:
 
 ```
-Update documentation for: User authentication refactor
-
-Changed files:
-- src/auth/login.py
-- src/auth/session.py
-
-Update:
-1. docs/specs/modules/auth/login.md - Update implementation details
-2. docs/features/authentication.md - Note new session handling
-3. docs/reference/api.md - Update endpoint documentation
+Docs aktualisiert:
+- docs/specs/modules/auth.md - Implementation Details aktualisiert
+- docs/features/authentication.md - Neues Session-Handling dokumentiert
+- CHANGELOG.md - Eintrag unter [Unreleased] hinzugefuegt
 ```

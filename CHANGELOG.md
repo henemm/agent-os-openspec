@@ -7,6 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Agent Orchestration & Model Strategy (from gregor_zwanzig)
+
+**Model Assignment Strategy:**
+- Haiku: Mechanical tasks (validation, context loading, scope reviews, test running)
+- Sonnet: Creative/analytical work (spec writing, bug investigation, planning, docs)
+- Opus: Core implementation only (main context, not delegated)
+
+**Updated Agents with Model Assignments:**
+- `bug-intake.md` - Rewritten with parallel 3x Explore/Haiku subagent dispatching, input contract
+- `docs-updater.md` - Extended with model: sonnet, input contract
+- `spec-writer.md` - Extended with model: sonnet, input contract, stricter quality rules
+- `spec-validator.md` - Extended with model: haiku, strict VALID/INVALID output format
+- `bug-investigator.md` - Added model: sonnet
+- `test-runner.md` - Added model: haiku
+
+**New Agent:**
+- `user-story-planner.md` - JTBD-based User Story Discovery (runs in main context/Opus)
+
+**Updated Commands with Model Dispatching:**
+- `/analyse` (2-analyse.md) - Bug vs. Feature routing, 3x parallel Explore/Haiku, Plan/Sonnet assessment
+- `/write-spec` (3-write-spec.md) - Sonnet spec creation + Haiku validation with auto-fix loop
+- `/implement` (5-implement.md) - Haiku context loading, Opus implementation, parallel side-tasks
+- `/validate` (6-validate.md) - 4x parallel Haiku validation + Sonnet auto-fix + docs-updater
+
+**New Template:**
+- `templates/agent_orchestration.md` - Reference template for orchestration patterns and model strategy
+
+**Config Updates:**
+- Complete agent model assignments in `config.yaml` agents section
+- New agents: bug_investigator, test_runner, feature_planner, user_story_planner, implementation_validator
+
+### Added - Agents & Commands (from timebox-ios)
+
+**New Commands:**
+- `/user-story` - JTBD-basierte User Story Discovery
+- `/feature` - Startet feature-planner Agent (NEU/AENDERUNG Modus)
+- `/test` - Startet test-runner Agent
+
+**Details `/user-story`:**
+- JTBD-basiertes (Jobs to be Done) User Story Discovery
+- Strukturierter Dialog in 4 Phasen:
+  1. Kontext klären (Produkt/Feature/Verbesserung)
+  2. JTBD Interview (Situation → Job → Ergebnis)
+  3. Zusammenfassung validieren
+  4. Dokumentieren in `docs/stories/`
+- Dimensionen: Funktional, Emotional, Sozial
+- Timeline & Alternativen-Analyse
+- Output Template mit JTBD Statement und Feature-Ableitung
+
+**New Core Agents:**
+- `feature-planner.md` - NEU vs. AENDERUNG Modus, Scoping, Roadmap-Enforcement
+- `bug-investigator.md` - Analysis-First Bug-Analyse, Root Cause Identifikation
+- `test-runner.md` - Generischer Test-Runner mit Multi-Platform Support
+
+**New iOS/SwiftUI Module Agents:**
+- `mock-data-generator.md` - Mock-Daten fuer UI Tests erstellen
+- `ui-test-debugger.md` - XCUITest Diagnose (Environment, Timing, State)
+
+**New Hooks (from timebox-ios):**
+- `strict_code_gate.py` - Blocks ALL code changes without active workflow + TDD
+  - Whitelist-Approach: Tests, docs, config always allowed
+  - Requires phase6+ for implementation
+  - Enforces affected_files scope check
+  - Configurable via `strict_code_gate` section in config.yaml
+- `docs_location_guard.py` - Prevents writing to wrong directories
+  - Blocks nested duplicates (e.g., `src/docs/` instead of `docs/`)
+  - Configurable blocked paths via `docs_location` section
+- `ui_test_gate.py` - Blocks validation without UI tests
+  - Requires ui_test_green_done or UI artifacts
+  - Disabled by default, enable via `ui_test_gate.enabled: true`
+
+**New Config Sections:**
+- `strict_code_gate` - Code extension whitelist, allowed dirs/patterns
+- `docs_location` - Blocked path mappings
+- `ui_test_gate` - UI test requirements
+
 ### Added - Backlog Status Tracking (v2.1)
 
 **New Feature: "Spec Ready" Status**

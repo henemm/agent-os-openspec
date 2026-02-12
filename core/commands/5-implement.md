@@ -21,7 +21,7 @@ python3 .claude/hooks/workflow_state_multi.py status
 
 ## Your Tasks
 
-### 1. Verify RED Phase Complete
+### Step 1: Verify RED Phase Complete
 
 ```bash
 python3 -c "
@@ -37,23 +37,28 @@ if w:
 "
 ```
 
-### 2. Read the Spec
+### Step 2: Kontext laden (Explore/Haiku)
 
-Open and follow the approved spec exactly:
-- Implementation details
-- Affected files
-- Expected behavior
+Dispatche einen **Explore/Haiku Subagenten** um den Implementierungs-Kontext zu laden:
 
-### 3. Implement - Make Tests GREEN
-
-Write code to make tests pass:
-
-```python
-# Implement the minimal code to satisfy tests
-def feature_that_was_missing():
-    # Now it exists!
-    return expected_value
 ```
+Task (Explore/haiku): "Lies folgende Dateien und fasse den relevanten Kontext
+  zusammen:
+  - Spec: [spec_file_path]
+  - Betroffene Dateien: [affected_files]
+  - Test-Dateien: [test_files]
+
+  Fasse zusammen: Welche Interfaces existieren, welche Methoden muessen
+  implementiert werden, welche Imports werden benoetigt."
+```
+
+### Step 3: Implementieren (Hauptkontext / Opus)
+
+Die eigentliche Implementation passiert im **Hauptkontext** (Opus) fuer hoechste Qualitaet:
+
+- Lies und befolge die approved Spec exakt
+- Schreibe Code der die Tests gruen macht
+- Halte dich an die Scoping-Limits
 
 **TDD GREEN Rules:**
 - Only write code that makes a test pass
@@ -61,18 +66,25 @@ def feature_that_was_missing():
 - Don't optimize prematurely
 - Don't refactor yet
 
-### 4. Run Tests - MUST BE GREEN
+### Step 4: Parallele Side-Tasks
 
-```bash
-pytest tests/test_[feature].py -v
+Dispatche parallel waehrend/nach der Implementation:
+
+```
+Task 1 (general-purpose/sonnet): "Fuehre die Tests aus:
+  [test_command]
+  Fasse Ergebnisse zusammen: passed/failed/errors."
+
+Task 2 (general-purpose/haiku): "Pruefe ob Konfigurationsdateien
+  aktualisiert werden muessen fuer [Feature].
+  Check: package.json, config files, environment variables."
 ```
 
-**Expected:** All tests PASS.
-
-### 5. Capture GREEN Artifacts
+### Step 5: GREEN Artifacts erfassen
 
 ```bash
-pytest tests/ -v > docs/artifacts/[workflow]/test-green-output.txt 2>&1
+# Test output erfassen
+[test_command] > docs/artifacts/[workflow]/test-green-output.txt 2>&1
 
 python3 -c "
 import sys; sys.path.insert(0, '.claude/hooks')
@@ -84,13 +96,13 @@ active = state['active_workflow']
 add_test_artifact(active, {
     'type': 'test_output',
     'path': 'docs/artifacts/[workflow]/test-green-output.txt',
-    'description': 'All tests PASSED: 5 passed in 0.3s',
+    'description': 'All tests PASSED',
     'phase': 'phase6_implement'
 })
 "
 ```
 
-### 6. Update Workflow State
+### Step 6: Update Workflow State
 
 ```bash
 python3 .claude/hooks/workflow_state_multi.py phase phase7_validate
@@ -101,17 +113,17 @@ python3 .claude/hooks/workflow_state_multi.py phase phase7_validate
 Follow scoping limits:
 - **Max 4-5 files** per change
 - **Max +/-250 LoC** total
-- **Functions ≤50 LoC**
+- **Functions <= 50 LoC**
 - **No side effects** outside spec scope
 
 ## Next Step
 
 After implementation:
-> "Implementation complete. All [N] tests pass. Ready for `/validate` for manual testing."
+> "Implementation complete. All [N] tests pass. Ready for `/validate`."
 
 ## Common Mistakes
 
-❌ **Adding unrequested features** → Scope creep
-❌ **Skipping tests** → Not TDD
-❌ **Large functions** → Hard to test/maintain
-❌ **Not running tests** → Might still be RED
+- **Adding unrequested features** -> Scope creep
+- **Skipping tests** -> Not TDD
+- **Large functions** -> Hard to test/maintain
+- **Not running tests** -> Might still be RED

@@ -133,6 +133,24 @@ add_test_artifact(state['active_workflow'], {
 "
 ```
 
+## Modell-Zuweisungsstrategie
+
+Jeder Agent und jede Phase verwendet gezielt das passende Modell:
+
+| Model | Einsatz | Use Cases |
+|-------|---------|-----------|
+| **Haiku** | Schnell + guenstig fuer mechanische Aufgaben | Validierung (spec-validator), Kontext laden (Explore), Scope-Reviews, Test-Running (test-runner), Bug-Intake |
+| **Sonnet** | Qualitaet + Kosten-Balance fuer kreative Arbeit | Specs schreiben (spec-writer), Bug-Analyse (bug-investigator), Feature-Planung (feature-planner), Docs-Updates (docs-updater), Auto-Fixes |
+| **Opus** | Hoechste Qualitaet fuer Kern-Arbeit | Implementation (Hauptkontext), User-Interaktion, Synthese, User Story Discovery (user-story-planner) |
+
+**Dispatching-Muster:**
+- **Parallel Explore (3x Haiku):** Schnelle Kontextsammlung in Analyse-Phasen
+- **Write + Validate (Sonnet + Haiku):** Spec-Erstellung mit Qualitaetssicherung
+- **Parallel Validation (4x Haiku):** Umfassende Validierung nach Implementation
+- **Auto-Fix (Sonnet nach Haiku):** Haiku findet Probleme, Sonnet behebt sie
+
+Siehe `templates/agent_orchestration.md` fuer das vollstaendige Referenz-Template.
+
 ## Konventionen für dieses Repository
 
 ### Beim Bearbeiten des Frameworks
@@ -217,6 +235,9 @@ python3 /path/to/agent-os-openspec/setup.py --version
 | `/validate` | 7 | Manuelle Validierung |
 | `/workflow` | - | Workflows verwalten |
 | `/add-artifact` | - | Test-Artefakte registrieren |
+| `/user-story` | - | JTBD-basierte User Story Discovery |
+| `/feature` | - | Feature planen (startet feature-planner Agent) |
+| `/test` | - | Tests ausführen (startet test-runner Agent) |
 
 ## Arbeitsanweisungen für Claude
 

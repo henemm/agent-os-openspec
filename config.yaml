@@ -161,6 +161,69 @@ scoping:
   max_lines: 250      # Maximum lines changed
   warn_only: true     # Warn but don't block (set false to enforce)
 
+# Strict Code Gate - Blocks code changes without workflow
+strict_code_gate:
+  enabled: true       # Set false to disable strict enforcement
+  code_extensions:
+    - ".swift"
+    - ".kt"
+    - ".java"
+    - ".py"
+    - ".js"
+    - ".ts"
+    - ".tsx"
+    - ".jsx"
+    - ".go"
+    - ".rs"
+    - ".cpp"
+    - ".c"
+    - ".h"
+    - ".rb"
+    - ".php"
+  always_allowed_dirs:
+    - "Tests/"
+    - "UITests/"
+    - "test/"
+    - "tests/"
+    - "__tests__/"
+    - "spec/"
+    - "docs/"
+    - ".claude/"
+    - "scripts/"
+    - "tools/"
+    - "openspec/"
+  always_allowed_patterns:
+    - "\\.md$"
+    - "\\.txt$"
+    - "\\.json$"
+    - "\\.yaml$"
+    - "\\.yml$"
+    - "\\.toml$"
+    - "\\.gitignore$"
+    - "README"
+    - "CHANGELOG"
+    - "LICENSE"
+
+# Documentation Location Guard - Prevents wrong directory structure
+docs_location:
+  enabled: true
+  blocked_paths:
+    - blocked: "src/docs/"
+      correct: "docs/"
+      description: "Documentation"
+    - blocked: "src/.claude/"
+      correct: ".claude/"
+      description: "Claude Configuration"
+    - blocked: "src/openspec/"
+      correct: "openspec/"
+      description: "OpenSpec Files"
+
+# UI Test Gate - Requires UI tests for validation phase
+ui_test_gate:
+  enabled: false      # Enable if UI tests are mandatory
+  require_ui_tests: true
+  min_ui_artifacts: 1
+
 # Active Modules
 # Enable/disable optional functionality
 modules:
@@ -195,13 +258,18 @@ modules:
     automation_testing: true   # Test automations with mock states
 
 # Agent Configuration
+# Model Strategy: Haiku (mechanical) / Sonnet (creative) / Opus (core, main context)
 agents:
-  # Model preferences for agents
+  # Default model for agents not explicitly configured
   default_model: "sonnet"
 
-  # Agent-specific overrides
+  # Agent-specific model assignments
+  # Haiku: Fast + cheap for mechanical tasks (validation, context loading, scope reviews)
+  # Sonnet: Quality + cost balance for creative/analytical work (specs, tests, planning)
+  # Opus: Highest quality only for core implementation (main context, not delegated)
+
   spec_writer:
-    model: "haiku"
+    model: "sonnet"
     enabled: true
   spec_validator:
     model: "haiku"
@@ -210,7 +278,22 @@ agents:
     model: "sonnet"
     enabled: true
   bug_intake:
+    model: "haiku"
+    enabled: true
+  bug_investigator:
     model: "sonnet"
+    enabled: true
+  test_runner:
+    model: "haiku"
+    enabled: true
+  feature_planner:
+    model: "sonnet"
+    enabled: true
+  user_story_planner:
+    model: "opus"  # Runs in main context for highest quality
+    enabled: true
+  implementation_validator:
+    model: "haiku"
     enabled: true
 
 # Domain Pattern Guards
