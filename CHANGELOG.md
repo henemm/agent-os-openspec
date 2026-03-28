@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - Hooks Migrated to hook_utils.py
+
+- **5 hooks** rewritten to use `hook_utils` bootstrap: `override_token_guard`, `override_token_bash_guard`, `adversary_verdict_guard`, `stop_lock_guard`, `docs_location_guard`
+- Average 35% boilerplate reduction per hook
+- Consistent import pattern: `from hook_utils import setup_path, ...` + `setup_path()`
+
+### Fixed - Agent Frontmatter Consistency
+
+- **analysis-challenger.md, implementation-validator.md:** Standardized tools format from comma-separated string to YAML list
+
 ### Added - Hook Utilities Module
 
 - **core/hooks/hook_utils.py:** New shared bootstrap module for all hooks

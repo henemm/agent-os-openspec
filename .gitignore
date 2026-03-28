@@ -22,3 +22,6 @@ Thumbs.db
 # Project specific
 *.log
 .env
+
+# Example/test projects (not part of framework distribution)
+timebox-ios/

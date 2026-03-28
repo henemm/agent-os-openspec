@@ -20,25 +20,12 @@ Exit Codes:
 
 import json
 import os
-import sys
-from pathlib import Path
-
-try:
-    from config_loader import find_project_root
-except ImportError:
-    sys.path.insert(0, str(Path(__file__).parent))
-    try:
-        from config_loader import find_project_root
-    except ImportError:
-        def find_project_root():
-            cwd = Path.cwd()
-            for parent in [cwd] + list(cwd.parents):
-                if (parent / ".git").exists():
-                    return parent
-            return cwd
+from hook_utils import setup_path, block, allow
+setup_path()
+from config_loader import find_project_root
 
 
-def get_lock_file() -> Path:
+def get_lock_file():
     """Get path to stop lock file."""
     return find_project_root() / ".claude" / "stop.lock"
 
@@ -48,12 +35,12 @@ def main():
 
     # Only guard destructive tools
     if tool_name not in ("Edit", "Write", "Bash"):
-        sys.exit(0)
+        allow()
 
     lock_file = get_lock_file()
 
     if not lock_file.exists():
-        sys.exit(0)
+        allow()
 
     # Lock is active - read lock info
     try:
@@ -62,14 +49,12 @@ def main():
     except (json.JSONDecodeError, Exception):
         reason = "User requested stop"
 
-    print(
+    block(
         f"STOPPED: All operations are paused.\n"
         f"Reason: {reason}\n"
         f"\n"
-        f"Say 'resume', 'weiter', or 'continue' to unlock.",
-        file=sys.stderr,
+        f"Say 'resume', 'weiter', or 'continue' to unlock."
     )
-    sys.exit(2)
 
 
 if __name__ == "__main__":

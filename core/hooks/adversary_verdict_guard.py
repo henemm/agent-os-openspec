@@ -10,25 +10,9 @@ Exit Codes:
 - 2: Blocked (attempt to manipulate verdict)
 """
 
-import json
 import os
-import sys
-from pathlib import Path
-
-
-def get_tool_input() -> dict:
-    """Read tool input from stdin or environment."""
-    tool_input_str = os.environ.get("CLAUDE_TOOL_INPUT", "")
-    if tool_input_str:
-        try:
-            return json.loads(tool_input_str)
-        except json.JSONDecodeError:
-            pass
-    try:
-        data = json.load(sys.stdin)
-        return data.get("tool_input", data)
-    except (json.JSONDecodeError, EOFError, Exception):
-        return {}
+from hook_utils import setup_path, get_tool_input, block, allow
+setup_path()
 
 
 def main():
@@ -41,7 +25,7 @@ def main():
 
         # Only guard workflow state files
         if "workflow_state" not in file_path:
-            sys.exit(0)
+            allow()
 
         # Check if content manipulates adversary_verdict
         content = tool_input.get("content", "")
@@ -49,28 +33,23 @@ def main():
         check_text = content + new_string
 
         if "adversary_verdict" in check_text:
-            print(
+            block(
                 "BLOCKED: Direct manipulation of adversary_verdict is not allowed.\n"
                 "The adversary_verdict can only be set by the adversary_gate hook\n"
-                "after validating real test output.",
-                file=sys.stderr,
+                "after validating real test output."
             )
-            sys.exit(2)
 
     # Check Bash operations
     elif tool_name == "Bash":
         command = tool_input.get("command", "")
 
-        # Block echo/cat/sed/python manipulating verdict in state files
         if "adversary_verdict" in command and "workflow_state" in command:
-            print(
+            block(
                 "BLOCKED: Direct manipulation of adversary_verdict via shell is not allowed.\n"
-                "Run your tests properly and let the adversary_gate validate the output.",
-                file=sys.stderr,
+                "Run your tests properly and let the adversary_gate validate the output."
             )
-            sys.exit(2)
 
-    sys.exit(0)
+    allow()
 
 
 if __name__ == "__main__":

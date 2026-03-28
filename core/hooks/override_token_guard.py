@@ -10,39 +10,20 @@ Exit Codes:
 - 2: Blocked (attempt to manipulate token file)
 """
 
-import json
-import os
-import sys
-
-
-def get_tool_input() -> dict:
-    """Read tool input."""
-    tool_input_str = os.environ.get("CLAUDE_TOOL_INPUT", "")
-    if tool_input_str:
-        try:
-            return json.loads(tool_input_str)
-        except json.JSONDecodeError:
-            pass
-    try:
-        data = json.load(sys.stdin)
-        return data.get("tool_input", data)
-    except (json.JSONDecodeError, EOFError, Exception):
-        return {}
+from hook_utils import setup_path, get_file_path, block, allow
+setup_path()
 
 
 def main():
-    tool_input = get_tool_input()
-    file_path = tool_input.get("file_path", "")
+    file_path = get_file_path()
 
     if "override_token" in file_path:
-        print(
+        block(
             "BLOCKED: Direct manipulation of override tokens is not allowed.\n"
-            "Override tokens are created by the user saying 'override'.",
-            file=sys.stderr,
+            "Override tokens are created by the user saying 'override'."
         )
-        sys.exit(2)
 
-    sys.exit(0)
+    allow()
 
 
 if __name__ == "__main__":

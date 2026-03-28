@@ -17,17 +17,9 @@ Exit Codes:
 - 2: Blocked (wrong location)
 """
 
-import json
-import os
-import sys
-from pathlib import Path
-
-# Try to load config
-try:
-    from config_loader import load_config
-    config = load_config()
-except ImportError:
-    config = {}
+from hook_utils import setup_path, get_file_path, block, allow
+setup_path()
+from config_loader import load_config
 
 # Default blocked paths (can be overridden via config.yaml)
 DEFAULT_BLOCKED_PATHS = [
@@ -51,21 +43,19 @@ DEFAULT_BLOCKED_PATHS = [
 
 def get_blocked_paths() -> list:
     """Get blocked paths from config or use defaults."""
+    try:
+        config = load_config()
+    except Exception:
+        config = {}
     docs_config = config.get("docs_location", {})
     return docs_config.get("blocked_paths", DEFAULT_BLOCKED_PATHS)
 
 
 def main():
-    try:
-        data = json.load(sys.stdin)
-    except (json.JSONDecodeError, Exception):
-        sys.exit(0)
-
-    tool_input = data.get("tool_input", {})
-    file_path = tool_input.get("file_path", "")
+    file_path = get_file_path()
 
     if not file_path:
-        sys.exit(0)
+        allow()
 
     blocked_paths = get_blocked_paths()
 
@@ -75,7 +65,7 @@ def main():
         description = entry.get("description", "Files")
 
         if blocked in file_path or blocked.replace("/", "\\") in file_path:
-            print(f"""
+            block(f"""
 +======================================================================+
 |  BLOCKED: Wrong Directory!                                           |
 +======================================================================+
@@ -90,10 +80,9 @@ def main():
 |  Correct the path and try again!                                     |
 |                                                                      |
 +======================================================================+
-""", file=sys.stderr)
-            sys.exit(2)
+""")
 
-    sys.exit(0)
+    allow()
 
 
 if __name__ == "__main__":
