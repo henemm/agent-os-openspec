@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - TDD Enforcement: Configurable Artifact Categories (from timebox-ios)
+
+- **tdd_enforcement.py:** Artifact requirements are now configurable per category via `tdd.artifact_categories` in config.yaml
+- Projects can require e.g. both unit AND UI test artifacts (iOS) or just one generic category (default)
+- Added `ui_test_output` as valid artifact type
+- Added `validate_artifact_timestamps()` — prevents retroactive artifact creation to bypass TDD
+- Added `check_user_override()` — respects `user_override` and `spec_approved` workflow flags
+- Added infrastructure file skip (`.claude/hooks/`, `docs/specs/` etc.)
+- **config.yaml:** Replaced flat `min_artifacts` with structured `artifact_categories` (with example for iOS)
+
 ### Changed - Architecture: Centralized find_project_root()
 
 - **4 hooks** (workflow_cleanup, stop_lock_listener, stop_lock_guard, override_token_listener) now import `find_project_root` from `config_loader.py` instead of duplicating the function

@@ -45,20 +45,34 @@ workflow:
 
 # TDD Enforcement
 tdd:
-  # Minimum requirements for RED phase
-  min_artifacts: 1
   max_artifact_age_hours: 24
 
-  # Valid artifact types
-  artifact_types:
-    - screenshot
-    - email
-    - api_response
-    - log
-    - file
-    - test_output
-    - video
-    - audio
+  # Artifact categories — configurable per project.
+  # Each category requires a minimum number of matching artifacts.
+  # Default: single "default" category accepting all types.
+  #
+  # Example for iOS projects requiring both unit AND UI tests:
+  #   artifact_categories:
+  #     unit_tests:
+  #       min_artifacts: 1
+  #       types: [test_output, log, api_response]
+  #     ui_tests:
+  #       min_artifacts: 1
+  #       types: [ui_test_output, screenshot, video]
+  #
+  artifact_categories:
+    default:
+      min_artifacts: 1
+      types:
+        - screenshot
+        - email
+        - api_response
+        - log
+        - file
+        - test_output
+        - ui_test_output
+        - video
+        - audio
 
   # Minimum file sizes (bytes) to prove non-empty
   min_sizes:

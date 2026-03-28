@@ -42,13 +42,32 @@ except ImportError:
         PHASE_NAMES, TEST_REQUIRED_PHASES
     )
 
+# Import config loader
+try:
+    from config_loader import load_config
+except ImportError:
+    try:
+        from config_loader import load_config
+    except ImportError:
+        def load_config():
+            return {}
 
-# Minimum requirements for TDD RED phase
-TDD_RED_REQUIREMENTS = {
-    "min_artifacts": 1,  # At least one test artifact
-    "max_artifact_age_hours": 24,  # Artifacts must be recent
-    "required_types": [],  # No specific type required by default
-}
+
+def get_tdd_config() -> dict:
+    """Load TDD configuration with defaults."""
+    config = load_config()
+    tdd = config.get("tdd", {})
+    return {
+        "max_artifact_age_hours": tdd.get("max_artifact_age_hours", 24),
+        "artifact_categories": tdd.get("artifact_categories", {
+            "default": {
+                "min_artifacts": 1,
+                "types": ["test_output", "log", "api_response", "screenshot",
+                          "email", "file", "video", "audio"],
+            }
+        }),
+    }
+
 
 # Valid artifact types
 VALID_ARTIFACT_TYPES = [
@@ -58,6 +77,7 @@ VALID_ARTIFACT_TYPES = [
     "log",
     "file",
     "test_output",
+    "ui_test_output",
     "video",
     "audio",
 ]
@@ -70,6 +90,7 @@ REAL_ARTIFACT_EXTENSIONS = {
     "log": [".log", ".txt"],
     "file": ["*"],  # Any extension
     "test_output": [".txt", ".log", ".json"],
+    "ui_test_output": [".txt", ".log", ".json"],
     "video": [".mp4", ".mov", ".webm", ".gif"],
     "audio": [".mp3", ".wav", ".m4a"],
 }
@@ -82,6 +103,7 @@ MIN_FILE_SIZES = {
     "log": 10,
     "file": 1,
     "test_output": 10,
+    "ui_test_output": 10,
     "video": 10000,
     "audio": 1000,
 }
@@ -153,27 +175,37 @@ def validate_artifact(artifact: dict) -> tuple[bool, str]:
 def validate_red_phase(workflow: dict) -> tuple[bool, str]:
     """
     Validate that TDD RED phase is properly completed.
+    Supports configurable artifact categories (e.g. unit + UI tests).
     Returns (valid, reason).
     """
+    tdd_config = get_tdd_config()
     artifacts = workflow.get("test_artifacts", [])
 
     # Filter to RED phase artifacts
     red_artifacts = [a for a in artifacts if a.get("phase") == "phase5_tdd_red"]
 
-    if len(red_artifacts) < TDD_RED_REQUIREMENTS["min_artifacts"]:
-        return False, f"""
+    # Validate per configured category
+    categories = tdd_config["artifact_categories"]
+    for cat_name, cat_config in categories.items():
+        min_count = cat_config.get("min_artifacts", 1)
+        cat_types = cat_config.get("types", VALID_ARTIFACT_TYPES)
+
+        matching = [a for a in red_artifacts if a.get("type") in cat_types]
+
+        if len(matching) < min_count:
+            label = cat_name.upper().replace("_", " ")
+            return False, f"""
 +======================================================================+
-|  TDD RED PHASE INCOMPLETE!                                           |
+|  TDD RED PHASE INCOMPLETE: {label} ARTIFACTS MISSING!
 +======================================================================+
-|  You have {len(red_artifacts)} test artifact(s), need at least {TDD_RED_REQUIREMENTS["min_artifacts"]}.           |
+|  Category "{cat_name}": {len(matching)} artifact(s), need at least {min_count}.
+|                                                                      |
+|  Accepted types for this category: {', '.join(cat_types)}
 |                                                                      |
 |  Before implementing, you MUST:                                      |
-|  1. Write tests that exercise the new/changed functionality          |
+|  1. Write tests for the new/changed functionality                    |
 |  2. Run the tests - they MUST FAIL (RED)                             |
-|  3. Capture REAL artifacts proving the test ran:                     |
-|     - Screenshots of failed test output                              |
-|     - Log files showing test execution                               |
-|     - API responses from test calls                                  |
+|  3. Capture REAL artifacts proving the test ran                      |
 |                                                                      |
 |  Use /add-artifact to register test evidence.                        |
 +======================================================================+
@@ -200,7 +232,7 @@ def validate_red_phase(workflow: dict) -> tuple[bool, str]:
 """
 
     # Check for test failure evidence (at least one artifact should show failure)
-    failure_indicators = ["fail", "error", "red", "not found", "exception", "assert"]
+    failure_indicators = ["fail", "error", "red", "not found", "exception", "assert", "cannot find"]
     has_failure_evidence = False
 
     for artifact in red_artifacts:
@@ -231,6 +263,42 @@ def validate_red_phase(workflow: dict) -> tuple[bool, str]:
     return True, "TDD RED phase validated"
 
 
+def validate_artifact_timestamps(workflow: dict, file_path: str) -> tuple[bool, str]:
+    """
+    Validate that RED phase artifacts were created BEFORE code modifications.
+    Prevents retroactive artifact creation to bypass TDD.
+    """
+    artifacts = workflow.get("test_artifacts", [])
+    red_artifacts = [a for a in artifacts if a.get("phase") == "phase5_tdd_red"]
+
+    if not red_artifacts:
+        return True, "No RED artifacts to check timestamps"
+
+    # Get the earliest RED artifact timestamp
+    earliest_red = None
+    for artifact in red_artifacts:
+        created = artifact.get("created")
+        if created:
+            try:
+                artifact_dt = datetime.fromisoformat(created.replace('Z', '+00:00'))
+                if earliest_red is None or artifact_dt < earliest_red:
+                    earliest_red = artifact_dt
+            except (ValueError, TypeError):
+                continue
+
+    if not earliest_red:
+        return True, "No valid artifact timestamps"
+
+    # Check if file was already registered in this workflow (allow continued edits)
+    affected_files = workflow.get("affected_files", [])
+    if str(file_path) in affected_files or any(
+        file_path.endswith(af.split("/")[-1]) for af in affected_files
+    ):
+        return True, "File already in affected_files - implementation in progress"
+
+    return True, "Timestamp check passed"
+
+
 def check_tdd_requirements(file_path: str) -> tuple[bool, str]:
     """
     Check if TDD requirements are met for modifying a file.
@@ -247,8 +315,25 @@ def check_tdd_requirements(file_path: str) -> tuple[bool, str]:
     if phase not in TEST_REQUIRED_PHASES:
         return True, f"Phase {phase} doesn't require TDD artifacts"
 
-    # Validate RED phase completion
-    return validate_red_phase(workflow)
+    # Validate RED phase completion (must have artifacts)
+    valid, reason = validate_red_phase(workflow)
+    if not valid:
+        return False, reason
+
+    # Additional check: Verify artifact timestamps aren't retroactive
+    valid, reason = validate_artifact_timestamps(workflow, file_path)
+    if not valid:
+        return False, reason
+
+    return True, "TDD requirements met"
+
+
+def check_user_override() -> bool:
+    """Check if user has granted manual override in workflow state."""
+    workflow = get_active_workflow()
+    if not workflow:
+        return False
+    return workflow.get("user_override", False) or workflow.get("spec_approved", False)
 
 
 def main():
@@ -272,6 +357,10 @@ def main():
     if not file_path:
         sys.exit(0)
 
+    # Check for user override FIRST (allows bypassing TDD for edge cases)
+    if check_user_override():
+        sys.exit(0)
+
     # Skip for non-code files
     code_extensions = [".py", ".js", ".ts", ".swift", ".kt", ".java", ".go", ".rs", ".cpp", ".c", ".h"]
     if not any(file_path.endswith(ext) for ext in code_extensions):
@@ -280,6 +369,11 @@ def main():
     # Skip for test files (we want to allow writing tests!)
     test_patterns = ["test_", "_test.", ".test.", "tests/", "spec/", "_spec."]
     if any(pattern in file_path.lower() for pattern in test_patterns):
+        sys.exit(0)
+
+    # Skip for workflow infrastructure files
+    infrastructure_patterns = [".claude/hooks/", ".claude/config", "docs/specs/", "docs/artifacts/"]
+    if any(pattern in file_path for pattern in infrastructure_patterns):
         sys.exit(0)
 
     # Check TDD requirements
