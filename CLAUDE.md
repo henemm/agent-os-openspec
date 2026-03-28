@@ -104,19 +104,38 @@ python3 .claude/hooks/workflow_state_multi.py status
 
 ## TDD mit ECHTEN Artefakten
 
-Der `tdd_enforcement.py` Hook erzwingt echte Test-Artefakte:
+Der `tdd_enforcement.py` Hook erzwingt echte Test-Artefakte mit **konfigurierbaren Kategorien**.
+
+**Konfiguration in config.yaml:**
+```yaml
+tdd:
+  artifact_categories:
+    # Default: eine Kategorie fuer alle Typen
+    default:
+      min_artifacts: 1
+      types: [test_output, screenshot, log, ...]
+
+    # iOS-Beispiel: Unit UND UI Tests separat erzwingen
+    # unit_tests:
+    #   min_artifacts: 1
+    #   types: [test_output, log, api_response]
+    # ui_tests:
+    #   min_artifacts: 1
+    #   types: [ui_test_output, screenshot, video]
+```
 
 **Akzeptiert:**
 - Screenshots (PNG, JPG) mit echtem Inhalt (>1KB)
 - Test-Output-Logs mit echten Fehlern
+- UI-Test-Output (ui_test_output) — separater Typ fuer UI-Tests
 - API-Responses als JSON/XML-Dateien
-- E-Mails als .eml oder .txt
 
 **Blockiert:**
 - Platzhalter-Text wie "[Screenshot hier]"
 - Leere Dateien
 - Artefakte ohne Beschreibung
 - Artefakte älter als 24 Stunden
+- Retroaktiv erstellte Artefakte (Timestamp-Validierung)
 
 ```bash
 # Artefakt registrieren
@@ -140,7 +159,7 @@ Jeder Agent und jede Phase verwendet gezielt das passende Modell:
 | Model | Einsatz | Use Cases |
 |-------|---------|-----------|
 | **Haiku** | Schnell + guenstig fuer mechanische Aufgaben | Validierung (spec-validator), Kontext laden (Explore), Scope-Reviews, Test-Running (test-runner), Bug-Intake |
-| **Sonnet** | Qualitaet + Kosten-Balance fuer kreative Arbeit | Specs schreiben (spec-writer), Bug-Analyse (bug-investigator), Feature-Planung (feature-planner), Docs-Updates (docs-updater), Auto-Fixes |
+| **Sonnet** | Qualitaet + Kosten-Balance fuer kreative/analytische Arbeit | Specs schreiben (spec-writer), Bug-Analyse (bug-investigator), Feature-Planung (feature-planner), Docs-Updates (docs-updater), Analysis-Challenger, Implementation-Validator, Auto-Fixes |
 | **Opus** | Hoechste Qualitaet fuer Kern-Arbeit | Implementation (Hauptkontext), User-Interaktion, Synthese, User Story Discovery (user-story-planner) |
 
 **Dispatching-Muster:**
@@ -214,16 +233,24 @@ Einmal-Bypass fuer Gates:
 ### Hook-Entwicklung
 
 ```python
-# Exit-Codes:
-# 0 = Operation erlaubt
-# 2 = Operation blockiert (Nachricht wird Claude angezeigt)
+# Neuen Hook schreiben — nutze hook_utils fuer Bootstrap:
+from hook_utils import setup_path, get_tool_input, block, allow
+setup_path()
+from config_loader import load_config
 
-import sys
-if violation_detected:
-    print("BLOCKED: Reason for blocking", file=sys.stderr)
-    sys.exit(2)
-sys.exit(0)
+def main():
+    tool_input = get_tool_input()
+    file_path = tool_input.get("file_path", "")
+
+    if violation_detected:
+        block("BLOCKED: Reason for blocking")
+    allow()
+
+if __name__ == "__main__":
+    main()
 ```
+
+**Exit-Codes:** 0 = erlaubt, 2 = blockiert (stderr wird Claude angezeigt)
 
 ## Improvement-Flow zwischen Projekten
 
@@ -259,8 +286,10 @@ python3 /path/to/agent-os-openspec/setup.py --version
 | `setup.py` | Installations- und Update-Tool (v2.1) |
 | `config.yaml` | Template für Projektkonfiguration |
 | `CHANGELOG.md` | Versionshistorie |
+| `core/hooks/hook_utils.py` | Shared Bootstrap fuer alle Hooks (Imports, Parsing, Exit-Helpers) |
+| `core/hooks/config_loader.py` | Zentraler Config-Loader (find_project_root, load_config) |
 | `core/hooks/workflow_state_multi.py` | Multi-Workflow State Manager |
-| `core/hooks/tdd_enforcement.py` | TDD mit echten Artefakten |
+| `core/hooks/tdd_enforcement.py` | TDD mit konfigurierbaren Artefakt-Kategorien |
 | `core/hooks/workflow_gate.py` | Phasen-Gate |
 | `core/hooks/spec_enforcement.py` | Spec-First Enforcement |
 | `core/hooks/adversary_gate.py` | Adversary Test-Output Validierung (v2.1) |

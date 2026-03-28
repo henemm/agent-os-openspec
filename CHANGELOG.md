@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Hook Utilities Module
+
+- **core/hooks/hook_utils.py:** New shared bootstrap module for all hooks
+  - `setup_path()` — adds hooks directory to sys.path
+  - `get_tool_input()` / `get_user_message()` / `get_tool_result()` — standardized input parsing
+  - `block()` / `allow()` — exit helpers
+  - `is_code_file()` / `is_test_file()` — common file checks
+  - New hooks should use this instead of duplicating boilerplate
+
+### Changed - Config Cleanup
+
+- **config.yaml:** Removed dead `e2e_tests` and `output_specs` sections (no hook references them)
+- **config.yaml:** Fixed `implementation_validator` model from `haiku` to `sonnet`
+- **CLAUDE.md:** Updated model assignment table, hook development guide, TDD documentation
+
 ### Changed - TDD Enforcement: Configurable Artifact Categories (from timebox-ios)
 
 - **tdd_enforcement.py:** Artifact requirements are now configurable per category via `tdd.artifact_categories` in config.yaml

@@ -307,7 +307,7 @@ agents:
     model: "opus"  # Runs in main context for highest quality
     enabled: true
   implementation_validator:
-    model: "haiku"
+    model: "sonnet"  # Investigative edge-case probing, not mechanical
     enabled: true
 
 # Domain Pattern Guards
@@ -324,35 +324,6 @@ domain_guards:
   #     - pattern: "cloud_pct\\s*[<>=]"
   #       message: "Direct cloud percentage comparison"
   #       fix: "Use WeatherMetricsService.calculate_sunny_hours()"
-
-# E2E Test Configuration
-e2e_tests:
-  base_url: "http://localhost:8080"
-  default_timeout: 10  # seconds
-  screenshot_dir: ".claude/artifacts/screenshots"
-  headless: true
-  browser: "chromium"  # chromium, firefox, webkit
-
-# Output Format Validation Specs
-output_specs:
-  # Example: Email format spec
-  # email_v1:
-  #   description: "Standard email format"
-  #   type: "html"
-  #   fetch_method: "imap"  # or "file", "http"
-  #   imap:
-  #     host: "imap.gmail.com"
-  #     folder: "[Gmail]/Sent Mail"
-  #   validations:
-  #     - type: "structure"
-  #       rules:
-  #         - pattern: "<table.*?</table>"
-  #           count: 2
-  #           message: "Must have exactly 2 tables"
-  #     - type: "required_sections"
-  #       sections:
-  #         - "Summary"
-  #         - "Details"
 
 # Pre-commit Gate Configuration
 pre_commit:
