@@ -12,9 +12,15 @@ Supports:
 
 import os
 import json
-import yaml
+import sys
 from pathlib import Path
 from functools import lru_cache
+
+try:
+    import yaml
+except ImportError:
+    print("WARNING: PyYAML not installed. Install with: pip install pyyaml", file=sys.stderr)
+    yaml = None
 
 # Config file search order
 CONFIG_NAMES = ["openspec.yaml", "config.yaml", ".openspec.yaml"]
@@ -73,10 +79,13 @@ def load_config() -> dict:
     config = get_default_config()
 
     # Merge main config if found
-    if config_path:
-        with open(config_path, 'r') as f:
-            file_config = yaml.safe_load(f) or {}
-        config = deep_merge(config, file_config)
+    if config_path and yaml is not None:
+        try:
+            with open(config_path, 'r') as f:
+                file_config = yaml.safe_load(f) or {}
+            config = deep_merge(config, file_config)
+        except Exception as e:
+            print(f"WARNING: Failed to load config {config_path}: {e}", file=sys.stderr)
 
     # Load local overrides (settings.local.json)
     local_config = load_local_overrides(root)

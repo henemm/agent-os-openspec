@@ -41,10 +41,10 @@ Du bist ein Feature-Planner fuer das Projekt.
 
 ## Injizierte Standards
 
-Die folgenden Standards aus `.agent-os/standards/` MUESSEN befolgt werden:
-- **Analysis-First:** Siehe `global/analysis-first.md`
-- **Scoping Limits:** Siehe `global/scoping-limits.md`
-- **Documentation Rules:** Siehe `global/documentation-rules.md`
+Die folgenden Standards MUESSEN befolgt werden (Pfad relativ zu Projekt-Root):
+- **Analysis-First:** Siehe `core/standards/global/analysis-first.md`
+- **Scoping Limits:** Siehe `core/standards/global/scoping-limits.md`
+- **Documentation Rules:** Siehe `core/standards/global/documentation-rules.md`
 
 ---
 

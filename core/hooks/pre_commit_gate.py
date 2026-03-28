@@ -28,6 +28,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 # Try to import config loader
@@ -68,6 +69,7 @@ def get_pre_commit_config() -> dict:
             ".svelte",
         ]),
         "screenshot_reminder": pre_commit.get("screenshot_reminder", True),
+        "required_staged_files": pre_commit.get("required_staged_files", []),
     }
 
 
@@ -132,14 +134,8 @@ def run_tests(config: dict) -> tuple[bool, str]:
         if result.returncode == 0:
             return True, output
 
-        # Some test frameworks return non-zero for various reasons
-        # Check output for actual failures
-        output_lower = output.lower()
-        if "failed" in output_lower or "error" in output_lower:
-            return False, output
-
-        # If no failures mentioned, consider it passed
-        return True, output
+        # Non-zero return code means failure
+        return False, output
 
     except subprocess.TimeoutExpired:
         return False, f"Tests timed out after {timeout} seconds"
@@ -159,6 +155,85 @@ def run_tests(config: dict) -> tuple[bool, str]:
             return True, f"Test runner not available: {e}. Allowing commit."
     except Exception as e:
         return False, f"Failed to run tests: {e}"
+
+
+def check_todos_staged(config: dict) -> tuple[bool, list]:
+    """Check if required files are staged for commit."""
+    required = config.get("required_staged_files", [])
+    if not required:
+        return True, []
+
+    project_root = get_project_root()
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--cached", "--name-only"],
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+        )
+        staged = set(result.stdout.strip().split("\n"))
+    except Exception:
+        return True, []
+
+    missing = [f for f in required if f not in staged]
+    return len(missing) == 0, missing
+
+
+def check_adversary_verdict() -> tuple[bool, str]:
+    """Check if adversary gate has VERIFIED the implementation."""
+    try:
+        from workflow_state_multi import get_active_workflow
+        workflow = get_active_workflow()
+        if not workflow:
+            return True, ""
+
+        phase = workflow.get("current_phase", "phase0_idle")
+
+        # Only check in implementation+ phases
+        if phase not in ("phase6_implement", "phase7_validate", "phase8_complete"):
+            return True, ""
+
+        verdict = workflow.get("adversary_verdict", "")
+        if verdict == "VERIFIED":
+            return True, ""
+        elif verdict == "UNVERIFIED":
+            return False, "Adversary gate verdict is UNVERIFIED. Run tests and verify output first."
+        else:
+            # No verdict set yet - don't block (adversary gate may not be enabled)
+            return True, ""
+    except ImportError:
+        return True, ""
+
+
+def consume_override_token() -> None:
+    """Remove override token after successful gate pass."""
+    project_root = get_project_root()
+    token_file = project_root / ".claude" / "override_token.json"
+    if token_file.exists():
+        try:
+            data = json.loads(token_file.read_text())
+            # Only consume if token exists and is not already consumed
+            if not data.get("consumed", False):
+                token_file.unlink()
+        except (json.JSONDecodeError, Exception):
+            pass
+
+
+def has_override_token() -> bool:
+    """Check if a valid override token exists."""
+    project_root = get_project_root()
+    token_file = project_root / ".claude" / "override_token.json"
+    if not token_file.exists():
+        return False
+    try:
+        data = json.loads(token_file.read_text())
+        # Token must be fresh (< 10 minutes)
+        created = data.get("created", 0)
+        if time.time() - created > 600:
+            return False
+        return not data.get("consumed", False)
+    except (json.JSONDecodeError, Exception):
+        return False
 
 
 def check_for_ui_changes(config: dict) -> bool:
@@ -195,10 +270,35 @@ def main():
     if not is_git_commit(tool_input, config):
         sys.exit(0)
 
+    # Check override token first
+    override = has_override_token()
+
+    # Check required staged files
+    staged_ok, missing_files = check_todos_staged(config)
+    if not staged_ok and not override:
+        print("=" * 70, file=sys.stderr)
+        print("BLOCKED - Pre-Commit Gate: Required files not staged", file=sys.stderr)
+        print("=" * 70, file=sys.stderr)
+        print(f"\nMissing staged files: {', '.join(missing_files)}", file=sys.stderr)
+        print("\nStage these files before committing, or say 'override'.", file=sys.stderr)
+        print("=" * 70, file=sys.stderr)
+        sys.exit(2)
+
+    # Check adversary verdict
+    verdict_ok, verdict_msg = check_adversary_verdict()
+    if not verdict_ok and not override:
+        print("=" * 70, file=sys.stderr)
+        print("BLOCKED - Pre-Commit Gate: Adversary Verdict", file=sys.stderr)
+        print("=" * 70, file=sys.stderr)
+        print(f"\n{verdict_msg}", file=sys.stderr)
+        print("\nSay 'override' to bypass this check once.", file=sys.stderr)
+        print("=" * 70, file=sys.stderr)
+        sys.exit(2)
+
     # Run tests
     success, output = run_tests(config)
 
-    if not success:
+    if not success and not override:
         # Extract failure summary
         lines = output.split("\n")
         failures = [l for l in lines if "FAILED" in l or "Error" in l or "FAIL" in l]
@@ -221,6 +321,9 @@ def main():
     if config["screenshot_reminder"] and check_for_ui_changes(config):
         # Don't block, just output reminder
         print("Note: UI changes detected. Consider adding screenshot artifacts.", file=sys.stderr)
+
+    # Consume override token after successful pass
+    consume_override_token()
 
     sys.exit(0)
 

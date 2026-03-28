@@ -28,7 +28,7 @@ from datetime import datetime
 import hashlib
 
 
-FRAMEWORK_VERSION = "2.0.0"
+FRAMEWORK_VERSION = "2.1.0"
 FRAMEWORK_ROOT = Path(__file__).parent
 CORE_DIR = FRAMEWORK_ROOT / "core"
 MODULES_DIR = FRAMEWORK_ROOT / "modules"
@@ -214,67 +214,109 @@ def install_module(project_path: Path, module_name: str):
 
 
 def generate_settings_json(project_path: Path, modules: list):
-    """Generate .claude/settings.json with hook configuration."""
+    """Generate .claude/settings.json with hook configuration.
+
+    Hook ordering is EXPLICIT to ensure correct execution:
+    - stop_lock_guard MUST be first (blocks everything when locked)
+    - override_token_guard MUST be before gates (allows bypass)
+    - Workflow/TDD gates in the middle
+    - Module hooks (iOS, HA) at the end
+    """
     hooks_dir = project_path / ".claude" / "hooks"
 
-    # Collect all hooks
-    edit_write_hooks = []
-    bash_hooks = []
-    read_hooks = []
-    stop_hooks = []
-    user_prompt_hooks = []
+    # ===== EXPLICIT HOOK ORDERING =====
+    # Order matters! Hooks are executed in the order listed.
 
-    for hook_file in sorted(hooks_dir.glob("*.py")):
-        hook_name = hook_file.name
-        hook_path = str(hooks_dir / hook_name)
+    # Edit/Write hooks (ordered)
+    EDIT_WRITE_HOOK_ORDER = [
+        # 1. FIRST: Stop lock (blocks everything when active)
+        "stop_lock_guard.py",
+        # 2. Override token protection
+        "override_token_guard.py",
+        # 3. Location guards
+        "docs_location_guard.py",
+        # 4. Core workflow hooks
+        "workflow_gate.py",
+        "spec_enforcement.py",
+        "strict_code_gate.py",
+        "claude_md_protection.py",
+        # 5. TDD enforcement
+        "tdd_enforcement.py",
+        "red_test_gate.py",
+        # 6. Quality gates
+        "post_implementation_gate.py",
+        "scope_guard.py",
+        "plan_validator.py",
+        # 7. UI validation
+        "ui_screenshot_gate.py",
+        # 8. Architecture enforcement
+        "domain_pattern_guard.py",
+        # 9. Change tracking (never blocks)
+        "track_changes.py",
+    ]
 
-        # Categorize hooks based on their purpose
-        # Edit/Write hooks - block file modifications based on workflow state
-        if hook_name in [
-            # Core workflow hooks
-            "workflow_gate.py",
-            "spec_enforcement.py",
-            "claude_md_protection.py",
-            # TDD enforcement (v2.0)
-            "tdd_enforcement.py",
-            "red_test_gate.py",
-            # Quality gates (v2.0 - from Home Assistant)
-            "post_implementation_gate.py",
-            "scope_guard.py",
-            "plan_validator.py",
-            # UI validation
-            "ui_screenshot_gate.py",
-            "lovelace_screenshot_gate.py",
-            # Architecture enforcement (v2.0 - from gregor_zwanziger)
-            "domain_pattern_guard.py",
-            # Change tracking (runs on Edit/Write but never blocks)
-            "track_changes.py",
-        ]:
-            edit_write_hooks.append(hook_path)
-        # Bash hooks - validate shell commands
-        elif hook_name in [
-            "check_ha_restart.py",
-            # Commit gate (v2.0 - from gregor_zwanziger)
-            "pre_commit_gate.py",
-            # Secrets guard (v2.0 - from helix-mvp) - blocks sensitive file access
-            "secrets_guard.py",
-        ]:
-            bash_hooks.append(hook_path)
-        # Read hooks - validate file reads (v2.0)
-        elif hook_name in [
-            # Secrets guard - blocks reading sensitive files
-            "secrets_guard.py",
-        ]:
-            read_hooks.append(hook_path)
-        # Stop hooks - run when Claude stops responding
-        elif hook_name in ["notify_sound.py", "check_claude_md.py"]:
-            stop_hooks.append(hook_path)
-        # UserPromptSubmit hooks - process user input
-        elif hook_name == "workflow_state_updater.py":
-            user_prompt_hooks.append(hook_path)
-        # Libraries (imported by hooks, not run directly):
-        # - workflow_state_multi.py
-        # - config_loader.py
+    # Bash hooks (ordered)
+    BASH_HOOK_ORDER = [
+        # 1. FIRST: Stop lock
+        "stop_lock_guard.py",
+        # 2. Override token protection
+        "override_token_bash_guard.py",
+        # 3. Adversary verdict guard
+        "adversary_verdict_guard.py",
+        # 4. Commit gate
+        "pre_commit_gate.py",
+        # 5. Secrets guard
+        "secrets_guard.py",
+        # 6. Parallel test guard
+        "parallel_test_guard.py",
+    ]
+
+    # Read hooks (ordered)
+    READ_HOOK_ORDER = [
+        "stop_lock_guard.py",
+        "secrets_guard.py",
+    ]
+
+    # UserPromptSubmit hooks (ordered)
+    USER_PROMPT_HOOK_ORDER = [
+        # 1. FIRST: Stop lock listener
+        "stop_lock_listener.py",
+        # 2. Workflow state updater
+        "workflow_state_updater.py",
+        # 3. Override token listener
+        "override_token_listener.py",
+        # 4. Workflow cleanup
+        "workflow_cleanup.py",
+    ]
+
+    # PostToolUse hooks (NEW in v2.1)
+    POST_BASH_HOOK_ORDER = [
+        # Advisory hooks for Bash results
+        "adversary_gate.py",          # Validates test output
+        "on_ui_test_failure.py",      # iOS: Diagnose xcodebuild failures
+        "ui_test_debugger_hint.py",   # iOS: Recommend debugger agent
+    ]
+
+    # Stop hooks
+    STOP_HOOK_ORDER = [
+        "notify_sound.py",
+    ]
+
+    def collect_hooks(order: list) -> list:
+        """Collect hooks that exist in the project, preserving order."""
+        result = []
+        for hook_name in order:
+            hook_path = hooks_dir / hook_name
+            if hook_path.exists():
+                result.append(str(hook_path))
+        return result
+
+    edit_write_hooks = collect_hooks(EDIT_WRITE_HOOK_ORDER)
+    bash_hooks = collect_hooks(BASH_HOOK_ORDER)
+    read_hooks = collect_hooks(READ_HOOK_ORDER)
+    user_prompt_hooks = collect_hooks(USER_PROMPT_HOOK_ORDER)
+    post_bash_hooks = collect_hooks(POST_BASH_HOOK_ORDER)
+    stop_hooks = collect_hooks(STOP_HOOK_ORDER)
 
     settings = {
         "permissions": {
@@ -284,6 +326,7 @@ def generate_settings_json(project_path: Path, modules: list):
         },
         "hooks": {
             "PreToolUse": [],
+            "PostToolUse": [],
             "Stop": [],
             "UserPromptSubmit": []
         }
@@ -309,13 +352,23 @@ def generate_settings_json(project_path: Path, modules: list):
             ]
         })
 
-    # Add Read hooks (v2.0 - secrets guard)
+    # Add Read hooks
     if read_hooks:
         settings["hooks"]["PreToolUse"].append({
             "matcher": "Read",
             "hooks": [
                 {"type": "command", "command": f"python3 {h}", "timeout": 5}
                 for h in read_hooks
+            ]
+        })
+
+    # Add PostToolUse Bash hooks (v2.1 - advisory)
+    if post_bash_hooks:
+        settings["hooks"]["PostToolUse"].append({
+            "matcher": "Bash",
+            "hooks": [
+                {"type": "command", "command": f"python3 {h}", "timeout": 10}
+                for h in post_bash_hooks
             ]
         })
 

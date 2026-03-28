@@ -355,6 +355,7 @@ pre_commit:
     - ".jsx"
     - ".svelte"
   screenshot_reminder: true
+  required_staged_files: []  # Files that MUST be staged for commit (e.g., ["DOCS/current-todos.md"])
 
 # Validation Tool Configuration
 validation:
@@ -365,19 +366,77 @@ validation:
   source_dir: "src"
   import_command: "python3 -c"  # or "uv run python -c"
 
+# Stop Lock - Pause all operations on user command
+stop_lock:
+  enabled: true
+  stop_keywords:
+    - "stop"
+    - "stopp"
+    - "halt"
+  resume_keywords:
+    - "resume"
+    - "weiter"
+    - "continue"
+    - "weitermachen"
+
+# Override Token - One-time gate bypass
+override_token:
+  enabled: true
+  keywords:
+    - "override"
+    - "ueberschreiben"
+
+# Parallel Test Guard - Prevent test interference between workflows
+parallel_test_guard:
+  enabled: true
+  stale_threshold_hours: 48
+  test_command_patterns:
+    - "pytest"
+    - "jest"
+    - "xcodebuild.*test"
+    - "go\\s+test"
+    - "cargo\\s+test"
+    - "npm\\s+test"
+    - "yarn\\s+test"
+    - "vitest"
+    - "mocha"
+
+# Workflow Cleanup - Auto-remove stale/completed workflows
+workflow_cleanup:
+  enabled: true
+  stale_days: 7
+  interval_hours: 1
+
+# Adversary Gate - Validate real test output
+adversary_gate:
+  enabled: true
+  max_age_minutes: 30
+  min_size_bytes: 500
+  test_patterns:
+    - framework: "pytest"
+      pass_pattern: "passed"
+      fail_pattern: "FAILED|ERROR"
+    - framework: "jest"
+      pass_pattern: "Tests:.*passed"
+      fail_pattern: "Tests:.*failed"
+    - framework: "xcodebuild"
+      pass_pattern: "\\*\\* TEST SUCCEEDED \\*\\*"
+      fail_pattern: "\\*\\* TEST FAILED \\*\\*"
+    - framework: "go_test"
+      pass_pattern: "^ok\\s+"
+      fail_pattern: "^FAIL\\s+"
+    - framework: "cargo_test"
+      pass_pattern: "test result: ok"
+      fail_pattern: "test result: FAILED"
+    - framework: "npm_test"
+      pass_pattern: "passing"
+      fail_pattern: "failing"
+
 # Hooks Configuration
 hooks:
   # Timeout in seconds for hook execution
   timeout: 5
 
-  # Hook execution order (lower = earlier)
-  priority:
-    secrets_guard: 5          # First! Block sensitive file access
-    workflow_gate: 10
-    spec_enforcement: 20
-    domain_pattern_guard: 25
-    track_changes: 30
-    tdd_enforcement: 35
-    module_hooks: 50
-    pre_commit_gate: 90
-    notification: 100
+  # Hook execution order is defined in setup.py generate_settings_json().
+  # Do NOT configure order here — it has no effect.
+  # To change hook order, modify the *_HOOK_ORDER lists in setup.py.

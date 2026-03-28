@@ -7,6 +7,136 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed - Critical Bug Fixes
+
+- **workflow_state_multi.py:** `get_tdd_status()` returned `None` when called with explicit workflow name (inverted conditional logic)
+- **config_loader.py:** Missing `yaml` import fallback — entire hook system crashed if PyYAML not installed; now warns and continues with defaults
+- **pre_commit_gate.py:** Tests that crash without outputting "failed"/"error" were silently considered passing; now any non-zero exit code means failure
+- **setup.py:** Removed non-existent `check_claude_md.py` from STOP_HOOK_ORDER
+- **setup.py:** Removed module-specific hooks (`ui_test_preflight.py`, `test_lock_guard.py`, `check_ha_restart.py`, `lovelace_screenshot_gate.py`) from core hook ordering — these belong in module installation only
+
+### Fixed - Agent Model Assignments
+
+- **user-story-planner.md:** Added missing `model: opus` (was undeclared, docs said Opus)
+- **analysis-challenger.md:** Changed `model: haiku` → `model: sonnet` (analytical work, not mechanical)
+- **implementation-validator.md:** Changed `model: haiku` → `model: sonnet` (investigative edge-case probing)
+
+### Fixed - Broken References
+
+- **bug-investigator.md, feature-planner.md:** Fixed standards path from non-existent `.agent-os/standards/` to `core/standards/global/`
+- **config.yaml:** Removed dead `hooks.priority` section (has no effect since v2.1; order is defined in setup.py)
+
+### Added
+
+- **core/standards/global/analysis-first.md:** New standard document — was referenced by agents but never created
+
+## [2.1.0] - 2026-03-12
+
+### Added - Adversary Gate System (from my-dayly-sprints)
+
+**Problem:** Claude can claim tests passed without real evidence.
+**Solution:** Validates REAL test output (file freshness <30min, size >500 bytes, magic bytes, framework patterns).
+
+**New Hooks:**
+- `adversary_gate.py` - PostToolUse Bash: Validates test output, sets `adversary_verdict` in workflow state
+- `adversary_verdict_guard.py` - PreToolUse: Blocks direct JSON manipulation of verdict field
+
+**Config:** `adversary_gate.test_patterns` - Configurable per framework (pytest, jest, xcodebuild, go test, cargo test, npm test)
+
+### Added - Stop Lock System (from my-dayly-sprints)
+
+**Problem:** No way to immediately pause Claude.
+**Solution:** User says "stop"/"stopp" -> all Edit/Write/Bash blocked until "resume"/"weiter".
+
+**New Hooks:**
+- `stop_lock_guard.py` - PreToolUse: MUST BE FIRST HOOK. Blocks all operations when locked.
+- `stop_lock_listener.py` - UserPromptSubmit: Creates/removes `.claude/stop.lock`
+
+**Config:** `stop_lock.stop_keywords` / `resume_keywords` - EN+DE defaults
+
+### Added - Override Token System (from my-dayly-sprints)
+
+**Problem:** Sometimes user needs to consciously bypass a gate.
+**Solution:** User says "override" -> one-time token created, consumed after single gate pass.
+
+**New Hooks:**
+- `override_token_listener.py` - UserPromptSubmit: Creates token
+- `override_token_guard.py` - PreToolUse Edit/Write: Protects token file
+- `override_token_bash_guard.py` - PreToolUse Bash: Protects token file
+
+**Config:** `override_token.keywords` - Configurable
+
+### Added - Workflow Cleanup (from my-dayly-sprints)
+
+**Problem:** workflow_state_multi.json grows with completed/stale workflows.
+**Solution:** Auto-cleanup of phase8_complete + stale (7+ days inactive) workflows. Rate-limited to 1x/hour.
+
+**New Hook:**
+- `workflow_cleanup.py` - UserPromptSubmit
+
+**Config:** `workflow_cleanup.stale_days`, `workflow_cleanup.interval_hours`
+
+### Added - Parallel Test Guard (from my-dayly-sprints)
+
+**Problem:** Parallel workflows can interfere during test runs.
+**Solution:** Blocks test commands when other active workflows have pending RED tests.
+
+**New Hook:**
+- `parallel_test_guard.py` - PreToolUse Bash
+
+**Config:** `parallel_test_guard.test_command_patterns`, `parallel_test_guard.stale_threshold_hours`
+
+### Added - Analysis Challenger Agent (from my-dayly-sprints)
+
+**New Agent:**
+- `analysis-challenger.md` - Devil's Advocate for bug analyses. 5 challenges: Symptom Coverage, Call-Site/Dead-Code, Repeated-Fix, Platform Check, Simpler Explanation.
+
+### Changed - Implementation Validator Rewrite (from my-dayly-sprints)
+
+**Rewritten Agent:**
+- `implementation-validator.md` - Now an Adversary Agent that actively tries to BREAK the implementation. Issues VERDICT: HOLDS/BROKEN.
+- `modules/ios-swiftui/agents/implementation-validator.md` - iOS-specific override with xcodebuild, Simulator, screenshots.
+
+### Changed - Pre-Commit Gate (3 new features)
+
+- `check_todos_staged()` - Blocks commit if configured files not staged
+- `check_adversary_verdict()` - Checks VERIFIED verdict in phase6-8
+- Override Token cleanup after successful gate pass
+- **Config:** `pre_commit.required_staged_files: []`
+
+### Changed - RED Test Gate
+
+- Added `phase6_implement` to enforced phases (previously only phase4/5)
+
+### Changed - UI Screenshot Gate
+
+- Added magic bytes validation (PNG/JPG/GIF/WebP header check)
+- Added minimum size check (1KB) to prevent empty placeholder files
+
+### Added - iOS Module Hooks (from my-dayly-sprints)
+
+**New Hooks:**
+- `test_lock_guard.py` - PreToolUse Bash: Prevents parallel xcodebuild runs via `pgrep`
+- `ui_test_preflight.py` - PreToolUse Edit/Write: Blocks anti-patterns (sleep(), hard-coded coordinates)
+- `on_ui_test_failure.py` - PostToolUse Bash: Diagnoses xcodebuild failures (exit 64/65/70)
+- `ui_test_debugger_hint.py` - PostToolUse Bash: Recommends ui-test-debugger agent on UI test failures
+
+### Changed - Setup & Configuration
+
+**setup.py:**
+- Explicit hook ordering (stop_lock MUST be first)
+- PostToolUse hook support (new hook event type)
+- Version bumped to 2.1.0
+
+**config.yaml:**
+- New sections: `stop_lock`, `override_token`, `parallel_test_guard`, `workflow_cleanup`, `adversary_gate`
+- `pre_commit.required_staged_files` option
+- Updated hook priority table
+
+---
+
+## [Unreleased]
+
 ### Added - Agent Orchestration & Model Strategy (from gregor_zwanzig)
 
 **Model Assignment Strategy:**

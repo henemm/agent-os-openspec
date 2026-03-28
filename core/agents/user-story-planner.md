@@ -1,6 +1,7 @@
 ---
 name: user-story-planner
 description: JTBD-basierte User Story Discovery und Feature-Ableitung
+model: opus
 tools:
   - Read
   - Grep

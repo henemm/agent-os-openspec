@@ -505,11 +505,11 @@ def get_tdd_status(workflow_name: str = None) -> dict:
         green_result: str or None
         artifacts: list of test artifacts
     """
-    workflow = get_active_workflow() if not workflow_name else None
-
     if workflow_name:
         state = load_state()
         workflow = state["workflows"].get(workflow_name)
+    else:
+        workflow = get_active_workflow()
 
     if not workflow:
         return {
