@@ -2,7 +2,7 @@
 
 > **Meta-Projekt**: Dies ist das zentrale Framework-Repository, das abstraktes Projekt- und Workflow-Wissen konsolidiert. Alle Projekte können Improvements hierher zurückführen und von Verbesserungen aus anderen Projekten profitieren.
 
-**Version**: 2.0.0
+**Version**: 2.1.0
 
 ## Projektzweck
 
@@ -151,6 +151,47 @@ Jeder Agent und jede Phase verwendet gezielt das passende Modell:
 
 Siehe `templates/agent_orchestration.md` fuer das vollstaendige Referenz-Template.
 
+## Adversary System (v2.1)
+
+Das Adversary System verhindert, dass Claude behauptet Tests seien bestanden ohne echten Beweis:
+
+1. **adversary_gate.py** (PostToolUse) — Validiert nach Test-Runs:
+   - Datei-Frische (<30 Min)
+   - Mindestgroesse (>500 Bytes)
+   - Magic Bytes (PNG/JPG Header)
+   - Framework-Patterns (pytest/jest/xcodebuild/go/cargo)
+   - Setzt `adversary_verdict: VERIFIED/UNVERIFIED` im Workflow State
+
+2. **adversary_verdict_guard.py** — Blockiert direkte Manipulation des Verdicts
+
+3. **implementation-validator.md** — Adversary Agent der aktiv versucht die Implementierung zu BRECHEN. Verdict: HOLDS/BROKEN.
+
+## Stop Lock (v2.1)
+
+Sofort-Pause fuer Claude:
+- User sagt **"stop"/"stopp"/"halt"** → Alle Edit/Write/Bash blockiert
+- User sagt **"resume"/"weiter"/"continue"** → Wieder freigegeben
+- `stop_lock_guard.py` MUSS erster Hook in der Kette sein
+- Keywords konfigurierbar via `openspec.yaml` → `stop_lock`
+
+## Override Token (v2.1)
+
+Einmal-Bypass fuer Gates:
+- User sagt **"override"** → Token wird erstellt
+- Naechster blockierter Gate-Check wird einmalig uebersprungen
+- Token wird nach Verwendung automatisch geloescht
+- Token-Datei ist vor direkter Manipulation geschuetzt
+
+## Hook-Kette (v2.1)
+
+**Edit/Write:** stop_lock → override_token_guard → docs_location → workflow_gate → spec → strict_code → claude_md → tdd → red_test → post_impl → scope → plan → ui_screenshot → domain_pattern → track_changes → [module hooks]
+
+**Bash:** stop_lock → override_token_bash → adversary_verdict → pre_commit → secrets → parallel_test → [module hooks]
+
+**UserPromptSubmit:** stop_lock_listener → workflow_state_updater → override_token_listener → workflow_cleanup
+
+**PostToolUse Bash:** adversary_gate → [module: on_ui_test_failure, ui_test_debugger_hint]
+
 ## Konventionen für dieses Repository
 
 ### Beim Bearbeiten des Frameworks
@@ -215,13 +256,18 @@ python3 /path/to/agent-os-openspec/setup.py --version
 
 | Datei | Beschreibung |
 |-------|--------------|
-| `setup.py` | Installations- und Update-Tool (v2.0) |
+| `setup.py` | Installations- und Update-Tool (v2.1) |
 | `config.yaml` | Template für Projektkonfiguration |
 | `CHANGELOG.md` | Versionshistorie |
 | `core/hooks/workflow_state_multi.py` | Multi-Workflow State Manager |
 | `core/hooks/tdd_enforcement.py` | TDD mit echten Artefakten |
 | `core/hooks/workflow_gate.py` | Phasen-Gate |
 | `core/hooks/spec_enforcement.py` | Spec-First Enforcement |
+| `core/hooks/adversary_gate.py` | Adversary Test-Output Validierung (v2.1) |
+| `core/hooks/stop_lock_guard.py` | Stop-Lock System (v2.1) |
+| `core/hooks/override_token_listener.py` | Override-Token System (v2.1) |
+| `core/hooks/parallel_test_guard.py` | Parallele Test-Konflikterkennung (v2.1) |
+| `core/hooks/workflow_cleanup.py` | Auto-Cleanup (v2.1) |
 
 ## Slash-Commands Übersicht
 

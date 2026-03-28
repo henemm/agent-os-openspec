@@ -1,20 +1,23 @@
 # Agent OS + OpenSpec Framework
 
-A modular workflow enforcement system for Claude Code that ensures quality through spec-first development, automated validation, and domain-specific standards.
+A modular workflow enforcement system for Claude Code that ensures quality through spec-first development, TDD with real artifacts, and domain-specific standards.
+
+**Version**: 2.0.0
 
 ## What is Agent OS + OpenSpec?
 
 This framework combines two complementary approaches to AI-assisted development:
 
-- **Agent OS**: Domain-specific standards, agents, and workflows (iOS/SwiftUI, Home Assistant, etc.)
-- **OpenSpec**: 4-phase workflow enforcement with Python hooks
+- **Agent OS**: Hook-based workflow enforcement for Claude Code
+- **OpenSpec**: Spec-first development - no code without specification
 
 Together they provide:
-- **4-Phase Workflow**: analyse → write-spec → implement → validate
-- **Spec-First Development**: No code without specifications
+- **8-Phase Workflow**: Structured progression from context to completion
+- **Spec-First Development**: No code without approved specifications
+- **TDD with Real Artifacts**: Actual screenshots, logs - no placeholders
 - **Hook Enforcement**: Automated blocking of rule violations
+- **Multi-Workflow Support**: Work on multiple features in parallel
 - **Modular Design**: Core system + domain-specific modules
-- **Best Practices**: Curated standards for each domain
 
 ## Why Use This?
 
@@ -22,6 +25,7 @@ Without guardrails, AI coding assistants can:
 - Start implementing before understanding the problem
 - Create code without documentation
 - Skip validation steps
+- Write tests that pass without actually testing anything
 - Forget edge cases
 
 OpenSpec prevents these issues through **technical enforcement**, not just documentation.
@@ -41,119 +45,190 @@ python3 setup.py /path/to/your/project --module ios-swiftui
 
 # With Home Assistant module
 python3 setup.py /path/to/your/project --module home-assistant
+
+# Update existing installation
+python3 setup.py /path/to/your/project --update
 ```
 
-## The 4-Phase Workflow
+## The 8-Phase Workflow (v2.0)
 
 ```
-User Request
-     │
-     ▼
-┌─────────────┐
-│  /analyse   │ ← Understand request, research codebase
-└─────────────┘
-     │
-     ▼
-┌─────────────┐
-│ /write-spec │ ← Create specification document
-└─────────────┘
-     │
-     ▼
-┌─────────────┐
-│  "approved" │ ← User reviews and approves spec
-└─────────────┘
-     │
-     ▼
-┌─────────────┐
-│ /implement  │ ← NOW you can write code
-└─────────────┘
-     │
-     ▼
-┌─────────────┐
-│  /validate  │ ← Test and verify implementation
-└─────────────┘
-     │
-     ▼
-   Commit
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         OPENSPEC WORKFLOW v2.0                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  phase0_idle                                                            │
+│       │                                                                 │
+│       ▼                                                                 │
+│  phase1_context ─── /context ───► Collect relevant context              │
+│       │                                                                 │
+│       ▼                                                                 │
+│  phase2_analyse ─── /analyse ───► Analyze requirements                  │
+│       │                                                                 │
+│       ▼                                                                 │
+│  phase3_spec ────── /write-spec ► Write specification                   │
+│       │                                                                 │
+│       ▼                                                                 │
+│  phase4_approved ── "approved" ─► User approval (GATE)                  │
+│       │                                                                 │
+│       ▼                                                                 │
+│  phase5_tdd_red ─── /tdd-red ───► Write tests, MUST FAIL                │
+│       │                           + REAL artifacts required!            │
+│       ▼                                                                 │
+│  phase6_implement ─ /implement ─► Write code, make tests GREEN          │
+│       │                                                                 │
+│       ▼                                                                 │
+│  phase7_validate ── /validate ──► Manual testing, validation            │
+│       │                                                                 │
+│       ▼                                                                 │
+│  phase8_complete ── /deploy ────► Ready for commit/deploy               │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Project Structure
 
 ```
-openspec-framework/
+agent-os-openspec/
 ├── config.yaml              # Configuration template
-├── setup.py                 # Installation tool
-├── README.md
+├── setup.py                 # Installation & update tool
+├── CLAUDE.md                # Framework documentation
+├── CHANGELOG.md             # Version history
 │
 ├── core/                    # Core components (always installed)
 │   ├── hooks/
-│   │   ├── config_loader.py      # Shared configuration
-│   │   ├── workflow_gate.py      # Enforce 4-phase workflow
-│   │   ├── workflow_state_updater.py  # Handle approvals
-│   │   ├── spec_enforcement.py   # Require specs
-│   │   ├── claude_md_protection.py    # Prevent bloat
-│   │   └── notify_sound.py       # Notifications
+│   │   ├── workflow_state_multi.py   # Multi-workflow state manager (v2.0)
+│   │   ├── workflow_gate.py          # Phase gate enforcement
+│   │   ├── workflow_state_updater.py # Handle approval phrases
+│   │   ├── tdd_enforcement.py        # TDD with real artifacts
+│   │   ├── spec_enforcement.py       # Require specs
+│   │   ├── red_test_gate.py          # Ensure tests fail first
+│   │   ├── scope_guard.py            # Limit change scope
+│   │   ├── secrets_guard.py          # Prevent secret commits
+│   │   ├── pre_commit_gate.py        # Pre-commit validation
+│   │   ├── post_implementation_gate.py
+│   │   ├── plan_validator.py
+│   │   ├── domain_pattern_guard.py
+│   │   ├── ui_screenshot_gate.py
+│   │   ├── track_changes.py
+│   │   ├── claude_md_protection.py   # Prevent CLAUDE.md bloat
+│   │   ├── config_loader.py          # Shared configuration
+│   │   └── notify_sound.py           # Notifications
 │   │
 │   ├── agents/
-│   │   ├── spec-writer.md        # Create specifications
-│   │   ├── spec-validator.md     # Validate specs
-│   │   ├── docs-updater.md       # Update documentation
-│   │   └── bug-intake.md         # Structured bug reports
+│   │   ├── spec-writer.md            # Create specifications
+│   │   ├── spec-validator.md         # Validate specs
+│   │   ├── implementation-validator.md # Validate implementations
+│   │   ├── docs-updater.md           # Update documentation
+│   │   └── bug-intake.md             # Structured bug reports
 │   │
 │   └── commands/
-│       ├── analyse.md
-│       ├── write-spec.md
-│       ├── implement.md
-│       └── validate.md
+│       ├── 0-reset.md                # Reset workflow
+│       ├── 1-context.md              # Phase 1: Collect context
+│       ├── 2-analyse.md              # Phase 2: Analyze
+│       ├── 3-write-spec.md           # Phase 3: Write spec
+│       ├── 4-tdd-red.md              # Phase 5: Failing tests
+│       ├── 5-implement.md            # Phase 6: Implement
+│       ├── 6-validate.md             # Phase 7: Validate
+│       ├── 7-deploy.md               # Phase 8: Deploy
+│       ├── workflow.md               # Workflow management
+│       ├── add-artifact.md           # Register test artifacts
+│       └── bug.md                    # Bug intake
 │
 ├── modules/                 # Optional domain-specific modules
 │   ├── ios-swiftui/         # iOS/SwiftUI development
 │   │   ├── config.yaml
 │   │   ├── standards/
-│   │   │   ├── global/      # Analysis-First, Scoping, Documentation
-│   │   │   └── swiftui/     # Lifecycle, Localization, State
 │   │   ├── agents/
-│   │   │   ├── bug-investigator.md
-│   │   │   ├── feature-planner.md
-│   │   │   ├── localizer.md
-│   │   │   └── test-runner.md
 │   │   ├── workflows/
-│   │   │   ├── bug-fix-workflow.md
-│   │   │   ├── feature-workflow.md
-│   │   │   └── release-workflow.md
 │   │   ├── commands/
-│   │   │   ├── bug.md
-│   │   │   ├── feature.md
-│   │   │   ├── test.md
-│   │   │   └── localize.md
 │   │   └── templates/
 │   │
-│   ├── home-assistant/      # Home Assistant configuration
-│   │   ├── config.yaml
-│   │   ├── hooks/
-│   │   │   ├── check_ha_restart.py
-│   │   │   └── lovelace_screenshot_gate.py
-│   │   └── agents/
-│   │       ├── ha-validator.md
-│   │       ├── lovelace-validator.md
-│   │       ├── automation-tester.md
-│   │       └── implementation-validator.md
-│   │
-│   └── generic/             # Generic optional hooks
+│   └── home-assistant/      # Home Assistant configuration
+│       ├── config.yaml
+│       ├── hooks/
+│       └── agents/
 │
-├── docs/
-│   └── specs/
-│       └── _template.md
-│
-├── templates/               # Configuration templates
-└── examples/               # Example projects
+├── templates/               # Spec templates
+└── docs/
+    └── specs/
+        └── _template.md
+```
+
+## Slash Commands
+
+| Command | Phase | Description |
+|---------|-------|-------------|
+| `/context` | 1 | Collect relevant context |
+| `/analyse` | 2 | Analyze requirements |
+| `/write-spec` | 3 | Create specification |
+| `/tdd-red` | 5 | Write failing tests |
+| `/implement` | 6 | Implement (make tests green) |
+| `/validate` | 7 | Manual validation |
+| `/deploy` | 8 | Deploy/commit |
+| `/reset` | - | Reset workflow to idle |
+| `/workflow` | - | Manage workflows |
+| `/add-artifact` | - | Register test artifacts |
+| `/bug` | - | Structured bug intake |
+
+## Multi-Workflow Support
+
+Work on multiple features in parallel:
+
+```bash
+# Start workflows
+python3 .claude/hooks/workflow_state_multi.py start "feature-login"
+python3 .claude/hooks/workflow_state_multi.py start "bugfix-crash"
+
+# Switch between workflows
+python3 .claude/hooks/workflow_state_multi.py switch "bugfix-crash"
+
+# List all workflows
+python3 .claude/hooks/workflow_state_multi.py list
+
+# Check active workflow status
+python3 .claude/hooks/workflow_state_multi.py status
+```
+
+## TDD with Real Artifacts
+
+The `tdd_enforcement.py` hook enforces real test artifacts:
+
+**Accepted:**
+- Screenshots (PNG, JPG) with real content (>1KB)
+- Test output logs with actual errors
+- API responses as JSON/XML files
+- Emails as .eml or .txt
+
+**Blocked:**
+- Placeholder text like "[Screenshot here]"
+- Empty files
+- Artifacts without description
+- Artifacts older than 24 hours
+
+```bash
+# Register an artifact
+python3 -c "
+import sys; sys.path.insert(0, '.claude/hooks')
+from workflow_state_multi import add_test_artifact, load_state
+state = load_state()
+add_test_artifact(state['active_workflow'], {
+    'type': 'screenshot',
+    'path': 'docs/artifacts/feature-x/test-failed.png',
+    'description': 'Test failed: Login button not found',
+    'phase': 'phase5_tdd_red'
+})
+"
 ```
 
 ## Available Modules
 
 ### Core (Always Installed)
-- 4-phase workflow enforcement
+- 8-phase workflow enforcement
 - Spec-first development
+- TDD with real artifacts
+- Multi-workflow support
+- Scope guards and secret protection
 - CLAUDE.md size protection
 - Notification system
 
@@ -164,12 +239,6 @@ Standards and best practices for iOS development:
 - **TDD Workflow**: RED → GREEN → REFACTOR cycle
 - **Localization**: DE/EN support with proper patterns
 - **SwiftUI Patterns**: Lifecycle, state management, guard flags
-
-Agents:
-- `bug-investigator` - Systematic bug analysis
-- `feature-planner` - Spec-first feature planning
-- `localizer` - Localization management
-- `test-runner` - Unit test execution
 
 ### Home Assistant Module
 - Config validation before restart
@@ -209,10 +278,15 @@ Hooks are Python scripts that run before Claude executes tools:
 
 | Hook | Trigger | Purpose |
 |------|---------|---------|
-| workflow_gate.py | Edit/Write | Block if workflow phase is wrong |
-| spec_enforcement.py | Edit/Write | Block if spec missing |
-| workflow_state_updater.py | UserPromptSubmit | Detect approval phrases |
-| check_ha_restart.py | Bash | Block restart without config check |
+| `workflow_gate.py` | Edit/Write | Block if workflow phase is wrong |
+| `workflow_state_multi.py` | - | Multi-workflow state management |
+| `tdd_enforcement.py` | Edit/Write | Require real test artifacts |
+| `spec_enforcement.py` | Edit/Write | Block if spec missing |
+| `red_test_gate.py` | Edit/Write | Ensure tests fail before green |
+| `scope_guard.py` | Edit/Write | Limit files/LoC per change |
+| `secrets_guard.py` | Edit/Write | Prevent committing secrets |
+| `pre_commit_gate.py` | Bash (git) | Pre-commit validation |
+| `workflow_state_updater.py` | UserPromptSubmit | Detect approval phrases |
 
 When a hook returns exit code 2, the tool call is blocked and the error message is shown to Claude.
 
@@ -255,25 +329,18 @@ The workflow state is tracked in `.claude/workflow_state.json`:
 
 ```json
 {
-  "current_phase": "spec_approved",
-  "feature_name": "User Authentication",
-  "spec_file": "docs/specs/modules/user_authentication.md",
-  "spec_approved": true,
-  "implementation_done": false,
-  "validation_done": false
+  "active_workflow": "feature-login",
+  "workflows": {
+    "feature-login": {
+      "current_phase": "phase5_tdd_red",
+      "feature_name": "User Login",
+      "spec_file": "docs/specs/feature-login.md",
+      "spec_approved": true,
+      "test_artifacts": []
+    }
+  }
 }
 ```
-
-## iOS/SwiftUI Specific Commands
-
-When using the ios-swiftui module:
-
-| Command | Agent | Purpose |
-|---------|-------|---------|
-| `/bug [desc]` | bug-investigator | Analyze bug with Analysis-First |
-| `/feature [name]` | feature-planner | Plan feature with OpenSpec |
-| `/test` | test-runner | Run unit tests |
-| `/localize` | localizer | Check/add localizations |
 
 ## Contributing
 
@@ -288,9 +355,5 @@ Contributions welcome! Areas of interest:
 MIT License - See LICENSE file.
 
 ## Credits
-
-This framework combines:
-- **OpenSpec Framework** - Hook-based workflow enforcement
-- **Agent OS** - iOS/SwiftUI standards and best practices
 
 Developed from real-world usage enforcing quality in iOS and Home Assistant projects.

@@ -138,7 +138,7 @@ def main():
     # Only enforce in phases where RED test matters
     # phase4_approved = spec approved, should do RED test
     # phase5_tdd_red = explicitly in RED phase
-    if phase not in ["phase4_approved", "phase5_tdd_red"]:
+    if phase not in ["phase4_approved", "phase5_tdd_red", "phase6_implement"]:
         sys.exit(0)
 
     # If RED test is done, allow

@@ -92,6 +92,18 @@ DEFAULT_UI_EXTENSIONS = [
 # Screenshot file extensions
 SCREENSHOT_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp"]
 
+# Magic bytes for image validation
+MAGIC_BYTES = {
+    ".png": b"\x89PNG",
+    ".jpg": b"\xff\xd8\xff",
+    ".jpeg": b"\xff\xd8\xff",
+    ".gif": b"GIF8",
+    ".webp": b"RIFF",
+}
+
+# Minimum file size to prove non-placeholder (1KB)
+MIN_SCREENSHOT_SIZE = 1024
+
 
 def get_ui_config() -> dict:
     """Get UI screenshot configuration."""
@@ -133,8 +145,25 @@ def find_recent_screenshot(workflow_name: str, file_path: str) -> Path | None:
         for screenshot in screenshot_dir.glob(f"*{ext}"):
             # Check age
             mtime = datetime.fromtimestamp(screenshot.stat().st_mtime)
-            if datetime.now() - mtime < timedelta(minutes=max_age_minutes):
-                return screenshot
+            if datetime.now() - mtime >= timedelta(minutes=max_age_minutes):
+                continue
+
+            # Check minimum size (no empty placeholders)
+            if screenshot.stat().st_size < MIN_SCREENSHOT_SIZE:
+                continue
+
+            # Validate magic bytes
+            expected_magic = MAGIC_BYTES.get(ext)
+            if expected_magic:
+                try:
+                    with open(screenshot, "rb") as f:
+                        header = f.read(len(expected_magic))
+                    if not header.startswith(expected_magic):
+                        continue
+                except (OSError, IOError):
+                    continue
+
+            return screenshot
 
     return None
 
