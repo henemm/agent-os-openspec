@@ -293,14 +293,30 @@ def generate_settings_json(project_path: Path, modules: list):
     POST_BASH_HOOK_ORDER = [
         # Advisory hooks for Bash results
         "adversary_gate.py",          # Validates test output
-        "on_ui_test_failure.py",      # iOS: Diagnose xcodebuild failures
-        "ui_test_debugger_hint.py",   # iOS: Recommend debugger agent
     ]
 
     # Stop hooks
     STOP_HOOK_ORDER = [
         "notify_sound.py",
     ]
+
+    # Append module hooks from module configs
+    for module_name in modules:
+        module_config_path = MODULES_DIR / module_name / "config.yaml"
+        if not module_config_path.exists():
+            continue
+        try:
+            import yaml
+            with open(module_config_path, 'r') as f:
+                module_config = yaml.safe_load(f) or {}
+            module_hooks = module_config.get("hooks", {})
+            EDIT_WRITE_HOOK_ORDER.extend(module_hooks.get("edit_write", []))
+            BASH_HOOK_ORDER.extend(module_hooks.get("bash", []))
+            POST_BASH_HOOK_ORDER.extend(module_hooks.get("post_bash", []))
+            USER_PROMPT_HOOK_ORDER.extend(module_hooks.get("user_prompt", []))
+            print(f"  Loaded hook ordering from module: {module_name}")
+        except Exception as e:
+            print(f"  WARNING: Could not load hooks from {module_name}: {e}")
 
     def collect_hooks(order: list) -> list:
         """Collect hooks that exist in the project, preserving order."""

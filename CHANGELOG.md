@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - Architecture: Centralized find_project_root()
+
+- **4 hooks** (workflow_cleanup, stop_lock_listener, stop_lock_guard, override_token_listener) now import `find_project_root` from `config_loader.py` instead of duplicating the function
+- Fallback inline definition kept for robustness if import fails
+
+### Changed - Architecture: Dynamic Module Hook Loading
+
+- **setup.py:** Module hooks are no longer hardcoded in core hook ordering lists
+- Module configs (`modules/*/config.yaml`) now define their own `hooks:` section with `edit_write`, `bash`, `post_bash`, `user_prompt` lists
+- `generate_settings_json()` reads module configs and appends module hooks to core lists at generation time
+- **ios-swiftui/config.yaml:** Added hook ordering (ui_test_preflight, test_lock_guard, on_ui_test_failure, ui_test_debugger_hint)
+- **home-assistant/config.yaml:** Added hook ordering (lovelace_screenshot_gate, check_ha_restart)
+
 ### Fixed - Critical Bug Fixes
 
 - **workflow_state_multi.py:** `get_tdd_status()` returned `None` when called with explicit workflow name (inverted conditional logic)

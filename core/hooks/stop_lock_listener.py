@@ -33,27 +33,24 @@ from pathlib import Path
 
 # Import config loader
 try:
-    from config_loader import load_config
+    from config_loader import load_config, find_project_root
 except ImportError:
     sys.path.insert(0, str(Path(__file__).parent))
     try:
-        from config_loader import load_config
+        from config_loader import load_config, find_project_root
     except ImportError:
         def load_config():
             return {}
+        def find_project_root():
+            cwd = Path.cwd()
+            for parent in [cwd] + list(cwd.parents):
+                if (parent / ".git").exists():
+                    return parent
+            return cwd
 
 
 DEFAULT_STOP_KEYWORDS = ["stop", "stopp", "halt"]
 DEFAULT_RESUME_KEYWORDS = ["resume", "weiter", "continue", "weitermachen"]
-
-
-def find_project_root() -> Path:
-    """Find project root."""
-    cwd = Path.cwd()
-    for parent in [cwd] + list(cwd.parents):
-        if (parent / ".git").exists():
-            return parent
-    return cwd
 
 
 def get_lock_file() -> Path:

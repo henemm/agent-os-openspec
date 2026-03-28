@@ -88,6 +88,13 @@ spec_categories:
   dashboards:
     path: "dashboards"
 
+# Hook ordering for this module (appended to core hook lists)
+hooks:
+  edit_write:
+    - "lovelace_screenshot_gate.py"
+  bash:
+    - "check_ha_restart.py"
+
 # Validation settings
 validation:
   # Time window for config validation lock (seconds)

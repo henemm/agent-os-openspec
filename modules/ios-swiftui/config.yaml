@@ -67,6 +67,16 @@ commands:
   - name: "localize"
     file: "commands/localize.md"
 
+# Hook ordering for this module (appended to core hook lists)
+hooks:
+  edit_write:
+    - "ui_test_preflight.py"
+  bash:
+    - "test_lock_guard.py"
+  post_bash:
+    - "on_ui_test_failure.py"
+    - "ui_test_debugger_hint.py"
+
 # Build configuration templates
 build:
   ios_simulator: "iPhone 16 Pro"

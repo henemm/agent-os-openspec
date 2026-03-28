@@ -23,14 +23,19 @@ import os
 import sys
 from pathlib import Path
 
-
-def find_project_root() -> Path:
-    """Find project root by looking for .git."""
-    cwd = Path.cwd()
-    for parent in [cwd] + list(cwd.parents):
-        if (parent / ".git").exists():
-            return parent
-    return cwd
+try:
+    from config_loader import find_project_root
+except ImportError:
+    sys.path.insert(0, str(Path(__file__).parent))
+    try:
+        from config_loader import find_project_root
+    except ImportError:
+        def find_project_root():
+            cwd = Path.cwd()
+            for parent in [cwd] + list(cwd.parents):
+                if (parent / ".git").exists():
+                    return parent
+            return cwd
 
 
 def get_lock_file() -> Path:

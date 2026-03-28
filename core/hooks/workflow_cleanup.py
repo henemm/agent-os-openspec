@@ -25,19 +25,24 @@ from pathlib import Path
 
 # Import helpers
 try:
-    from config_loader import load_config
+    from config_loader import load_config, find_project_root
 except ImportError:
     sys.path.insert(0, str(Path(__file__).parent))
     try:
-        from config_loader import load_config
+        from config_loader import load_config, find_project_root
     except ImportError:
         def load_config():
             return {}
+        def find_project_root():
+            cwd = Path.cwd()
+            for parent in [cwd] + list(cwd.parents):
+                if (parent / ".git").exists():
+                    return parent
+            return cwd
 
 try:
     from workflow_state_multi import load_state, save_state
 except ImportError:
-    sys.path.insert(0, str(Path(__file__).parent))
     try:
         from workflow_state_multi import load_state, save_state
     except ImportError:
@@ -45,15 +50,6 @@ except ImportError:
             return {"version": "2.0", "workflows": {}, "active_workflow": None}
         def save_state(s):
             pass
-
-
-def find_project_root() -> Path:
-    """Find project root."""
-    cwd = Path.cwd()
-    for parent in [cwd] + list(cwd.parents):
-        if (parent / ".git").exists():
-            return parent
-    return cwd
 
 
 def get_cleanup_config() -> dict:
