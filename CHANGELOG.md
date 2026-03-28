@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Hook Dependency Validation in setup.py
+
+- `generate_settings_json()` now validates critical ordering constraints:
+  - `stop_lock_guard.py` MUST be first in every hook chain
+  - `override_token_guard.py` MUST come before `workflow_gate.py`
+- Prints warnings during setup if constraints are violated
+
 ### Changed - Hooks Migrated to hook_utils.py
 
 - **5 hooks** rewritten to use `hook_utils` bootstrap: `override_token_guard`, `override_token_bash_guard`, `adversary_verdict_guard`, `stop_lock_guard`, `docs_location_guard`

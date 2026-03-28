@@ -334,6 +334,23 @@ def generate_settings_json(project_path: Path, modules: list):
     post_bash_hooks = collect_hooks(POST_BASH_HOOK_ORDER)
     stop_hooks = collect_hooks(STOP_HOOK_ORDER)
 
+    # Validate critical hook dependencies
+    def validate_hook_order(hooks: list, name: str):
+        """Warn if critical ordering constraints are violated."""
+        hook_names = [Path(h).name for h in hooks]
+        # stop_lock_guard MUST be first if present
+        if "stop_lock_guard.py" in hook_names and hook_names.index("stop_lock_guard.py") != 0:
+            print(f"  WARNING: stop_lock_guard.py is not first in {name}! "
+                  f"It MUST be first to block operations when locked.")
+        # override_token_guard MUST come before workflow_gate
+        if "override_token_guard.py" in hook_names and "workflow_gate.py" in hook_names:
+            if hook_names.index("override_token_guard.py") > hook_names.index("workflow_gate.py"):
+                print(f"  WARNING: override_token_guard.py must come before "
+                      f"workflow_gate.py in {name}!")
+
+    validate_hook_order(edit_write_hooks, "Edit/Write")
+    validate_hook_order(bash_hooks, "Bash")
+
     settings = {
         "permissions": {
             "allow": ["Bash", "WebSearch", "WebFetch"],
