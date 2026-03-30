@@ -15,7 +15,7 @@ Write tests BEFORE implementation. Tests MUST FAIL because the functionality doe
 
 Check status:
 ```bash
-python3 .claude/hooks/workflow_state_multi.py status
+python3 .claude/hooks/workflow.py status
 ```
 
 ## Your Tasks
@@ -23,7 +23,7 @@ python3 .claude/hooks/workflow_state_multi.py status
 ### 1. Enter TDD RED Phase
 
 ```bash
-python3 .claude/hooks/workflow_state_multi.py phase phase5_tdd_red
+python3 .claude/hooks/workflow.py phase phase5_tdd_red
 ```
 
 ### 2. Write Tests Based on Spec
@@ -71,21 +71,10 @@ pytest tests/ -v > docs/artifacts/[workflow]/test-red-output.txt 2>&1
 ### 5. Register Artifacts
 
 ```bash
-python3 -c "
-import sys; sys.path.insert(0, '.claude/hooks')
-from workflow_state_multi import add_test_artifact, load_state
-
-state = load_state()
-active = state['active_workflow']
-
-add_test_artifact(active, {
-    'type': 'test_output',
-    'path': 'docs/artifacts/[workflow]/test-red-output.txt',
-    'description': 'Test FAILED: [function] raises NotImplementedError - assertion error line 42',
-    'phase': 'phase5_tdd_red'
-})
-print('Artifact registered')
-"
+python3 .claude/hooks/workflow.py add-artifact test_output \
+    "docs/artifacts/[workflow]/test-red-output.txt" \
+    "Test FAILED: [function] raises NotImplementedError - assertion error line 42" \
+    phase5_tdd_red
 ```
 
 ## Artifact Requirements
@@ -112,7 +101,7 @@ After RED phase is complete:
 > "TDD RED complete. [N] tests written, all failing as expected. Artifacts captured. Ready for `/implement`."
 
 ```bash
-python3 .claude/hooks/workflow_state_multi.py phase phase6_implement
+python3 .claude/hooks/workflow.py phase phase6_implement
 ```
 
 ## Common Mistakes

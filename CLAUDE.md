@@ -2,7 +2,7 @@
 
 > **Meta-Projekt**: Dies ist das zentrale Framework-Repository, das abstraktes Projekt- und Workflow-Wissen konsolidiert. Alle Projekte können Improvements hierher zurückführen und von Verbesserungen aus anderen Projekten profitieren.
 
-**Version**: 2.1.0
+**Version**: 3.0.0
 
 ## Projektzweck
 
@@ -22,12 +22,17 @@ Das Framework erzwingt technisch (nicht nur durch Dokumentation), dass Claude st
 ```
 agent-os-openspec/
 ├── core/                    # Basis-System (immer installiert)
-│   ├── hooks/               # Python-Hooks für Workflow-Enforcement
-│   │   ├── workflow_gate.py         # Phasen-Gate für geschützte Dateien
-│   │   ├── workflow_state_multi.py  # Multi-Workflow State Manager (v2.0)
-│   │   ├── tdd_enforcement.py       # TDD mit echten Artefakten
-│   │   ├── spec_enforcement.py      # Spec-First Enforcement
-│   │   └── ...
+│   ├── hooks/               # v3: 4 konsolidierte Hooks + Utilities
+│   │   ├── edit_gate.py             # PreToolUse Edit|Write (ersetzt 17 Hooks)
+│   │   ├── bash_gate.py             # PreToolUse Bash (ersetzt 15 Hooks)
+│   │   ├── post_bash.py             # PostToolUse Bash (Adversary Detection)
+│   │   ├── phase_listener.py        # UserPromptSubmit (ersetzt 6 Hooks)
+│   │   ├── workflow.py              # Workflow State CLI (isolierte JSON-Files)
+│   │   ├── qa_gate.py              # QA-Gate: Test-Output validieren, Verdict setzen
+│   │   ├── override_token.py       # Shared Override-Token Management (TTL, Multi-WF)
+│   │   ├── migrate_state.py         # v2 → v3 State-Migration
+│   │   ├── hook_utils.py            # Shared Bootstrap (Imports, Parsing, Exit)
+│   │   └── config_loader.py         # Config-Loader (YAML + Local Overrides)
 │   ├── agents/              # Agent-Definitionen (Markdown)
 │   └── commands/            # Slash-Commands
 │       ├── context.md       # Phase 1: Kontext sammeln
@@ -42,7 +47,7 @@ agent-os-openspec/
 │   ├── ios-swiftui/         # iOS/SwiftUI Standards, TDD, Localization
 │   └── home-assistant/      # HA Config-Validation, Dashboard-QA
 ├── templates/               # Spec-Templates
-├── setup.py                 # Installations- und Update-Tool
+├── setup.py                 # Installations- und Update-Tool (v3.0)
 ├── config.yaml              # Zentrale Konfiguration
 └── CHANGELOG.md             # Versionshistorie
 ```
@@ -83,74 +88,66 @@ agent-os-openspec/
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Parallele Workflows
+## Parallele Workflows (v3 — Isolierter State)
 
-Mehrere Features können gleichzeitig bearbeitet werden:
+Jeder Workflow bekommt ein eigenes JSON-File in `.claude/workflows/`.
+Aktiver Workflow wird per `.active` Symlink verwaltet.
+
+```
+.claude/workflows/
+├── .active              ← Symlink auf aktiven Workflow
+├── FEAT_001.json        ← State fuer FEAT_001
+├── BUG_042.json         ← State fuer BUG_042
+└── _archive/            ← Abgeschlossene Workflows
+```
 
 ```bash
 # Workflow starten
-python3 .claude/hooks/workflow_state_multi.py start "feature-login"
-python3 .claude/hooks/workflow_state_multi.py start "bugfix-crash"
+python3 .claude/hooks/workflow.py start "feature-login"
+python3 .claude/hooks/workflow.py start "bugfix-crash"
 
 # Zwischen Workflows wechseln
-python3 .claude/hooks/workflow_state_multi.py switch "bugfix-crash"
+python3 .claude/hooks/workflow.py switch "bugfix-crash"
 
 # Alle Workflows anzeigen
-python3 .claude/hooks/workflow_state_multi.py list
+python3 .claude/hooks/workflow.py list
 
 # Status des aktiven Workflows
-python3 .claude/hooks/workflow_state_multi.py status
+python3 .claude/hooks/workflow.py status
+
+# Phase setzen (mit Validierung)
+python3 .claude/hooks/workflow.py phase phase6_implement
+
+# Feld setzen
+python3 .claude/hooks/workflow.py set-field spec_file "docs/specs/feat.md"
+
+# Artefakt registrieren
+python3 .claude/hooks/workflow.py add-artifact test_output "logs/test.log" "Tests failed" phase5_tdd_red
+
+# Workflow abschliessen (→ _archive/)
+python3 .claude/hooks/workflow.py complete
+```
+
+### Migration von v2
+```bash
+python3 .claude/hooks/migrate_state.py          # Dry run
+python3 .claude/hooks/migrate_state.py --apply   # Tatsaechlich migrieren
 ```
 
 ## TDD mit ECHTEN Artefakten
 
-Der `tdd_enforcement.py` Hook erzwingt echte Test-Artefakte mit **konfigurierbaren Kategorien**.
+`edit_gate.py` prueft RED-Test-Artefakte bevor Code-Edits in phase6+ erlaubt werden.
 
-**Konfiguration in config.yaml:**
-```yaml
-tdd:
-  artifact_categories:
-    # Default: eine Kategorie fuer alle Typen
-    default:
-      min_artifacts: 1
-      types: [test_output, screenshot, log, ...]
-
-    # iOS-Beispiel: Unit UND UI Tests separat erzwingen
-    # unit_tests:
-    #   min_artifacts: 1
-    #   types: [test_output, log, api_response]
-    # ui_tests:
-    #   min_artifacts: 1
-    #   types: [ui_test_output, screenshot, video]
-```
-
-**Akzeptiert:**
-- Screenshots (PNG, JPG) mit echtem Inhalt (>1KB)
-- Test-Output-Logs mit echten Fehlern
-- UI-Test-Output (ui_test_output) — separater Typ fuer UI-Tests
-- API-Responses als JSON/XML-Dateien
-
-**Blockiert:**
-- Platzhalter-Text wie "[Screenshot hier]"
-- Leere Dateien
-- Artefakte ohne Beschreibung
-- Artefakte älter als 24 Stunden
-- Retroaktiv erstellte Artefakte (Timestamp-Validierung)
-
+**Artefakte registrieren (v3):**
 ```bash
-# Artefakt registrieren
-python3 -c "
-import sys; sys.path.insert(0, '.claude/hooks')
-from workflow_state_multi import add_test_artifact, load_state
-state = load_state()
-add_test_artifact(state['active_workflow'], {
-    'type': 'screenshot',
-    'path': 'docs/artifacts/feature-x/test-failed.png',
-    'description': 'Test failed: Login button not found - assertion error',
-    'phase': 'phase5_tdd_red'
-})
-"
+python3 .claude/hooks/workflow.py add-artifact test_output "logs/test.log" "Tests failed: 3 errors" phase5_tdd_red
+python3 .claude/hooks/workflow.py add-artifact screenshot "docs/artifacts/test-failed.png" "UI assertion error" phase5_tdd_red
+python3 .claude/hooks/workflow.py mark-red "3 tests failed"
+python3 .claude/hooks/workflow.py mark-ui-red "UI test assertion error"
 ```
+
+**Akzeptiert:** Screenshots (>1KB), Test-Output-Logs, UI-Test-Output, API-Responses
+**Blockiert:** Kein RED-Artefakt → kein Code-Edit in phase6+
 
 ## Modell-Zuweisungsstrategie
 
@@ -170,46 +167,41 @@ Jeder Agent und jede Phase verwendet gezielt das passende Modell:
 
 Siehe `templates/agent_orchestration.md` fuer das vollstaendige Referenz-Template.
 
-## Adversary System (v2.1)
+## Adversary System (v3)
 
-Das Adversary System verhindert, dass Claude behauptet Tests seien bestanden ohne echten Beweis:
+`post_bash.py` erkennt Test-Framework-Output und setzt automatisch `adversary_verdict` im Workflow State.
+`bash_gate.py` prueft bei `git commit` ob ein VERIFIED-Verdict vorliegt.
 
-1. **adversary_gate.py** (PostToolUse) — Validiert nach Test-Runs:
-   - Datei-Frische (<30 Min)
-   - Mindestgroesse (>500 Bytes)
-   - Magic Bytes (PNG/JPG Header)
-   - Framework-Patterns (pytest/jest/xcodebuild/go/cargo)
-   - Setzt `adversary_verdict: VERIFIED/UNVERIFIED` im Workflow State
+**implementation-validator.md** — Adversary Agent der aktiv versucht die Implementierung zu BRECHEN. Verdict: HOLDS/BROKEN.
 
-2. **adversary_verdict_guard.py** — Blockiert direkte Manipulation des Verdicts
-
-3. **implementation-validator.md** — Adversary Agent der aktiv versucht die Implementierung zu BRECHEN. Verdict: HOLDS/BROKEN.
-
-## Stop Lock (v2.1)
+## Stop Lock
 
 Sofort-Pause fuer Claude:
-- User sagt **"stop"/"stopp"/"halt"** → Alle Edit/Write/Bash blockiert
+- User sagt **"stop"/"stopp"/"halt"** → `phase_listener.py` setzt Stop-Lock
+- Alle Edit/Write/Bash blockiert durch `edit_gate.py` / `bash_gate.py`
 - User sagt **"resume"/"weiter"/"continue"** → Wieder freigegeben
-- `stop_lock_guard.py` MUSS erster Hook in der Kette sein
 - Keywords konfigurierbar via `openspec.yaml` → `stop_lock`
 
-## Override Token (v2.1)
+## Override Token
 
 Einmal-Bypass fuer Gates:
-- User sagt **"override"** → Token wird erstellt
-- Naechster blockierter Gate-Check wird einmalig uebersprungen
-- Token wird nach Verwendung automatisch geloescht
-- Token-Datei ist vor direkter Manipulation geschuetzt
+- User sagt **"override"** → `phase_listener.py` erstellt Token
+- `edit_gate.py` prueft Token und ueberspringt Phase-/TDD-Check
+- Keywords konfigurierbar via `openspec.yaml` → `override_token`
 
-## Hook-Kette (v2.1)
+## Hook-Architektur (v3 — 4 Hooks)
 
-**Edit/Write:** stop_lock → override_token_guard → docs_location → workflow_gate → spec → strict_code → claude_md → tdd → red_test → post_impl → scope → plan → ui_screenshot → domain_pattern → track_changes → [module hooks]
+**PreToolUse Edit|Write:** `edit_gate.py` → [module hooks]
+  Intern: Protected State → Always-Allowed → Code-Check → Infra → Stop-Lock → Workflow → Phase → Override → TDD
 
-**Bash:** stop_lock → override_token_bash → adversary_verdict → pre_commit → secrets → parallel_test → [module hooks]
+**PreToolUse Bash:** `bash_gate.py` → [module hooks]
+  Intern: Stop-Lock → Git Fast-Path → State-Integrity → Secrets → Commit-Gates
 
-**UserPromptSubmit:** stop_lock_listener → workflow_state_updater → override_token_listener → workflow_cleanup
+**PostToolUse Bash:** `post_bash.py` → [module hooks]
+  Intern: Test-Output-Detection → Adversary-Verdict
 
-**PostToolUse Bash:** adversary_gate → [module: on_ui_test_failure, ui_test_debugger_hint]
+**UserPromptSubmit:** `phase_listener.py` → [module hooks]
+  Intern: Override → Stop-Lock → Approval → New-UI → GREEN
 
 ## Konventionen für dieses Repository
 
@@ -224,17 +216,19 @@ Einmal-Bypass fuer Gates:
 
 | Pfad | Zweck |
 |------|-------|
-| `core/hooks/*.py` | Python-Scripts mit Exit-Code 2 zum Blockieren |
+| `core/hooks/*.py` | v3: 4 konsolidierte Hooks + Utilities |
 | `core/agents/*.md` | Agent-Definitionen mit YAML-Frontmatter |
 | `core/commands/*.md` | Slash-Command-Definitionen |
 | `modules/<name>/` | Domain-Module mit eigener config.yaml |
 | `templates/` | Wiederverwendbare Spec-Templates |
 
-### Hook-Entwicklung
+### Hook-Entwicklung (v3)
+
+v3 konsolidiert alle Checks in 4 Hooks. Neue Checks gehoeren IN die bestehenden Hooks, nicht als separate Dateien. Modul-spezifische Hooks werden via `modules/<name>/config.yaml` → `hooks:` registriert.
 
 ```python
-# Neuen Hook schreiben — nutze hook_utils fuer Bootstrap:
-from hook_utils import setup_path, get_tool_input, block, allow
+# Modul-Hook schreiben — nutze hook_utils fuer Bootstrap:
+from hook_utils import setup_path, find_project_root, get_tool_input, block, allow
 setup_path()
 from config_loader import load_config
 
@@ -283,20 +277,19 @@ python3 /path/to/agent-os-openspec/setup.py --version
 
 | Datei | Beschreibung |
 |-------|--------------|
-| `setup.py` | Installations- und Update-Tool (v2.1) |
-| `config.yaml` | Template für Projektkonfiguration |
+| `setup.py` | Installations- und Update-Tool (v3.0) |
+| `config.yaml` | Template fuer Projektkonfiguration |
 | `CHANGELOG.md` | Versionshistorie |
-| `core/hooks/hook_utils.py` | Shared Bootstrap fuer alle Hooks (Imports, Parsing, Exit-Helpers) |
-| `core/hooks/config_loader.py` | Zentraler Config-Loader (find_project_root, load_config) |
-| `core/hooks/workflow_state_multi.py` | Multi-Workflow State Manager |
-| `core/hooks/tdd_enforcement.py` | TDD mit konfigurierbaren Artefakt-Kategorien |
-| `core/hooks/workflow_gate.py` | Phasen-Gate |
-| `core/hooks/spec_enforcement.py` | Spec-First Enforcement |
-| `core/hooks/adversary_gate.py` | Adversary Test-Output Validierung (v2.1) |
-| `core/hooks/stop_lock_guard.py` | Stop-Lock System (v2.1) |
-| `core/hooks/override_token_listener.py` | Override-Token System (v2.1) |
-| `core/hooks/parallel_test_guard.py` | Parallele Test-Konflikterkennung (v2.1) |
-| `core/hooks/workflow_cleanup.py` | Auto-Cleanup (v2.1) |
+| `core/hooks/edit_gate.py` | Konsolidierter Edit/Write Guard (ersetzt 17 Hooks) |
+| `core/hooks/bash_gate.py` | Konsolidierter Bash Guard (ersetzt 15 Hooks) |
+| `core/hooks/post_bash.py` | PostToolUse Bash (Adversary Detection) |
+| `core/hooks/phase_listener.py` | UserPromptSubmit Listener (ersetzt 6 Hooks) |
+| `core/hooks/workflow.py` | Workflow State CLI (isolierte JSON-Files pro Workflow) |
+| `core/hooks/qa_gate.py` | QA-Gate: Test-Output validieren, Verdict setzen |
+| `core/hooks/override_token.py` | Shared Override-Token Management (TTL, Multi-WF) |
+| `core/hooks/migrate_state.py` | v2 → v3 State-Migration |
+| `core/hooks/hook_utils.py` | Shared Bootstrap (Imports, Parsing, Exit-Helpers) |
+| `core/hooks/config_loader.py` | Config-Loader (YAML + Local Overrides) |
 
 ## Slash-Commands Übersicht
 

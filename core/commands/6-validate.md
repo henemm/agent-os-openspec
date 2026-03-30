@@ -9,7 +9,7 @@ You are in **Phase 7 - Validation**.
 
 Check status:
 ```bash
-python3 .claude/hooks/workflow_state_multi.py status
+python3 .claude/hooks/workflow.py status
 ```
 
 ## Your Tasks
@@ -80,7 +80,7 @@ Task (general-purpose/sonnet): "Du bist der docs-updater Agent.
 ### Step 4: Workflow State aktualisieren
 
 ```bash
-python3 .claude/hooks/workflow_state_multi.py phase phase8_complete
+python3 .claude/hooks/workflow.py phase phase8_complete
 ```
 
 ## Validation Report

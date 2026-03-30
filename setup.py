@@ -28,7 +28,7 @@ from datetime import datetime
 import hashlib
 
 
-FRAMEWORK_VERSION = "2.1.0"
+FRAMEWORK_VERSION = "3.0.0"
 FRAMEWORK_ROOT = Path(__file__).parent
 CORE_DIR = FRAMEWORK_ROOT / "core"
 MODULES_DIR = FRAMEWORK_ROOT / "modules"
@@ -68,6 +68,8 @@ def create_directory_structure(project_path: Path):
         ".claude/agents",
         ".claude/commands",
         ".claude/tools",
+        ".claude/workflows",
+        ".claude/workflows/_archive",
         ".claude/artifacts/screenshots",
         ".agent-os/standards/global",
         "docs/specs",
@@ -214,93 +216,26 @@ def install_module(project_path: Path, module_name: str):
 
 
 def generate_settings_json(project_path: Path, modules: list):
-    """Generate .claude/settings.json with hook configuration.
+    """Generate .claude/settings.json with v3 consolidated hook configuration.
 
-    Hook ordering is EXPLICIT to ensure correct execution:
-    - stop_lock_guard MUST be first (blocks everything when locked)
-    - override_token_guard MUST be before gates (allows bypass)
-    - Workflow/TDD gates in the middle
-    - Module hooks (iOS, HA) at the end
+    v3 Architecture: 4 hook entries instead of ~41.
+    Each consolidated hook handles all checks internally with short-circuit logic.
+    Module hooks are appended after core hooks.
     """
     hooks_dir = project_path / ".claude" / "hooks"
 
-    # ===== EXPLICIT HOOK ORDERING =====
-    # Order matters! Hooks are executed in the order listed.
-
-    # Edit/Write hooks (ordered)
-    EDIT_WRITE_HOOK_ORDER = [
-        # 1. FIRST: Stop lock (blocks everything when active)
-        "stop_lock_guard.py",
-        # 2. Override token protection
-        "override_token_guard.py",
-        # 3. Location guards
-        "docs_location_guard.py",
-        # 4. Core workflow hooks
-        "workflow_gate.py",
-        "spec_enforcement.py",
-        "strict_code_gate.py",
-        "claude_md_protection.py",
-        # 5. TDD enforcement
-        "tdd_enforcement.py",
-        "red_test_gate.py",
-        # 6. Quality gates
-        "post_implementation_gate.py",
-        "scope_guard.py",
-        "plan_validator.py",
-        # 7. UI validation
-        "ui_screenshot_gate.py",
-        # 8. Architecture enforcement
-        "domain_pattern_guard.py",
-        # 9. Change tracking (never blocks)
-        "track_changes.py",
-    ]
-
-    # Bash hooks (ordered)
-    BASH_HOOK_ORDER = [
-        # 1. FIRST: Stop lock
-        "stop_lock_guard.py",
-        # 2. Override token protection
-        "override_token_bash_guard.py",
-        # 3. Adversary verdict guard
-        "adversary_verdict_guard.py",
-        # 4. Commit gate
-        "pre_commit_gate.py",
-        # 5. Secrets guard
-        "secrets_guard.py",
-        # 6. Parallel test guard
-        "parallel_test_guard.py",
-    ]
-
-    # Read hooks (ordered)
-    READ_HOOK_ORDER = [
-        "stop_lock_guard.py",
-        "secrets_guard.py",
-    ]
-
-    # UserPromptSubmit hooks (ordered)
-    USER_PROMPT_HOOK_ORDER = [
-        # 1. FIRST: Stop lock listener
-        "stop_lock_listener.py",
-        # 2. Workflow state updater
-        "workflow_state_updater.py",
-        # 3. Override token listener
-        "override_token_listener.py",
-        # 4. Workflow cleanup
-        "workflow_cleanup.py",
-    ]
-
-    # PostToolUse hooks (NEW in v2.1)
-    POST_BASH_HOOK_ORDER = [
-        # Advisory hooks for Bash results
-        "adversary_gate.py",          # Validates test output
-    ]
-
-    # Stop hooks
-    STOP_HOOK_ORDER = [
-        "notify_sound.py",
-    ]
+    # v3 Core hooks — 1 hook per event type
+    CORE_EDIT_WRITE = ["edit_gate.py"]
+    CORE_BASH = ["bash_gate.py"]
+    CORE_POST_BASH = ["post_bash.py"]
+    CORE_USER_PROMPT = ["phase_listener.py"]
 
     # Append module hooks from module configs
+    module_edit = []
+    module_bash = []
+    module_post_bash = []
+    module_user_prompt = []
+
     for module_name in modules:
         module_config_path = MODULES_DIR / module_name / "config.yaml"
         if not module_config_path.exists():
@@ -310,16 +245,15 @@ def generate_settings_json(project_path: Path, modules: list):
             with open(module_config_path, 'r') as f:
                 module_config = yaml.safe_load(f) or {}
             module_hooks = module_config.get("hooks", {})
-            EDIT_WRITE_HOOK_ORDER.extend(module_hooks.get("edit_write", []))
-            BASH_HOOK_ORDER.extend(module_hooks.get("bash", []))
-            POST_BASH_HOOK_ORDER.extend(module_hooks.get("post_bash", []))
-            USER_PROMPT_HOOK_ORDER.extend(module_hooks.get("user_prompt", []))
-            print(f"  Loaded hook ordering from module: {module_name}")
+            module_edit.extend(module_hooks.get("edit_write", []))
+            module_bash.extend(module_hooks.get("bash", []))
+            module_post_bash.extend(module_hooks.get("post_bash", []))
+            module_user_prompt.extend(module_hooks.get("user_prompt", []))
+            print(f"  Loaded module hooks from: {module_name}")
         except Exception as e:
             print(f"  WARNING: Could not load hooks from {module_name}: {e}")
 
     def collect_hooks(order: list) -> list:
-        """Collect hooks that exist in the project, preserving order."""
         result = []
         for hook_name in order:
             hook_path = hooks_dir / hook_name
@@ -327,29 +261,10 @@ def generate_settings_json(project_path: Path, modules: list):
                 result.append(str(hook_path))
         return result
 
-    edit_write_hooks = collect_hooks(EDIT_WRITE_HOOK_ORDER)
-    bash_hooks = collect_hooks(BASH_HOOK_ORDER)
-    read_hooks = collect_hooks(READ_HOOK_ORDER)
-    user_prompt_hooks = collect_hooks(USER_PROMPT_HOOK_ORDER)
-    post_bash_hooks = collect_hooks(POST_BASH_HOOK_ORDER)
-    stop_hooks = collect_hooks(STOP_HOOK_ORDER)
-
-    # Validate critical hook dependencies
-    def validate_hook_order(hooks: list, name: str):
-        """Warn if critical ordering constraints are violated."""
-        hook_names = [Path(h).name for h in hooks]
-        # stop_lock_guard MUST be first if present
-        if "stop_lock_guard.py" in hook_names and hook_names.index("stop_lock_guard.py") != 0:
-            print(f"  WARNING: stop_lock_guard.py is not first in {name}! "
-                  f"It MUST be first to block operations when locked.")
-        # override_token_guard MUST come before workflow_gate
-        if "override_token_guard.py" in hook_names and "workflow_gate.py" in hook_names:
-            if hook_names.index("override_token_guard.py") > hook_names.index("workflow_gate.py"):
-                print(f"  WARNING: override_token_guard.py must come before "
-                      f"workflow_gate.py in {name}!")
-
-    validate_hook_order(edit_write_hooks, "Edit/Write")
-    validate_hook_order(bash_hooks, "Bash")
+    edit_write_hooks = collect_hooks(CORE_EDIT_WRITE + module_edit)
+    bash_hooks = collect_hooks(CORE_BASH + module_bash)
+    post_bash_hooks = collect_hooks(CORE_POST_BASH + module_post_bash)
+    user_prompt_hooks = collect_hooks(CORE_USER_PROMPT + module_user_prompt)
 
     settings = {
         "permissions": {
@@ -360,12 +275,10 @@ def generate_settings_json(project_path: Path, modules: list):
         "hooks": {
             "PreToolUse": [],
             "PostToolUse": [],
-            "Stop": [],
             "UserPromptSubmit": []
         }
     }
 
-    # Add Edit/Write hooks
     if edit_write_hooks:
         settings["hooks"]["PreToolUse"].append({
             "matcher": "Edit|Write",
@@ -375,46 +288,24 @@ def generate_settings_json(project_path: Path, modules: list):
             ]
         })
 
-    # Add Bash hooks
     if bash_hooks:
         settings["hooks"]["PreToolUse"].append({
             "matcher": "Bash",
             "hooks": [
-                {"type": "command", "command": f"python3 {h}", "timeout": 5}
+                {"type": "command", "command": f"python3 {h}", "timeout": 300}
                 for h in bash_hooks
             ]
         })
 
-    # Add Read hooks
-    if read_hooks:
-        settings["hooks"]["PreToolUse"].append({
-            "matcher": "Read",
-            "hooks": [
-                {"type": "command", "command": f"python3 {h}", "timeout": 5}
-                for h in read_hooks
-            ]
-        })
-
-    # Add PostToolUse Bash hooks (v2.1 - advisory)
     if post_bash_hooks:
         settings["hooks"]["PostToolUse"].append({
             "matcher": "Bash",
             "hooks": [
-                {"type": "command", "command": f"python3 {h}", "timeout": 10}
+                {"type": "command", "command": f"python3 {h}", "timeout": 5}
                 for h in post_bash_hooks
             ]
         })
 
-    # Add Stop hooks
-    if stop_hooks:
-        settings["hooks"]["Stop"].append({
-            "hooks": [
-                {"type": "command", "command": f"python3 {h}", "timeout": 5}
-                for h in stop_hooks
-            ]
-        })
-
-    # Add UserPromptSubmit hooks
     if user_prompt_hooks:
         settings["hooks"]["UserPromptSubmit"].append({
             "hooks": [
@@ -519,25 +410,14 @@ tags: []
     print(f"  Created: docs/specs/_template.md")
 
 
-def create_workflow_state(project_path: Path):
-    """Create initial workflow state file."""
-    state = {
-        "current_phase": "idle",
-        "feature_name": None,
-        "spec_file": None,
-        "spec_approved": False,
-        "tasks_created": False,
-        "implementation_done": False,
-        "validation_done": False,
-        "phases_completed": [],
-        "last_updated": datetime.now().isoformat()
-    }
-
-    state_path = project_path / ".claude" / "workflow_state.json"
-    with open(state_path, 'w') as f:
-        json.dump(state, f, indent=2)
-
-    print(f"  Created: .claude/workflow_state.json")
+def create_workflows_dir(project_path: Path):
+    """Create .claude/workflows/ directory for v3 isolated workflow state."""
+    wf_dir = project_path / ".claude" / "workflows"
+    wf_dir.mkdir(parents=True, exist_ok=True)
+    archive_dir = wf_dir / "_archive"
+    archive_dir.mkdir(exist_ok=True)
+    print(f"  Created: .claude/workflows/ (v3 isolated state)")
+    print(f"  Created: .claude/workflows/_archive/")
 
 
 def create_claude_md(project_path: Path):
@@ -819,7 +699,7 @@ Available modules:
     print("\nGenerating configuration...")
     generate_config_yaml(project_path, args.modules)
     create_spec_template(project_path)
-    create_workflow_state(project_path)
+    create_workflows_dir(project_path)
 
     # Save version info
     version_file = project_path / ".claude" / "framework_version.json"
@@ -844,16 +724,27 @@ Available modules:
     print(f"""
 Framework version: {FRAMEWORK_VERSION}
 
-New Workflow (v2.0):
+Workflow v3 (consolidated hooks):
   /context   -> Gather relevant context (Phase 1)
   /analyse   -> Analyse requirements (Phase 2)
   /write-spec -> Create specification (Phase 3)
   "approved" -> User approval (Phase 4)
   /tdd-red   -> Write failing tests (Phase 5)
   /implement -> Make tests pass (Phase 6)
-  /validate  -> Manual testing (Phase 7)
+  /validate  -> Validation (Phase 7)
 
-Parallel workflows supported! Use /workflow to manage.
+Hook architecture: 4 consolidated hooks (edit_gate, bash_gate, post_bash, phase_listener)
+State: Isolated per-workflow JSON in .claude/workflows/
+
+Workflow CLI:
+  python3 .claude/hooks/workflow.py start <name>
+  python3 .claude/hooks/workflow.py switch <name>
+  python3 .claude/hooks/workflow.py status
+  python3 .claude/hooks/workflow.py list
+
+Migration from v2:
+  python3 .claude/hooks/migrate_state.py          # Dry run
+  python3 .claude/hooks/migrate_state.py --apply  # Migrate
 
 Next steps:
 1. Review openspec.yaml and customize for your project

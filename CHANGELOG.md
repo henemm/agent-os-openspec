@@ -5,7 +5,95 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.0.0] - 2026-03-30
+
+### Added — QA Gate (from INFRA_002-P3)
+
+- **qa_gate.py** — CLI tool that validates test output files and sets `adversary_verdict` in active workflow
+  - Checks file freshness (<30 min), minimum size, test framework patterns
+  - Supports `--infra` flag for pure infrastructure tickets
+  - Supports `--screenshot` and `--no-visual` flags
+  - Sets verdict via `workflow.py set-field` (no direct JSON manipulation)
+  - Project-agnostic: generic test patterns, no hardcoded project test targets
+
+### Added — Override Token Module
+
+- **override_token.py** — Shared module for multi-workflow token management
+  - TTL-based expiry (1 hour)
+  - Automatic pruning of expired tokens on create
+  - v1/v2 format backward compatibility
+  - API: `has_valid_token()`, `create_token()`, `remove_token()`, `remove_all_tokens()`
+  - Used by `edit_gate.py`, `bash_gate.py`, `phase_listener.py` instead of inline logic
+
+### Changed — Hooks use override_token module
+
+- **edit_gate.py** — `_has_override_token()` now imports from `override_token.has_valid_token()`
+- **bash_gate.py** — Adversary verdict override check uses `override_token.has_valid_token()`, added `qa_gate.py` to WHITELIST_COMMANDS
+- **phase_listener.py** — `_create_override_token()` uses `override_token.create_token()` with inline fallback
+
+### Changed — Slash Commands migrated to workflow.py
+
+All 9 slash commands updated from `workflow_state_multi.py` to `workflow.py`:
+- Inline Python imports (`from workflow_state_multi import ...`) replaced with CLI calls (`python3 .claude/hooks/workflow.py ...`)
+- `add-artifact` command uses `workflow.py add-artifact` instead of inline `add_test_artifact()`
+- `workflow.md` completely rewritten for v3 state architecture
+- `0-reset.md` uses `workflow.py complete` instead of manual JSON reset
+
+### Changed — implementation-validator.md
+
+- References to `adversary_gate` updated to `qa_gate`
+
+### BREAKING — Hook Consolidation: 30 Hooks → 4
+
+**Problem:** 30+ Python-Hooks (~10.000 LoC), sequentielle Ausfuehrung (bis 85s pro Edit), Over-Blocking, Race Conditions durch geteilten State.
+
+**Loesung:** 4 konsolidierte Hooks (~800 LoC) mit interner Short-Circuit-Logik. Gleiche Qualitaetssicherung, 90% weniger Komplexitaet.
+
+**Neue Hooks:**
+- `edit_gate.py` — PreToolUse Edit|Write (ersetzt 17 Hooks: workflow_gate, strict_code_gate, red_test_gate, spec_enforcement, tdd_enforcement, scope_guard, track_changes, claude_md_protection, docs_location_guard, domain_pattern_guard, plan_validator, post_implementation_gate, ui_screenshot_gate, override_token_guard, stop_lock_guard, ui_test_gate, ui_test_preflight)
+- `bash_gate.py` — PreToolUse Bash (ersetzt 15 Hooks: state_integrity_guard, stop_lock_guard, override_token_bash_guard, adversary_verdict_guard, pre_commit_gate, secrets_guard, parallel_test_guard, build_lock_guard, sim_enforcer, tdd_green_gate, test_lock_guard, no_workaround_guard, validate_completeness_gate, result_inspection_gate, artifact_existence_guard)
+- `post_bash.py` — PostToolUse Bash (ersetzt adversary_gate, build_lock_release)
+- `phase_listener.py` — UserPromptSubmit (ersetzt 6 Hooks: stop_lock_listener, workflow_state_updater, override_token_listener, workflow_cleanup, new_ui_listener, tdd_green_listener)
+
+**Geloescht (28 Hooks):**
+adversary_gate, adversary_verdict_guard, claude_md_protection, docs_location_guard, domain_pattern_guard, notify_sound, override_token_bash_guard, override_token_guard, override_token_listener, parallel_test_guard, plan_validator, post_implementation_gate, pre_commit_gate, red_test_gate, scope_guard, secrets_guard, spec_enforcement, stop_lock_guard, stop_lock_listener, strict_code_gate, tdd_enforcement, track_changes, ui_screenshot_gate, ui_test_gate, workflow_cleanup, workflow_gate, workflow_state_multi, workflow_state_updater
+
+### BREAKING — Isolated Workflow State (v3)
+
+**Problem:** Ein einziges `workflow_state.json` fuer alle Workflows, Session-Tracking via TERM_SESSION_ID + /tmp-Files, `fcntl.flock()` Locks.
+
+**Loesung:** 1 JSON-File pro Workflow in `.claude/workflows/`. Aktiver Workflow per `.active` Symlink. Atomare Writes via `tempfile` + `os.rename()`.
+
+**Neue Dateien:**
+- `workflow.py` — Workflow State CLI (ersetzt workflow_state_multi.py, ~280 LoC statt 1.733 LoC)
+- `migrate_state.py` — Einmaliges Migrations-Script v2 → v3
+
+**Was entfaellt:**
+- `workflow_state.json` (ein File fuer alles)
+- `workflow_state.lock` (fcntl.flock)
+- Session-Tracking (TERM_SESSION_ID, /tmp/claude_session_*)
+- `test_execution_lock.json`, `validation_state.json`, `ui_test_preflight_state.json`, `ui_screenshot_lock.json`, `workflow_last_cleanup.json`
+
+### Changed — setup.py v3
+
+- `generate_settings_json()`: 4 Hook-Eintraege statt ~41
+- `create_workflows_dir()` ersetzt `create_workflow_state()`
+- Verzeichnisstruktur: `.claude/workflows/` und `_archive/` hinzugefuegt
+- Bash-Hook Timeout auf 300s (fuer Build-Lock-Szenarien in Modulen)
+- Stop/Read Hook-Kategorien entfernt (in konsolidierte Hooks integriert)
+- Version: 3.0.0
+
+### Changed — config.yaml v3
+
+- Entfernt: `modules.core.*` (keine einzeln schaltbaren Hook-Module mehr), `docs_location`, `ui_test_gate`, `parallel_test_guard`, `workflow_cleanup`, `scoping`, `claude_md`, `domain_guards`, `validation`, alte `hooks` Sektion
+- Aktualisiert: Workflow-Phasen inkl. `phase6b_adversary`, erweiterte `approval_phrases`
+- Jede config-Sektion dokumentiert welcher Hook sie nutzt
+
+### Changed — hook_utils.py
+
+- `find_project_root()` hinzugefuegt (mit CLAUDE_PROJECT_DIR Support)
+
+## [Unreleased-v2] — Previous v2.x Changes (archived)
 
 ### Added - Hook Dependency Validation in setup.py
 
@@ -411,6 +499,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **PATCH**: Bug fixes, documentation updates
 
 ## Upgrade Notes
+
+### From 2.x to 3.0
+
+**Migration:**
+1. Run `python3 .claude/hooks/migrate_state.py --apply` to split workflow_state.json into per-workflow files
+2. Re-run `python3 /path/to/agent-os-openspec/setup.py /path/to/project --update --force` to get new hooks + settings.json
+3. Delete old hooks that are no longer needed (28 files removed)
+4. Slash-Commands: Replace `workflow_state_multi.py` → `workflow.py` in all commands
+
+**Breaking Changes:**
+- 28 hooks deleted, replaced by 4 consolidated hooks
+- `workflow_state.json` replaced by `.claude/workflows/*.json`
+- `workflow_state_multi.py` replaced by `workflow.py`
+- settings.json format: 4 entries instead of ~41
+- `config.yaml`: Many sections removed/renamed (see CHANGELOG for details)
 
 ### From 1.x to 2.x
 

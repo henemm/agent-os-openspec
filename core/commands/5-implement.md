@@ -14,7 +14,7 @@ Write the **minimal code** to make failing tests pass. No more, no less.
 
 Check status:
 ```bash
-python3 .claude/hooks/workflow_state_multi.py status
+python3 .claude/hooks/workflow.py status
 ```
 
 **If TDD RED artifacts are missing, the `tdd_enforcement` hook will BLOCK your edits!**
@@ -24,17 +24,7 @@ python3 .claude/hooks/workflow_state_multi.py status
 ### Step 1: Verify RED Phase Complete
 
 ```bash
-python3 -c "
-import sys; sys.path.insert(0, '.claude/hooks')
-from workflow_state_multi import get_active_workflow
-
-w = get_active_workflow()
-if w:
-    artifacts = [a for a in w.get('test_artifacts', []) if a.get('phase') == 'phase5_tdd_red']
-    print(f'RED artifacts: {len(artifacts)}')
-    for a in artifacts:
-        print(f'  - {a[\"type\"]}: {a[\"description\"][:50]}...')
-"
+python3 .claude/hooks/workflow.py status
 ```
 
 ### Step 2: Kontext laden (Explore/Haiku)
@@ -86,26 +76,16 @@ Task 2 (general-purpose/haiku): "Pruefe ob Konfigurationsdateien
 # Test output erfassen
 [test_command] > docs/artifacts/[workflow]/test-green-output.txt 2>&1
 
-python3 -c "
-import sys; sys.path.insert(0, '.claude/hooks')
-from workflow_state_multi import add_test_artifact, load_state
-
-state = load_state()
-active = state['active_workflow']
-
-add_test_artifact(active, {
-    'type': 'test_output',
-    'path': 'docs/artifacts/[workflow]/test-green-output.txt',
-    'description': 'All tests PASSED',
-    'phase': 'phase6_implement'
-})
-"
+python3 .claude/hooks/workflow.py add-artifact test_output \
+    "docs/artifacts/[workflow]/test-green-output.txt" \
+    "All tests PASSED" \
+    phase6_implement
 ```
 
 ### Step 6: Update Workflow State
 
 ```bash
-python3 .claude/hooks/workflow_state_multi.py phase phase7_validate
+python3 .claude/hooks/workflow.py phase phase7_validate
 ```
 
 ## Implementation Constraints

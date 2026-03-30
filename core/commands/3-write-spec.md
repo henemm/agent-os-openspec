@@ -9,7 +9,7 @@ You are in **Phase 3 - Specification Writing**.
 
 Check current workflow:
 ```bash
-python3 .claude/hooks/workflow_state_multi.py status
+python3 .claude/hooks/workflow.py status
 ```
 
 ## Your Tasks
@@ -57,18 +57,10 @@ Task (general-purpose/haiku): "Du bist der spec-validator Agent.
 
 ```bash
 # Update spec file path in workflow
-python3 -c "
-import sys; sys.path.insert(0, '.claude/hooks')
-from workflow_state_multi import load_state, save_state
-state = load_state()
-active = state.get('active_workflow')
-if active:
-    state['workflows'][active]['spec_file'] = 'docs/specs/[category]/[entity].md'
-    save_state(state)
-"
+python3 .claude/hooks/workflow.py set-field spec_file "docs/specs/[category]/[entity].md"
 
 # Advance to spec_written phase
-python3 .claude/hooks/workflow_state_multi.py phase phase3_spec
+python3 .claude/hooks/workflow.py phase phase3_spec
 ```
 
 ## Next Step

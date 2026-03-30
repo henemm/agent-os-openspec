@@ -9,7 +9,7 @@ You are in **Phase 2 - Analysis** of the workflow.
 
 Check current workflow:
 ```bash
-python3 .claude/hooks/workflow_state_multi.py status
+python3 .claude/hooks/workflow.py status
 ```
 
 ## Your Tasks
@@ -95,7 +95,7 @@ Fasse die Ergebnisse zusammen und aktualisiere `docs/context/[workflow-name].md`
 ### Step 5: Update Workflow State
 
 ```bash
-python3 .claude/hooks/workflow_state_multi.py phase phase3_spec
+python3 .claude/hooks/workflow.py phase phase3_spec
 ```
 
 ## Next Step

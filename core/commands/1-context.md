@@ -14,12 +14,12 @@ Before analysing, gather ALL relevant context. This prevents:
 ### 1. Start or Resume Workflow
 
 ```bash
-python3 .claude/hooks/workflow_state_multi.py start "[feature-name]"
+python3 .claude/hooks/workflow.py start "[feature-name]"
 ```
 
 Or switch to existing:
 ```bash
-python3 .claude/hooks/workflow_state_multi.py switch "[feature-name]"
+python3 .claude/hooks/workflow.py switch "[feature-name]"
 ```
 
 ### 2. Gather Context
@@ -74,7 +74,7 @@ Create `docs/context/[workflow-name].md`:
 ### 4. Update Workflow State
 
 ```bash
-python3 .claude/hooks/workflow_state_multi.py phase phase2_analyse
+python3 .claude/hooks/workflow.py phase phase2_analyse
 ```
 
 ## Next Step

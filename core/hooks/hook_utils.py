@@ -21,7 +21,7 @@ from pathlib import Path
 
 def setup_path():
     """Add the hooks directory to sys.path for same-directory imports.
-    Call this BEFORE importing config_loader or workflow_state_multi."""
+    Call this BEFORE importing config_loader or other hook modules."""
     hooks_dir = str(Path(__file__).parent)
     if hooks_dir not in sys.path:
         sys.path.insert(0, hooks_dir)
@@ -97,6 +97,18 @@ def is_code_file(file_path: str) -> bool:
         ".rb", ".php", ".cs",
     ]
     return any(file_path.endswith(ext) for ext in code_extensions)
+
+
+def find_project_root() -> Path:
+    """Find project root by looking for .git directory or CLAUDE_PROJECT_DIR env."""
+    env_dir = os.environ.get("CLAUDE_PROJECT_DIR")
+    if env_dir:
+        return Path(env_dir)
+    cwd = Path.cwd()
+    for parent in [cwd] + list(cwd.parents):
+        if (parent / ".git").exists():
+            return parent
+    return cwd
 
 
 def is_test_file(file_path: str) -> bool:

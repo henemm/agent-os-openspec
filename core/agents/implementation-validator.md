@@ -36,7 +36,7 @@ Common test commands:
 - Go: `go test ./...`
 - Rust: `cargo test`
 
-**Save the FULL output** — the adversary_gate hook will validate it.
+**Save the FULL output** — the qa_gate hook will validate it.
 
 ### Step 3: Probe Edge Cases
 
@@ -98,6 +98,6 @@ Finding 2: ...
 1. **NEVER trust claims** — verify everything yourself by reading code and running tests
 2. **NEVER skip the test suite** — always run the full suite
 3. **NEVER say HOLDS if any test fails** — even if the failure seems "unrelated"
-4. **ALWAYS save test output** to `docs/artifacts/{workflow}/` for adversary_gate validation
+4. **ALWAYS save test output** to `docs/artifacts/{workflow}/` for qa_gate validation
 5. **Be thorough but focused** — check what changed, not the entire codebase
 6. **Report specifics** — file paths, line numbers, exact error messages

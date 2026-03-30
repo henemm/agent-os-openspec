@@ -1,18 +1,18 @@
-# OpenSpec Framework Configuration
-# ================================
-# Central configuration for the 4-phase workflow enforcement system.
+# OpenSpec Framework Configuration v3.0
+# ======================================
+# Central configuration for the 8-phase workflow enforcement system.
+# v3: Consolidated hooks, isolated workflow state.
 #
-# Copy this file to your project root and customize.
+# Copy this file to your project root as openspec.yaml and customize.
 
 # Project Information
 project:
   name: "My Project"
   base_path: "/path/to/project"  # Will be auto-detected if not set
 
-# Workflow Configuration (v2.0)
+# Workflow Configuration (v3)
 workflow:
-  # Phase names and order
-  # 8 phases with clear numbering for parallel workflow support
+  # 10 phases including phase6b_adversary
   phases:
     - phase0_idle
     - phase1_context
@@ -21,137 +21,77 @@ workflow:
     - phase4_approved
     - phase5_tdd_red
     - phase6_implement
+    - phase6b_adversary
     - phase7_validate
     - phase8_complete
 
-  # Phases that allow code modification
+  # Phases that allow code modification (used by edit_gate.py)
   code_modify_phases:
     - phase6_implement
+    - phase6b_adversary
     - phase7_validate
     - phase8_complete
 
-  # Phases that require TDD artifacts
-  tdd_required_phases:
-    - phase6_implement
-    - phase7_validate
-
-  # Phrases that trigger spec approval (case-insensitive)
+  # Phrases that trigger spec approval (case-insensitive, word-boundary matched)
   approval_phrases:
     - "approved"
     - "freigabe"
     - "spec ok"
     - "lgtm"
     - "looks good"
+    - "genehmigt"
+    - "abgenommen"
+    - "passt"
+    - "sieht gut aus"
 
-# TDD Enforcement
-tdd:
-  max_artifact_age_hours: 24
+# Edit Gate — Controls which code files can be edited and when
+# Used by edit_gate.py (consolidated PreToolUse Edit|Write hook)
+strict_code_gate:
+  code_extensions:
+    - ".swift"
+    - ".kt"
+    - ".java"
+    - ".py"
+    - ".js"
+    - ".ts"
+    - ".tsx"
+    - ".jsx"
+    - ".go"
+    - ".rs"
+    - ".cpp"
+    - ".c"
+    - ".h"
+    - ".hpp"
+    - ".rb"
+    - ".php"
+    - ".cs"
+  always_allowed_dirs:
+    - "Tests/"
+    - "UITests/"
+    - "Test/"
+    - "test/"
+    - "tests/"
+    - "__tests__/"
+    - "spec/"
+    - "docs/"
+    - ".claude/commands/"
+    - "scripts/"
+    - "tools/"
+  always_allowed_patterns:
+    - "\\.md$"
+    - "\\.txt$"
+    - "\\.json$"
+    - "\\.yaml$"
+    - "\\.yml$"
+    - "\\.toml$"
+    - "\\.gitignore$"
+    - "README"
+    - "CHANGELOG"
+    - "LICENSE"
 
-  # Artifact categories — configurable per project.
-  # Each category requires a minimum number of matching artifacts.
-  # Default: single "default" category accepting all types.
-  #
-  # Example for iOS projects requiring both unit AND UI tests:
-  #   artifact_categories:
-  #     unit_tests:
-  #       min_artifacts: 1
-  #       types: [test_output, log, api_response]
-  #     ui_tests:
-  #       min_artifacts: 1
-  #       types: [ui_test_output, screenshot, video]
-  #
-  artifact_categories:
-    default:
-      min_artifacts: 1
-      types:
-        - screenshot
-        - email
-        - api_response
-        - log
-        - file
-        - test_output
-        - ui_test_output
-        - video
-        - audio
-
-  # Minimum file sizes (bytes) to prove non-empty
-  min_sizes:
-    screenshot: 1000
-    email: 100
-    api_response: 10
-    log: 10
-    test_output: 10
-    video: 10000
-    audio: 1000
-
-# File Protection Rules
-# Files matching these patterns REQUIRE the full workflow
-protected_paths:
-  # Pattern -> Spec category mapping
-  - pattern: "src/.*\\.py$"
-    spec_type: "modules"
-  - pattern: "src/.*\\.ts$"
-    spec_type: "modules"
-  - pattern: "src/.*\\.js$"
-    spec_type: "modules"
-  - pattern: "src/.*\\.swift$"
-    spec_type: "modules"
-  - pattern: "lib/.*\\.py$"
-    spec_type: "modules"
-  - pattern: "app/.*\\.py$"
-    spec_type: "modules"
-  - pattern: "tests/.*\\.py$"
-    spec_type: "tests"
-  - pattern: "tests/.*\\.ts$"
-    spec_type: "tests"
-  - pattern: "spec/.*\\.ts$"
-    spec_type: "tests"
-  # E2E validators - MUST NOT be changed to "pass" broken code!
-  - pattern: "core/tools/output_validator\\.py$"
-    spec_type: "e2e_validators"
-  - pattern: "core/tools/e2e_test_harness\\.py$"
-    spec_type: "e2e_validators"
-
-# Files that are ALWAYS allowed without workflow
-always_allowed:
-  - "\\.claude/workflow_state"  # State files need frequent updates
-  - "\\.claude/validation_state"
-  - "\\.claude/session_"
-  - "docs/"
-  - "\\.md$"
-  - "\\.gitignore"
-  - "README"
-
-# Specs Configuration
-specs:
-  base_path: "docs/specs"  # Relative to project root
-  template_file: "docs/specs/_template.md"
-
-  # Categories and their entity extraction patterns
-  categories:
-    modules:
-      pattern: "^class\\s+(\\w+)"  # Extract class names
-      path: "modules"
-    functions:
-      pattern: "^def\\s+(\\w+)"    # Extract function names
-      path: "functions"
-    tests:
-      pattern: "^def\\s+test_(\\w+)"
-      path: "tests"
-
-# CLAUDE.md Protection
-claude_md:
-  max_lines: 600
-  forbidden_patterns:
-    - pattern: "### \\[\\d{4}-\\d{2}-\\d{2}.*\\] Attempt #\\d+"
-      message: "Solution Attempts belong in docs/project/solution_attempts.md"
-    - pattern: "```(?:yaml|python|bash)\\n(?:.*\\n){20,}```"
-      message: "Long code examples belong in docs/reference/"
-
-# Secrets Guard - Prevents accidental exposure of sensitive files
+# Secrets Guard — Prevents accidental exposure of sensitive files
+# Used by bash_gate.py
 secrets_guard:
-  enabled: true
-  staging_mode: false  # Enable via: touch .claude/staging
   sensitive_patterns:
     - "\\.env"
     - "credentials\\.json"
@@ -168,120 +108,96 @@ secrets_guard:
     - "\\.pem$"
     - "\\.key$"
 
-# Scoping Limits - Keep changes small and focused
-scoping:
-  enabled: true
-  max_files: 5        # Maximum files per change
-  max_lines: 250      # Maximum lines changed
-  warn_only: true     # Warn but don't block (set false to enforce)
+# Pre-commit Gate — Checks before git commit is allowed
+# Used by bash_gate.py
+pre_commit:
+  required_staged_files: []  # Files that MUST be staged (e.g., ["docs/ACTIVE-todos.md"])
 
-# Strict Code Gate - Blocks code changes without workflow
-strict_code_gate:
-  enabled: true       # Set false to disable strict enforcement
-  code_extensions:
-    - ".swift"
-    - ".kt"
-    - ".java"
-    - ".py"
-    - ".js"
-    - ".ts"
-    - ".tsx"
-    - ".jsx"
-    - ".go"
-    - ".rs"
-    - ".cpp"
-    - ".c"
-    - ".h"
-    - ".rb"
-    - ".php"
-  always_allowed_dirs:
-    - "Tests/"
-    - "UITests/"
-    - "test/"
-    - "tests/"
-    - "__tests__/"
-    - "spec/"
-    - "docs/"
-    - ".claude/"
-    - "scripts/"
-    - "tools/"
-    - "openspec/"
-  always_allowed_patterns:
-    - "\\.md$"
-    - "\\.txt$"
-    - "\\.json$"
-    - "\\.yaml$"
-    - "\\.yml$"
-    - "\\.toml$"
-    - "\\.gitignore$"
-    - "README"
-    - "CHANGELOG"
-    - "LICENSE"
+# Stop Lock — Pause all operations on user command
+# Used by edit_gate.py, bash_gate.py, phase_listener.py
+stop_lock:
+  stop_keywords:
+    - "stop"
+    - "stopp"
+    - "halt"
+  resume_keywords:
+    - "resume"
+    - "weiter"
+    - "continue"
+    - "weitermachen"
 
-# Documentation Location Guard - Prevents wrong directory structure
-docs_location:
-  enabled: true
-  blocked_paths:
-    - blocked: "src/docs/"
-      correct: "docs/"
-      description: "Documentation"
-    - blocked: "src/.claude/"
-      correct: ".claude/"
-      description: "Claude Configuration"
-    - blocked: "src/openspec/"
-      correct: "openspec/"
-      description: "OpenSpec Files"
+# Override Token — One-time gate bypass
+# Used by edit_gate.py, phase_listener.py
+override_token:
+  keywords:
+    - "override"
+    - "ueberschreiben"
+    - "ich genehmige"
 
-# UI Test Gate - Requires UI tests for validation phase
-ui_test_gate:
-  enabled: false      # Enable if UI tests are mandatory
-  require_ui_tests: true
-  min_ui_artifacts: 1
+# TDD Enforcement
+tdd:
+  max_artifact_age_hours: 24
+  artifact_categories:
+    default:
+      min_artifacts: 1
+      types:
+        - screenshot
+        - email
+        - api_response
+        - log
+        - file
+        - test_output
+        - ui_test_output
+        - video
+        - audio
+  min_sizes:
+    screenshot: 1000
+    email: 100
+    api_response: 10
+    log: 10
+    test_output: 10
+    video: 10000
+    audio: 1000
 
-# Active Modules
-# Enable/disable optional functionality
-modules:
-  # Core modules (always active)
-  core:
-    workflow_gate: true
-    workflow_state_multi: true  # Multi-workflow support (v2.0)
-    tdd_enforcement: true       # TDD with real artifacts (v2.0)
-    spec_enforcement: true
-    claude_md_protection: true
-    secrets_guard: true         # Prevent secret exposure (v2.0)
-    notification: true
+# Adversary Gate — Validate real test output
+# Used by post_bash.py
+adversary_gate:
+  test_patterns:
+    - framework: "pytest"
+      pass_pattern: "passed"
+      fail_pattern: "FAILED|ERROR"
+    - framework: "jest"
+      pass_pattern: "Tests:.*passed"
+      fail_pattern: "Tests:.*failed"
+    - framework: "xcodebuild"
+      pass_pattern: "\\*\\* TEST SUCCEEDED \\*\\*"
+      fail_pattern: "\\*\\* TEST FAILED \\*\\*"
+    - framework: "go_test"
+      pass_pattern: "^ok\\s+"
+      fail_pattern: "^FAIL\\s+"
+    - framework: "cargo_test"
+      pass_pattern: "test result: ok"
+      fail_pattern: "test result: FAILED"
 
-  # Optional generic modules
-  generic:
-    bug_fix_blocker: false     # Require test before bug fix
-    test_before_commit: false  # Require all spec tests pass
-    scope_drift_guard: false   # Prevent off-topic edits
-
-  # Domain-specific modules
-  ios_swiftui:
-    enabled: false
-    analysis_first: true       # Enforce analysis before fixes
-    tdd_workflow: true         # RED-GREEN-REFACTOR cycle
-    localization: true         # DE/EN localization support
-    scoping_limits: true       # Max 4-5 files, +/-250 LoC
-
-  home_assistant:
-    enabled: false
-    config_validation: true    # check_config before restart
-    dashboard_screenshots: true # Screenshot QA for Lovelace
-    automation_testing: true   # Test automations with mock states
+# Specs Configuration
+specs:
+  base_path: "docs/specs"
+  template_file: "docs/specs/_template.md"
+  categories:
+    modules:
+      pattern: "^class\\s+(\\w+)"
+      path: "modules"
+    functions:
+      pattern: "^def\\s+(\\w+)"
+      path: "functions"
+    tests:
+      pattern: "^def\\s+test_(\\w+)"
+      path: "tests"
 
 # Agent Configuration
 # Model Strategy: Haiku (mechanical) / Sonnet (creative) / Opus (core, main context)
 agents:
-  # Default model for agents not explicitly configured
   default_model: "sonnet"
-
-  # Agent-specific model assignments
-  # Haiku: Fast + cheap for mechanical tasks (validation, context loading, scope reviews)
-  # Sonnet: Quality + cost balance for creative/analytical work (specs, tests, planning)
-  # Opus: Highest quality only for core implementation (main context, not delegated)
-
   spec_writer:
     model: "sonnet"
     enabled: true
@@ -304,124 +220,15 @@ agents:
     model: "sonnet"
     enabled: true
   user_story_planner:
-    model: "opus"  # Runs in main context for highest quality
+    model: "opus"
     enabled: true
   implementation_validator:
-    model: "sonnet"  # Investigative edge-case probing, not mechanical
+    model: "sonnet"
     enabled: true
 
-# Domain Pattern Guards
-# Enforce Single Source of Truth architectural patterns
-domain_guards:
-  # Example: Weather service pattern guard
-  # weather_service:
-  #   description: "Weather calculations must use WeatherMetricsService"
-  #   source_of_truth: "src/services/weather_metrics.py"
-  #   allowed_files:
-  #     - "weather_metrics.py"
-  #     - "test_weather_*.py"
-  #   violations:
-  #     - pattern: "cloud_pct\\s*[<>=]"
-  #       message: "Direct cloud percentage comparison"
-  #       fix: "Use WeatherMetricsService.calculate_sunny_hours()"
-
-# Pre-commit Gate Configuration
-pre_commit:
-  enabled: true
-  test_command: ["pytest", "--tb=line", "-q"]
-  timeout: 120
-  allow_amend: true
-  ui_patterns:
-    - "web/pages/"
-    - "templates/"
-    - "components/"
-    - ".vue"
-    - ".tsx"
-    - ".jsx"
-    - ".svelte"
-  screenshot_reminder: true
-  required_staged_files: []  # Files that MUST be staged for commit (e.g., ["DOCS/current-todos.md"])
-
-# Validation Tool Configuration
-validation:
-  checks:
-    - syntax
-    - imports
-    # - server_startup  # optional
-  source_dir: "src"
-  import_command: "python3 -c"  # or "uv run python -c"
-
-# Stop Lock - Pause all operations on user command
-stop_lock:
-  enabled: true
-  stop_keywords:
-    - "stop"
-    - "stopp"
-    - "halt"
-  resume_keywords:
-    - "resume"
-    - "weiter"
-    - "continue"
-    - "weitermachen"
-
-# Override Token - One-time gate bypass
-override_token:
-  enabled: true
-  keywords:
-    - "override"
-    - "ueberschreiben"
-
-# Parallel Test Guard - Prevent test interference between workflows
-parallel_test_guard:
-  enabled: true
-  stale_threshold_hours: 48
-  test_command_patterns:
-    - "pytest"
-    - "jest"
-    - "xcodebuild.*test"
-    - "go\\s+test"
-    - "cargo\\s+test"
-    - "npm\\s+test"
-    - "yarn\\s+test"
-    - "vitest"
-    - "mocha"
-
-# Workflow Cleanup - Auto-remove stale/completed workflows
-workflow_cleanup:
-  enabled: true
-  stale_days: 7
-  interval_hours: 1
-
-# Adversary Gate - Validate real test output
-adversary_gate:
-  enabled: true
-  max_age_minutes: 30
-  min_size_bytes: 500
-  test_patterns:
-    - framework: "pytest"
-      pass_pattern: "passed"
-      fail_pattern: "FAILED|ERROR"
-    - framework: "jest"
-      pass_pattern: "Tests:.*passed"
-      fail_pattern: "Tests:.*failed"
-    - framework: "xcodebuild"
-      pass_pattern: "\\*\\* TEST SUCCEEDED \\*\\*"
-      fail_pattern: "\\*\\* TEST FAILED \\*\\*"
-    - framework: "go_test"
-      pass_pattern: "^ok\\s+"
-      fail_pattern: "^FAIL\\s+"
-    - framework: "cargo_test"
-      pass_pattern: "test result: ok"
-      fail_pattern: "test result: FAILED"
-    - framework: "npm_test"
-      pass_pattern: "passing"
-      fail_pattern: "failing"
-
-# Hooks Configuration
-hooks:
-  # Timeout in seconds for hook execution
-  timeout: 5
-
-  # Hook execution order is defined in setup.py generate_settings_json().
-  # Do NOT configure order here — it has no effect.
-  # To change hook order, modify the *_HOOK_ORDER lists in setup.py.
+# Domain-specific modules (installed via setup.py --module)
+modules:
+  ios_swiftui:
+    enabled: false
+  home_assistant:
+    enabled: false
