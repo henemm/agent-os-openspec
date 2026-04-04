@@ -167,12 +167,37 @@ Jeder Agent und jede Phase verwendet gezielt das passende Modell:
 
 Siehe `templates/agent_orchestration.md` fuer das vollstaendige Referenz-Template.
 
-## Adversary System (v3)
+## Adversary System (v3.1 — 2-Rollen-Modell)
 
-`post_bash.py` erkennt Test-Framework-Output und setzt automatisch `adversary_verdict` im Workflow State.
-`bash_gate.py` prueft bei `git commit` ob ein VERIFIED-Verdict vorliegt.
+Das Adversary System implementiert ein **QA-Tester / Fixer Cycle** mit strukturiertem Dialog:
 
-**implementation-validator.md** — Adversary Agent der aktiv versucht die Implementierung zu BRECHEN. Verdict: HOLDS/BROKEN.
+### Rollen
+- **Fixer** (Hauptkontext/Opus): Implementiert Code, liefert Beweise
+- **QA-Tester** (`implementation-validator` Agent/Sonnet): Versucht aktiv die Implementierung zu brechen
+
+### Ablauf
+```
+phase6_implement → User-Freigabe ("go") → phase6b_adversary → Dialog → Verdict
+                                                                         ↓
+                                                              VERIFIED → phase7
+                                                              BROKEN → zurueck zu phase6
+                                                              AMBIGUOUS → User-Review
+```
+
+### Adversary Dialog (`adversary_dialog.py`)
+- Parst Spec `## Expected Behavior` → Checkliste
+- Mindestens 2 Dialog-Runden (Early-Agreement-Skepticism)
+- Strukturierte Findings mit Severity (CRITICAL/HIGH/MEDIUM/LOW) und Category
+- Tri-State Verdict: **VERIFIED** / **BROKEN** / **AMBIGUOUS**
+- Circuit Breaker: Max 3 Iterationen, dann Eskalation an User
+
+### Hooks
+- `post_bash.py` erkennt Test-Framework-Output und setzt automatisch `adversary_verdict`
+- `bash_gate.py` prueft bei `git commit` ob ein VERIFIED-Verdict vorliegt
+- `qa_gate.py` validiert Test-Output + optional Adversary-Dialog-Checklist (`--checklist`)
+
+### Fresh Eyes Inspector
+`fresh-eyes-inspector.md` — Unabhaengiger UI-Beobachter der Screenshots OHNE Bug-Kontext bewertet. Ergaenzt den Adversary-Dialog um eine neutrale Perspektive.
 
 ## Stop Lock
 
@@ -290,6 +315,8 @@ python3 /path/to/agent-os-openspec/setup.py --version
 | `core/hooks/migrate_state.py` | v2 → v3 State-Migration |
 | `core/hooks/hook_utils.py` | Shared Bootstrap (Imports, Parsing, Exit-Helpers) |
 | `core/hooks/config_loader.py` | Config-Loader (YAML + Local Overrides) |
+| `core/hooks/adversary_dialog.py` | Adversary Dialog System (Spec-Checkliste, Tri-State Verdict) |
+| `core/agents/fresh-eyes-inspector.md` | Unabhaengiger UI-Beobachter ohne Bug-Kontext |
 
 ## Slash-Commands Übersicht
 

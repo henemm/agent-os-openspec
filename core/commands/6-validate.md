@@ -6,11 +6,23 @@ You are in **Phase 7 - Validation**.
 
 - Implementation complete (`phase6_implement`)
 - All tests passing (GREEN artifacts registered)
+- **Adversary Dialog verified** (`phase6b_adversary` passed, `adversary_verdict` set)
 
 Check status:
 ```bash
 python3 .claude/hooks/workflow.py status
 ```
+
+### Adversary Dialog Prerequisite
+
+**Du MUSST pruefen, dass der Adversary Dialog valid ist, bevor du fortfaehrst:**
+
+```bash
+python3 .claude/hooks/adversary_dialog.py validate docs/artifacts/<workflow-name>/adversary-dialog.md
+```
+
+Wenn die Validierung fehlschlaegt: Zurueck zu `/implement` Step 8 (Adversary Dialog wiederholen).
+Akzeptierte Verdicts: **VERIFIED** oder **AMBIGUOUS** (mit User-OK).
 
 ## Your Tasks
 

@@ -5,6 +5,56 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added — Adversary Dialog System (from my-daily-sprints)
+
+- **adversary_dialog.py** — Structured QA-Tester / Fixer verification dialog
+  - Parses spec `## Expected Behavior` into checklist of provable points
+  - Renders dialog protocol as Markdown artifact with checklist, rounds, findings, verdict
+  - Validates artifacts: freshness (<60 min), all points checked, min 2 rounds
+  - CLI: `parse <spec>`, `validate <artifact>`, `schema`
+
+- **Tri-State Verdict:** VERIFIED / BROKEN / AMBIGUOUS
+  - AMBIGUOUS does not block pipeline but flags for user review
+  - Replaces binary HOLDS/BROKEN model
+
+- **Circuit Breaker:** Max 3 QA-Fixer loop iterations, then escalation to user
+
+- **Structured Findings Schema:**
+  - Each finding: ID, severity (CRITICAL/HIGH/MEDIUM/LOW), category, evidence, remediation
+  - Categories: spec_violation, edge_case, regression, security, anti_pattern
+
+- **fresh-eyes-inspector.md** — Independent UI observer agent
+  - Reviews screenshots without bug context
+  - Neutral observations, no assumptions about implementation
+
+### Changed — 5-implement.md (2-Role QA-Fixer Cycle)
+
+- Added Step 6: Mandatory user approval of GREEN results before proceeding
+- Added Step 7: Transition to phase6b_adversary
+- Added Step 8: Full adversary dialog protocol (parse spec, run dialog, save artifact, QA gate)
+- Loop back to implementation if BROKEN, escalate after 3 iterations
+
+### Changed — 6-validate.md (Adversary Prerequisite)
+
+- Added mandatory adversary dialog validation before validation phase
+- Must pass `adversary_dialog.py validate` check
+
+### Changed — qa_gate.py v3.1
+
+- Added `--checklist` flag: validates adversary dialog artifact via `adversary_dialog.validate_dialog_artifact()`
+- Tri-state support: AMBIGUOUS verdict sets exit 0 but flags for review
+- Updated docstring with new usage patterns
+
+### Changed — implementation-validator.md (Enhanced Protocol)
+
+- Context isolation principle documented
+- Structured findings format with severity and category
+- Tri-state verdict (HOLDS/BROKEN/AMBIGUOUS) with usage guide
+- Early-agreement skepticism: must not converge in round 1
+- Minimum 2 dialog rounds enforced
+
 ## [3.0.0] - 2026-03-30
 
 ### Added — QA Gate (from INFRA_002-P3)

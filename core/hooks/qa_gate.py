@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
 """
-QA Gate v3 — Validates test output and sets adversary_verdict.
+QA Gate v3.1 — Validates test output and sets adversary_verdict.
 
 Project-agnostic version. Validates test output files for freshness,
 content patterns, and test results. Sets verdict via workflow.py CLI.
 
+Supports adversary dialog checklist validation via --checklist flag.
+Tri-state verdicts: VERIFIED / BROKEN (exit 1) / AMBIGUOUS (exit 0, flagged).
+
 Usage:
     python3 qa_gate.py <test-output-file>
     python3 qa_gate.py <test-output-file> --screenshot <path>
+    python3 qa_gate.py <test-output-file> --checklist <artifact-path>
     python3 qa_gate.py <test-output-file> --no-visual "reason"
     python3 qa_gate.py <test-output-file> --infra --no-visual "reason"
     python3 qa_gate.py --check
 
-Exit Codes: 0 = VERIFIED, 1 = FAILED
+Exit Codes: 0 = VERIFIED or AMBIGUOUS, 1 = BROKEN/FAILED
 """
 
 from hook_utils import setup_path, find_project_root
@@ -113,6 +117,12 @@ def main():
     no_visual = "--no-visual" in args
     screenshot = None
 
+    checklist = None
+    if "--checklist" in args:
+        idx = args.index("--checklist")
+        if idx + 1 < len(args):
+            checklist = args[idx + 1]
+
     if "--screenshot" in args:
         idx = args.index("--screenshot")
         if idx + 1 < len(args):
@@ -154,12 +164,35 @@ def main():
             print(f"\nFAILED — Screenshot too small ({ss_path.stat().st_size} bytes)")
             sys.exit(1)
 
-    verdict = f"VERIFIED:{message}"
+    # Validate adversary dialog checklist if provided
+    is_ambiguous = False
+    if checklist:
+        try:
+            from adversary_dialog import validate_dialog_artifact
+            cl_valid, cl_message = validate_dialog_artifact(checklist)
+            if not cl_valid:
+                print(f"\nCHECKLIST FAILED — {cl_message}")
+                _set_verdict(f"BROKEN:{cl_message}")
+                sys.exit(1)
+            print(f"Checklist: {cl_message}")
+            if "AMBIGUOUS" in cl_message:
+                is_ambiguous = True
+        except ImportError:
+            print("Warning: adversary_dialog module not found, skipping checklist validation")
+
+    if is_ambiguous:
+        verdict = f"AMBIGUOUS:{message} — User review recommended"
+    else:
+        verdict = f"VERIFIED:{message}"
+
     _set_verdict(verdict)
 
     print(f"\n{verdict}")
     print(f"Workflow: {wf_name}")
-    print("Commit is now allowed.")
+    if is_ambiguous:
+        print("Pipeline NOT blocked — but user should review ambiguous findings.")
+    else:
+        print("Commit is now allowed.")
     sys.exit(0)
 
 
