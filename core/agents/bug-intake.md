@@ -33,7 +33,18 @@ Aus dem User-Input extrahieren:
 - Kontext (welche View, welches Feature, welcher Trigger)
 - Reproduzierbarkeit
 
-### Step 2: Parallele Investigation (3x Explore/Haiku)
+### Step 2: GitHub Issues auf Duplikate pruefen
+
+**Immer vor der Investigation:**
+```bash
+# Nach aehnlichen offenen Bug-Issues suchen
+gh issue list --label "bug" --state open
+gh issue list --search "[Symptom-Keyword]" --state open
+```
+
+Falls Duplikat gefunden: Issue-Nummer notieren, kein neues Issue erstellen.
+
+### Step 3: Parallele Investigation (3x Explore/Haiku)
 
 Dispatche **3 parallele Subagenten** fuer schnelle Kontextsammlung:
 
@@ -48,7 +59,7 @@ Task 3 (Explore/haiku): "Suche nach kuerzlichen Aenderungen an [betroffene Datei
   Git log der letzten 10 Commits fuer diese Dateien."
 ```
 
-### Step 3: Synthese
+### Step 4: Synthese
 
 Aus den 3 Investigation-Ergebnissen:
 1. **Betroffene Dateien** identifizieren
@@ -56,7 +67,7 @@ Aus den 3 Investigation-Ergebnissen:
 3. **Potenzielle Root Causes** auflisten
 4. **Wahrscheinlichste Ursache** benennen
 
-### Step 4: Report erstellen
+### Step 5: Report erstellen
 
 ## Output Format
 
@@ -87,10 +98,34 @@ Aus den 3 Investigation-Ergebnissen:
 [Klein / Mittel / Gross] - [Begruendung]
 ```
 
+## Step 6: GitHub Issue erstellen (falls kein Duplikat)
+
+```bash
+gh issue create \
+  --title "bug: [Kurze Beschreibung]" \
+  --body "## Symptom
+[Exakte Beschreibung]
+
+## Betroffene Dateien
+[Liste der Dateien mit Relevanz]
+
+## Wahrscheinlichste Root Cause
+[Begruendung mit Code-Referenz]
+
+## Empfohlener naechster Schritt
+[Analyse vertiefen / Direkt fixen / Mehr Info noetig]
+
+## Geschaetzter Aufwand
+[Klein / Mittel / Gross]" \
+  --label "bug"
+```
+
+Issue-Nummer in der Handoff-Nachricht erwaehnen.
+
 ## Handoff
 
 Nach Intake:
-> "Bug aufgenommen: [Zusammenfassung]. Empfehlung: [naechster Schritt]. Starte `/analyse` fuer die vollstaendige Analyse."
+> "Bug aufgenommen als Issue #<N>: [Zusammenfassung]. Empfehlung: [naechster Schritt]. Starte `/20-analyse` fuer die vollstaendige Analyse."
 
 ## Wichtige Regeln
 

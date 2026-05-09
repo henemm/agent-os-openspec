@@ -6,9 +6,9 @@ Reset the workflow state to start fresh.
 
 | Situation | Action |
 |-----------|--------|
-| Workflow completed successfully | `/reset` |
-| Need to abort current workflow | `/reset` |
-| Starting a completely new task | `/reset` |
+| Workflow completed successfully | `/99-reset` |
+| Need to abort current workflow | `/99-reset` |
+| Starting a completely new task | `/99-reset` |
 
 ## What Happens
 
@@ -29,8 +29,8 @@ python3 .claude/hooks/workflow.py start "new-feature"
 After reset, start a new workflow:
 
 ```
-/context               → Gather context first
-/analyse [feature/bug] → Start analysis
+/10-context               → Gather context first
+/20-analyse [feature/bug] → Start analysis
 ```
 
 ---

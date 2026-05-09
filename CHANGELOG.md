@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Orchestrator-Prinzip (v3.1)
+
+- **`developer-agent.md`** — Neue Agent-Definition: schreibt Code, führt Tests aus, reportet an Orchestrator; arbeitet nie mit User, plant nie, rate nie
+- **`5-implement.md`** — Step 3 komplett überarbeitet: Hauptkontext ist jetzt Orchestrator, spawnt Developer Agent statt selbst zu coden; Step 4 (Side Tasks) in Developer Agent integriert; Adversary-Dialog-Abschnitt: Orchestrator koordiniert, Developer liefert Beweise auf Anfrage
+- **`CLAUDE.md`** — Orchestrator-Prinzip als explizite Tabelle (Orchestrator / Developer / Adversary — Rollen, Werkzeuge, Aufgaben); Version 3.0.0 → 3.1.0
+
+**Kernregel:** Der Hauptkontext darf `Edit`/`Write` nie auf Code-Dateien anwenden. Nur `developer-agent` besitzt diese Rolle. Verstoss ist in Common Mistakes dokumentiert.
+
+### Added — Workflow Observability & Measurement (Issue #6, from 3 projects)
+
+**S1 — Workflow Execution Log** (`workflow.py`)
+- `write-log [outcome]`: Schreibt YAML-Execution-Log nach `.claude/workflows/_log/YYYY-MM-DD_<name>.yaml`
+- `complete` blockiert wenn kein Log vorhanden
+- Log enthält: phases_completed/skipped, tdd_red_confirmed, adversary_verdict, fix_loop_iterations, scope_loc_delta, outcome
+- `status` zeigt Log-Status an
+
+**S5 — Phase Transition Audit Trail** (`workflow.py`)
+- `phase <target>` loggt jede Transition mit from/to/at/trigger in `phase_transitions[]`
+- `trigger`-Werte: `command` | `user_keyword` | `manual` (via `--trigger=` flag)
+- Fix-Loop-Counter: `fix_loop_iterations` wird inkrementiert bei phase6b_adversary → phase6_implement
+- `status` zeigt Fix-Loop-Iterations und Phase-Transitions-Anzahl
+
+**S2 — Acceptance Criteria Format** (`edit_gate.py` + `spec_template.md`)
+- `edit_gate.py`: Blockiert phase6-Edits wenn Spec keine `## Acceptance Criteria` mit `AC-N`-Einträgen hat
+- `spec_template.md`: `## Acceptance Criteria` mit `AC-1`/`AC-2` Given/When/Then-Format + Issue-Link
+
+**S3 — LoC Delta Enforcement** (`edit_gate.py`)
+- Prüft kumulativen LoC-Delta via `git diff HEAD --numstat` bei jedem Code-Edit
+- Blockiert bei Überschreitung (Standard: 250 LoC), konfigurierbar via `scope_guard.max_loc_delta`
+- Generierte Dateien (`.xcstrings`, `.strings`, `.po`) ausgeschlossen per `loc_exclude_patterns`
+- Per-Workflow-Override: `workflow.py set-field loc_limit_override <N>`
+- Speichert aktuellen Delta in Workflow-State, sichtbar via `status`
+
+**S4 — Adversary Code-First + AMBIGUOUS Enforcement** (`bash_gate.py` + `implementation-validator.md`)
+- `bash_gate.py`: AMBIGUOUS-Verdict blockiert Commit; Escape via `workflow.py override-ambiguous '<reason>'`
+- `implementation-validator.md`: Jedes Finding MUSS `Code reference: file:line` enthalten (aus echtem Code gelesen)
+- Confirmations für bestandene ACs sind Pflicht (vollständige AC-Coverage)
+- Hinweis auf neues AMBIGUOUS-Blocking-Verhalten im Verdict-Guide
+
+### Changed — GitHub Issues als zentrales Backlog-System
+
+- **feature-planner.md** — Bash-Tool hinzugefügt; GitHub Issue erstellen statt Roadmap-Dokument-Eintrag; Phase-0-Suche vor jeder Planung
+- **bug-investigator.md** — GitHub Issue erstellen statt Todo-Dokument-Eintrag; Duplikat-Suche vor Analyse
+- **bug-intake.md** — Duplikat-Prüfung (Step 2) und Issue-Erstellung (Step 6) integriert; Schritt-Nummerierung korrigiert
+- **feature.md** Command — Schritt 0: GitHub-Suche vor Agent-Start
+- **bug.md** Command — Schritt 0: GitHub-Suche vor Agent-Start
+
+**Verhalten:** Jedes Feature und jeder Bug landet als GitHub Issue. Agenten suchen immer zuerst nach bestehenden Issues, bevor neue erstellt werden. Issue-Nummern werden im Workflow-State via `set-field github_issue <N>` gespeichert.
+
 ### Added — Adversary Dialog System (from my-daily-sprints)
 
 - **adversary_dialog.py** — Structured QA-Tester / Fixer verification dialog

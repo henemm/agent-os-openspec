@@ -25,6 +25,7 @@ setup_path()
 import json
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -133,6 +134,78 @@ def _is_stop_locked() -> bool:
         return False
 
 
+# --- S2: Acceptance Criteria check ---
+
+def _check_acceptance_criteria(workflow: dict) -> str | None:
+    """Block phase6 edits if spec has no AC-N acceptance criteria."""
+    spec_file = workflow.get("spec_file")
+    if not spec_file:
+        return None
+    spec_path = _root / spec_file
+    if not spec_path.exists():
+        return None
+    content = spec_path.read_text()
+    if "## Acceptance Criteria" not in content:
+        return ("BLOCKED: Spec missing '## Acceptance Criteria' section. "
+                "Add AC-1, AC-2, ... entries before implementing.")
+    if not re.search(r"\bAC-\d+", content):
+        return ("BLOCKED: '## Acceptance Criteria' has no AC-N entries. "
+                "Format: '- **AC-1:** Given ... / When ... / Then ...'")
+    return None
+
+
+# --- S3: LoC delta check ---
+
+def _check_loc_delta(config: dict, workflow: dict) -> str | None:
+    """Block when cumulative uncommitted LoC delta exceeds project limit."""
+    max_loc = int(workflow.get("loc_limit_override") or
+                  config.get("scope_guard", {}).get("max_loc_delta", 250))
+    exclude_patterns = config.get("scope_guard", {}).get("loc_exclude_patterns", [
+        r"\.xcstrings$", r"\.strings$", r"\.po$", r"Localizable\.",
+    ])
+    try:
+        result = subprocess.run(
+            ["git", "diff", "HEAD", "--numstat"],
+            cwd=str(_root), capture_output=True, text=True, timeout=5
+        )
+        total = 0
+        for line in result.stdout.splitlines():
+            parts = line.split("\t")
+            if len(parts) < 3:
+                continue
+            file_name = parts[2]
+            if any(re.search(p, file_name) for p in exclude_patterns):
+                continue
+            added = int(parts[0]) if parts[0].isdigit() else 0
+            deleted = int(parts[1]) if parts[1].isdigit() else 0
+            total += added + deleted
+        if total > max_loc:
+            return (f"BLOCKED: LoC delta {total} exceeds limit {max_loc}. "
+                    "Split the change or: workflow.py set-field loc_limit_override <N>")
+        # Store current delta for status display
+        try:
+            from pathlib import Path as _P
+            wf_dir = _root / ".claude" / "workflows"
+            link = wf_dir / ".active"
+            if link.is_symlink():
+                target = _P(os.readlink(str(link)))
+                if not target.is_absolute():
+                    target = link.parent / target
+                if target.exists():
+                    import tempfile
+                    data = json.loads(target.read_text())
+                    data["loc_delta_current"] = f"+{total}"
+                    fd, tmp = tempfile.mkstemp(dir=str(target.parent), suffix=".tmp")
+                    with os.fdopen(fd, "w") as f:
+                        json.dump(data, f, indent=2)
+                    os.rename(tmp, str(target))
+        except Exception:
+            pass
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    return None
+
+
 # --- Main ---
 
 def main():
@@ -208,6 +281,16 @@ def main():
                        if a.get("phase") == "phase5_tdd_red"]
             if not red_arts:
                 block("BLOCKED: No RED test artifacts. Run /tdd-red first.")
+
+    # 10b. Acceptance Criteria check (S2)
+    ac_error = _check_acceptance_criteria(workflow)
+    if ac_error:
+        block(ac_error)
+
+    # 10c. LoC delta check (S3)
+    loc_error = _check_loc_delta(config, workflow)
+    if loc_error:
+        block(loc_error)
 
     # 11. Allow
     allow()

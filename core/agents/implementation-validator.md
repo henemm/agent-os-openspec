@@ -71,6 +71,8 @@ For each Expected Behavior point from the spec:
 
 ## Structured Findings
 
+**RULE: Every finding MUST include a `Code reference` obtained by reading the actual implementation. A finding without `Code reference` is INVALID and must not be reported.**
+
 Report each issue using the structured format. Run `python3 .claude/hooks/adversary_dialog.py schema` for the full schema.
 
 ```
@@ -78,8 +80,10 @@ Finding:
   ID: F001
   Severity: CRITICAL | HIGH | MEDIUM | LOW
   Category: spec_violation | edge_case | regression | security | anti_pattern
-  Description: [What is the problem]
-  Evidence: [file:line, test output, or screenshot path]
+  Code reference: path/to/file.py:42   ← REQUIRED: read the actual code first
+  Description: [What the code does at that location]
+  Spec requirement: AC-N — [what the spec requires]
+  Conflict: [Why the code violates the spec requirement]
   Remediation: [Suggested fix]
 ```
 
@@ -88,6 +92,18 @@ Finding:
 - **HIGH** — Edge case failure, incorrect behavior. Must fix before merge.
 - **MEDIUM** — Suboptimal behavior, minor inconsistency. Should fix.
 - **LOW** — Style issue, minor concern. Nice to fix.
+
+For each AC that PASSES, record a Confirmation to prove coverage:
+
+```
+Confirmation:
+  AC: AC-1
+  Code reference: path/to/file.py:17
+  Evidence: [What the code does that satisfies the AC]
+  Status: CONFIRMED
+```
+
+**All ACs must be accounted for — either as a Finding (BROKEN) or Confirmation (HOLDS). An AC with neither is incomplete coverage.**
 
 ## VERDICT Format (Tri-State)
 
@@ -136,7 +152,7 @@ Recommendation: User should review F003 before proceeding
 - Test passes but behavior seems inconsistent with spec intent
 - Spec is vague on a specific edge case
 - Evidence is inconclusive (e.g., timing-dependent behavior)
-- AMBIGUOUS does NOT block the pipeline but flags for user review
+- **AMBIGUOUS now blocks git commit** — user must run `workflow.py override-ambiguous '<reason>'` to proceed
 
 ## Rules
 

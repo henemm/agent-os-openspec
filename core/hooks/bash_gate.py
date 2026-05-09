@@ -192,9 +192,15 @@ def main():
         if wf:
             phase = wf.get("current_phase", "")
             if phase in ("phase6_implement", "phase6b_adversary", "phase7_validate"):
-                verdict = wf.get("adversary_verdict", "")
-                if not verdict or not str(verdict).startswith("VERIFIED"):
-                    # Allow if override token exists
+                verdict = str(wf.get("adversary_verdict", "") or "")
+                if verdict.startswith("VERIFIED"):
+                    pass  # green
+                elif verdict.startswith("AMBIGUOUS"):
+                    # AMBIGUOUS requires explicit override-ambiguous (S4)
+                    if not wf.get("adversary_ambiguous_override"):
+                        block("BLOCKED: Adversary verdict is AMBIGUOUS. "
+                              "Review findings, then: workflow.py override-ambiguous '<reason>'")
+                else:
                     has_override = False
                     try:
                         from override_token import has_valid_token

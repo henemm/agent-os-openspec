@@ -16,6 +16,8 @@ Usage:
     python3 workflow.py add-artifact <type> <path> <desc> <phase>
     python3 workflow.py mark-red <result>
     python3 workflow.py mark-ui-red <result>
+    python3 workflow.py write-log [outcome]
+    python3 workflow.py override-ambiguous <reason>
     python3 workflow.py complete
     python3 workflow.py list
 """
@@ -141,6 +143,8 @@ def _new_workflow(name: str) -> dict:
         "ui_test_red_done": False,
         "green_approved": False,
         "adversary_verdict": None,
+        "phase_transitions": [],
+        "fix_loop_iterations": 0,
     }
 
 
@@ -221,24 +225,48 @@ def cmd_status(args: list[str]) -> None:
     approved = "Yes" if data.get("spec_approved") else "No"
     green_ok = "Yes" if data.get("green_approved") else "No"
     artifacts = len(data.get("test_artifacts", []))
+    fix_loops = data.get("fix_loop_iterations", 0)
+    transitions = len(data.get("phase_transitions", []))
+    loc_delta = data.get("loc_delta_current", "+0")
+    log_dir = find_project_root() / ".claude" / "workflows" / "_log"
+    log_written = log_dir.exists() and any(log_dir.glob(f"*_{name}.yaml"))
     print(f"Workflow: {name}")
     print(f"Phase: {phase_name}")
     print(f"Spec: {spec}")
     print(f"Approved: {approved}")
     print(f"GREEN Approved: {green_ok}")
     print(f"Test Artifacts: {artifacts}")
+    print(f"Fix-Loop Iterations: {fix_loops}")
+    print(f"Phase Transitions: {transitions}")
+    print(f"LoC Delta: {loc_delta}")
+    print(f"Execution Log: {'Written' if log_written else 'Pending — run write-log before complete'}")
 
 
 def cmd_phase(args: list[str]) -> None:
     if not args:
         print("Usage: workflow.py phase <phase>", file=sys.stderr)
         sys.exit(1)
-    target = args[0]
+    trigger = "command"
+    filtered = [a for a in args if not a.startswith("--trigger=")]
+    for a in args:
+        if a.startswith("--trigger="):
+            trigger = a.split("=", 1)[1]
+    target = filtered[0]
     data, name = _read_active()
     error = _validate_transition(data, target)
     if error:
         print(f"BLOCKED: {error}", file=sys.stderr)
         sys.exit(1)
+    current = data.get("current_phase", "phase0_idle")
+    data.setdefault("phase_transitions", []).append({
+        "from": current,
+        "to": target,
+        "at": datetime.now().isoformat(),
+        "trigger": trigger,
+    })
+    # Fix-loop counter: re-entering phase6_implement from phase6b_adversary
+    if target == "phase6_implement" and current == "phase6b_adversary":
+        data["fix_loop_iterations"] = data.get("fix_loop_iterations", 0) + 1
     data["current_phase"] = target
     _save_active(data)
     print(f"Set phase to: {target}")
@@ -308,8 +336,62 @@ def cmd_mark_ui_red(args: list[str]) -> None:
     print(f"RED UI test marked done: {result}")
 
 
+def cmd_write_log(args: list[str]) -> None:
+    data, name = _read_active()
+    log_dir = find_project_root() / ".claude" / "workflows" / "_log"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    log_file = log_dir / f"{date_str}_{name}.yaml"
+    transitions = data.get("phase_transitions", [])
+    phases_visited = {t["to"] for t in transitions}
+    phases_visited.add(data.get("current_phase", "phase0_idle"))
+    phases_completed = [p for p in PHASES if p in phases_visited and p != "phase0_idle"]
+    impl_idx = PHASES.index("phase6_implement")
+    expected = PHASES[1:impl_idx + 1]
+    phases_skipped = [p for p in expected if p not in phases_visited]
+    outcome = args[0] if args else "success"
+    lines = [
+        f"workflow_id: {name}",
+        f"project: {find_project_root().name}",
+        f"completed_at: {datetime.now().isoformat()}",
+        "phases_completed:",
+    ] + [f"  - {p}" for p in phases_completed] + [
+        "phases_skipped:",
+    ] + [f"  - {p}" for p in phases_skipped] + [
+        f"override_used: {bool(data.get('adversary_ambiguous_override'))}",
+        f"tdd_red_confirmed: {bool(data.get('red_test_done') or data.get('ui_test_red_done'))}",
+        f"adversary_verdict: {data.get('adversary_verdict') or 'none'}",
+        f"adversary_findings_total: {data.get('adversary_findings_total', 0)}",
+        f"adversary_fix_loop_iterations: {data.get('fix_loop_iterations', 0)}",
+        f"scope_files_changed: {len(data.get('affected_files', []))}",
+        f"scope_loc_delta: {data.get('loc_delta_current', '+0')}",
+        f"outcome: {outcome}",
+    ]
+    log_file.write_text("\n".join(lines) + "\n")
+    print(f"Execution log written: {log_file}")
+
+
+def cmd_override_ambiguous(args: list[str]) -> None:
+    if not args:
+        print("Usage: workflow.py override-ambiguous <reason>", file=sys.stderr)
+        sys.exit(1)
+    reason = " ".join(args)
+    data, name = _read_active()
+    data["adversary_ambiguous_override"] = {
+        "reason": reason,
+        "at": datetime.now().isoformat(),
+    }
+    _save_active(data)
+    print(f"AMBIGUOUS override set for {name}: {reason}")
+
+
 def cmd_complete(args: list[str]) -> None:
     data, name = _read_active()
+    log_dir = find_project_root() / ".claude" / "workflows" / "_log"
+    if not (log_dir.exists() and any(log_dir.glob(f"*_{name}.yaml"))):
+        print(f"BLOCKED: No execution log for '{name}'. Run: workflow.py write-log [outcome]",
+              file=sys.stderr)
+        sys.exit(1)
     data["current_phase"] = "phase8_complete"
     archive = _archive_dir()
     archive.mkdir(parents=True, exist_ok=True)
@@ -351,6 +433,8 @@ COMMANDS = {
     "add-artifact": cmd_add_artifact,
     "mark-red": cmd_mark_red,
     "mark-ui-red": cmd_mark_ui_red,
+    "write-log": cmd_write_log,
+    "override-ambiguous": cmd_override_ambiguous,
     "complete": cmd_complete,
     "list": cmd_list,
 }

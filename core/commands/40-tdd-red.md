@@ -98,7 +98,7 @@ Before proceeding to implementation:
 ## Next Step
 
 After RED phase is complete:
-> "TDD RED complete. [N] tests written, all failing as expected. Artifacts captured. Ready for `/implement`."
+> "TDD RED complete. [N] tests written, all failing as expected. Artifacts captured. Ready for `/50-implement`."
 
 ```bash
 python3 .claude/hooks/workflow.py phase phase6_implement

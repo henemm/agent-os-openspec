@@ -2,7 +2,7 @@
 
 > **Meta-Projekt**: Dies ist das zentrale Framework-Repository, das abstraktes Projekt- und Workflow-Wissen konsolidiert. Alle Projekte können Improvements hierher zurückführen und von Verbesserungen aus anderen Projekten profitieren.
 
-**Version**: 3.0.0
+**Version**: 3.1.0
 
 ## Projektzweck
 
@@ -16,6 +16,18 @@ Das Framework erzwingt technisch (nicht nur durch Dokumentation), dass Claude st
 - TDD: Erst Tests schreiben (RED), dann implementieren (GREEN)
 - Keine Änderungen an geschützten Dateien ohne freigegebene Spec
 - ECHTE Test-Artefakte (Screenshots, Logs, etc.) - keine Platzhalter
+
+## Orchestrator-Prinzip (v3.1)
+
+**Der Hauptkontext schreibt niemals Code direkt.**
+
+| Rolle | Werkzeuge | Aufgabe |
+|-------|-----------|---------|
+| **Orchestrator** (Hauptkontext) | Read, Grep, Bash, koordinieren | Planen, entscheiden, koordinieren |
+| **Developer Agent** (`developer-agent`) | Edit, Write, Bash, Read | Code schreiben, Tests ausführen |
+| **Adversary Agent** (`implementation-validator`) | Read, Grep, Bash | Implementierung angreifen, Beweise fordern |
+
+Warum: Separation of concerns verhindert Conversation Drift (der Implementierer validiert sich nicht selbst), ermöglicht echte Kontext-Isolation beim Adversary, und macht den Developer Agent austauschbar (z.B. mit worktree-Isolation für parallele Workflows).
 
 ## Architektur
 
@@ -62,25 +74,25 @@ agent-os-openspec/
 │  phase0_idle                                                            │
 │       │                                                                 │
 │       ▼                                                                 │
-│  phase1_context ─── /context ───► Kontext sammeln                       │
+│  phase1_context ─── /10-context ───► Kontext sammeln                       │
 │       │                                                                 │
 │       ▼                                                                 │
-│  phase2_analyse ─── /analyse ───► Anforderungen analysieren             │
+│  phase2_analyse ─── /20-analyse ───► Anforderungen analysieren             │
 │       │                                                                 │
 │       ▼                                                                 │
-│  phase3_spec ────── /write-spec ► Spezifikation schreiben               │
+│  phase3_spec ────── /30-write-spec ► Spezifikation schreiben               │
 │       │                                                                 │
 │       ▼                                                                 │
 │  phase4_approved ── "approved" ─► User-Freigabe (GATE)                  │
 │       │                                                                 │
 │       ▼                                                                 │
-│  phase5_tdd_red ─── /tdd-red ───► Tests schreiben, MÜSSEN FEHLSCHLAGEN  │
+│  phase5_tdd_red ─── /40-tdd-red ───► Tests schreiben, MÜSSEN FEHLSCHLAGEN  │
 │       │                           + ECHTE Artefakte!                    │
 │       ▼                                                                 │
-│  phase6_implement ─ /implement ─► Code schreiben, Tests GRÜN machen     │
+│  phase6_implement ─ /50-implement ─► Code schreiben, Tests GRÜN machen     │
 │       │                                                                 │
 │       ▼                                                                 │
-│  phase7_validate ── /validate ──► Manuelle Tests, Validierung           │
+│  phase7_validate ── /60-validate ──► Manuelle Tests, Validierung           │
 │       │                                                                 │
 │       ▼                                                                 │
 │  phase8_complete                  ► Fertig, bereit für Commit           │
@@ -322,17 +334,17 @@ python3 /path/to/agent-os-openspec/setup.py --version
 
 | Command | Phase | Beschreibung |
 |---------|-------|--------------|
-| `/context` | 1 | Relevanten Kontext sammeln |
-| `/analyse` | 2 | Anforderungen analysieren |
-| `/write-spec` | 3 | Spezifikation erstellen |
-| `/tdd-red` | 5 | Failing Tests schreiben |
-| `/implement` | 6 | Implementieren (Tests grün) |
-| `/validate` | 7 | Manuelle Validierung |
-| `/workflow` | - | Workflows verwalten |
-| `/add-artifact` | - | Test-Artefakte registrieren |
-| `/user-story` | - | JTBD-basierte User Story Discovery |
-| `/feature` | - | Feature planen (startet feature-planner Agent) |
-| `/test` | - | Tests ausführen (startet test-runner Agent) |
+| `/10-context` | 1 | Relevanten Kontext sammeln |
+| `/20-analyse` | 2 | Anforderungen analysieren |
+| `/30-write-spec` | 3 | Spezifikation erstellen |
+| `/40-tdd-red` | 5 | Failing Tests schreiben |
+| `/50-implement` | 6 | Implementieren (Tests grün) |
+| `/60-validate` | 7 | Manuelle Validierung |
+| `/80-workflow` | - | Workflows verwalten |
+| `/81-add-artifact` | - | Test-Artefakte registrieren |
+| `/83-user-story` | - | JTBD-basierte User Story Discovery |
+| `/01-feature` | - | Feature planen (startet feature-planner Agent) |
+| `/82-test` | - | Tests ausführen (startet test-runner Agent) |
 
 ## Arbeitsanweisungen für Claude
 

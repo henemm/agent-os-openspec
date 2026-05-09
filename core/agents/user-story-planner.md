@@ -117,7 +117,7 @@ Erstelle User Story in `docs/stories/[feature-name].md`:
 
 ## Naechster Schritt
 
-Starte `/analyse` fuer das priorisierte Feature.
+Starte `/20-analyse` fuer das priorisierte Feature.
 ```
 
 ## Wichtige Regeln

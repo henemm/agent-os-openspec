@@ -6,6 +6,7 @@ tools:
   - Read
   - Grep
   - Glob
+  - Bash
   - Task
   - Write
   - Edit
@@ -52,28 +53,38 @@ Die folgenden Standards MUESSEN befolgt werden (Pfad relativ zu Projekt-Root):
 
 Jede Feature-Planung MUSS enden mit diesen Schritten:
 
-1. **ZUERST: Eintrag in Roadmap-Dokument** (zentraler Einstiegspunkt!)
-   ```markdown
-   ### [Feature Name]
-   **Status:** Geplant
-   **Prioritaet:** [Hoch/Mittel/Niedrig]
-   **Kategorie:** [Primary/Support/Passive Feature]
-   **Aufwand:** [Klein/Mittel/Gross]
-
-   **Kurzbeschreibung:**
+1. **ZUERST: GitHub Issue erstellen** (zentraler Tracking-Einstiegspunkt!)
+   ```bash
+   gh issue create \
+     --title "feat: [Feature Name]" \
+     --body "## Beschreibung
    [1-2 Saetze was das Feature tut]
 
-   **Betroffene Systeme:**
+   ## Kategorie
+   [Primary / Support / Passive Feature]
+
+   ## Aufwand
+   [Klein / Mittel / Gross]
+
+   ## Betroffene Systeme
    - [System 1]
    - [System 2]
+
+   ## Prioritaet
+   [Hoch / Mittel / Niedrig]" \
+     --label "enhancement"
+   ```
+   Issue-Nummer merken → in Workflow-State speichern:
+   ```bash
+   python3 .claude/hooks/workflow.py set-field github_issue <ISSUE_NUMBER>
    ```
 
 2. **DANN:** OpenSpec Proposal erstellen in `openspec/changes/[feature-name]/`
-   - `proposal.md` - Was und warum
+   - `proposal.md` - Was und warum (verlinkt Issue: `Closes #<ISSUE_NUMBER>`)
    - `tasks.md` - Implementierungs-Checkliste
    - `specs/[domain]/spec.md` - Spec Delta
 
-**Ohne Roadmap-Eintrag ist die Planung NICHT abgeschlossen!**
+**Ohne GitHub Issue ist die Planung NICHT abgeschlossen!**
 
 ---
 
@@ -82,6 +93,26 @@ Jede Feature-Planung MUSS enden mit diesen Schritten:
 **NIEMALS direkt implementieren!** Erst Feature vollstaendig verstehen, dann planen, dann (nach Freigabe) umsetzen.
 
 ## Vorgehen bei jedem Feature
+
+### Phase 0: GitHub Issues durchsuchen (IMMER ZUERST)
+
+**Vor jeder Planung:**
+```bash
+# Offene Feature-Issues suchen
+gh issue list --label "enhancement" --state open
+
+# Spezifisch nach Schluesselwoertern suchen
+gh issue list --search "[Feature-Keyword]" --state open
+
+# Auch geschlossene Issues pruefen (duplikat vermeiden)
+gh issue list --search "[Feature-Keyword]" --state closed
+```
+
+Wenn ein passendes Issue existiert:
+- Issue-Nummer notieren
+- Issue ggf. mit neuen Informationen aktualisieren (`gh issue edit <N> --body "..."`)
+- KEIN neues Issue erstellen
+- Weiter mit Phase 1 (und Issue-Nummer in Workflow speichern)
 
 ### Phase 1: Feature verstehen
 

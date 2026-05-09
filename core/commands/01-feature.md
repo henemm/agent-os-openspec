@@ -6,6 +6,22 @@ Starte den `feature-planner` Agenten aus `core/agents/feature-planner.md`.
 
 ---
 
+## Schritt 0: GitHub Issues durchsuchen (IMMER ZUERST)
+
+Bevor irgendeine Analyse beginnt:
+```bash
+# Offene Feature-Issues anzeigen
+gh issue list --label "enhancement" --state open
+
+# Keyword-Suche (aus $ARGUMENTS ableiten)
+gh issue list --search "$ARGUMENTS" --state open
+```
+
+Falls passendes Issue gefunden → Issue-Nummer notieren und weiter mit Analyse.
+Falls kein Issue → `feature-planner` erstellt am Ende eines neues Issue.
+
+---
+
 ## Modus erkennen
 
 | Formulierung | Modus |

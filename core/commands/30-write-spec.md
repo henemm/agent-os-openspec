@@ -80,7 +80,7 @@ Present the spec and request approval:
 When user approves:
 1. `workflow_state_updater` hook detects approval phrase
 2. State advances to `phase4_approved`
-3. Next: `/tdd-red` to write failing tests
+3. Next: `/40-tdd-red` to write failing tests
 
 **IMPORTANT:**
 - Do NOT implement until approved

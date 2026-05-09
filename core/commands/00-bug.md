@@ -4,6 +4,21 @@ Analyze a bug following the **Analysis-First** principle.
 
 **NEVER fix directly!** First understand completely, then document, then (after approval) fix.
 
+## Step 0: GitHub Issues durchsuchen (IMMER ZUERST)
+
+```bash
+# Offene Bug-Issues anzeigen
+gh issue list --label "bug" --state open
+
+# Keyword-Suche nach aehnlichen Bugs
+gh issue list --search "$ARGUMENTS" --state open
+```
+
+Falls Duplikat gefunden → vorhandenes Issue referenzieren, kein neues erstellen.
+Falls kein Duplikat → `bug-investigator` erstellt am Ende ein neues Issue.
+
+---
+
 ## Phase 1: Understand the Bug
 
 1. **Capture symptoms:**
@@ -45,11 +60,11 @@ Analyze a bug following the **Analysis-First** principle.
 ## Phase 4: Fix (only after approval!)
 
 After documentation and user approval:
-1. `/analyse` - Start workflow
-2. `/write-spec` - Specify fix
+1. `/20-analyse` - Start workflow
+2. `/30-write-spec` - Specify fix
 3. User: "approved"
-4. `/implement` - Implement fix
-5. `/validate` - Test
+4. `/50-implement` - Implement fix
+5. `/60-validate` - Test
 
 ## STOP Conditions
 

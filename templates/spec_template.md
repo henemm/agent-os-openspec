@@ -15,6 +15,10 @@ test_targets: []
 
 - [ ] Approved
 
+## GitHub Issue
+
+- **Issue:** #N (link to tracking issue)
+
 ## Purpose
 
 [1-2 sentences: What does this entity do? Why does it exist?]
@@ -56,13 +60,17 @@ def example():
 - Limitation 1
 - Limitation 2
 
+## Acceptance Criteria
+
+- **AC-1:** Given <precondition> / When <action> / Then <observable outcome>
+  - Test: *(populated after TDD RED phase)*
+
+- **AC-2:** Given <precondition> / When <action> / Then <observable outcome>
+  - Test: *(populated after TDD RED phase)*
+
 ## Test Plan
 
-Manual tests:
-- [ ] Test case 1
-- [ ] Test case 2
-
-Automated tests:
+Automated tests (linked to AC above):
 - `pytest tests/test_entity.py`
 
 ## Changelog

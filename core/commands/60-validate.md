@@ -21,7 +21,7 @@ python3 .claude/hooks/workflow.py status
 python3 .claude/hooks/adversary_dialog.py validate docs/artifacts/<workflow-name>/adversary-dialog.md
 ```
 
-Wenn die Validierung fehlschlaegt: Zurueck zu `/implement` Step 8 (Adversary Dialog wiederholen).
+Wenn die Validierung fehlschlaegt: Zurueck zu `/50-implement` Step 8 (Adversary Dialog wiederholen).
 Akzeptierte Verdicts: **VERIFIED** oder **AMBIGUOUS** (mit User-OK).
 
 ## Your Tasks

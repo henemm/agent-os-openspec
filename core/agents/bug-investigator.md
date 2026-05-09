@@ -31,19 +31,39 @@ Die folgenden Standards MUESSEN befolgt werden (Pfad relativ zu Projekt-Root):
 
 Jede Bug-Analyse MUSS enden mit diesen Schritten:
 
-1. **ZUERST: Eintrag in Todo-Dokument** (zentraler Einstiegspunkt!)
-   ```markdown
-   **Bug X: [Kurze Beschreibung]**
-   - Location: [Datei(en)]
-   - Problem: [Was passiert falsch]
-   - Expected: [Was sollte passieren]
-   - Root Cause: [Warum passiert es - Code-Stelle]
-   - Test: [Wie Fix verifizieren]
+1. **ZUERST: GitHub Issues durchsuchen** (Duplikat vermeiden!)
+   ```bash
+   gh issue list --label "bug" --state open
+   gh issue list --search "[Bug-Keyword]" --state open
    ```
 
-2. **DANN optional:** Detail-Dokument (nur bei komplexen Bugs)
+2. **DANN: GitHub Issue erstellen** (wenn kein Duplikat gefunden)
+   ```bash
+   gh issue create \
+     --title "bug: [Kurze Beschreibung]" \
+     --body "## Symptom
+   [Was passiert falsch]
 
-**Ohne Todo-Eintrag ist die Analyse NICHT abgeschlossen!**
+   ## Erwartetes Verhalten
+   [Was sollte passieren]
+
+   ## Root Cause
+   - **Datei:** [file:line]
+   - **Ursache:** [Erklaerung]
+
+   ## Testfall
+   [Wie den Fix verifizieren]
+
+   ## Aufwand
+   [Klein / Mittel / Gross]" \
+     --label "bug"
+   ```
+   Issue-Nummer in Workflow-State speichern:
+   ```bash
+   python3 .claude/hooks/workflow.py set-field github_issue <ISSUE_NUMBER>
+   ```
+
+**Ohne GitHub Issue ist die Analyse NICHT abgeschlossen!**
 
 ---
 
@@ -85,7 +105,7 @@ Jede Bug-Analyse MUSS enden mit diesen Schritten:
 
 ### Phase 4: Dokumentieren
 
-6. **Bug in Todo-Dokument eintragen**
+6. **GitHub Issue erstellen** (siehe PFLICHT-Output oben)
 
 ## Output an User
 

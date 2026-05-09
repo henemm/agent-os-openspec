@@ -42,40 +42,55 @@ Task (Explore/haiku): "Lies folgende Dateien und fasse den relevanten Kontext
   implementiert werden, welche Imports werden benoetigt."
 ```
 
-### Step 3: Implementieren (Hauptkontext / Opus)
+### Step 3: Developer Agent spawnen (ORCHESTRATOR-PRINZIP)
 
-Die eigentliche Implementation passiert im **Hauptkontext** (Opus) fuer hoechste Qualitaet:
+**Der Hauptkontext schreibt KEINEN Code. Nie. Keine Ausnahmen.**
 
-- Lies und befolge die approved Spec exakt
-- Schreibe Code der die Tests gruen macht
-- Halte dich an die Scoping-Limits
-
-**TDD GREEN Rules:**
-- Only write code that makes a test pass
-- Don't add features not covered by tests
-- Don't optimize prematurely
-- Don't refactor yet
-
-### Step 4: Parallele Side-Tasks
-
-Dispatche parallel waehrend/nach der Implementation:
+Der Hauptkontext ist ein **Orchestrator** — er koordiniert, plant, und entscheidet.
+Code-Edits gehoeren ausschliesslich dem **Developer Agent**.
 
 ```
-Task 1 (general-purpose/sonnet): "Fuehre die Tests aus:
-  [test_command]
-  Fasse Ergebnisse zusammen: passed/failed/errors."
+Task (developer-agent/opus):
+  "Implementiere gemaess Spec.
 
-Task 2 (general-purpose/haiku): "Pruefe ob Konfigurationsdateien
-  aktualisiert werden muessen fuer [Feature].
-  Check: package.json, config files, environment variables."
+  Spec: [spec_file_path einfuegen]
+  Betroffene Dateien: [affected_files aus workflow status]
+  Test-Dateien: [test_files]
+  Test-Command: [test_command aus openspec.yaml oder CLAUDE.md]
+
+  Deine Aufgabe:
+  1. Lies Spec vollstaendig — alle AC-N Acceptance Criteria verstehen
+  2. Lies failing Tests — was genau wird getestet?
+  3. Lies betroffene Dateien — aktueller Stand
+  4. Schreibe minimalen Code um jeden failing Test gruen zu machen
+  5. Fuehre Tests aus nach jeder wesentlichen Aenderung
+  6. Speichere finalen Test-Output:
+     [test_command] > docs/artifacts/[workflow]/test-green-output.txt 2>&1
+  7. Melde zurueck: Dateien geaendert, Tests gruen/rot, welche ACs erfuellt
+
+  NICHT:
+  - Features die nicht in der Spec stehen
+  - Refactoring das nicht zum Gruen benoetigt wird
+  - Premature optimization
+  - Mehr als 3 Loesungsversuche ohne Rueckmeldung"
 ```
 
-### Step 5: GREEN Artifacts erfassen
+**Nach Rueckmeldung des Developer Agent:**
+- Tests GRUEN → weiter zu Step 4
+- Tests noch ROT → Developer Agent erneut beauftragen mit Fehlermeldung (max. 3 Versuche total)
+- Nach 3 Versuchen immer noch ROT → Eskalation an User: Root Cause unklar
+
+| Rolle | Darf | Darf NICHT |
+|-------|------|------------|
+| **Orchestrator** (Hauptkontext) | Read, Grep, Bash (Tests starten, Output lesen), koordinieren | Edit/Write auf Code-Dateien |
+| **Developer Agent** (Sub-Task) | Edit, Write, Tests ausfuehren, Code schreiben | Planen, User-Interaktion |
+
+### Step 4: GREEN Artifacts registrieren
+
+Der Developer Agent hat den Test-Output bereits gespeichert.
+Orchestrator registriert das Artifact im Workflow-State:
 
 ```bash
-# Test output erfassen
-[test_command] > docs/artifacts/[workflow]/test-green-output.txt 2>&1
-
 python3 .claude/hooks/workflow.py add-artifact test_output \
     "docs/artifacts/[workflow]/test-green-output.txt" \
     "All tests PASSED" \
@@ -120,7 +135,7 @@ python3 .claude/hooks/workflow.py phase phase6b_adversary
 
 ### Step 8: Run Adversary Dialog (MANDATORY)
 
-**Du kannst NICHT direkt zu `/validate` springen. Der Adversary-Dialog muss zuerst stattfinden.**
+**Du kannst NICHT direkt zu `/60-validate` springen. Der Adversary-Dialog muss zuerst stattfinden.**
 
 #### 8a. Spec parsen — Checkliste erstellen
 
@@ -148,11 +163,14 @@ Task (implementation-validator): "Pruefe den aktuellen Workflow gegen die Spec.
   - Nutze das Structured Findings Schema (python3 .claude/hooks/adversary_dialog.py schema)"
 ```
 
-Der Dialog laeuft als Hin-und-Her zwischen dir (Implementierer) und dem Agent (Adversary):
-1. Agent nennt naechsten offenen Punkt + was er sehen will
-2. Du lieferst Beweis (Screenshot, Test-Output)
-3. Agent bewertet: AKZEPTIERT oder NACHFRAGE
-4. Wiederholen bis alle Punkte bewiesen ODER Defekt gefunden
+Der Dialog laeuft als Hin-und-Her. **Du als Orchestrator koordinierst:**
+1. Adversary Agent nennt naechsten offenen Punkt + was er sehen will
+2. Du (Orchestrator) beauftragst Developer Agent, Beweis zu sammeln (Test ausfuehren, Screenshot, Code-Pfad)
+3. Developer Agent liefert Beweis-Output → du relayierst an Adversary Agent
+4. Adversary Agent bewertet: AKZEPTIERT oder NACHFRAGE
+5. Wiederholen bis alle AC-N-Punkte bewiesen ODER Defekt gefunden
+
+**Bei BROKEN:** Developer Agent erneut beauftragen (Schritt 3) — nicht selbst fixen!
 
 #### 8c. Dialog-Protokoll speichern
 
@@ -205,7 +223,7 @@ Follow scoping limits:
 ## Next Step
 
 After adversary verification:
-> "Implementation complete. Adversary verified. Ready for `/validate`."
+> "Implementation complete. Adversary verified. Ready for `/60-validate`."
 
 ## Common Mistakes
 
@@ -215,3 +233,4 @@ After adversary verification:
 - **Not running tests** -> Might still be RED
 - **Skipping adversary** -> Commit will be BLOCKED
 - **Skipping User-Freigabe** -> Validation BLOCKED without user approval
+- **Orchestrator schreibt Code selbst** -> Verletzt Orchestrator-Prinzip, kein Isolation-Schutz
