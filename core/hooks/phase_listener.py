@@ -67,7 +67,22 @@ def _matches(message: str, phrases: list[str]) -> bool:
 
 
 def _read_active_workflow() -> tuple[dict | None, Path | None]:
-    """Read active workflow. Returns (data, file_path)."""
+    """Read active workflow. Returns (data, file_path).
+
+    Priority:
+    1. OPENSPEC_ACTIVE_WORKFLOW env var (session-scoped, prevents cross-session
+       symlink collisions when multiple Claude Code instances run in parallel)
+    2. .active symlink (single-session default)
+    """
+    env_name = os.environ.get("OPENSPEC_ACTIVE_WORKFLOW", "").strip()
+    if env_name:
+        wf_file = _root / ".claude" / "workflows" / f"{env_name}.json"
+        if wf_file.exists():
+            try:
+                return json.loads(wf_file.read_text()), wf_file
+            except (OSError, json.JSONDecodeError):
+                pass
+
     link = _root / ".claude" / "workflows" / ".active"
     if not link.exists():
         return None, None

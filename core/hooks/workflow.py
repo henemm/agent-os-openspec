@@ -58,6 +58,15 @@ PHASE_NAMES = {
     "phase8_complete": "Complete",
 }
 
+# Phases where user keywords ("approved", "go", "deployed") are expected.
+# Switching away from these without updating OPENSPEC_ACTIVE_WORKFLOW causes
+# the next keyword to land on the wrong workflow.
+KEYWORD_SENSITIVE_PHASES = {"phase3_spec", "phase6_implement", "phase7_validate"}
+
+VALID_ARTIFACT_TYPES = [
+    "screenshot", "email", "api_response", "log", "file", "test_output", "video", "audio",
+]
+
 
 def _workflows_dir() -> Path:
     return find_project_root() / ".claude" / "workflows"
@@ -95,8 +104,29 @@ def _read_workflow(path: Path) -> dict:
     return json.loads(path.read_text())
 
 
+def _active_name_from_env() -> str:
+    """Return workflow name from OPENSPEC_ACTIVE_WORKFLOW env var, or empty string."""
+    return os.environ.get("OPENSPEC_ACTIVE_WORKFLOW", "").strip()
+
+
 def _read_active() -> tuple[dict, str]:
-    """Read the active workflow. Returns (data, name)."""
+    """Read the active workflow. Returns (data, name).
+
+    Priority:
+    1. OPENSPEC_ACTIVE_WORKFLOW env var — session-scoped, prevents cross-session
+       symlink collisions when multiple Claude Code instances run in parallel.
+       Set before starting Claude: export OPENSPEC_ACTIVE_WORKFLOW=my-feature
+    2. .active symlink — single-session default.
+    """
+    env_name = _active_name_from_env()
+    if env_name:
+        wf_file = _workflow_file(env_name)
+        if wf_file.exists():
+            data = _read_workflow(wf_file)
+            return data, data.get("name", wf_file.stem)
+        # env var set but file missing — fall through with a warning
+        print(f"WARNING: OPENSPEC_ACTIVE_WORKFLOW={env_name!r} but file not found, falling back to .active", file=sys.stderr)
+
     link = _active_link()
     if not link.exists():
         print("No active workflow.", file=sys.stderr)
@@ -213,7 +243,40 @@ def cmd_switch(args: list[str]) -> None:
     if not wf_file.exists():
         print(f"Workflow {name} not found.", file=sys.stderr)
         sys.exit(1)
+
+    # Warn if current active workflow is in a keyword-sensitive phase.
+    # Switching here means the next "approved" / "go" will target the new workflow.
+    try:
+        current_data, current_name = _read_active()
+        if current_name != name:
+            cur_phase = current_data.get("current_phase", "")
+            if cur_phase in KEYWORD_SENSITIVE_PHASES:
+                print(
+                    f"WARNING: Switching away from '{current_name}' which is in {cur_phase}.\n"
+                    f"  User keywords ('approved', 'go') will now target '{name}'.\n"
+                    f"  Switch back with: workflow.py switch {current_name}",
+                    file=sys.stderr,
+                )
+    except SystemExit:
+        pass  # no current active workflow — that's fine
+
     _set_active(name)
+
+    env_name = _active_name_from_env()
+    if env_name and env_name != name:
+        print(
+            f"Switched to workflow: {name} (.active symlink updated)\n"
+            f"WARNING: OPENSPEC_ACTIVE_WORKFLOW={env_name!r} is set in this session.\n"
+            f"  Hooks will still use '{env_name}' — the env var overrides the symlink.\n"
+            f"  To align: export OPENSPEC_ACTIVE_WORKFLOW={name}",
+            file=sys.stderr,
+        )
+    elif not env_name:
+        print(
+            f"Tip: For parallel sessions, set OPENSPEC_ACTIVE_WORKFLOW={name} "
+            "before starting Claude Code.",
+            file=sys.stderr,
+        )
     print(f"Switched to workflow: {name}")
 
 
@@ -230,7 +293,9 @@ def cmd_status(args: list[str]) -> None:
     loc_delta = data.get("loc_delta_current", "+0")
     log_dir = find_project_root() / ".claude" / "workflows" / "_log"
     log_written = log_dir.exists() and any(log_dir.glob(f"*_{name}.yaml"))
-    print(f"Workflow: {name}")
+    env_name = _active_name_from_env()
+    source_label = f"env:OPENSPEC_ACTIVE_WORKFLOW={env_name}" if env_name == name else ".active symlink"
+    print(f"Workflow: {name}  [{source_label}]")
     print(f"Phase: {phase_name}")
     print(f"Spec: {spec}")
     print(f"Approved: {approved}")
@@ -306,6 +371,13 @@ def cmd_add_artifact(args: list[str]) -> None:
         print("Usage: workflow.py add-artifact <type> <path> <desc> <phase>", file=sys.stderr)
         sys.exit(1)
     art_type, art_path, desc, phase = args[0], args[1], args[2], args[3]
+    if art_type not in VALID_ARTIFACT_TYPES:
+        print(
+            f"Invalid artifact type: '{art_type}'\n"
+            f"Valid types: {', '.join(sorted(VALID_ARTIFACT_TYPES))}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     data, _ = _read_active()
     data.setdefault("test_artifacts", []).append({
         "type": art_type,
@@ -410,11 +482,12 @@ def cmd_list(args: list[str]) -> None:
     if not wf_dir.exists():
         print("No workflows.")
         return
-    active_name = None
-    link = _active_link()
-    if link.is_symlink():
-        target = os.readlink(str(link))
-        active_name = Path(target).stem
+    active_name = _active_name_from_env()
+    if not active_name:
+        link = _active_link()
+        if link.is_symlink():
+            target = os.readlink(str(link))
+            active_name = Path(target).stem
     for f in sorted(wf_dir.glob("*.json")):
         data = _read_workflow(f)
         name = data.get("name", f.stem)
