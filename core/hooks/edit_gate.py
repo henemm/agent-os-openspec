@@ -78,18 +78,28 @@ _root = find_project_root()
 
 
 def _read_active_workflow() -> dict | None:
-    """Read the active workflow from .claude/workflows/.active symlink."""
-    link = _root / ".claude" / "workflows" / ".active"
-    if not link.exists():
+    """Read the active workflow from OPENSPEC_ACTIVE_WORKFLOW env var.
+
+    Falls back to scanning all workflows if env var is not set.
+    The .active symlink is intentionally not used — it causes drift in
+    parallel sessions where each session has a different active workflow.
+    """
+    name = os.environ.get("OPENSPEC_ACTIVE_WORKFLOW", "").strip()
+    if not name:
         return None
-    try:
-        target = Path(os.readlink(str(link)))
-        if not target.is_absolute():
-            target = link.parent / target
-        if target.exists():
-            return json.loads(target.read_text())
-    except (OSError, json.JSONDecodeError):
-        pass
+    wf_dir = _root / ".claude" / "workflows"
+    wf_file = wf_dir / f"{name}.json"
+    if wf_file.exists():
+        try:
+            return json.loads(wf_file.read_text())
+        except (OSError, json.JSONDecodeError):
+            pass
+    arch = wf_dir / "_archive" / f"{name}.json"
+    if arch.exists():
+        try:
+            return json.loads(arch.read_text())
+        except (OSError, json.JSONDecodeError):
+            pass
     return None
 
 
