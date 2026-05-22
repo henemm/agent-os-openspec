@@ -3,7 +3,9 @@
 Workflow v3 — Isolated State Manager
 
 Each workflow gets its own JSON file in .claude/workflows/.
-Active workflow tracked via .active symlink.
+Active workflow tracked ONLY via OPENSPEC_ACTIVE_WORKFLOW env var.
+The .active symlink fallback is intentionally disabled — using it causes
+cross-session drift. Always set: export OPENSPEC_ACTIVE_WORKFLOW=<name>
 Atomic writes via tempfile + rename (no file locks).
 
 Usage:
@@ -112,11 +114,9 @@ def _active_name_from_env() -> str:
 def _read_active() -> tuple[dict, str]:
     """Read the active workflow. Returns (data, name).
 
-    Priority:
-    1. OPENSPEC_ACTIVE_WORKFLOW env var — session-scoped, prevents cross-session
-       symlink collisions when multiple Claude Code instances run in parallel.
-       Set before starting Claude: export OPENSPEC_ACTIVE_WORKFLOW=my-feature
-    2. .active symlink — single-session default.
+    ONLY reads OPENSPEC_ACTIVE_WORKFLOW env var. The .active symlink fallback is
+    intentionally removed — relying on it causes cross-session workflow drift.
+    Every caller MUST set OPENSPEC_ACTIVE_WORKFLOW explicitly.
     """
     env_name = _active_name_from_env()
     if env_name:
@@ -124,21 +124,30 @@ def _read_active() -> tuple[dict, str]:
         if wf_file.exists():
             data = _read_workflow(wf_file)
             return data, data.get("name", wf_file.stem)
-        # env var set but file missing — fall through with a warning
-        print(f"WARNING: OPENSPEC_ACTIVE_WORKFLOW={env_name!r} but file not found, falling back to .active", file=sys.stderr)
+        print(
+            f"FATAL: OPENSPEC_ACTIVE_WORKFLOW='{env_name}' is set but no matching workflow file exists.\n"
+            f"  Run: python3 .claude/hooks/workflow.py list",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
+    # Symlink fallback is DISABLED. If a stale .active symlink exists, tell the user
+    # what to do instead of silently using it.
     link = _active_link()
-    if not link.exists():
-        print("No active workflow.", file=sys.stderr)
+    if link.is_symlink():
+        target = Path(os.readlink(str(link)))
+        name = target.stem
+        print(
+            f"FATAL: OPENSPEC_ACTIVE_WORKFLOW is not set.\n"
+            f"  A .active symlink points to '{name}', but symlink fallback is disabled.\n"
+            f"  Set the env var explicitly and retry:\n"
+            f"    export OPENSPEC_ACTIVE_WORKFLOW={name}",
+            file=sys.stderr,
+        )
         sys.exit(1)
-    target = Path(os.readlink(str(link)))
-    if not target.is_absolute():
-        target = link.parent / target
-    if not target.exists():
-        print(f"Active workflow file missing: {target}", file=sys.stderr)
-        sys.exit(1)
-    data = _read_workflow(target)
-    return data, data.get("name", target.stem)
+
+    print("No active workflow. Set OPENSPEC_ACTIVE_WORKFLOW=<name> and retry.", file=sys.stderr)
+    sys.exit(1)
 
 
 def _set_active(name: str) -> None:
@@ -232,6 +241,12 @@ def cmd_start(args: list[str]) -> None:
     _atomic_write(wf_file, data)
     _set_active(name)
     print(f"Started workflow: {name}")
+    print(
+        f"\nREQUIRED: Set this env var immediately — all subsequent commands will fail without it:\n"
+        f"  export OPENSPEC_ACTIVE_WORKFLOW={name}\n"
+        f"  Pass it to every agent spawn:\n"
+        f'  Agent(prompt="... ## Required\\nexport OPENSPEC_ACTIVE_WORKFLOW={name}\\n...")',
+    )
 
 
 def cmd_switch(args: list[str]) -> None:

@@ -103,42 +103,29 @@ agent-os-openspec/
 ## Parallele Workflows (v3 — Isolierter State)
 
 Jeder Workflow bekommt ein eigenes JSON-File in `.claude/workflows/`.
-Aktiver Workflow wird per `.active` Symlink verwaltet.
+Aktiver Workflow wird **ausschliesslich** per `OPENSPEC_ACTIVE_WORKFLOW` Env-Var verwaltet.
+
+**SYMLINK VERBOTEN:** Der `.active`-Symlink-Fallback ist deaktiviert. `workflow.py` bricht mit FATAL-Error ab wenn `OPENSPEC_ACTIVE_WORKFLOW` nicht gesetzt ist. Nach `workflow.py start <name>` gibt das Tool die notwendige `export`-Zeile direkt aus.
 
 ```
 .claude/workflows/
-├── .active              ← Symlink auf aktiven Workflow
 ├── FEAT_001.json        ← State fuer FEAT_001
 ├── BUG_042.json         ← State fuer BUG_042
 └── _archive/            ← Abgeschlossene Workflows
 ```
 
 ```bash
-# Workflow starten
+# Workflow starten — Ausgabe enthaelt die Pflicht-export-Zeile
 python3 .claude/hooks/workflow.py start "feature-login"
-python3 .claude/hooks/workflow.py start "bugfix-crash"
+export OPENSPEC_ACTIVE_WORKFLOW=feature-login   # ← SOFORT setzen
 
-# Zwischen Workflows wechseln
-python3 .claude/hooks/workflow.py switch "bugfix-crash"
-
-# Alle Workflows anzeigen
-python3 .claude/hooks/workflow.py list
-
-# Status des aktiven Workflows
-python3 .claude/hooks/workflow.py status
-
-# Phase setzen (mit Validierung)
-python3 .claude/hooks/workflow.py phase phase6_implement
-
-# Feld setzen
-python3 .claude/hooks/workflow.py set-field spec_file "docs/specs/feat.md"
-
-# Artefakt registrieren
-python3 .claude/hooks/workflow.py add-artifact test_output "logs/test.log" "Tests failed" phase5_tdd_red
-
-# Workflow abschliessen (→ _archive/)
-python3 .claude/hooks/workflow.py complete
+# Alle weiteren Befehle immer mit Env-Var-Prefix
+OPENSPEC_ACTIVE_WORKFLOW=feature-login python3 .claude/hooks/workflow.py status
+OPENSPEC_ACTIVE_WORKFLOW=feature-login python3 .claude/hooks/workflow.py phase phase6_implement
+OPENSPEC_ACTIVE_WORKFLOW=feature-login python3 .claude/hooks/workflow.py complete
 ```
+
+Beim Agent-Spawn den Workflow-Namen immer im Prompt uebergeben: `export OPENSPEC_ACTIVE_WORKFLOW=<name>` als erste Pflicht-Zeile im Agent-Brief.
 
 ### Migration von v2
 ```bash
