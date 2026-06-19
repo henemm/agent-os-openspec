@@ -22,9 +22,14 @@ import time
 import re
 from pathlib import Path
 
-# Try to import config loader
+# Module guard — No-Op wenn home-assistant nicht aktiv
+if "home-assistant" not in os.environ.get("OPENSPEC_ENABLED_MODULES", "").split(","):
+    sys.exit(0)
+
+# Plugin-Root Bootstrap — CLAUDE_PLUGIN_ROOT hat Vorrang vor relativem Pfad
+_plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT") or str(Path(__file__).parent.parent.parent.parent)
 try:
-    sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "core" / "hooks"))
+    sys.path.insert(0, str(Path(_plugin_root) / "core" / "hooks"))
     from config_loader import get_project_root, load_config
 except ImportError:
     def get_project_root():

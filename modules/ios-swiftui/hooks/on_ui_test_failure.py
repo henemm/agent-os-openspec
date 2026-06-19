@@ -21,6 +21,10 @@ import re
 import sys
 from pathlib import Path
 
+# Module guard — No-Op wenn ios-swiftui nicht aktiv
+if "ios-swiftui" not in os.environ.get("OPENSPEC_ENABLED_MODULES", "").split(","):
+    sys.exit(0)
+
 
 def get_tool_result() -> dict:
     """Read tool result from PostToolUse input."""

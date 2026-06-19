@@ -123,6 +123,12 @@ def find_plugin_root() -> Path:
     return candidate
 
 
+def is_module_enabled(module_id: str) -> bool:
+    """Check if a plugin module is enabled via OPENSPEC_ENABLED_MODULES env var."""
+    enabled = os.environ.get("OPENSPEC_ENABLED_MODULES", "")
+    return module_id in [m.strip() for m in enabled.split(",") if m.strip()]
+
+
 def is_test_file(file_path: str) -> bool:
     """Check if a file is a test file."""
     test_patterns = [

@@ -18,6 +18,10 @@ import re
 import subprocess
 import sys
 
+# Module guard — No-Op wenn ios-swiftui nicht aktiv
+if "ios-swiftui" not in os.environ.get("OPENSPEC_ENABLED_MODULES", "").split(","):
+    sys.exit(0)
+
 
 def get_tool_input() -> dict:
     """Read tool input."""
