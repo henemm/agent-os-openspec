@@ -1,0 +1,10 @@
+{
+  "name": "agent-os-openspec",
+  "version": "3.2.0",
+  "description": "8-Phase Workflow Engine with TDD Enforcement for Claude Code",
+  "author": "henemm",
+  "modules": [
+    {"id": "ios-swiftui", "label": "iOS/SwiftUI", "env_key": "OPENSPEC_ENABLED_MODULES"},
+    {"id": "home-assistant", "label": "Home Assistant", "env_key": "OPENSPEC_ENABLED_MODULES"}
+  ]
+}

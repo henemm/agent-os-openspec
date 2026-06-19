@@ -19,7 +19,7 @@ Usage:
 Exit Codes: 0 = VERIFIED or AMBIGUOUS, 1 = BROKEN/FAILED
 """
 
-from hook_utils import setup_path, find_project_root
+from hook_utils import setup_path, find_project_root, find_plugin_root
 setup_path()
 
 import json
@@ -31,6 +31,7 @@ import time
 from pathlib import Path
 
 _root = find_project_root()
+_plugin_root = find_plugin_root()
 
 # Generic test patterns (project-agnostic)
 TEST_PATTERNS = [
@@ -43,7 +44,7 @@ TEST_PATTERNS = [
 
 def _set_verdict(verdict: str) -> None:
     """Set adversary_verdict on active workflow via workflow.py CLI."""
-    workflow_py = _root / ".claude" / "hooks" / "workflow.py"
+    workflow_py = _plugin_root / "core" / "hooks" / "workflow.py"
     subprocess.run(
         [sys.executable, str(workflow_py), "set-field", "adversary_verdict", verdict],
         capture_output=True, text=True
@@ -108,7 +109,7 @@ def main():
     args = sys.argv[1:]
 
     if not args or args[0] == "--check":
-        workflow_py = _root / ".claude" / "hooks" / "workflow.py"
+        workflow_py = _plugin_root / "core" / "hooks" / "workflow.py"
         subprocess.run([sys.executable, str(workflow_py), "status"])
         sys.exit(0)
 
@@ -134,7 +135,7 @@ def main():
         print(f"Screenshot skipped: {reason}")
 
     # Get active workflow name
-    workflow_py = _root / ".claude" / "hooks" / "workflow.py"
+    workflow_py = _plugin_root / "core" / "hooks" / "workflow.py"
     result = subprocess.run(
         [sys.executable, str(workflow_py), "status"],
         capture_output=True, text=True

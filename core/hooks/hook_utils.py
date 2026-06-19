@@ -111,6 +111,24 @@ def find_project_root() -> Path:
     return cwd
 
 
+def find_plugin_root() -> Path:
+    """Plugin-Root: wo die Hook-Skripte liegen."""
+    env = os.environ.get("CLAUDE_PLUGIN_ROOT", "").strip()
+    if env:
+        return Path(env)
+    # Fallback: hook_utils.py liegt in plugin_root/core/hooks/
+    candidate = Path(__file__).parent.parent.parent
+    if (candidate / ".claude-plugin" / "plugin.json").exists():
+        return candidate
+    return candidate
+
+
+def is_module_enabled(module_id: str) -> bool:
+    """Check if a plugin module is enabled via OPENSPEC_ENABLED_MODULES env var."""
+    enabled = os.environ.get("OPENSPEC_ENABLED_MODULES", "")
+    return module_id in [m.strip() for m in enabled.split(",") if m.strip()]
+
+
 def is_test_file(file_path: str) -> bool:
     """Check if a file is a test file."""
     test_patterns = [

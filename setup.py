@@ -28,8 +28,20 @@ from datetime import datetime
 import hashlib
 
 
-FRAMEWORK_VERSION = "3.0.0"
 FRAMEWORK_ROOT = Path(__file__).parent
+
+
+def _read_plugin_version() -> str:
+    plugin_json = FRAMEWORK_ROOT / ".claude-plugin" / "plugin.json"
+    if plugin_json.exists():
+        try:
+            return json.loads(plugin_json.read_text()).get("version", "3.0.0")
+        except Exception:
+            pass
+    return "3.0.0"
+
+
+FRAMEWORK_VERSION = _read_plugin_version()
 CORE_DIR = FRAMEWORK_ROOT / "core"
 MODULES_DIR = FRAMEWORK_ROOT / "modules"
 
@@ -319,6 +331,98 @@ def generate_settings_json(project_path: Path, modules: list):
         json.dump(settings, f, indent=2)
 
     print(f"  Generated: .claude/settings.json")
+
+
+def generate_settings_json_plugin_mode(project_path: Path, modules: list):
+    """Generate settings.json using ${CLAUDE_PLUGIN_ROOT} references — no hook files copied."""
+    hooks_json_path = FRAMEWORK_ROOT / "hooks" / "hooks.json"
+    if not hooks_json_path.exists():
+        print("  ERROR: hooks/hooks.json not found in plugin root — cannot generate plugin-mode settings.")
+        return
+
+    hooks_data = json.loads(hooks_json_path.read_text())
+
+    settings = {
+        "permissions": {
+            "allow": ["Bash", "WebSearch", "WebFetch"],
+            "deny": [],
+            "ask": []
+        },
+        "hooks": hooks_data["hooks"]
+    }
+
+    if modules:
+        settings["env"] = {
+            "OPENSPEC_ENABLED_MODULES": ",".join(modules)
+        }
+
+    settings_path = project_path / ".claude" / "settings.json"
+    with open(settings_path, 'w') as f:
+        json.dump(settings, f, indent=2)
+    print(f"  Generated: .claude/settings.json (plugin mode, modules: {modules or 'none'})")
+
+
+def install_plugin_mode(project_path: Path, modules: list):
+    """Install in plugin mode — no hook copying, uses ${CLAUDE_PLUGIN_ROOT} references."""
+    print(f"\nOpenSpec Framework Setup (Plugin Mode)")
+    print(f"=======================================")
+    print(f"Framework version: {FRAMEWORK_VERSION}")
+    print(f"Project: {project_path}")
+    print(f"Modules: {modules or ['core only']}")
+    print()
+
+    dirs = [
+        ".claude/workflows",
+        ".claude/workflows/_archive",
+        ".claude/artifacts/screenshots",
+        "docs/specs",
+        "docs/artifacts",
+        "docs/context",
+    ]
+    print("Creating directory structure...")
+    for d in dirs:
+        (project_path / d).mkdir(parents=True, exist_ok=True)
+        print(f"  Created: {d}/")
+
+    print("\nGenerating configuration...")
+    generate_settings_json_plugin_mode(project_path, modules)
+    generate_config_yaml(project_path, modules)
+    create_spec_template(project_path)
+    create_workflows_dir(project_path)
+
+    version_file = project_path / ".claude" / "framework_version.json"
+    version_info = {
+        "framework_version": FRAMEWORK_VERSION,
+        "installed": datetime.now().isoformat(),
+        "installed_modules": modules,
+        "plugin_mode": True,
+    }
+    with open(version_file, 'w') as f:
+        json.dump(version_info, f, indent=2)
+    print("  Created: .claude/framework_version.json")
+
+    print("\nCreating CLAUDE.md...")
+    create_claude_md(project_path)
+
+    print("\n" + "=" * 50)
+    print("Setup complete! (Plugin Mode)")
+    print("=" * 50)
+    print(f"""
+Plugin mode: hooks run from ${{CLAUDE_PLUGIN_ROOT}}/core/hooks/
+No hooks copied to .claude/hooks/ — they live in the plugin.
+
+Workflow via skills (preferred):
+  /80-workflow start <name>
+  /80-workflow status
+
+Or directly:
+  python3 ${{CLAUDE_PLUGIN_ROOT}}/core/hooks/workflow.py start <name>
+  python3 ${{CLAUDE_PLUGIN_ROOT}}/core/hooks/workflow.py status
+
+Next steps:
+1. Review openspec.yaml and customize for your project
+2. Ensure the plugin is installed in Claude Code
+""")
 
 
 def generate_config_yaml(project_path: Path, modules: list):
@@ -674,9 +778,13 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Fresh installation
+  # Fresh installation (legacy mode — hooks copied to .claude/hooks/)
   python3 setup.py /path/to/project
   python3 setup.py /path/to/project --module home-assistant
+
+  # Plugin mode (no file copying — uses ${CLAUDE_PLUGIN_ROOT} references)
+  python3 setup.py /path/to/project --plugin-mode
+  python3 setup.py /path/to/project --plugin-mode --module ios-swiftui
 
   # Update existing installation
   python3 setup.py /path/to/project --update
@@ -721,6 +829,15 @@ Available modules:
     )
 
     parser.add_argument(
+        "--plugin-mode",
+        action="store_true",
+        help=(
+            "Install in plugin mode: no hooks copied, settings.json references "
+            "${CLAUDE_PLUGIN_ROOT}/core/hooks/ instead of local .claude/hooks/"
+        )
+    )
+
+    parser.add_argument(
         "--version", "-v",
         action="version",
         version=f"OpenSpec Framework {FRAMEWORK_VERSION}"
@@ -737,6 +854,11 @@ Available modules:
     # Update mode
     if args.update:
         update_project(project_path, args.modules, args.force)
+        return
+
+    # Plugin mode
+    if args.plugin_mode:
+        install_plugin_mode(project_path, args.modules)
         return
 
     # Fresh installation

@@ -236,9 +236,11 @@ def main():
         if pf in file_path:
             block(f"BLOCKED: Protected state file: {pf}")
 
-    # 2. Always-allowed directories
+    # 2. Always-allowed directories (component match — avoids false positives
+    # when project folder names happen to contain "test/" etc.)
+    _file_parts = set(Path(file_path).parts)
     for d in allowed_dirs:
-        if d in file_path:
+        if d.rstrip("/") in _file_parts:
             allow()
 
     # 2b. Always-allowed patterns

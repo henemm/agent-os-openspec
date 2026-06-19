@@ -22,16 +22,19 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
-TOKEN_FILE = find_project_root() / ".claude" / "user_override_token.json"
 TOKEN_TTL_HOURS = 1
+
+
+def _get_token_file() -> Path:
+    return find_project_root() / ".claude" / "user_override_token.json"
 
 
 def _load_tokens() -> dict[str, dict]:
     """Load all tokens, handling both v1 and v2 format."""
-    if not TOKEN_FILE.exists():
+    if not _get_token_file().exists():
         return {}
     try:
-        data = json.loads(TOKEN_FILE.read_text())
+        data = json.loads(_get_token_file().read_text())
     except (json.JSONDecodeError, OSError):
         return {}
 
@@ -51,9 +54,10 @@ def _load_tokens() -> dict[str, dict]:
 
 
 def _save_tokens(tokens: dict[str, dict]) -> None:
-    TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+    token_file = _get_token_file()
+    token_file.parent.mkdir(parents=True, exist_ok=True)
     data = {"version": 2, "tokens": tokens}
-    with open(TOKEN_FILE, "w") as f:
+    with open(token_file, "w") as f:
         json.dump(data, f, indent=2)
 
 
@@ -114,8 +118,9 @@ def remove_token(workflow_name: str) -> None:
 
 
 def remove_all_tokens() -> None:
-    if TOKEN_FILE.exists():
+    token_file = _get_token_file()
+    if token_file.exists():
         try:
-            TOKEN_FILE.unlink()
+            token_file.unlink()
         except OSError:
             pass

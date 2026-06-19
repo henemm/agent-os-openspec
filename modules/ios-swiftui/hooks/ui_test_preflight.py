@@ -23,6 +23,15 @@ import sys
 import time
 from pathlib import Path
 
+# Module guard — No-Op wenn ios-swiftui nicht aktiv
+if "ios-swiftui" not in os.environ.get("OPENSPEC_ENABLED_MODULES", "").split(","):
+    sys.exit(0)
+
+# Plugin-Root Bootstrap — CLAUDE_PLUGIN_ROOT hat Vorrang vor relativem Pfad
+_plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT") or str(Path(__file__).parent.parent.parent.parent)
+sys.path.insert(0, str(Path(_plugin_root) / "core" / "hooks"))
+from hook_utils import find_project_root
+
 
 # Anti-patterns in UI test code
 ANTI_PATTERNS = [
@@ -101,15 +110,6 @@ def check_anti_patterns(tool_input: dict) -> list:
             })
 
     return violations
-
-
-def find_project_root() -> Path:
-    """Find project root."""
-    cwd = Path.cwd()
-    for parent in [cwd] + list(cwd.parents):
-        if (parent / ".git").exists():
-            return parent
-    return cwd
 
 
 def check_inspect_ui_done() -> bool:

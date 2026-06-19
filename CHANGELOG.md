@@ -5,7 +5,104 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.0] — 2026-06-19
+
+### Added — Claude Code Plugin Support
+
+**Plugin-Manifest** (`.claude-plugin/plugin.json`)
+- Offizielles Claude Code Plugin-Format mit Name, Version, Description, Author
+- Deklariert optionale Module (`ios-swiftui`, `home-assistant`) mit `OPENSPEC_ENABLED_MODULES` als Aktivierungsschlüssel
+
+**Hook-Deklaration** (`hooks/hooks.json`)
+- Plugin-native Hook-Deklaration mit `${CLAUDE_PLUGIN_ROOT}`-Pfaden
+- Alle 4 konsolidierten Hooks + `session_singleton_guard.py` deklariert
+- `Stop`-Event für Session-Cleanup
+
+**Skills** (`skills/*/SKILL.md`)
+- 12 Skills aus `core/commands/` migriert mit Plugin-Frontmatter
+- `disable-model-invocation: true` für TDD/Implement/Validate/Deploy-Phasen (nur User-Trigger)
+- `disable-model-invocation: false` für Context/Analyse/Spec (Claude darf selbst triggern)
+- Pfad-Referenzen via `WF`, `QA`, `AD` Setup-Variablen am Anfang jedes Skills
+
+**Modul-System** (`modules/*/hooks.json`)
+- Jedes Modul hat eigene `hooks.json`
+- `is_module_enabled()` in `hook_utils.py` — Early-Exit wenn Modul inaktiv
+- `sys.path`-Setup in `modules/ios-swiftui/hooks/ui_test_preflight.py` repariert
+
+**Plugin-Root-Trennung** (`hook_utils.py`, `config_loader.py`, `qa_gate.py`, `override_token.py`)
+- `find_plugin_root()` — neue Funktion, prüft `CLAUDE_PLUGIN_ROOT` → Fallback via `__file__`
+- `find_project_root()` — prüft `CLAUDE_PROJECT_DIR` als erste Priorität
+- `qa_gate.py`: hardcodierter `.claude/hooks/workflow.py`-Pfad → `find_plugin_root()/core/hooks/`
+- `override_token.py`: Lazy `_get_token_file()` statt Auswertung beim Import
+
+**`setup.py` — `--plugin-mode` Flag**
+- Version wird aus `plugin.json` gelesen (nicht mehr hardcodiert)
+- `--plugin-mode`: keine Hook-Dateien kopiert, `settings.json` mit `${CLAUDE_PLUGIN_ROOT}`-Pfaden
+- `generate_settings_json_plugin_mode()` nutzt `hooks/hooks.json` direkt
+- `env.OPENSPEC_ENABLED_MODULES` wird bei Modul-Install gesetzt
+
+**`migrate_to_plugin.py`** (neues Script)
+- Migriert bestehende Projekte von Legacy zu Plugin-Mode
+- Erkennt beide Hook-Formate: v2 Shell-Wrapper und v3 direkte Pfade
+- Patcht nur bekannte Plugin-Hooks, lässt projektspezifische Hooks unberührt
+- Entfernt Plugin-Hook-Dateien aus `.claude/hooks/` nach Migration
+- Dry-Run by default, `--apply` für echte Änderungen
+
+**`agents/` Symlink**
+- Top-Level `agents/` → `core/agents/` Symlink für Plugin-Discovery
+
+### Fixed
+
+- **`edit_gate.py` — `ALWAYS_ALLOWED_DIRS` False Positives**: Substring-Matching `d in file_path` ersetzt durch `Path.parts`-Komponenten-Vergleich. Verhindert false positives wenn Projektordnernamen zufällig Test-Strings enthalten (z.B. `openspec-plugin-test/src/`).
+
+### Migration
+
+Bestehende Projekte: Dry-Run vor `--apply` empfohlen. `--apply` erst nach Plugin-Installation in Claude Code (setzt `CLAUDE_PLUGIN_ROOT` voraus).
+
+```bash
+# Dry-Run
+python3 /home/hem/agent-os-openspec/migrate_to_plugin.py /path/to/project
+
+# Anwenden (nach Plugin-Installation)
+python3 /home/hem/agent-os-openspec/migrate_to_plugin.py /path/to/project --apply
+```
+
 ## [Unreleased]
+
+### Added — gregor_zwanzig Improvement Bundle (from production experience)
+
+**Session Singleton Guard** (`session_singleton_guard.py`)
+- Neues Hook-File: erkennt parallele Claude-Sessions im selben Working-Tree via PID-Lock-Files in `.claude/session-locks/`
+- Warnt (ohne zu blockieren) wenn ein anderer Session-Prozess aktiv ist
+- Räumt veraltete Locks für tote Prozesse automatisch auf
+- Registrierung: `UserPromptSubmit` (check) + `Stop` (cleanup) — siehe Datei-Header für settings.json-Snippet
+
+**External Validator Agent** (`external-validator.md`)
+- Neuer Agent: testet die laufende App als echter User ohne Quellcode-Zugriff
+- Kennt nur Spec (ACs) + App-URL + Credentials
+- Pflicht-Format für Findings: `Code reference: file:line`
+- Tri-State Verdict: VERIFIED / BROKEN / AMBIGUOUS
+- Ergänzt `implementation-validator` (Code-Analyse) um echten Black-Box-Test
+
+**Hardcoded Credentials Guard** (`bash_gate.py` Step 4b)
+- Erkennt hartcodierte Secrets in Bash-Befehlen: `sk-*` API-Keys, GitHub PATs (`ghp_`), Slack Tokens (`xoxb-`), Bearer Tokens (40+ Zeichen), Passwörter und API-Keys in Assignments
+- Negative Lookaheads verhindern False Positives bei Env-Var-Referenzen (`$TOKEN`, `${TOKEN}`)
+- Konfigurierbar via `config.yaml → credentials_guard.patterns`
+
+**E2E Scope Detection** (`bash_gate.py` Step 5c)
+- Bei jedem `git commit`: staged Files werden analysiert und Scope bestimmt: `docs-only` | `frontend-only` | `backend` | `full-stack`
+- Scope wird atomar in Workflow-State geschrieben (`e2e_scope` Feld)
+- Niemals blockierend — rein informativ für nachgelagerte E2E-Routing-Entscheidungen
+- Patterns konfigurierbar via `config.yaml → e2e_scope`
+
+**Bug-Fix: `_read_active_workflow()` in `bash_gate.py`**
+- Nutzte ausschliesslich `.active`-Symlink — ignorierte `OPENSPEC_ACTIVE_WORKFLOW` Env-Var
+- Fix: Env-Var wird jetzt als primäre Quelle geprüft (analog zu `edit_gate.py`)
+- Verhindert Workflow-Drift bei parallelen Sessions
+
+**Bug-Fix: `_set_adversary_verdict()` in `post_bash.py`**
+- Nutzte `.active`-Symlink + non-atomisches Write — mögliche Dateikorruption bei Race-Conditions
+- Fix: Env-Var als primäre Quelle + atomisches Schreiben via `tempfile + rename`
 
 ### Added — Orchestrator-Prinzip (v3.1)
 
