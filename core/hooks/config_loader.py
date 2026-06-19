@@ -32,6 +32,11 @@ LOCAL_OVERRIDE_NAMES = ["settings.local.json", ".settings.local.json"]
 @lru_cache(maxsize=1)
 def find_project_root() -> Path:
     """Find project root by looking for config file or .git directory."""
+    # CLAUDE_PROJECT_DIR hat höchste Priorität (gesetzt von Claude Code im Plugin-Modus)
+    env_dir = os.environ.get("CLAUDE_PROJECT_DIR", "").strip()
+    if env_dir:
+        return Path(env_dir)
+
     current = Path.cwd()
 
     while current != current.parent:
