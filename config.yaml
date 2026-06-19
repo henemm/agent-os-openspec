@@ -108,6 +108,25 @@ secrets_guard:
     - "\\.pem$"
     - "\\.key$"
 
+# Credentials Guard — Detects hardcoded secrets in bash commands
+# Used by bash_gate.py (step 4b). Empty patterns list = use built-in defaults.
+credentials_guard:
+  patterns: []
+
+# E2E Scope Detection — Classifies commits by scope for downstream E2E routing
+# Used by bash_gate.py (step 5c) — writes e2e_scope to workflow state, never blocks
+# Scope values: docs-only | frontend-only | backend | full-stack
+e2e_scope:
+  docs_patterns:
+    - '^docs/'
+    - '\.md$'
+    - '^\.claude/'
+  frontend_patterns:
+    - '^(frontend|ui|client)/'
+    - '^src/.*\.(svelte|vue|tsx|jsx|css|scss|html)$'
+  backend_patterns:
+    - '^(src|api|internal|cmd|backend|server)/'
+
 # Pre-commit Gate — Checks before git commit is allowed
 # Used by bash_gate.py
 pre_commit:

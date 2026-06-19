@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — gregor_zwanzig Improvement Bundle (from production experience)
+
+**Session Singleton Guard** (`session_singleton_guard.py`)
+- Neues Hook-File: erkennt parallele Claude-Sessions im selben Working-Tree via PID-Lock-Files in `.claude/session-locks/`
+- Warnt (ohne zu blockieren) wenn ein anderer Session-Prozess aktiv ist
+- Räumt veraltete Locks für tote Prozesse automatisch auf
+- Registrierung: `UserPromptSubmit` (check) + `Stop` (cleanup) — siehe Datei-Header für settings.json-Snippet
+
+**External Validator Agent** (`external-validator.md`)
+- Neuer Agent: testet die laufende App als echter User ohne Quellcode-Zugriff
+- Kennt nur Spec (ACs) + App-URL + Credentials
+- Pflicht-Format für Findings: `Code reference: file:line`
+- Tri-State Verdict: VERIFIED / BROKEN / AMBIGUOUS
+- Ergänzt `implementation-validator` (Code-Analyse) um echten Black-Box-Test
+
+**Hardcoded Credentials Guard** (`bash_gate.py` Step 4b)
+- Erkennt hartcodierte Secrets in Bash-Befehlen: `sk-*` API-Keys, GitHub PATs (`ghp_`), Slack Tokens (`xoxb-`), Bearer Tokens (40+ Zeichen), Passwörter und API-Keys in Assignments
+- Negative Lookaheads verhindern False Positives bei Env-Var-Referenzen (`$TOKEN`, `${TOKEN}`)
+- Konfigurierbar via `config.yaml → credentials_guard.patterns`
+
+**E2E Scope Detection** (`bash_gate.py` Step 5c)
+- Bei jedem `git commit`: staged Files werden analysiert und Scope bestimmt: `docs-only` | `frontend-only` | `backend` | `full-stack`
+- Scope wird atomar in Workflow-State geschrieben (`e2e_scope` Feld)
+- Niemals blockierend — rein informativ für nachgelagerte E2E-Routing-Entscheidungen
+- Patterns konfigurierbar via `config.yaml → e2e_scope`
+
+**Bug-Fix: `_read_active_workflow()` in `bash_gate.py`**
+- Nutzte ausschliesslich `.active`-Symlink — ignorierte `OPENSPEC_ACTIVE_WORKFLOW` Env-Var
+- Fix: Env-Var wird jetzt als primäre Quelle geprüft (analog zu `edit_gate.py`)
+- Verhindert Workflow-Drift bei parallelen Sessions
+
+**Bug-Fix: `_set_adversary_verdict()` in `post_bash.py`**
+- Nutzte `.active`-Symlink + non-atomisches Write — mögliche Dateikorruption bei Race-Conditions
+- Fix: Env-Var als primäre Quelle + atomisches Schreiben via `tempfile + rename`
+
 ### Added — Orchestrator-Prinzip (v3.1)
 
 - **`developer-agent.md`** — Neue Agent-Definition: schreibt Code, führt Tests aus, reportet an Orchestrator; arbeitet nie mit User, plant nie, rate nie

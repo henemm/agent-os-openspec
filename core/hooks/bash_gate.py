@@ -62,6 +62,21 @@ WHITELIST_COMMANDS = [
     "git status", "git log", "git push",
 ]
 
+# Credential patterns to detect hardcoded secrets in bash commands
+HARDCODED_CREDENTIAL_PATTERNS = [
+    (r"sk-[A-Za-z0-9]{20,}", "API key (sk- prefix)"),
+    (r"ghp_[A-Za-z0-9]{36}", "GitHub Personal Access Token"),
+    (r"xoxb-[A-Za-z0-9-]{20,}", "Slack Bot token"),
+    (r"Bearer\s+(?!\$|\{|<)[A-Za-z0-9._~+/=-]{40,}", "hardcoded Bearer token"),
+    (r"(?:password|passwd)\s*=\s*['\"][^'\"\$\{<]{8,}['\"]", "hardcoded password"),
+    (r"(?:api_key|apikey|api-key)\s*=\s*['\"][^'\"\$\{<]{8,}['\"]", "hardcoded API key"),
+]
+
+# E2E scope detection patterns (configurable via config.yaml → e2e_scope)
+E2E_DOCS_PATTERNS = [r'^docs/', r'\.md$', r'^\.claude/']
+E2E_FRONTEND_PATTERNS = [r'^(frontend|ui|client)/', r'^src/.*\.(svelte|vue|tsx|jsx|css|scss|html)$']
+E2E_BACKEND_PATTERNS = [r'^(src|api|internal|cmd|backend|server)/']
+
 
 # --- Config loading ---
 
@@ -115,6 +130,17 @@ def _outputs_content(command: str) -> bool:
 
 
 def _read_active_workflow() -> dict | None:
+    """Read active workflow via OPENSPEC_ACTIVE_WORKFLOW env var (preferred) or .active symlink."""
+    name = os.environ.get("OPENSPEC_ACTIVE_WORKFLOW", "").strip()
+    if name:
+        wf_file = _root / ".claude" / "workflows" / f"{name}.json"
+        if wf_file.exists():
+            try:
+                return json.loads(wf_file.read_text())
+            except (OSError, json.JSONDecodeError):
+                pass
+        return None
+    # Symlink fallback for sessions without env var set
     link = _root / ".claude" / "workflows" / ".active"
     if not link.exists():
         return None
@@ -127,6 +153,54 @@ def _read_active_workflow() -> dict | None:
     except (OSError, json.JSONDecodeError):
         pass
     return None
+
+
+def _contains_hardcoded_credentials(command: str, config: dict) -> str | None:
+    """Return credential type if command contains a hardcoded secret, else None."""
+    patterns = config.get("credentials_guard", {}).get("patterns", HARDCODED_CREDENTIAL_PATTERNS)
+    for pattern, cred_type in patterns:
+        if re.search(pattern, command, re.IGNORECASE):
+            return cred_type
+    return None
+
+
+def _detect_e2e_scope(staged_files: list, config: dict) -> str:
+    """Determine E2E test scope from staged file paths."""
+    docs = config.get("e2e_scope", {}).get("docs_patterns", E2E_DOCS_PATTERNS)
+    front = config.get("e2e_scope", {}).get("frontend_patterns", E2E_FRONTEND_PATTERNS)
+    back = config.get("e2e_scope", {}).get("backend_patterns", E2E_BACKEND_PATTERNS)
+    non_doc = [f for f in staged_files if not any(re.search(p, f) for p in docs)]
+    if not non_doc:
+        return "docs-only"
+    has_front = any(any(re.search(p, f) for p in front) for f in non_doc)
+    has_back = any(any(re.search(p, f) for p in back) for f in non_doc)
+    if has_front and has_back:
+        return "full-stack"
+    if has_front:
+        return "frontend-only"
+    if has_back:
+        return "backend"
+    return "full-stack"
+
+
+def _write_e2e_scope(wf: dict, scope: str) -> None:
+    """Write e2e_scope to the active workflow JSON atomically (never raises)."""
+    import tempfile
+    name = wf.get("name", "")
+    if not name:
+        return
+    wf_file = _root / ".claude" / "workflows" / f"{name}.json"
+    if not wf_file.exists():
+        return
+    try:
+        data = json.loads(wf_file.read_text())
+        data["e2e_scope"] = scope
+        fd, tmp = tempfile.mkstemp(dir=str(wf_file.parent), suffix=".tmp")
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=2)
+        os.rename(tmp, str(wf_file))
+    except (OSError, json.JSONDecodeError):
+        pass
 
 
 # --- Main ---
@@ -165,27 +239,33 @@ def main():
         if not staging:
             block("BLOCKED: Secrets guard — .env file. Enable staging mode with: touch .claude/staging")
 
+    # 4b. Hardcoded credentials in command
+    if not _is_whitelisted(command):
+        cred_type = _contains_hardcoded_credentials(command, config)
+        if cred_type:
+            block(f"BLOCKED: Hardcoded {cred_type} detected. Use env vars or secrets.env instead.")
+
     # 5. Git commit gates
     if "git commit" in command:
         import subprocess
 
+        # Get staged files (reused across 5a, 5b, 5c)
+        staged = subprocess.run(
+            ["git", "diff", "--cached", "--name-only"],
+            cwd=_root, capture_output=True, text=True
+        )
+        staged_list = staged.stdout.strip().splitlines()
+
         # 5a. Configurable required staged files
         required_files = config.get("pre_commit", {}).get("required_staged_files", [])
-        if required_files:
-            staged = subprocess.run(
-                ["git", "diff", "--cached", "--name-only"],
-                cwd=_root, capture_output=True, text=True
-            )
-            staged_list = staged.stdout.strip().splitlines()
-            for req_file in required_files:
-                if req_file not in staged_list:
-                    # Check if file has changes
-                    diff = subprocess.run(
-                        ["git", "diff", "--name-only", "--", req_file],
-                        cwd=_root, capture_output=True, text=True
-                    )
-                    if diff.stdout.strip():
-                        block(f"BLOCKED: {req_file} has unstaged changes. Stage it first.")
+        for req_file in required_files:
+            if req_file not in staged_list:
+                diff = subprocess.run(
+                    ["git", "diff", "--name-only", "--", req_file],
+                    cwd=_root, capture_output=True, text=True
+                )
+                if diff.stdout.strip():
+                    block(f"BLOCKED: {req_file} has unstaged changes. Stage it first.")
 
         # 5b. Adversary verdict check (if in phase6+)
         wf = _read_active_workflow()
@@ -196,7 +276,6 @@ def main():
                 if verdict.startswith("VERIFIED"):
                     pass  # green
                 elif verdict.startswith("AMBIGUOUS"):
-                    # AMBIGUOUS requires explicit override-ambiguous (S4)
                     if not wf.get("adversary_ambiguous_override"):
                         block("BLOCKED: Adversary verdict is AMBIGUOUS. "
                               "Review findings, then: workflow.py override-ambiguous '<reason>'")
@@ -209,6 +288,11 @@ def main():
                         pass
                     if not has_override:
                         block("BLOCKED: Adversary verdict missing or not VERIFIED. Run adversary validation first.")
+
+            # 5c. E2E scope detection (informational — never blocks)
+            scope = _detect_e2e_scope(staged_list, config)
+            _write_e2e_scope(wf, scope)
+            print(f"E2E scope: {scope}", file=sys.stderr)
 
     # 6. Allow
     allow()

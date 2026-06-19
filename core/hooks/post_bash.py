@@ -49,7 +49,33 @@ def _detect_test_output(command: str, tool_input: dict) -> None:
 
 
 def _set_adversary_verdict(verdict: str) -> None:
-    """Update adversary_verdict in active workflow."""
+    """Update adversary_verdict in active workflow via env var (preferred) or .active symlink."""
+    import tempfile
+
+    def _atomic_write(wf_file: Path, data: dict) -> None:
+        fd, tmp = tempfile.mkstemp(dir=str(wf_file.parent), suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(data, f, indent=2)
+            os.rename(tmp, str(wf_file))
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+
+    name = os.environ.get("OPENSPEC_ACTIVE_WORKFLOW", "").strip()
+    if name:
+        wf_file = _root / ".claude" / "workflows" / f"{name}.json"
+        if wf_file.exists():
+            try:
+                data = json.loads(wf_file.read_text())
+                data["adversary_verdict"] = verdict
+                _atomic_write(wf_file, data)
+            except (OSError, json.JSONDecodeError):
+                pass
+        return
+    # Symlink fallback
     link = _root / ".claude" / "workflows" / ".active"
     if not link.exists():
         return
@@ -61,7 +87,7 @@ def _set_adversary_verdict(verdict: str) -> None:
             return
         data = json.loads(target.read_text())
         data["adversary_verdict"] = verdict
-        target.write_text(json.dumps(data, indent=2))
+        _atomic_write(target, data)
     except (OSError, json.JSONDecodeError):
         pass
 
