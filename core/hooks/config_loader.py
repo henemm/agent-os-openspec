@@ -241,6 +241,11 @@ def get_state_file_path() -> Path:
     return get_project_root() / ".claude" / "workflow_state.json"
 
 
+def get_ac_format_required_since() -> "str | None":
+    """Return ac_format_required_since date string from config, or None."""
+    return load_config().get("spec_validation", {}).get("ac_format_required_since")
+
+
 if __name__ == "__main__":
     # Test: Print loaded config
     import json

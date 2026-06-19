@@ -86,6 +86,28 @@ def _archive_dir() -> Path:
     return _workflows_dir() / "_archive"
 
 
+# Compatibility aliases for project hooks that used the old project-local workflow.py API
+_get_workflows_root = _workflows_dir
+
+
+def _archive_file(name: str) -> Path:
+    return _archive_dir() / f"{name}.json"
+
+
+def _read_workflow_file(path: "Path") -> dict:
+    return _read_workflow(path)
+
+
+def _active_name() -> "str | None":
+    """Return active workflow name from env var, or None (non-fatal).
+
+    Compatibility alias: old project-local workflow.py returned None instead
+    of calling sys.exit(1) when no workflow was active.
+    """
+    name = _active_name_from_env()
+    return name if name else None
+
+
 def _atomic_write(path: Path, data: dict) -> None:
     """Write JSON atomically via tempfile + rename."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -148,6 +170,22 @@ def _read_active() -> tuple[dict, str]:
 
     print("No active workflow. Set OPENSPEC_ACTIVE_WORKFLOW=<name> and retry.", file=sys.stderr)
     sys.exit(1)
+
+
+def read_active_workflow_fast() -> "tuple[str, dict] | None":
+    """Return (name, data) for the active workflow, or None if no workflow is active.
+
+    Unlike _read_active(), this never calls sys.exit(). Intended for hooks that
+    should silently skip when no workflow is running.
+    """
+    env_name = _active_name_from_env()
+    if env_name:
+        wf_file = _workflow_file(env_name)
+        if wf_file.exists():
+            data = _read_workflow(wf_file)
+            return data.get("name", wf_file.stem), data
+        return None
+    return None
 
 
 def _set_active(name: str) -> None:
