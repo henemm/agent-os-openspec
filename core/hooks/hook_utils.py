@@ -111,6 +111,27 @@ def find_project_root() -> Path:
     return cwd
 
 
+def get_active_workflow_name() -> str:
+    """Return the active workflow name.
+
+    Checks env var first (injected by Claude Code from settings.local.json at session
+    start). Falls back to reading settings.local.json directly — necessary when
+    workflow.py start/switch was called AFTER the current session started, because
+    Claude Code only reads settings files at startup, not on every hook invocation.
+    """
+    name = os.environ.get("OPENSPEC_ACTIVE_WORKFLOW", "").strip()
+    if name:
+        return name
+    try:
+        settings_path = find_project_root() / ".claude" / "settings.local.json"
+        if settings_path.exists():
+            settings = json.loads(settings_path.read_text())
+            name = settings.get("env", {}).get("OPENSPEC_ACTIVE_WORKFLOW", "").strip()
+    except (OSError, json.JSONDecodeError, KeyError):
+        pass
+    return name
+
+
 def find_plugin_root() -> Path:
     """Plugin-Root: wo die Hook-Skripte liegen."""
     env = os.environ.get("CLAUDE_PLUGIN_ROOT", "").strip()

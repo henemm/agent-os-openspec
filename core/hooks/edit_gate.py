@@ -19,7 +19,7 @@ Replaces 17 separate hooks with 1. Sequential short-circuit logic:
 Exit Codes: 0 = allowed, 2 = blocked
 """
 
-from hook_utils import setup_path, find_project_root, get_tool_input, block, allow
+from hook_utils import setup_path, find_project_root, get_tool_input, block, allow, get_active_workflow_name
 setup_path()
 
 import json
@@ -84,7 +84,7 @@ def _read_active_workflow() -> dict | None:
     The .active symlink is intentionally not used — it causes drift in
     parallel sessions where each session has a different active workflow.
     """
-    name = os.environ.get("OPENSPEC_ACTIVE_WORKFLOW", "").strip()
+    name = get_active_workflow_name()
     if not name:
         return None
     wf_dir = _root / ".claude" / "workflows"

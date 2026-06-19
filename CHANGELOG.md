@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+**`hook_utils.py`: `get_active_workflow_name()` — Hooks lesen settings.local.json direkt als Fallback**
+- Problem: Claude Code liest `settings.local.json` nur beim Session-Start, nicht bei jedem Hook-Aufruf. Wenn `workflow.py start/switch` in einer laufenden Session aufgerufen wird, sehen Hooks `OPENSPEC_ACTIVE_WORKFLOW=""` bis zum Neustart.
+- Fix: Neue Funktion `get_active_workflow_name()` in `hook_utils.py` — liest env var zuerst, fällt direkt auf `settings.local.json` zurück. Kein Session-Neustart mehr erforderlich.
+- `edit_gate.py`, `bash_gate.py`, `post_bash.py`, `phase_listener.py`: verwenden jetzt `get_active_workflow_name()` statt `os.environ.get()`
+- `workflow.py` `_read_active()`: gleicher Fallback für CLI-Aufrufe ohne Export
+
 **`workflow.py`: OPENSPEC_ACTIVE_WORKFLOW automatisch in settings.local.json persistieren**
 - Problem: Hook-Subprozesse erben die Umgebung von Claude Codes Hauptprozess, nicht von einzelnen `export`-Bash-Befehlen → Hooks sahen `OPENSPEC_ACTIVE_WORKFLOW=""` → Phase "idle" → alle Schreibzugriffe blockiert
 - Fix: `_set_active()` (aufgerufen von `start` und `switch`) schreibt den Workflow-Namen jetzt automatisch in `.claude/settings.local.json` unter `env.OPENSPEC_ACTIVE_WORKFLOW`

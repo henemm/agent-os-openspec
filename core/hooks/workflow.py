@@ -136,11 +136,24 @@ def _active_name_from_env() -> str:
 def _read_active() -> tuple[dict, str]:
     """Read the active workflow. Returns (data, name).
 
-    ONLY reads OPENSPEC_ACTIVE_WORKFLOW env var. The .active symlink fallback is
-    intentionally removed — relying on it causes cross-session workflow drift.
-    Every caller MUST set OPENSPEC_ACTIVE_WORKFLOW explicitly.
+    Lookup order:
+    1. OPENSPEC_ACTIVE_WORKFLOW env var (set by Claude Code from settings.local.json at startup)
+    2. settings.local.json direct read (when workflow.py start/switch was called in the
+       current session — Claude Code only reads settings files at startup, not live)
+    The .active symlink fallback is intentionally removed (causes cross-session drift).
     """
     env_name = _active_name_from_env()
+
+    # Fallback: read settings.local.json directly if env var absent
+    if not env_name:
+        try:
+            settings_path = find_project_root() / ".claude" / "settings.local.json"
+            if settings_path.exists():
+                settings = json.loads(settings_path.read_text())
+                env_name = settings.get("env", {}).get("OPENSPEC_ACTIVE_WORKFLOW", "").strip()
+        except (OSError, json.JSONDecodeError, KeyError):
+            pass
+
     if env_name:
         wf_file = _workflow_file(env_name)
         if wf_file.exists():
@@ -160,15 +173,14 @@ def _read_active() -> tuple[dict, str]:
         target = Path(os.readlink(str(link)))
         name = target.stem
         print(
-            f"FATAL: OPENSPEC_ACTIVE_WORKFLOW is not set.\n"
+            f"FATAL: No active workflow found.\n"
             f"  A .active symlink points to '{name}', but symlink fallback is disabled.\n"
-            f"  Set the env var explicitly and retry:\n"
-            f"    export OPENSPEC_ACTIVE_WORKFLOW={name}",
+            f"  Run: python3 .claude/hooks/workflow.py switch {name}",
             file=sys.stderr,
         )
         sys.exit(1)
 
-    print("No active workflow. Set OPENSPEC_ACTIVE_WORKFLOW=<name> and retry.", file=sys.stderr)
+    print("No active workflow. Run: python3 .claude/hooks/workflow.py start <name>", file=sys.stderr)
     sys.exit(1)
 
 
@@ -320,9 +332,9 @@ def cmd_start(args: list[str]) -> None:
     _set_active(name)
     print(f"Started workflow: {name}")
     print(
-        f"\nHooks: OPENSPEC_ACTIVE_WORKFLOW={name} written to settings.local.json — "
-        f"all hook subprocesses will see it automatically.\n"
-        f"Shell (optional, for manual workflow.py calls):\n"
+        f"\nOPENSPEC_ACTIVE_WORKFLOW={name} written to all settings.local.json files.\n"
+        f"Hooks read this directly — no session restart required.\n"
+        f"Shell (for manual workflow.py calls in terminal):\n"
         f"  export OPENSPEC_ACTIVE_WORKFLOW={name}\n"
         f"Agent spawns:\n"
         f'  Agent(prompt="... ## Required\\nexport OPENSPEC_ACTIVE_WORKFLOW={name}\\n...")',

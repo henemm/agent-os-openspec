@@ -8,7 +8,7 @@ Module hooks (e.g., iOS build_lock_release) extend this via config.
 Exit Codes: 0 always (never blocks)
 """
 
-from hook_utils import setup_path, find_project_root, get_tool_input
+from hook_utils import setup_path, find_project_root, get_tool_input, get_active_workflow_name
 setup_path()
 
 import json
@@ -64,7 +64,7 @@ def _set_adversary_verdict(verdict: str) -> None:
             except OSError:
                 pass
 
-    name = os.environ.get("OPENSPEC_ACTIVE_WORKFLOW", "").strip()
+    name = get_active_workflow_name()
     if name:
         wf_file = _root / ".claude" / "workflows" / f"{name}.json"
         if wf_file.exists():

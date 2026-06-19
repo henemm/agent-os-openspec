@@ -14,7 +14,7 @@ Replaces 6 separate hooks with 1. Listens for keywords in user messages:
 Exit Codes: 0 always (never blocks, only updates state)
 """
 
-from hook_utils import setup_path, find_project_root, get_user_message
+from hook_utils import setup_path, find_project_root, get_user_message, get_active_workflow_name
 setup_path()
 
 import json
@@ -74,7 +74,7 @@ def _read_active_workflow() -> tuple[dict | None, Path | None]:
        symlink collisions when multiple Claude Code instances run in parallel)
     2. .active symlink (single-session default)
     """
-    env_name = os.environ.get("OPENSPEC_ACTIVE_WORKFLOW", "").strip()
+    env_name = get_active_workflow_name()
     if env_name:
         wf_file = _root / ".claude" / "workflows" / f"{env_name}.json"
         if wf_file.exists():

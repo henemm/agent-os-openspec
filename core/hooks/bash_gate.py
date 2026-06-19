@@ -16,7 +16,7 @@ Project-specific gates (sim_enforcer, build_lock) belong in module hooks.
 Exit Codes: 0 = allowed, 2 = blocked
 """
 
-from hook_utils import setup_path, find_project_root, get_tool_input, block, allow
+from hook_utils import setup_path, find_project_root, get_tool_input, block, allow, get_active_workflow_name
 setup_path()
 
 import json
@@ -130,8 +130,8 @@ def _outputs_content(command: str) -> bool:
 
 
 def _read_active_workflow() -> dict | None:
-    """Read active workflow via OPENSPEC_ACTIVE_WORKFLOW env var (preferred) or .active symlink."""
-    name = os.environ.get("OPENSPEC_ACTIVE_WORKFLOW", "").strip()
+    """Read active workflow via OPENSPEC_ACTIVE_WORKFLOW env var or settings.local.json fallback."""
+    name = get_active_workflow_name()
     if name:
         wf_file = _root / ".claude" / "workflows" / f"{name}.json"
         if wf_file.exists():
