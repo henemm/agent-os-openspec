@@ -16,6 +16,9 @@ import sys
 from pathlib import Path
 from functools import lru_cache
 
+# Re-export for projects that imported from config_loader before Plugin migration
+from hook_utils import find_main_repo_from_worktree  # noqa: F401
+
 try:
     import yaml
 except ImportError:

@@ -99,14 +99,58 @@ def is_code_file(file_path: str) -> bool:
     return any(file_path.endswith(ext) for ext in code_extensions)
 
 
+def find_main_repo_from_worktree(start: Path) -> "Path | None":
+    """If start is inside a git worktree, return the linked main repo root.
+
+    Git worktrees place a .git FILE (not directory) pointing at the main repo:
+      gitdir: <main>/.git/worktrees/<name>
+    Returns None if start is not in a worktree.
+    """
+    current = start
+    while current != current.parent:
+        git_marker = current / ".git"
+        if git_marker.is_file():
+            try:
+                content = git_marker.read_text(errors="ignore").strip()
+            except OSError:
+                return None
+            for line in content.splitlines():
+                line = line.strip()
+                if line.startswith("gitdir:"):
+                    gitdir = Path(line[len("gitdir:"):].strip())
+                    if not gitdir.is_absolute():
+                        gitdir = (current / gitdir).resolve()
+                    # Walk up until we find the .git directory itself
+                    walker = gitdir
+                    while walker.name != ".git" and walker != walker.parent:
+                        walker = walker.parent
+                    if walker.name == ".git":
+                        return walker.parent
+            return None
+        if git_marker.is_dir():
+            return None
+        current = current.parent
+    return None
+
+
 def find_project_root() -> Path:
-    """Find project root by looking for .git directory or CLAUDE_PROJECT_DIR env."""
+    """Find project root. Resolves git worktrees to the main repo root.
+
+    Priority:
+    1. CLAUDE_PROJECT_DIR env var (set by Claude Code) — resolved through worktree if needed
+    2. Walk up from CWD looking for .git, resolving worktrees transparently
+    """
     env_dir = os.environ.get("CLAUDE_PROJECT_DIR")
     if env_dir:
-        return Path(env_dir)
+        p = Path(env_dir)
+        main = find_main_repo_from_worktree(p)
+        return main if main is not None else p
     cwd = Path.cwd()
+    main = find_main_repo_from_worktree(cwd)
+    if main is not None:
+        return main
     for parent in [cwd] + list(cwd.parents):
-        if (parent / ".git").exists():
+        if (parent / ".git").is_dir():
             return parent
     return cwd
 
