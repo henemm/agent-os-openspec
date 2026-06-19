@@ -5,6 +5,16 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+**`workflow.py`: OPENSPEC_ACTIVE_WORKFLOW automatisch in settings.local.json persistieren**
+- Problem: Hook-Subprozesse erben die Umgebung von Claude Codes Hauptprozess, nicht von einzelnen `export`-Bash-Befehlen → Hooks sahen `OPENSPEC_ACTIVE_WORKFLOW=""` → Phase "idle" → alle Schreibzugriffe blockiert
+- Fix: `_set_active()` (aufgerufen von `start` und `switch`) schreibt den Workflow-Namen jetzt automatisch in `.claude/settings.local.json` unter `env.OPENSPEC_ACTIVE_WORKFLOW`
+- `complete` entfernt den Key wieder aus `settings.local.json`
+- `export` in der Shell bleibt weiterhin nötig für manuelle `workflow.py`-Aufrufe im Terminal und für Agent-Spawns
+
 ## [3.2.0] — 2026-06-19
 
 ### Added — Claude Code Plugin Support

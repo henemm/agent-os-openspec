@@ -189,13 +189,42 @@ def read_active_workflow_fast() -> "tuple[str, dict] | None":
 
 
 def _set_active(name: str) -> None:
-    """Set .active symlink to point to workflow file."""
+    """Set .active symlink and persist OPENSPEC_ACTIVE_WORKFLOW in settings.local.json.
+
+    Hook subprocesses inherit Claude Code's process environment, not individual Bash
+    exports. Writing to settings.local.json ensures all hooks see the correct workflow.
+    """
     link = _active_link()
     target = f"{name}.json"
     link.parent.mkdir(parents=True, exist_ok=True)
     if link.is_symlink() or link.exists():
         link.unlink()
     os.symlink(target, str(link))
+    _persist_env(name)
+
+
+def _persist_env(name: "str | None") -> None:
+    """Write (or remove) OPENSPEC_ACTIVE_WORKFLOW in .claude/settings.local.json.
+
+    This is the only reliable way to pass an env var to hook subprocesses — they
+    inherit Claude Code's process environment, not individual 'export' commands.
+    """
+    settings_path = find_project_root() / ".claude" / "settings.local.json"
+    try:
+        settings = json.loads(settings_path.read_text()) if settings_path.exists() else {}
+    except (json.JSONDecodeError, OSError):
+        settings = {}
+
+    env = settings.setdefault("env", {})
+    if name:
+        env["OPENSPEC_ACTIVE_WORKFLOW"] = name
+    else:
+        env.pop("OPENSPEC_ACTIVE_WORKFLOW", None)
+        if not env:
+            settings.pop("env", None)
+
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    _atomic_write(settings_path, settings)
 
 
 def _save_active(data: dict) -> None:
@@ -280,9 +309,11 @@ def cmd_start(args: list[str]) -> None:
     _set_active(name)
     print(f"Started workflow: {name}")
     print(
-        f"\nREQUIRED: Set this env var immediately — all subsequent commands will fail without it:\n"
+        f"\nHooks: OPENSPEC_ACTIVE_WORKFLOW={name} written to settings.local.json — "
+        f"all hook subprocesses will see it automatically.\n"
+        f"Shell (optional, for manual workflow.py calls):\n"
         f"  export OPENSPEC_ACTIVE_WORKFLOW={name}\n"
-        f"  Pass it to every agent spawn:\n"
+        f"Agent spawns:\n"
         f'  Agent(prompt="... ## Required\\nexport OPENSPEC_ACTIVE_WORKFLOW={name}\\n...")',
     )
 
@@ -318,16 +349,10 @@ def cmd_switch(args: list[str]) -> None:
     env_name = _active_name_from_env()
     if env_name and env_name != name:
         print(
-            f"Switched to workflow: {name} (.active symlink updated)\n"
-            f"WARNING: OPENSPEC_ACTIVE_WORKFLOW={env_name!r} is set in this session.\n"
-            f"  Hooks will still use '{env_name}' — the env var overrides the symlink.\n"
-            f"  To align: export OPENSPEC_ACTIVE_WORKFLOW={name}",
-            file=sys.stderr,
-        )
-    elif not env_name:
-        print(
-            f"Tip: For parallel sessions, set OPENSPEC_ACTIVE_WORKFLOW={name} "
-            "before starting Claude Code.",
+            f"Switched to workflow: {name}\n"
+            f"  settings.local.json updated — hooks will use '{name}' on next invocation.\n"
+            f"WARNING: Shell still has OPENSPEC_ACTIVE_WORKFLOW={env_name!r}.\n"
+            f"  Update shell: export OPENSPEC_ACTIVE_WORKFLOW={name}",
             file=sys.stderr,
         )
     print(f"Switched to workflow: {name}")
@@ -527,6 +552,7 @@ def cmd_complete(args: list[str]) -> None:
     link = _active_link()
     if link.is_symlink():
         link.unlink()
+    _persist_env(None)
     print(f"Workflow {name} completed and archived.")
 
 
