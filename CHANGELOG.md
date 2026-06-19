@@ -5,6 +5,68 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.0] — 2026-06-19
+
+### Added — Claude Code Plugin Support
+
+**Plugin-Manifest** (`.claude-plugin/plugin.json`)
+- Offizielles Claude Code Plugin-Format mit Name, Version, Description, Author
+- Deklariert optionale Module (`ios-swiftui`, `home-assistant`) mit `OPENSPEC_ENABLED_MODULES` als Aktivierungsschlüssel
+
+**Hook-Deklaration** (`hooks/hooks.json`)
+- Plugin-native Hook-Deklaration mit `${CLAUDE_PLUGIN_ROOT}`-Pfaden
+- Alle 4 konsolidierten Hooks + `session_singleton_guard.py` deklariert
+- `Stop`-Event für Session-Cleanup
+
+**Skills** (`skills/*/SKILL.md`)
+- 12 Skills aus `core/commands/` migriert mit Plugin-Frontmatter
+- `disable-model-invocation: true` für TDD/Implement/Validate/Deploy-Phasen (nur User-Trigger)
+- `disable-model-invocation: false` für Context/Analyse/Spec (Claude darf selbst triggern)
+- Pfad-Referenzen via `WF`, `QA`, `AD` Setup-Variablen am Anfang jedes Skills
+
+**Modul-System** (`modules/*/hooks.json`)
+- Jedes Modul hat eigene `hooks.json`
+- `is_module_enabled()` in `hook_utils.py` — Early-Exit wenn Modul inaktiv
+- `sys.path`-Setup in `modules/ios-swiftui/hooks/ui_test_preflight.py` repariert
+
+**Plugin-Root-Trennung** (`hook_utils.py`, `config_loader.py`, `qa_gate.py`, `override_token.py`)
+- `find_plugin_root()` — neue Funktion, prüft `CLAUDE_PLUGIN_ROOT` → Fallback via `__file__`
+- `find_project_root()` — prüft `CLAUDE_PROJECT_DIR` als erste Priorität
+- `qa_gate.py`: hardcodierter `.claude/hooks/workflow.py`-Pfad → `find_plugin_root()/core/hooks/`
+- `override_token.py`: Lazy `_get_token_file()` statt Auswertung beim Import
+
+**`setup.py` — `--plugin-mode` Flag**
+- Version wird aus `plugin.json` gelesen (nicht mehr hardcodiert)
+- `--plugin-mode`: keine Hook-Dateien kopiert, `settings.json` mit `${CLAUDE_PLUGIN_ROOT}`-Pfaden
+- `generate_settings_json_plugin_mode()` nutzt `hooks/hooks.json` direkt
+- `env.OPENSPEC_ENABLED_MODULES` wird bei Modul-Install gesetzt
+
+**`migrate_to_plugin.py`** (neues Script)
+- Migriert bestehende Projekte von Legacy zu Plugin-Mode
+- Erkennt beide Hook-Formate: v2 Shell-Wrapper und v3 direkte Pfade
+- Patcht nur bekannte Plugin-Hooks, lässt projektspezifische Hooks unberührt
+- Entfernt Plugin-Hook-Dateien aus `.claude/hooks/` nach Migration
+- Dry-Run by default, `--apply` für echte Änderungen
+
+**`agents/` Symlink**
+- Top-Level `agents/` → `core/agents/` Symlink für Plugin-Discovery
+
+### Fixed
+
+- **`edit_gate.py` — `ALWAYS_ALLOWED_DIRS` False Positives**: Substring-Matching `d in file_path` ersetzt durch `Path.parts`-Komponenten-Vergleich. Verhindert false positives wenn Projektordnernamen zufällig Test-Strings enthalten (z.B. `openspec-plugin-test/src/`).
+
+### Migration
+
+Bestehende Projekte: Dry-Run vor `--apply` empfohlen. `--apply` erst nach Plugin-Installation in Claude Code (setzt `CLAUDE_PLUGIN_ROOT` voraus).
+
+```bash
+# Dry-Run
+python3 /home/hem/agent-os-openspec/migrate_to_plugin.py /path/to/project
+
+# Anwenden (nach Plugin-Installation)
+python3 /home/hem/agent-os-openspec/migrate_to_plugin.py /path/to/project --apply
+```
+
 ## [Unreleased]
 
 ### Added — gregor_zwanzig Improvement Bundle (from production experience)
