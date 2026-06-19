@@ -204,27 +204,38 @@ def _set_active(name: str) -> None:
 
 
 def _persist_env(name: "str | None") -> None:
-    """Write (or remove) OPENSPEC_ACTIVE_WORKFLOW in .claude/settings.local.json.
+    """Write (or remove) OPENSPEC_ACTIVE_WORKFLOW in ALL settings.local.json files.
 
-    This is the only reliable way to pass an env var to hook subprocesses — they
-    inherit Claude Code's process environment, not individual 'export' commands.
+    Hook subprocesses inherit Claude Code's process environment, not individual Bash
+    exports. Worktrees each have their own .claude/settings.local.json, so we must
+    update the main project file AND every worktree's file.
     """
-    settings_path = find_project_root() / ".claude" / "settings.local.json"
-    try:
-        settings = json.loads(settings_path.read_text()) if settings_path.exists() else {}
-    except (json.JSONDecodeError, OSError):
-        settings = {}
+    project_root = find_project_root()
+    targets = [project_root / ".claude" / "settings.local.json"]
 
-    env = settings.setdefault("env", {})
-    if name:
-        env["OPENSPEC_ACTIVE_WORKFLOW"] = name
-    else:
-        env.pop("OPENSPEC_ACTIVE_WORKFLOW", None)
-        if not env:
-            settings.pop("env", None)
+    # Also update all worktrees: .claude/worktrees/*/.claude/settings.local.json
+    worktrees_dir = project_root / ".claude" / "worktrees"
+    if worktrees_dir.is_dir():
+        for wt in worktrees_dir.iterdir():
+            if wt.is_dir():
+                targets.append(wt / ".claude" / "settings.local.json")
 
-    settings_path.parent.mkdir(parents=True, exist_ok=True)
-    _atomic_write(settings_path, settings)
+    for settings_path in targets:
+        try:
+            settings = json.loads(settings_path.read_text()) if settings_path.exists() else {}
+        except (json.JSONDecodeError, OSError):
+            settings = {}
+
+        env = settings.setdefault("env", {})
+        if name:
+            env["OPENSPEC_ACTIVE_WORKFLOW"] = name
+        else:
+            env.pop("OPENSPEC_ACTIVE_WORKFLOW", None)
+            if not env:
+                settings.pop("env", None)
+
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        _atomic_write(settings_path, settings)
 
 
 def _save_active(data: dict) -> None:
