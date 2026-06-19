@@ -1,0 +1,20 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "henemm-private",
+  "description": "Private plugins for henemm.com projects",
+  "owner": {
+    "name": "henemm",
+    "email": "henemm.gmbh@gmail.com"
+  },
+  "plugins": [
+    {
+      "name": "agent-os-openspec",
+      "description": "8-Phase Workflow Engine with TDD Enforcement for Claude Code",
+      "author": {
+        "name": "henemm"
+      },
+      "category": "development",
+      "source": "."
+    }
+  ]
+}
