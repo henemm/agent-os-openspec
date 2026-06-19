@@ -21,6 +21,38 @@ python3 .claude/hooks/workflow.py status
 
 ## Your Tasks
 
+### Step 0: Workflow-State auflösen (ZUERST — vor allem anderen)
+
+**Wurde dieser Befehl mit einer Issue-Nummer aufgerufen** (z. B. `/50-implement #42` — typisch nach einem `/clear`)? Dann löse den Workflow-Namen von der Platte auf — der komplette State (Phase, Spec, RED-Tests, Verdict) überlebt jeden `/clear` und jeden Worktree:
+
+```bash
+ISSUE=42   # die übergebene Nummer (ohne #)
+python3 - "$ISSUE" <<'PY'
+import sys, json, glob, re, os
+issue = sys.argv[1].lstrip('#')
+pat = re.compile(rf'(^|[-_]){re.escape(issue)}([-_]|$)')
+hits = []
+for f in glob.glob('.claude/workflows/*.json'):
+    name = os.path.basename(f)[:-5]
+    if pat.search(name):
+        d = json.load(open(f))
+        hits.append((name, d.get('current_phase'), d.get('spec_approved'), d.get('adversary_verdict')))
+if not hits:
+    print(f'KEIN laufender Workflow fuer #{issue} (evtl. abgeschlossen -> .claude/workflows/_archive/).')
+else:
+    for name, ph, spec, verd in hits:
+        print(f'GEFUNDEN: {name} | Phase={ph} | Spec={spec} | Verdict={verd}')
+    print('\nexport OPENSPEC_ACTIVE_WORKFLOW=' + hits[0][0])
+PY
+```
+
+Setze `OPENSPEC_ACTIVE_WORKFLOW=<name>` und **fasse dem User in 2 Sätzen zusammen, wo der Workflow steht** (Phase, Spec, offene Punkte) — damit sichtbar ist, dass der `/clear` nichts verloren hat.
+
+**Ohne Issue-Argument** (laufende Session):
+```bash
+python3 .claude/hooks/workflow.py status
+```
+
 ### Step 1: Verify RED Phase Complete
 
 ```bash
@@ -222,8 +254,22 @@ Follow scoping limits:
 
 ## Next Step
 
-After adversary verification:
-> "Implementation complete. Adversary verified. Ready for `/60-validate`."
+Wenn Adversary VERIFIED (oder AMBIGUOUS mit User-OK): Stelle sicher, dass alle geänderten Dateien committed sind und das Adversary-Verdict im State steht — der nächste Schritt setzt den Gesprächskontext zurück. Gib dann exakt folgendes aus — dann **STOPP**:
+
+---
+✅ Phase 6 (Implementierung) abgeschlossen — Adversary VERIFIED.
+
+Workflow: `<name>` · Issue: **#<N>** · Verdict: VERIFIED
+
+Nächster Schritt — Kontext zurücksetzen spart Tokens (der Workflow-State liegt sicher auf der Platte):
+1. `/clear`
+2. `/60-validate #<N>`   (lädt Spec + State + Verdict automatisch von der Platte)
+
+_Bei kleinem Kontext optional — dann genügt direkt `/60-validate`._
+
+---
+
+**NICHT** selbst mit der Validierung beginnen. Warte bis der User `/60-validate` tippt.
 
 ## Common Mistakes
 

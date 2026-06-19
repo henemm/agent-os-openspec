@@ -97,12 +97,28 @@ Before proceeding to implementation:
 
 ## Next Step
 
-After RED phase is complete:
-> "TDD RED complete. [N] tests written, all failing as expected. Artifacts captured. Ready for `/50-implement`."
+Sobald alle Artefakte registriert sind und Spec + RED-Testdateien committed sind — der nächste Schritt setzt den Gesprächskontext zurück. Führe zuerst aus:
 
 ```bash
 python3 .claude/hooks/workflow.py phase phase6_implement
 ```
+
+Dann gib exakt folgendes aus — dann **STOPP**:
+
+---
+✅ Phase 5 (TDD RED) abgeschlossen.
+
+Workflow: `<name>` · Issue: **#<N>** · Phase: `phase5_tdd_red` ✓
+
+Nächster Schritt — Kontext zurücksetzen spart Tokens (der Workflow-State liegt sicher auf der Platte):
+1. `/clear`
+2. `/50-implement #<N>`   (lädt Spec + RED-Tests + State automatisch von der Platte)
+
+_Bei kleinem Kontext optional — dann genügt direkt `/50-implement`._
+
+---
+
+**NICHT** selbst mit der Implementierung beginnen. Warte bis der User `/50-implement` tippt.
 
 ## Common Mistakes
 

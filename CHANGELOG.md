@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+**Commands: `/clear`-Empfehlung + `#N`-Wiedereinstieg nach Phasen-Übergängen**
+- `40-tdd-red.md`: Strukturierter Abschluss-Block mit `/clear` → `/50-implement #<N>` Empfehlung
+- `50-implement.md`: Step 0 — Workflow-State via Issue-Nummer von der Platte laden (nach `/clear`); Abschluss-Block mit `/clear` → `/60-validate #<N>`
+- `60-validate.md`: Wiedereinstieg-Block am Anfang — State via `#<N>` laden
+- Workflow-State überlebt jeden `/clear` (liegt in `.claude/workflows/<name>.json` auf der Platte)
+- Portiert aus gregor_zwanzig, adaptiert auf `OPENSPEC_ACTIVE_WORKFLOW` + `workflow.py`
+
 ### Fixed
 
 **`hook_utils.py`: `get_active_workflow_name()` — Hooks lesen settings.local.json direkt als Fallback**
