@@ -2,9 +2,13 @@
 """
 Migrate existing OpenSpec project to Plugin Mode (v3.2)
 
-Scans .claude/settings.json and replaces local .claude/hooks/ paths
-with ${CLAUDE_PLUGIN_ROOT}/core/hooks/ references. Removes hook files
-that are now provided by the plugin.
+Scans .claude/settings.json and removes hook commands that reference
+local .claude/hooks/*.py files which are now provided by the plugin.
+
+The plugin's hooks/hooks.json already declares all core hooks globally
+for every project with the plugin enabled. Project-level settings.json
+must NOT use ${CLAUDE_PLUGIN_ROOT} — that variable is only valid inside
+a plugin's own hooks/hooks.json.
 
 Handles both legacy command formats:
   v2 wrapper: if [ -f "${CLAUDE_PROJECT_DIR}/.claude/hooks/foo.py" ]; then python3 ... ; fi
@@ -76,38 +80,43 @@ def _parse_hook_command(command: str) -> tuple[str | None, list[str]]:
     return filename, args
 
 
+_REMOVE = "__REMOVE__"
+
+
 def _migrate_command(command: str) -> str | None:
-    """Return plugin-mode command, or None if command doesn't reference a plugin hook."""
-    filename, args = _parse_hook_command(command)
+    """
+    Return _REMOVE if the command references a plugin-provided hook (should be deleted),
+    or None if the command is unrelated to the plugin.
+
+    ${CLAUDE_PLUGIN_ROOT} must NOT appear in project-level settings.json — the plugin's
+    own hooks/hooks.json already registers all core hooks globally.
+    """
+    filename, _args = _parse_hook_command(command)
     if not filename:
         return None
-
-    if filename in CORE_HOOKS:
-        base = f"python3 ${{CLAUDE_PLUGIN_ROOT}}/core/hooks/{filename}"
-    elif filename in MODULE_HOOKS:
-        module = MODULE_HOOKS[filename]
-        base = f"python3 ${{CLAUDE_PLUGIN_ROOT}}/modules/{module}/hooks/{filename}"
-    else:
-        return None
-
-    return f"{base} {' '.join(args)}" if args else base
+    if filename in CORE_HOOKS or filename in MODULE_HOOKS:
+        return _REMOVE
+    return None
 
 
 def _patch_settings(settings: dict, dry_run: bool) -> list[tuple[str, str, str]]:
     """
-    Patch hook commands in settings dict in-place.
-    Returns list of (event_name, old_command, new_command).
+    Remove plugin hook commands from settings dict in-place.
+    Returns list of (event_name, old_command, "<removed>").
     """
     changes = []
     for event_name, event_entries in settings.get("hooks", {}).items():
         for entry in event_entries:
-            for hook in entry.get("hooks", []):
+            hooks_list = entry.get("hooks", [])
+            to_remove = []
+            for hook in hooks_list:
                 old_cmd = hook.get("command", "")
-                new_cmd = _migrate_command(old_cmd)
-                if new_cmd and new_cmd != old_cmd:
-                    changes.append((event_name, old_cmd, new_cmd))
-                    if not dry_run:
-                        hook["command"] = new_cmd
+                if _migrate_command(old_cmd) == _REMOVE:
+                    changes.append((event_name, old_cmd, "<removed>"))
+                    to_remove.append(hook)
+            if to_remove and not dry_run:
+                for h in to_remove:
+                    hooks_list.remove(h)
     return changes
 
 
@@ -154,14 +163,14 @@ def migrate(project_path: Path, dry_run: bool = True) -> None:
     print("Scanning hook commands in .claude/settings.json ...")
     changes = _patch_settings(settings, dry_run)
     if changes:
-        print(f"Found {len(changes)} hook(s) to migrate:")
-        for event_name, old_cmd, new_cmd in changes:
+        print(f"Found {len(changes)} plugin hook(s) to remove from settings.json:")
+        for event_name, old_cmd, _action in changes:
             short_old = old_cmd if len(old_cmd) <= 80 else old_cmd[:77] + "..."
             print(f"  [{event_name}] {short_old}")
-            print(f"           → {new_cmd}")
+            print(f"           → <removed> (already provided by plugin hooks/hooks.json)")
         wrote_settings = True
     else:
-        print("  No hook commands need migration.")
+        print("  No plugin hook commands found in settings.json.")
 
     # --- 2. Add OPENSPEC_ENABLED_MODULES ---
     modules = _read_installed_modules(project_path)
