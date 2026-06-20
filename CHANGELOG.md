@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+**Bug-Fix Fast Track (`--type bug`) — Token-sparender 3-Schritte-Weg für kleine Bugs**
+- `workflow.py start <name> --type bug`: Startet direkt bei `phase6_implement`, setzt `red_test_done: true` und `spec_approved: true` automatisch — keine Phasen 1–5 nötig
+- `_validate_transition()`: Überspringt alle Prerequisit-Checks für `workflow_type == "bug"`
+- `edit_gate.py`: TDD-Artefakt-Check wird übersprungen wenn `workflow_type == "bug"` + `bug_fix.require_tdd: false` (konfigurierbar)
+- `bash_gate.py`: Adversary-Verdict-Check in 5c wird übersprungen für Bug-Workflows; Rebase-Gate (5b) bleibt aktiv
+- `00-bug.md`: Fast-Track-Sektion mit Ablauf und Voraussetzungen
+- `config.yaml`: Neue Sektion `bug_fix` mit `require_tdd` (bool) und `max_files` (Warnung)
+
+**Phase-Token-Logging — Zeitbasierter Proxy für Token-Verbrauch pro Phase**
+- `_log_phase_transition(data, new_phase)`: Neue Hilfsfunktion in `workflow.py` — schreibt Timestamps in `phase_log`-Array der Workflow-JSON; schließt jeweils die vorherige Phase ab (setzt `exited_at` + `duration_min`)
+- `workflow.py phase-log`: Neuer Subcommand — tabellarische Übersicht mit Dauer pro Phase, Gesamtdauer und Markierung der längsten Phase (▲)
+- `cmd_phase()`: Ruft `_log_phase_transition()` bei jeder Phase-Transition auf
+- `cmd_start()`: Initialisiert `phase_log` direkt beim Workflow-Start
+- `phase_listener.py`: Ruft `_log_phase_transition()` beim Spec-Approval (phase3 → phase4) auf
+- `_new_workflow()`: Enthält jetzt `workflow_type: "feature"` und `phase_log: []` als Standard-Felder
+
 **Drei weitere Guard-Hooks: `secrets_guard`, `claude_md_protection`, `edit_verify`**
 - `secrets_guard.py`: Blockiert Lese- und Shell-Zugriffe auf `.env`, Credentials, Private Keys (`credentials.json`, `.pem`, `.key`). Staging-Modus via `touch .claude/staging` oder `OPENSPEC_ENV=staging`. Immer-blockiert-Liste für Credentials/Keys auch im Staging. Registriert für PreToolUse `Bash` + `Read`.
 - `claude_md_protection.py`: Schützt `CLAUDE.md` vor verbotenen Patterns (konfigurierbar via `openspec.yaml → claude_md.forbidden_patterns`) und warnt bei Überschreitung von `max_lines` (Standard: 600). Registriert für PreToolUse `Edit|Write|MultiEdit`.

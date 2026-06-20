@@ -294,22 +294,26 @@ def main():
         if wf:
             phase = wf.get("current_phase", "")
             if phase in ("phase6_implement", "phase6b_adversary", "phase7_validate"):
-                verdict = str(wf.get("adversary_verdict", "") or "")
-                if verdict.startswith("VERIFIED"):
-                    pass  # green
-                elif verdict.startswith("AMBIGUOUS"):
-                    if not wf.get("adversary_ambiguous_override"):
-                        block("BLOCKED: Adversary verdict is AMBIGUOUS. "
-                              "Review findings, then: workflow.py override-ambiguous '<reason>'")
+                # Bug fast-track: no adversary verdict required
+                if wf.get("workflow_type") == "bug":
+                    pass
                 else:
-                    has_override = False
-                    try:
-                        from override_token import has_valid_token
-                        has_override = has_valid_token(wf.get("name"))
-                    except ImportError:
-                        pass
-                    if not has_override:
-                        block("BLOCKED: Adversary verdict missing or not VERIFIED. Run adversary validation first.")
+                    verdict = str(wf.get("adversary_verdict", "") or "")
+                    if verdict.startswith("VERIFIED"):
+                        pass  # green
+                    elif verdict.startswith("AMBIGUOUS"):
+                        if not wf.get("adversary_ambiguous_override"):
+                            block("BLOCKED: Adversary verdict is AMBIGUOUS. "
+                                  "Review findings, then: workflow.py override-ambiguous '<reason>'")
+                    else:
+                        has_override = False
+                        try:
+                            from override_token import has_valid_token
+                            has_override = has_valid_token(wf.get("name"))
+                        except ImportError:
+                            pass
+                        if not has_override:
+                            block("BLOCKED: Adversary verdict missing or not VERIFIED. Run adversary validation first.")
 
             # 5d. E2E scope detection (informational — never blocks)
             scope = _detect_e2e_scope(staged_list, config)

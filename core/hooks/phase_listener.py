@@ -170,6 +170,11 @@ def main():
         phase = wf_data.get("current_phase", "")
         if phase in ("phase3_spec",) and not wf_data.get("spec_approved"):
             wf_data["spec_approved"] = True
+            try:
+                from workflow import _log_phase_transition
+                _log_phase_transition(wf_data, "phase4_approved")
+            except Exception:
+                pass
             wf_data["current_phase"] = "phase4_approved"
             changed = True
             print(f"Spec approved for '{wf_data['name']}'! You may now run /tdd-red", file=sys.stderr)

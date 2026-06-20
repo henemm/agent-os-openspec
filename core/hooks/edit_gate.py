@@ -287,12 +287,16 @@ def main():
 
     # 10. RED test artifacts
     if phase in IMPL_PHASES:
-        red_done = workflow.get("red_test_done", False) or workflow.get("ui_test_red_done", False)
-        if not red_done:
-            red_arts = [a for a in workflow.get("test_artifacts", [])
-                       if a.get("phase") == "phase5_tdd_red"]
-            if not red_arts:
-                block("BLOCKED: No RED test artifacts. Run /tdd-red first.")
+        # Bug fast-track: TDD gate configurable via openspec.yaml → bug_fix.require_tdd
+        is_bug = workflow.get("workflow_type") == "bug"
+        require_tdd = config.get("bug_fix", {}).get("require_tdd", False)
+        if not (is_bug and not require_tdd):
+            red_done = workflow.get("red_test_done", False) or workflow.get("ui_test_red_done", False)
+            if not red_done:
+                red_arts = [a for a in workflow.get("test_artifacts", [])
+                           if a.get("phase") == "phase5_tdd_red"]
+                if not red_arts:
+                    block("BLOCKED: No RED test artifacts. Run /tdd-red first.")
 
     # 10b. Acceptance Criteria check (S2)
     ac_error = _check_acceptance_criteria(workflow)

@@ -82,3 +82,41 @@ Summarize (NO code, understandable language):
 2. **Where is the cause?** (File + short explanation)
 3. **How do we test the fix?** (Concrete steps)
 4. **Estimated effort** (Small/Medium/Large)
+
+---
+
+## Fast Track (triviale Bugs — ≤3 Dateien, bekannte Ursache)
+
+Wenn Ursache klar und Fix klein → direkt implementieren ohne vollständigen 8-Phasen-Workflow.
+
+**Voraussetzungen:**
+- Ursache mit Sicherheit bekannt (konkrete Datei + Zeile)
+- Fix berührt ≤3 Dateien
+- Kein neues API-Design oder Breaking Changes
+
+**Ablauf:**
+```bash
+# 1. Bug-Workflow starten (startet direkt bei phase6_implement)
+python3 .claude/hooks/workflow.py start BUG-<N> --type bug
+export OPENSPEC_ACTIVE_WORKFLOW=BUG-<N>
+
+# 2. Fix implementieren (kein Spec, kein TDD-Red erforderlich)
+# ...edit files...
+
+# 3. Manuell testen
+# Reproduktionsschritte durchgehen, Fix verifizieren
+
+# 4. Abschließen
+python3 .claude/hooks/workflow.py write-log success
+python3 .claude/hooks/workflow.py complete
+```
+
+**Was wegfällt beim Fast Track:**
+- Phasen 1–5 (Kontext, Analyse, Spec, Approval, TDD-Red)
+- Adversary-Validierung vor `git commit`
+- TDD-Artefakt-Pflicht
+
+**Was bleibt aktiv:**
+- Rebase-Gate (Branch muss auf `origin/main` stehen)
+- Stop-Lock / Override-Token
+- Secrets Guard

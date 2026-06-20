@@ -127,6 +127,12 @@ e2e_scope:
   backend_patterns:
     - '^(src|api|internal|cmd|backend|server)/'
 
+# Bug Fix Fast Track — Lightweight workflow for small, well-understood bugs
+# Activated via: workflow.py start <name> --type bug
+bug_fix:
+  require_tdd: false    # true → TDD-Red-Artefakt auch bei Bug-Workflows erforderlich
+  max_files: 5          # Warnung (kein Block) wenn Fix mehr Dateien berührt
+
 # Pre-commit Gate — Checks before git commit is allowed
 # Used by bash_gate.py
 pre_commit:

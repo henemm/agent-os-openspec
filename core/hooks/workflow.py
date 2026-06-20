@@ -9,10 +9,11 @@ cross-session drift. Always set: export OPENSPEC_ACTIVE_WORKFLOW=<name>
 Atomic writes via tempfile + rename (no file locks).
 
 Usage:
-    python3 workflow.py start <name>
+    python3 workflow.py start <name> [--type feature|bug]
     python3 workflow.py switch <name>
     python3 workflow.py status
     python3 workflow.py phase <phase>
+    python3 workflow.py phase-log
     python3 workflow.py set-field <key> <value>
     python3 workflow.py set-affected-files [--replace] <f1> <f2> ...
     python3 workflow.py add-artifact <type> <path> <desc> <phase>
@@ -259,6 +260,7 @@ def _save_active(data: dict) -> None:
 def _new_workflow(name: str) -> dict:
     return {
         "name": name,
+        "workflow_type": "feature",
         "current_phase": "phase1_context",
         "created": datetime.now().isoformat(),
         "last_updated": datetime.now().isoformat(),
@@ -274,13 +276,39 @@ def _new_workflow(name: str) -> dict:
         "adversary_verdict": None,
         "phase_transitions": [],
         "fix_loop_iterations": 0,
+        "phase_log": [],
     }
+
+
+def _log_phase_transition(data: dict, new_phase: str) -> None:
+    """Record phase transition timestamp in phase_log.
+
+    Call BEFORE setting data['current_phase']. Closes the current log entry
+    (sets exited_at + duration_min) and opens a new one for new_phase.
+    """
+    now = datetime.now().isoformat()
+    log = data.setdefault("phase_log", [])
+    if log:
+        last = log[-1]
+        if last.get("exited_at") is None:
+            last["exited_at"] = now
+            try:
+                entered = datetime.fromisoformat(last["entered_at"])
+                exited = datetime.fromisoformat(now)
+                last["duration_min"] = round((exited - entered).total_seconds() / 60, 1)
+            except (ValueError, KeyError):
+                pass
+    log.append({"phase": new_phase, "entered_at": now, "exited_at": None, "duration_min": None})
 
 
 # --- Phase Transition Validation ---
 
 def _validate_transition(data: dict, target: str) -> str | None:
     """Validate phase transition prerequisites. Returns error message or None."""
+    # Bug fast-track: no prerequisites enforced
+    if data.get("workflow_type") == "bug":
+        return None
+
     current = data.get("current_phase", "phase0_idle")
     cur_idx = PHASES.index(current) if current in PHASES else 0
     tgt_idx = PHASES.index(target) if target in PHASES else -1
@@ -319,18 +347,41 @@ def _validate_transition(data: dict, target: str) -> str | None:
 # --- Commands ---
 
 def cmd_start(args: list[str]) -> None:
-    if not args:
-        print("Usage: workflow.py start <name>", file=sys.stderr)
+    workflow_type = "feature"
+    name_args = []
+    i = 0
+    while i < len(args):
+        if args[i] == "--type" and i + 1 < len(args):
+            workflow_type = args[i + 1]
+            i += 2
+        else:
+            name_args.append(args[i])
+            i += 1
+    if not name_args:
+        print("Usage: workflow.py start <name> [--type feature|bug]", file=sys.stderr)
         sys.exit(1)
-    name = args[0]
+    if workflow_type not in ("feature", "bug"):
+        print(f"Unknown workflow type: {workflow_type!r}. Valid: feature, bug", file=sys.stderr)
+        sys.exit(1)
+    name = name_args[0]
     wf_file = _workflow_file(name)
     if wf_file.exists():
         print(f"Workflow {name} already exists. Use 'switch' to activate.", file=sys.stderr)
         sys.exit(1)
     data = _new_workflow(name)
+    data["workflow_type"] = workflow_type
+    if workflow_type == "bug":
+        # Fast-track: start at phase6, bypass spec and TDD gates
+        data["current_phase"] = "phase6_implement"
+        data["spec_approved"] = True
+        data["red_test_done"] = True
+        _log_phase_transition(data, "phase6_implement")
+    else:
+        _log_phase_transition(data, "phase1_context")
     _atomic_write(wf_file, data)
     _set_active(name)
-    print(f"Started workflow: {name}")
+    type_note = " [BUG fast-track → phase6_implement]" if workflow_type == "bug" else ""
+    print(f"Started workflow: {name}{type_note}")
     print(
         f"\nOPENSPEC_ACTIVE_WORKFLOW={name} written to all settings.local.json files.\n"
         f"Hooks read this directly — no session restart required.\n"
@@ -430,6 +481,7 @@ def cmd_phase(args: list[str]) -> None:
         "at": datetime.now().isoformat(),
         "trigger": trigger,
     })
+    _log_phase_transition(data, target)
     # Fix-loop counter: re-entering phase6_implement from phase6b_adversary
     if target == "phase6_implement" and current == "phase6b_adversary":
         data["fix_loop_iterations"] = data.get("fix_loop_iterations", 0) + 1
@@ -579,6 +631,41 @@ def cmd_complete(args: list[str]) -> None:
     print(f"Workflow {name} completed and archived.")
 
 
+def cmd_phase_log(args: list[str]) -> None:
+    data, name = _read_active()
+    log = data.get("phase_log", [])
+    if not log:
+        print("Kein Phase-Log vorhanden (Workflow vor v3.2 gestartet oder noch keine Phase-Transitions).")
+        return
+    SEP = "─" * 52
+    print(f"Workflow: {name}")
+    print(SEP)
+    print(f"  {'Phase':<26} {'Dauer':>9}  Status")
+    total_min = 0.0
+    longest_phase = None
+    longest_dur = 0.0
+    for entry in log:
+        phase = entry.get("phase", "?")
+        dur = entry.get("duration_min")
+        exited = entry.get("exited_at")
+        if exited is None:
+            status = "[aktiv]"
+            dur_str = "–"
+        else:
+            dur_val = dur if dur is not None else 0.0
+            total_min += dur_val
+            dur_str = f"{dur_val:.1f} min"
+            status = "✓"
+            if dur_val > longest_dur:
+                longest_dur = dur_val
+                longest_phase = phase
+        print(f"  {phase:<26} {dur_str:>9}  {status}")
+    print(SEP)
+    print(f"  Gesamt (abgeschlossen): {total_min:.1f} min")
+    if longest_phase:
+        print(f"  Längste Phase: {longest_phase} ({longest_dur:.1f} min) ▲")
+
+
 def cmd_list(args: list[str]) -> None:
     wf_dir = _workflows_dir()
     if not wf_dir.exists():
@@ -603,6 +690,7 @@ COMMANDS = {
     "switch": cmd_switch,
     "status": cmd_status,
     "phase": cmd_phase,
+    "phase-log": cmd_phase_log,
     "set-field": cmd_set_field,
     "set-affected-files": cmd_set_affected_files,
     "add-artifact": cmd_add_artifact,
