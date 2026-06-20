@@ -33,6 +33,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+**`bash_gate.py`: Rebase-Pflicht vor `git commit` wenn Branch hinter `origin/main` zurückliegt**
+- Neuer Check 5b im Commit-Gate: `git fetch origin main --quiet` + `git rev-list --count HEAD..origin/main`
+- Blockiert mit klarer Fehlermeldung wenn `behind > 0` und ein Workflow aktiv ist
+- Fail-silent bei fehlendem Netz (Timeout, kein Remote erreichbar) — kein Block, kein Fehler
+- Verhindert silent Overwrites von zwischenzeitlichen Commits anderer Worktrees (nachgewiesen aus gregor_zwanzig)
+
+**`config_loader.py`: `find_project_root()` erkennt Git-Worktrees korrekt**
+- Bisher: `.git`-Datei (Worktree-Marker) wurde wie ein normales `.git`-Verzeichnis behandelt → State landete im Worktree-Verzeichnis statt im Haupt-Repo
+- Fix: Worktree-Detection via `find_main_repo_from_worktree()` (aus `hook_utils`) vor dem Config-File-Walk; `CLAUDE_PROJECT_DIR` wird ebenfalls durch Worktree aufgelöst
+- Jetzt konsistent mit `hook_utils.find_project_root()` — beide geben immer das Haupt-Repo zurück
+
 **`hook_utils.py`: `get_active_workflow_name()` — Hooks lesen settings.local.json direkt als Fallback**
 - Problem: Claude Code liest `settings.local.json` nur beim Session-Start, nicht bei jedem Hook-Aufruf. Wenn `workflow.py start/switch` in einer laufenden Session aufgerufen wird, sehen Hooks `OPENSPEC_ACTIVE_WORKFLOW=""` bis zum Neustart.
 - Fix: Neue Funktion `get_active_workflow_name()` in `hook_utils.py` — liest env var zuerst, fällt direkt auf `settings.local.json` zurück. Kein Session-Neustart mehr erforderlich.

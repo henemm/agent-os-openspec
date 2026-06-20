@@ -267,8 +267,30 @@ def main():
                 if diff.stdout.strip():
                     block(f"BLOCKED: {req_file} has unstaged changes. Stage it first.")
 
-        # 5b. Adversary verdict check (if in phase6+)
+        # 5b. Rebase-Pflicht: Branch darf nicht hinter origin/main zurückliegen
         wf = _read_active_workflow()
+        if wf:
+            try:
+                fetch = subprocess.run(
+                    ["git", "fetch", "origin", "main", "--quiet"],
+                    cwd=_root, capture_output=True, timeout=10
+                )
+                if fetch.returncode == 0:
+                    behind_result = subprocess.run(
+                        ["git", "rev-list", "--count", "HEAD..origin/main"],
+                        cwd=_root, capture_output=True, text=True, timeout=5
+                    )
+                    behind = int(behind_result.stdout.strip() or "0")
+                    if behind > 0:
+                        block(
+                            f"BLOCKED — Branch ist {behind} Commit(s) hinter origin/main.\n"
+                            "Bitte erst: git fetch origin && git rebase origin/main"
+                        )
+                # fetch returncode != 0 → kein Netz → silent skip
+            except (subprocess.TimeoutExpired, OSError, ValueError):
+                pass  # Netzwerk nicht erreichbar → kein Block
+
+        # 5c. Adversary verdict check (if in phase6+)
         if wf:
             phase = wf.get("current_phase", "")
             if phase in ("phase6_implement", "phase6b_adversary", "phase7_validate"):
@@ -289,7 +311,7 @@ def main():
                     if not has_override:
                         block("BLOCKED: Adversary verdict missing or not VERIFIED. Run adversary validation first.")
 
-            # 5c. E2E scope detection (informational — never blocks)
+            # 5d. E2E scope detection (informational — never blocks)
             scope = _detect_e2e_scope(staged_list, config)
             _write_e2e_scope(wf, scope)
             print(f"E2E scope: {scope}", file=sys.stderr)

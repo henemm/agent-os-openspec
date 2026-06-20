@@ -34,13 +34,25 @@ LOCAL_OVERRIDE_NAMES = ["settings.local.json", ".settings.local.json"]
 
 @lru_cache(maxsize=1)
 def find_project_root() -> Path:
-    """Find project root by looking for config file or .git directory."""
+    """Find project root by looking for config file or .git directory.
+
+    Worktree-transparent: if inside a git worktree (.git is a file, not a
+    directory), resolves to the main repo root so that workflow state files
+    are always written to the same location regardless of worktree context.
+    """
     # CLAUDE_PROJECT_DIR hat höchste Priorität (gesetzt von Claude Code im Plugin-Modus)
     env_dir = os.environ.get("CLAUDE_PROJECT_DIR", "").strip()
     if env_dir:
-        return Path(env_dir)
+        p = Path(env_dir)
+        main = find_main_repo_from_worktree(p)
+        return main if main is not None else p
 
     current = Path.cwd()
+
+    # Worktree-Erkennung: .git ist eine Datei → Haupt-Repo ableiten
+    main = find_main_repo_from_worktree(current)
+    if main is not None:
+        return main
 
     while current != current.parent:
         # Check for config files
@@ -50,8 +62,8 @@ def find_project_root() -> Path:
             if (current / ".claude" / config_name).exists():
                 return current
 
-        # Check for .git as fallback
-        if (current / ".git").exists():
+        # Check for .git directory (file = worktree, already handled above)
+        if (current / ".git").is_dir():
             return current
 
         current = current.parent
