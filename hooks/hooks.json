@@ -6,8 +6,28 @@
         "hooks": [
           {
             "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/worktree_write_guard.py",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/claude_md_protection.py",
+            "timeout": 5
+          },
+          {
+            "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/edit_gate.py",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/tdd_enforcement.py",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/post_implementation_gate.py",
+            "timeout": 5
           }
         ]
       },
@@ -16,8 +36,23 @@
         "hooks": [
           {
             "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/secrets_guard.py",
+            "timeout": 5
+          },
+          {
+            "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/bash_gate.py",
             "timeout": 300
+          }
+        ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/secrets_guard.py",
+            "timeout": 5
           }
         ]
       }
@@ -30,6 +65,16 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/post_bash.py",
             "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/edit_verify.py",
+            "timeout": 5
           }
         ]
       }

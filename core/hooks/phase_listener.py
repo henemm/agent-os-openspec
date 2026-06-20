@@ -186,6 +186,14 @@ def main():
             wf_data["green_approved"] = True
             changed = True
             print("GREEN approved.", file=sys.stderr)
+            # Post-Implementation-Gate: Approval-Marker setzen damit post_implementation_gate entsperrt
+            try:
+                approval_path = _root / ".claude" / f"user_approved_validation_{wf_data['name']}"
+                approval_path.parent.mkdir(parents=True, exist_ok=True)
+                approval_path.touch()
+                print(f"Post-implementation gate entsperrt für '{wf_data['name']}'.", file=sys.stderr)
+            except OSError:
+                pass
 
     if changed:
         _save_workflow(wf_data, wf_path)

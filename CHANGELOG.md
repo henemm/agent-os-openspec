@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+**Drei weitere Guard-Hooks: `secrets_guard`, `claude_md_protection`, `edit_verify`**
+- `secrets_guard.py`: Blockiert Lese- und Shell-Zugriffe auf `.env`, Credentials, Private Keys (`credentials.json`, `.pem`, `.key`). Staging-Modus via `touch .claude/staging` oder `OPENSPEC_ENV=staging`. Immer-blockiert-Liste für Credentials/Keys auch im Staging. Registriert für PreToolUse `Bash` + `Read`.
+- `claude_md_protection.py`: Schützt `CLAUDE.md` vor verbotenen Patterns (konfigurierbar via `openspec.yaml → claude_md.forbidden_patterns`) und warnt bei Überschreitung von `max_lines` (Standard: 600). Registriert für PreToolUse `Edit|Write|MultiEdit`.
+- `edit_verify.py`: PostToolUse-Hook der nach jedem Edit/Write prüft, ob der neue Inhalt tatsächlich auf Disk gelandet ist. Gibt Warnung aus bei stiller Fehlfunktion. Fail-open: blockiert nie. Registriert für PostToolUse `Edit|Write|MultiEdit`.
+- `hooks/hooks.json`: Alle drei registriert; `secrets_guard` unter Bash und Read, `claude_md_protection` als zweiter Hook im Edit|Write-Block (vor `edit_gate`), `edit_verify` als neuer PostToolUse-Block.
+- Portiert aus `gregor_zwanzig`, Plugin-Imports (`config_loader`, `hook_utils`) statt projekt-lokaler Imports.
+
+**Drei neue Guard-Hooks: `worktree_write_guard`, `tdd_enforcement`, `post_implementation_gate`**
+- `worktree_write_guard.py`: Blockiert Schreibzugriffe vom Worktree-Kontext direkt ins Main-Repo (Split-Brain-Schutz). Liest `cwd` aus dem Claude-Code-Payload, erkennt `.claude/worktrees/<name>`-Konvention. Fail-safe: jede Exception → allow.
+- `tdd_enforcement.py`: Tiefgehende Validierung von RED-Phase-Artefakten in `phase6_implement` / `phase6b_adversary`. Prüft Dateigröße (min. 80 Bytes), Alter (<24h), Fehler-Keywords im Inhalt, Abwesenheit von Platzhalter-Text. Ergänzt `edit_gate.py`'s einfache Boolean-Prüfung.
+- `post_implementation_gate.py`: 15-Minuten-Batch-Fenster nach erstem Code-Edit in `phase6_implement` — danach BLOCKIERT bis User "go"/"approved"/"freigabe" sagt. Lock-Dateien in `.claude/pending_validation_<wf>.json` + Approval-Marker `.claude/user_approved_validation_<wf>`.
+- `phase_listener.py` erweitert: "go"-Keywords in phase6 erstellen jetzt automatisch den Approval-Marker für `post_implementation_gate`.
+- `hooks/hooks.json`: Alle drei Hooks als separate PreToolUse-Einträge für `Edit|Write|MultiEdit` registriert (laufen nach `worktree_write_guard` → `edit_gate` → `tdd_enforcement` → `post_implementation_gate`).
+- Portiert und generalisiert aus `gregor_zwanzig`, Framework-spezifische Imports (`workflow_state_multi`, `config_loader.get_project_root`) durch Plugin-Äquivalente ersetzt.
+
 **Commands: `/clear`-Empfehlung + `#N`-Wiedereinstieg nach Phasen-Übergängen**
 - `40-tdd-red.md`: Strukturierter Abschluss-Block mit `/clear` → `/50-implement #<N>` Empfehlung
 - `50-implement.md`: Step 0 — Workflow-State via Issue-Nummer von der Platte laden (nach `/clear`); Abschluss-Block mit `/clear` → `/60-validate #<N>`
