@@ -52,9 +52,10 @@ und damit alle schweren Phasen (Spec, TDD, Adversary) umgehen — auch für
 
 - Liegt in `.claude/` (kein Git-Tracking nötig, bereits in .gitignore via
   `settings.local.json`-Logik; alternativ explizit in .gitignore eintragen)
-- TTL: 30 Minuten — nach Ablauf gilt sie als nicht vorhanden
-- Wird von `workflow.py start --type bug` nach erfolgreicher Prüfung gelöscht
-  (one-time token)
+- TTL: **10 Minuten** — nach Ablauf gilt sie als nicht vorhanden
+  (belegt durch sudo default 5 min, CIS-Benchmark max 15 min, OAuth state nonce 5 min)
+- Wird von `workflow.py start --type bug` nach erfolgreicher Prüfung **atomar gelöscht**
+  (rename in `.claude/bug_workflow_consumed.json` vor dem Lesen → TOCTOU-sicher)
 
 ### 2. `phase_listener.py` — Flag setzen
 
@@ -91,14 +92,18 @@ In `cmd_start()`, nach dem `--type bug`-Parse:
 if workflow_type == "bug":
     flag_path = find_project_root() / ".claude" / "bug_workflow_requested.json"
     flag_valid = False
+    consumed_path = find_project_root() / ".claude" / "bug_workflow_consumed.json"
     if flag_path.exists():
         try:
-            flag_data = json.loads(flag_path.read_text())
+            # Atomic consume: rename first, then read — eliminates TOCTOU
+            flag_path.rename(consumed_path)
+            flag_data = json.loads(consumed_path.read_text())
             created = datetime.fromisoformat(flag_data["created"])
             age_min = (datetime.now() - created).total_seconds() / 60
-            if age_min <= 30:
+            if age_min <= 10:
                 flag_valid = True
-        except (json.JSONDecodeError, KeyError, ValueError):
+            consumed_path.unlink(missing_ok=True)
+        except (json.JSONDecodeError, KeyError, ValueError, OSError):
             pass
     if not flag_valid:
         print(
@@ -107,11 +112,6 @@ if workflow_type == "bug":
             file=sys.stderr,
         )
         sys.exit(1)
-    # Flag verbrauchen (one-time token)
-    try:
-        flag_path.unlink()
-    except OSError:
-        pass
 ```
 
 ### 4. Konfiguration in `openspec.yaml`
@@ -119,7 +119,7 @@ if workflow_type == "bug":
 ```yaml
 bug_workflow:
   require_user_initiation: true   # false → kein Flag-Check (Opt-out für Teams)
-  flag_ttl_minutes: 30
+  flag_ttl_minutes: 10
   trigger_phrases:
     - "/00-bug"
     - "bug workflow"
@@ -140,12 +140,21 @@ nicht wollen (z.B. reine Entwickler-Tools ohne Orchestrator-Pattern).
   tippen)
 - **Opt-out:** `require_user_initiation: false` → kein Flag-Check
 
+## Architektur-Notiz: Warum keine Env-Var
+
+Die naheliegende Alternative wäre eine Env-Var (`OPENSPEC_BUG_INTENT_TS`), die
+der Hook setzt und `workflow.py` liest. Das funktioniert in dieser Architektur
+nicht: Hooks sind kurzlebige Subprozesse — `os.environ['X'] = ...` propagiert
+nie zum Claude-Code-Elternprozess. Deshalb verwendet das Framework bereits
+`settings.local.json` für `OPENSPEC_ACTIVE_WORKFLOW`. settings.local.json
+überlebt jedoch Session-Neustarts, was dem Intent-Token-Prinzip widerspricht
+(alter Intent = kein Intent). Die Datei mit TTL ist der korrekte Kompromiss.
+
 ## Error Handling
 
 - Flag-Datei nicht lesbar (Permissions) → fail-open: Flag gilt als ungültig → BLOCKED
+- `rename` schlägt fehl (z.B. Cross-Device) → OSError gefangen → Flag gilt als ungültig → BLOCKED
 - `datetime`-Parse-Fehler im Flag → Flag gilt als ungültig → BLOCKED
-- Flag-Löschen schlägt fehl → Warning auf stderr, Workflow läuft weiter
-  (Flag läuft nach TTL ab)
 - `require_user_initiation` nicht in Config → Default `true`
 
 ## Acceptance Criteria

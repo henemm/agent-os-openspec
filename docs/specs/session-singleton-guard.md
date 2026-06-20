@@ -113,7 +113,14 @@ def _is_running(pid: int) -> bool:
     try:
         os.kill(pid, 0)
         return True
-    except (ProcessLookupError, PermissionError):
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # EPERM: Prozess existiert, gehört aber anderem User (PID-Reuse-Szenario).
+        # Celery-Bug #5409: fälschlicherweise als stale behandelt → Lock gelöscht.
+        # Korrekt: als "läuft" werten (konservativer, kein false-negative).
+        return True
+    except OSError:
         return False
 
 def _cleanup_stale_locks() -> None:
@@ -243,12 +250,28 @@ Agenten die aus Worktrees ins Main-Repo schreiben wollen).
 - `os.kill` wirft unerwartete Exception → catch-all, nicht als "running" werten
 - Stop Hook schlägt fehl → silent fail (Session ist sowieso beendet)
 
+## Architektur-Notiz: Warum keine fcntl.flock()
+
+`fcntl.flock()` wäre für Single-Instance-Detection technisch besser: Kernel
+gibt Lock automatisch frei wenn Prozess stirbt, kein stale-detection Code nötig.
+Es setzt aber voraus, dass ein **dauerhafter Prozess** den File-Descriptor offen
+hält. Hooks sind kurzlebige Subprozesse — der Lock wird beim Exit des Hooks
+sofort freigegeben. `flock()` ist hier also strukturell unbrauchbar.
+
+PID-Files mit `os.kill(pid, 0)` sind für hook-basierte Systeme der korrekte
+Ansatz, trotz bekannter Schwächen (PID-Reuse, EPERM). Der EPERM-Bug aus
+Celery #5409 ist im Code oben korrekt behandelt.
+
+Lock-Zeitpunkt: UserPromptSubmit ist das früheste verfügbare Hook-Event in
+Claude Code. Ein echter "Session-Start"-Hook existiert nicht.
+
 ## Known Limitations
 
-- PID-basiert: Bei PID-Reuse (sehr selten) könnte eine abgelaufene Session
-  fälschlicherweise als aktiv erkannt werden. Praktisch vernachlässigbar.
-- Warning erscheint nur bei `UserPromptSubmit` — nicht sofort beim Start,
-  sondern erst bei erster User-Eingabe in der neuen Session.
+- PID-Reuse (Linux default `pid_max` = 32.767): bei sehr hoher Prozesslast
+  könnte eine neue Session die PID einer abgelaufenen übernehmen → false
+  negative (kein Warning obwohl neu). Für Claude-Session-Frequenz vernachlässigbar.
+- Warning erscheint erst bei erstem User-Prompt, nicht beim Session-Start —
+  kein Session-Start-Hook in Claude Code verfügbar.
 - Warnt auch wenn zwei Tabs desselben Users gleichzeitig offen sind
   (harmlos, aber verwirrend). Lösung: `sessions`-Allowlist in config — not in scope.
 
