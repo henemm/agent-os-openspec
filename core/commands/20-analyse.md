@@ -100,9 +100,21 @@ python3 .claude/hooks/workflow.py phase phase3_spec
 
 ## Next Step
 
-When analysis is complete:
-> "Analysis complete. Type: [Bug/Feature]. Scope: [N] files, ~[N] LoC. Next: `/30-write-spec` to create the specification."
+Wenn die Analyse abgeschlossen ist, gib dem User folgende Zusammenfassung:
 
-If you have open questions, ask the user before proceeding.
+---
+**Analyse abgeschlossen.**
+
+**Art der Aufgabe:** [Feature / Bugfix]
+
+**Was steht an?** [1–2 Sätze was konkret geändert oder gebaut wird — aus Nutzerperspektive, ohne Dateinamen oder Code]
+
+**Risiko:** [Niedrig / Mittel / Hoch] — [kurze Begründung ohne Technik, z.B. "betrifft nur einen isolierten Bereich" oder "ändert eine zentrale Funktion"]
+
+Nächster Schritt: `/30-write-spec` — ich schreibe jetzt den detaillierten Plan.
+
+---
+
+Wenn noch offene Fragen bestehen: Zuerst den User fragen, bevor es weitergeht.
 
 **IMPORTANT:** Do NOT start implementation. Analysis -> Spec -> Approve -> TDD RED -> Implement.

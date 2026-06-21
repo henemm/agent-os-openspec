@@ -133,26 +133,26 @@ python3 .claude/hooks/workflow.py add-artifact test_output \
 
 **STOP! Du darfst NICHT weitermachen ohne User-Freigabe!**
 
-Praesentiere dem User eine verstaendliche Zusammenfassung:
+Praesentiere dem User folgende Zusammenfassung:
 
-```markdown
-## TDD GREEN Ergebnisse
+---
+**Implementierung fertig — deine Freigabe bitte.**
 
-### Was wurde getestet?
-- [Feature/Bug in User-Sprache beschreiben]
+**Was wurde umgesetzt?**
+[Feature/Bugfix in 1–2 Sätzen aus Nutzerperspektive — kein Code, keine Dateinamen]
 
-### Test-Ergebnisse
-- Unit Tests: [N] bestanden, [N] fehlgeschlagen
-- UI Tests: [N] bestanden, [N] fehlgeschlagen
+**Was funktioniert jetzt?**
+- [Konkretes Verhalten 1 aus Nutzersicht]
+- [Konkretes Verhalten 2 aus Nutzersicht]
 
-### Was die Tests pruefen
-- [Beschreibung in User-Sprache]
+**Qualitätsprüfungen:** [N] Tests ✅ bestanden[, N fehlgeschlagen ❌ — falls vorhanden mit Erklärung in einfacher Sprache]
 
-### Auffaelligkeiten / Warnungen
-- [Alles was aufgefallen ist]
+**Auffälligkeiten:**
+[Alles was aufgefallen ist — oder: Keine]
 
-Sage "go" wenn du mit den Ergebnissen zufrieden bist.
-```
+Wenn das Ergebnis so stimmt, schreibe `go`.
+
+---
 
 **WICHTIG:**
 - Du darfst NICHT selbst entscheiden ob Auffaelligkeiten relevant sind
@@ -260,6 +260,8 @@ Wenn Adversary VERIFIED (oder AMBIGUOUS mit User-OK): Stelle sicher, dass alle g
 ✅ Phase 6 (Implementierung) abgeschlossen — Adversary VERIFIED.
 
 Workflow: `<name>` · Issue: **#<N>** · Verdict: VERIFIED
+
+**Was wurde erreicht:** Der Code ist fertig und hat eine unabhängige interne Qualitätsprüfung bestanden. Als Nächstes folgt die finale Validierung — dabei wird geprüft, ob alle Anforderungen aus der Spezifikation lückenlos erfüllt sind.
 
 Nächster Schritt — Kontext zurücksetzen spart Tokens (der Workflow-State liegt sicher auf der Platte):
 1. `/clear`

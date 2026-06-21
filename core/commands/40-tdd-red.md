@@ -110,6 +110,8 @@ Dann gib exakt folgendes aus — dann **STOPP**:
 
 Workflow: `<name>` · Issue: **#<N>** · Phase: `phase5_tdd_red` ✓
 
+**Was wurde gemacht:** Die Qualitätsprüfungen (Tests) sind aufgesetzt und bestätigt als fehlschlagend — genau wie geplant, denn die eigentliche Funktion ist noch nicht gebaut. Das ist ein gutes Zeichen: Wir messen zuerst, dann bauen wir.
+
 Nächster Schritt — Kontext zurücksetzen spart Tokens (der Workflow-State liegt sicher auf der Platte):
 1. `/clear`
 2. `/50-implement #<N>`   (lädt Spec + RED-Tests + State automatisch von der Platte)

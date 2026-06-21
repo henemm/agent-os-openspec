@@ -79,7 +79,15 @@ python3 .claude/hooks/workflow.py phase phase2_analyse
 
 ## Next Step
 
-Inform the user:
-> "Context gathered. Found [N] related files. Next: `/20-analyse` for detailed analysis."
+Informiere den User mit folgender Zusammenfassung:
+
+---
+**Kontext gesammelt.**
+
+Was ich gefunden habe: [Kurz beschreiben was relevant ist — z.B. welche bestehenden Bereiche betroffen sind, ob ähnliche Lösungen schon existieren, was zu beachten ist — keine Dateinamen oder Technik]
+
+Nächster Schritt: `/20-analyse` — ich erarbeite jetzt die beste Lösung.
+
+---
 
 **IMPORTANT:** Do NOT skip to implementation. Context → Analyse → Spec → Implement.

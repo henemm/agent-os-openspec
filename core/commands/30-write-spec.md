@@ -85,15 +85,26 @@ python3 .claude/hooks/workflow.py phase phase3_spec
 
 ## Next Step
 
-Present the spec and request approval:
+Präsentiere die Spec und bitte um Freigabe. Gib dem User folgende Zusammenfassung:
 
-> "Spec erstellt und validiert: `docs/specs/[path]`
->
-> Scope: [N] files, ~[N] LoC
-> Test plan: [N] automated tests
-> Validation: VALID
->
-> Confirm with 'approved', 'freigabe', or 'lgtm' to proceed."
+---
+**Plan fertig — bitte Freigabe.**
+
+**Was wird gebaut?**
+[Feature/Änderung in 1–2 Sätzen aus Nutzerperspektive — keine Dateinamen, kein Code]
+
+**Was ändert sich sichtbar?**
+- [Konkretes sichtbares Verhalten 1]
+- [Konkretes sichtbares Verhalten 2]
+
+**Was bleibt unverändert?**
+[Was explizit nicht angefasst wird — gibt dem PO Sicherheit über den Scope]
+
+**Qualitätsplan:** [N] automatische Tests geplant · Spezifikation geprüft: VALID
+
+Schreibe `approved` wenn der Plan so stimmt — danach geht es in die Umsetzung.
+
+---
 
 ## After Approval
 

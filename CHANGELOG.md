@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+**PO-Zusammenfassungen an allen Workflow-Wartepunkten**
+
+An allen Stellen, an denen der Workflow auf Nutzer-Interaktion wartet, wurde eine nicht-technische Zusammenfassung für den Product Owner ergänzt:
+
+- `10-context.md`: Informierendes Ende — was gefunden wurde, in einfacher Sprache
+- `20-analyse.md`: Art der Aufgabe, Risikobewertung und nächster Schritt — ohne Dateinamen oder LoC
+- `30-write-spec.md`: Approval-Gate — "Was wird gebaut / Was ändert sich / Was bleibt unverändert" + Freigabe-Prompt
+- `40-tdd-red.md`: STOPP-Block — kurze Erklärung warum fehlschlagende Tests ein gutes Zeichen sind
+- `50-implement.md`: GREEN-Freigabe-Gate — "Was funktioniert jetzt?" + "Qualitätsprüfungen: N Tests bestanden"; STOPP-Block am Ende mit Status-Satz
+- `60-validate.md`: Finaler Status "Alles fertig und geprüft" mit Commit-Frage
+
 **Feature Fast Track (`--type feature-fast`) + `/00-intake` Klassifikation**
 
 Hintergrund: Shape Up (Basecamp), DORA 2024 und Google SRE zeigen übereinstimmend: uniforme Gates für alle Aufgaben senken Qualität, weil Teams sie umgehen. Prozesstiefe soll proportional zu Scope, Blast Radius und Unsicherheit skalieren — und das vor Arbeitsbeginn entschieden werden.

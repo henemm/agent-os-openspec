@@ -151,8 +151,23 @@ Erstelle eine Zusammenfassung:
 
 ## Next Step
 
-After successful validation:
-> "Validation successful. All checks passed. Ready for commit."
+Nach erfolgreicher Validierung, gib dem User folgende Zusammenfassung:
+
+---
+✅ **Alles fertig und geprüft.**
+
+**Was wurde umgesetzt:** [Feature/Bugfix in 1–2 Sätzen aus Nutzerperspektive]
+
+**Ergebnis:**
+- Alle Qualitätsprüfungen bestanden
+- Alle Anforderungen aus dem Plan erfüllt
+- Keine bestehenden Funktionen beeinträchtigt
+
+**Bereit für:** Commit[, dann Deploy — falls im Projekt vorgesehen]
+
+Soll ich den Code committen?
+
+---
 
 ## On Failure
 
