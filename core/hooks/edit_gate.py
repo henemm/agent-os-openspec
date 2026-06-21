@@ -287,10 +287,10 @@ def main():
 
     # 10. RED test artifacts
     if phase in IMPL_PHASES:
-        # Bug fast-track: TDD gate configurable via openspec.yaml → bug_fix.require_tdd
-        is_bug = workflow.get("workflow_type") == "bug"
+        # Bug + Feature fast-track: TDD gate configurable via openspec.yaml → bug_fix.require_tdd
+        is_fast = workflow.get("workflow_type") in ("bug", "feature-fast")
         require_tdd = config.get("bug_fix", {}).get("require_tdd", False)
-        if not (is_bug and not require_tdd):
+        if not (is_fast and not require_tdd):
             red_done = workflow.get("red_test_done", False) or workflow.get("ui_test_red_done", False)
             if not red_done:
                 red_arts = [a for a in workflow.get("test_artifacts", [])

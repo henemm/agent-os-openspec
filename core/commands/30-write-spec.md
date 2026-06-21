@@ -2,7 +2,27 @@
 
 You are in **Phase 3 - Specification Writing**.
 
-## Prerequisites
+## Fast Track (workflow_type == feature-fast)
+
+Prüfe zuerst den Workflow-Typ:
+```bash
+python3 .claude/hooks/workflow.py status
+```
+
+Wenn `workflow_type: feature-fast` → **kein Sonnet-Agent, kein Haiku-Validator**.
+Schreibe direkt eine Mini-Spec im Hauptkontext:
+
+- Datei: `docs/specs/fast/[name].md`
+- Format: laut `/00-intake` → Mini-Spec-Template
+- Dann: `workflow.py set-field spec_file "docs/specs/fast/[name].md"`
+- Dann: Freigabe vom User abwarten ("approved")
+- Nach Freigabe: direkt zu `/50-implement`
+
+**Standard- und Full-Process-Workflows** folgen dem normalen Ablauf unten.
+
+---
+
+## Prerequisites (Standard / Full Process)
 
 - Analysis completed (`phase2_analyse`)
 - Context document exists with affected files list

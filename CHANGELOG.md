@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+**Feature Fast Track (`--type feature-fast`) + `/00-intake` Klassifikation**
+
+Hintergrund: Shape Up (Basecamp), DORA 2024 und Google SRE zeigen übereinstimmend: uniforme Gates für alle Aufgaben senken Qualität, weil Teams sie umgehen. Prozesstiefe soll proportional zu Scope, Blast Radius und Unsicherheit skalieren — und das vor Arbeitsbeginn entschieden werden.
+
+- `core/commands/00-intake.md`: Neuer Slash-Command — bewertet Scope/Blast-Radius/Unsicherheit, bestimmt Track (Fast/Standard/Full), startet Workflow mit passendem Typ. Erster Schritt vor jedem Feature-Workflow.
+- `workflow.py start <name> --type feature-fast`: Startet bei `phase3_spec`, setzt `red_test_done: true` automatisch — kein Context-Doc, kein separates TDD-RED, kein Adversary nötig.
+- `workflow.py _validate_transition()`: Neue `feature-fast`-Branch — erzwingt nur den Spec-Approval-Gate (phase4), überspringt context_file-, TDD-Artefakt- und Adversary-Verdict-Prüfung.
+- `bash_gate.py` Adversary-Check: `feature-fast` neben `bug` von der Adversary-Verdict-Pflicht ausgenommen.
+- `edit_gate.py` TDD-Gate: `feature-fast` neben `bug` vom RED-Artefakt-Check ausgenommen.
+- `core/commands/30-write-spec.md`: Fast-Track-Sektion ergänzt — Mini-Spec direkt im Hauptkontext, kein Sonnet-Agent-Dispatch, kein Haiku-Validator.
+- Mini-Spec-Format: `docs/specs/fast/[name].md` mit 4 Sections.
+- Modell-Empfehlung im Intake-Output: Fast/Standard → Sonnet, Full Process → Opus (folgt direkt aus Track-Score, kein eigenes Kriterium).
+
 **Bug-Fix Fast Track (`--type bug`) — Token-sparender 3-Schritte-Weg für kleine Bugs**
 - `workflow.py start <name> --type bug`: Startet direkt bei `phase6_implement`, setzt `red_test_done: true` und `spec_approved: true` automatisch — keine Phasen 1–5 nötig
 - `_validate_transition()`: Überspringt alle Prerequisit-Checks für `workflow_type == "bug"`

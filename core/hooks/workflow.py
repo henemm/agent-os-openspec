@@ -309,6 +309,18 @@ def _validate_transition(data: dict, target: str) -> str | None:
     if data.get("workflow_type") == "bug":
         return None
 
+    # Feature fast-track: only spec approval gate enforced
+    if data.get("workflow_type") == "feature-fast":
+        tgt_idx_ff = PHASES.index(target) if target in PHASES else -1
+        if tgt_idx_ff < 0:
+            return f"Unknown phase: {target}"
+        if tgt_idx_ff >= PHASES.index("phase4_approved"):
+            if not data.get("spec_file"):
+                return "spec_file not set — run /30-write-spec first"
+            if not data.get("spec_approved"):
+                return "Spec not approved — user must say 'approved'"
+        return None
+
     current = data.get("current_phase", "phase0_idle")
     cur_idx = PHASES.index(current) if current in PHASES else 0
     tgt_idx = PHASES.index(target) if target in PHASES else -1
@@ -358,10 +370,10 @@ def cmd_start(args: list[str]) -> None:
             name_args.append(args[i])
             i += 1
     if not name_args:
-        print("Usage: workflow.py start <name> [--type feature|bug]", file=sys.stderr)
+        print("Usage: workflow.py start <name> [--type feature|bug|feature-fast]", file=sys.stderr)
         sys.exit(1)
-    if workflow_type not in ("feature", "bug"):
-        print(f"Unknown workflow type: {workflow_type!r}. Valid: feature, bug", file=sys.stderr)
+    if workflow_type not in ("feature", "bug", "feature-fast"):
+        print(f"Unknown workflow type: {workflow_type!r}. Valid: feature, bug, feature-fast", file=sys.stderr)
         sys.exit(1)
     name = name_args[0]
     wf_file = _workflow_file(name)
@@ -376,11 +388,21 @@ def cmd_start(args: list[str]) -> None:
         data["spec_approved"] = True
         data["red_test_done"] = True
         _log_phase_transition(data, "phase6_implement")
+    elif workflow_type == "feature-fast":
+        # Fast-track for small features: skip context/analyse, start at spec
+        data["current_phase"] = "phase3_spec"
+        data["red_test_done"] = True  # inline TDD during implementation
+        _log_phase_transition(data, "phase3_spec")
     else:
         _log_phase_transition(data, "phase1_context")
     _atomic_write(wf_file, data)
     _set_active(name)
-    type_note = " [BUG fast-track → phase6_implement]" if workflow_type == "bug" else ""
+    if workflow_type == "bug":
+        type_note = " [BUG fast-track → phase6_implement]"
+    elif workflow_type == "feature-fast":
+        type_note = " [FEATURE fast-track → phase3_spec]"
+    else:
+        type_note = ""
     print(f"Started workflow: {name}{type_note}")
     print(
         f"\nOPENSPEC_ACTIVE_WORKFLOW={name} written to all settings.local.json files.\n"
