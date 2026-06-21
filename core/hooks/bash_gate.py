@@ -104,7 +104,9 @@ def _is_stop_locked() -> bool:
 
 
 def _is_whitelisted(command: str) -> bool:
-    return any(allowed in command for allowed in WHITELIST_COMMANDS)
+    config = _load_config_values()
+    project_whitelist = config.get("bash_gate", {}).get("whitelist", [])
+    return any(allowed in command for allowed in WHITELIST_COMMANDS + project_whitelist)
 
 
 def _references_protected(command: str) -> bool:
