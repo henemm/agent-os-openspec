@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+**Workflow-Retro: `retro-list` + `retro [<name>]` + `/90-retro`**
+
+Analysiert abgeschlossene Workflows aus dem Archiv (`.claude/workflows/_archive/`).
+
+- `workflow.py retro-list`: Listet alle archivierten Workflows mit Name, Typ, Datum, Gesamtzeit und Ergebnis.
+- `workflow.py retro [<name>]`: Detaillierter Retro-Report — Phasen-Timeline mit Zeiten, Qualitätssignale (TDD, Adversary-Verdict, Fix-Loop-Iterationen, Override-Nutzung, Scope), automatische Optimierungshinweise. Ohne `<name>` wird der zuletzt abgeschlossene Workflow analysiert.
+- `core/commands/90-retro.md`: Neuer Slash-Command `/90-retro` — führt durch List → Pick → Analyse mit abschließender PO-Zusammenfassung in einfacher Sprache.
+- `core/commands/80-workflow.md`: Neue Befehle dokumentiert.
+
+Hinweis: Token-/API-Kostenanalyse ist nicht enthalten — diese Daten sind im Workflow-State nicht vorhanden.
+
 **PO-Zusammenfassungen an allen Workflow-Wartepunkten**
 
 An allen Stellen, an denen der Workflow auf Nutzer-Interaktion wartet, wurde eine nicht-technische Zusammenfassung für den Product Owner ergänzt:

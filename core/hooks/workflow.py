@@ -707,6 +707,185 @@ def cmd_list(args: list[str]) -> None:
         print(f"  {name}: {PHASE_NAMES.get(phase, phase)}{marker}")
 
 
+def _retro_load_log(name: str) -> dict:
+    """Load execution log YAML for a workflow by name. Returns {} if not found."""
+    log_dir = find_project_root() / ".claude" / "workflows" / "_log"
+    if not log_dir.exists():
+        return {}
+    matches = sorted(log_dir.glob(f"*_{name}.yaml"))
+    if not matches:
+        return {}
+    lines = matches[-1].read_text().splitlines()
+    result: dict = {}
+    for line in lines:
+        if ":" in line and not line.startswith(" "):
+            k, _, v = line.partition(":")
+            result[k.strip()] = v.strip()
+    return result
+
+
+def cmd_retro_list(args: list[str]) -> None:
+    """List all archived workflows with basic stats."""
+    archive = _archive_dir()
+    if not archive.exists() or not list(archive.glob("*.json")):
+        print("Keine abgeschlossenen Workflows im Archiv.")
+        return
+    SEP = "─" * 68
+    print(SEP)
+    print(f"  {'Name':<28} {'Typ':<14} {'Datum':<12} {'Zeit':>7}  Ergebnis")
+    print(SEP)
+    files = sorted(archive.glob("*.json"), key=lambda f: f.stat().st_mtime, reverse=True)
+    for f in files:
+        data = _read_workflow(f)
+        name = data.get("name", f.stem)
+        wf_type = data.get("workflow_type", "feature")
+        created = data.get("created", "")[:10]
+        log = _retro_load_log(name)
+        outcome = log.get("outcome", "–")
+        total_min = sum(
+            e.get("duration_min") or 0.0
+            for e in data.get("phase_log", [])
+            if e.get("exited_at") is not None
+        )
+        time_str = f"{total_min:.0f} min" if total_min > 0 else "–"
+        print(f"  {name:<28} {wf_type:<14} {created:<12} {time_str:>7}  {outcome}")
+    print(SEP)
+    print(f"  {len(files)} Workflow(s) archiviert.")
+
+
+def _retro_hints(data: dict, log: dict, total_min: float, longest_phase: str,
+                 longest_dur: float, phases_skipped: list) -> list[str]:
+    hints = []
+    fix_loops = data.get("fix_loop_iterations", 0)
+    if fix_loops > 0:
+        hints.append(
+            f"  ⚠  {fix_loops}x Fix-Loop in phase6b_adversary — deutet auf "
+            "unvollstaendige Spec oder fehlende Edge Cases hin."
+        )
+    if longest_phase and total_min > 0 and longest_dur / total_min > 0.35:
+        pct = round(longest_dur / total_min * 100)
+        hints.append(
+            f"  ⚠  {longest_phase} war mit {longest_dur:.1f} min die laengste "
+            f"Phase ({pct}% der Gesamtzeit)."
+        )
+    if data.get("adversary_ambiguous_override"):
+        reason = data["adversary_ambiguous_override"].get("reason", "–")
+        hints.append(f"  ⚠  AMBIGUOUS-Override genutzt: \"{reason}\"")
+    if phases_skipped:
+        hints.append(f"  ℹ  Uebersprungene Phasen: {', '.join(phases_skipped)}")
+    if not data.get("red_test_done") and not data.get("ui_test_red_done"):
+        if data.get("workflow_type") not in ("bug", "feature-fast"):
+            hints.append("  ⚠  Kein TDD-RED-Artefakt registriert — "
+                         "TDD-Disziplin nicht nachweisbar.")
+    if not hints:
+        hints.append("  ✓  Keine Optimierungshinweise — Workflow lief reibungslos.")
+    return hints
+
+
+def cmd_retro(args: list[str]) -> None:
+    """Analyze an archived workflow. Uses most recent if no name given."""
+    archive = _archive_dir()
+    if not archive.exists():
+        print("Kein Archiv gefunden — noch keine abgeschlossenen Workflows.")
+        return
+
+    if args:
+        name = args[0]
+        path = archive / f"{name}.json"
+        if not path.exists():
+            print(f"Workflow '{name}' nicht im Archiv gefunden.", file=sys.stderr)
+            print("Verfuegbare Workflows: workflow.py retro-list", file=sys.stderr)
+            sys.exit(1)
+    else:
+        files = sorted(archive.glob("*.json"), key=lambda f: f.stat().st_mtime)
+        if not files:
+            print("Kein abgeschlossener Workflow im Archiv.")
+            return
+        path = files[-1]
+        name = path.stem
+
+    data = _read_workflow(path)
+    log = _retro_load_log(name)
+    wf_type = data.get("workflow_type", "feature")
+    created = data.get("created", "")[:10]
+
+    SEP = "═" * 52
+    sep = "─" * 52
+    print(SEP)
+    print(f"  RETRO: {name}")
+    print(f"  Typ: {wf_type}  |  Gestartet: {created}")
+    print(SEP)
+
+    # Phase timeline
+    phase_log = data.get("phase_log", [])
+    total_min = 0.0
+    longest_phase = None
+    longest_dur = 0.0
+    print()
+    print("PHASEN-TIMELINE")
+    print(sep)
+    print(f"  {'Phase':<28} {'Dauer':>8}  Status")
+    print(sep)
+    for entry in phase_log:
+        phase = entry.get("phase", "?")
+        dur = entry.get("duration_min")
+        exited = entry.get("exited_at")
+        if exited is None:
+            status = "[unterbrochen]"
+            dur_str = "–"
+        else:
+            dur_val = dur if dur is not None else 0.0
+            total_min += dur_val
+            dur_str = f"{dur_val:.1f} min"
+            status = "✓"
+            if dur_val > longest_dur:
+                longest_dur = dur_val
+                longest_phase = phase
+        print(f"  {phase:<28} {dur_str:>8}  {status}")
+    print(sep)
+    total_str = f"{total_min:.1f} min" if total_min > 0 else "–"
+    print(f"  Gesamt: {total_str}", end="")
+    if longest_phase:
+        print(f"  |  Laengste Phase: {longest_phase} ({longest_dur:.1f} min) ▲")
+    else:
+        print()
+
+    # Quality signals
+    verdict = data.get("adversary_verdict") or log.get("adversary_verdict") or "–"
+    fix_loops = data.get("fix_loop_iterations", 0)
+    findings = data.get("adversary_findings_total", 0)
+    tdd_ok = data.get("red_test_done") or data.get("ui_test_red_done")
+    override_used = bool(data.get("adversary_ambiguous_override"))
+    affected = len(data.get("affected_files", []))
+    loc_delta = data.get("loc_delta_current") or log.get("scope_loc_delta") or "–"
+    outcome = log.get("outcome", "–")
+
+    print()
+    print("QUALITAETS-SIGNALE")
+    print(sep)
+    tdd_str = "✓ bestaetigt" if tdd_ok else ("– (fast-track)" if wf_type in ("bug", "feature-fast") else "✗ fehlend")
+    print(f"  TDD RED Artefakte:     {tdd_str}")
+    print(f"  Adversary-Verdict:     {verdict}")
+    print(f"  Fix-Loop-Iterationen:  {fix_loops}")
+    print(f"  Adversary-Findings:    {findings}")
+    print(f"  Override genutzt:      {'Ja' if override_used else 'Nein'}")
+    print(f"  Scope:                 {affected} Datei(en), {loc_delta} LoC")
+    print(f"  Ergebnis:              {outcome}")
+
+    # Phases skipped
+    phases_skipped_raw = log.get("phases_skipped", "")
+    phases_skipped = [p.strip("- ") for p in phases_skipped_raw.split(",") if p.strip("- ")]
+
+    # Optimization hints
+    hints = _retro_hints(data, log, total_min, longest_phase, longest_dur, phases_skipped)
+    print()
+    print("OPTIMIERUNGS-HINWEISE")
+    print(sep)
+    for h in hints:
+        print(h)
+    print()
+
+
 COMMANDS = {
     "start": cmd_start,
     "switch": cmd_switch,
@@ -722,6 +901,8 @@ COMMANDS = {
     "override-ambiguous": cmd_override_ambiguous,
     "complete": cmd_complete,
     "list": cmd_list,
+    "retro-list": cmd_retro_list,
+    "retro": cmd_retro,
 }
 
 

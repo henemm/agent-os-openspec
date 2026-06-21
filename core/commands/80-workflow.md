@@ -9,6 +9,20 @@ Manage multiple parallel workflows with isolated state (v3).
 python3 .claude/hooks/workflow.py list
 ```
 
+### Retro: Abgeschlossene Workflows analysieren
+```bash
+# Alle archivierten Workflows auflisten
+python3 .claude/hooks/workflow.py retro-list
+
+# Zuletzt abgeschlossenen Workflow analysieren
+python3 .claude/hooks/workflow.py retro
+
+# Bestimmten Workflow analysieren
+python3 .claude/hooks/workflow.py retro <name>
+```
+Zeigt: Phasen-Timeline mit Zeiten, Qualitätssignale (TDD, Adversary-Verdict, Fix-Loops), Optimierungshinweise.
+Slash-Command: `/90-retro`
+
 ### Check Current Status
 ```bash
 python3 .claude/hooks/workflow.py status
