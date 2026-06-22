@@ -16,7 +16,7 @@ Project-specific gates (sim_enforcer, build_lock) belong in module hooks.
 Exit Codes: 0 = allowed, 2 = blocked
 """
 
-from hook_utils import setup_path, find_project_root, get_tool_input, block, allow, get_active_workflow_name
+from hook_utils import setup_path, find_project_root, get_tool_input, block, allow, get_active_workflow_name, gate_diagnostics
 setup_path()
 
 import json
@@ -132,28 +132,20 @@ def _outputs_content(command: str) -> bool:
 
 
 def _read_active_workflow() -> dict | None:
-    """Read active workflow via OPENSPEC_ACTIVE_WORKFLOW env var or settings.local.json fallback."""
+    """Read active workflow via OPENSPEC_ACTIVE_WORKFLOW env var or settings.local.json fallback.
+
+    Resolution is env/settings only — the .active symlink is intentionally
+    not used (single source of truth, matching workflow.py).
+    """
     name = get_active_workflow_name()
-    if name:
-        wf_file = _root / ".claude" / "workflows" / f"{name}.json"
-        if wf_file.exists():
-            try:
-                return json.loads(wf_file.read_text())
-            except (OSError, json.JSONDecodeError):
-                pass
+    if not name:
         return None
-    # Symlink fallback for sessions without env var set
-    link = _root / ".claude" / "workflows" / ".active"
-    if not link.exists():
-        return None
-    try:
-        target = Path(os.readlink(str(link)))
-        if not target.is_absolute():
-            target = link.parent / target
-        if target.exists():
-            return json.loads(target.read_text())
-    except (OSError, json.JSONDecodeError):
-        pass
+    wf_file = _root / ".claude" / "workflows" / f"{name}.json"
+    if wf_file.exists():
+        try:
+            return json.loads(wf_file.read_text())
+        except (OSError, json.JSONDecodeError):
+            pass
     return None
 
 
@@ -306,7 +298,8 @@ def main():
                     elif verdict.startswith("AMBIGUOUS"):
                         if not wf.get("adversary_ambiguous_override"):
                             block("BLOCKED: Adversary verdict is AMBIGUOUS. "
-                                  "Review findings, then: workflow.py override-ambiguous '<reason>'")
+                                  "Review findings, then: workflow.py override-ambiguous '<reason>' "
+                                  + gate_diagnostics(wf, verdict="AMBIGUOUS"))
                     else:
                         has_override = False
                         try:
@@ -315,7 +308,8 @@ def main():
                         except ImportError:
                             pass
                         if not has_override:
-                            block("BLOCKED: Adversary verdict missing or not VERIFIED. Run adversary validation first.")
+                            block("BLOCKED: Adversary verdict missing or not VERIFIED. Run adversary validation first. "
+                                  + gate_diagnostics(wf, verdict=(verdict or "keins")))
 
             # 5d. E2E scope detection (informational — never blocks)
             scope = _detect_e2e_scope(staged_list, config)

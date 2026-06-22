@@ -49,7 +49,11 @@ def _detect_test_output(command: str, tool_input: dict) -> None:
 
 
 def _set_adversary_verdict(verdict: str) -> None:
-    """Update adversary_verdict in active workflow via env var (preferred) or .active symlink."""
+    """Update adversary_verdict in the active workflow JSON.
+
+    Resolution is env/settings only (via get_active_workflow_name) — the
+    .active symlink is intentionally not used (single source of truth).
+    """
     import tempfile
 
     def _atomic_write(wf_file: Path, data: dict) -> None:
@@ -65,31 +69,16 @@ def _set_adversary_verdict(verdict: str) -> None:
                 pass
 
     name = get_active_workflow_name()
-    if name:
-        wf_file = _root / ".claude" / "workflows" / f"{name}.json"
-        if wf_file.exists():
-            try:
-                data = json.loads(wf_file.read_text())
-                data["adversary_verdict"] = verdict
-                _atomic_write(wf_file, data)
-            except (OSError, json.JSONDecodeError):
-                pass
+    if not name:
         return
-    # Symlink fallback
-    link = _root / ".claude" / "workflows" / ".active"
-    if not link.exists():
-        return
-    try:
-        target = Path(os.readlink(str(link)))
-        if not target.is_absolute():
-            target = link.parent / target
-        if not target.exists():
-            return
-        data = json.loads(target.read_text())
-        data["adversary_verdict"] = verdict
-        _atomic_write(target, data)
-    except (OSError, json.JSONDecodeError):
-        pass
+    wf_file = _root / ".claude" / "workflows" / f"{name}.json"
+    if wf_file.exists():
+        try:
+            data = json.loads(wf_file.read_text())
+            data["adversary_verdict"] = verdict
+            _atomic_write(wf_file, data)
+        except (OSError, json.JSONDecodeError):
+            pass
 
 
 def main():

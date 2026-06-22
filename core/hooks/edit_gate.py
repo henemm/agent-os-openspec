@@ -19,7 +19,7 @@ Replaces 17 separate hooks with 1. Sequential short-circuit logic:
 Exit Codes: 0 = allowed, 2 = blocked
 """
 
-from hook_utils import setup_path, find_project_root, get_tool_input, block, allow, get_active_workflow_name
+from hook_utils import setup_path, find_project_root, get_tool_input, block, allow, get_active_workflow_name, gate_diagnostics
 setup_path()
 
 import json
@@ -191,16 +191,15 @@ def _check_loc_delta(config: dict, workflow: dict) -> str | None:
             total += added + deleted
         if total > max_loc:
             return (f"BLOCKED: LoC delta {total} exceeds limit {max_loc}. "
-                    "Split the change or: workflow.py set-field loc_limit_override <N>")
-        # Store current delta for status display
+                    "Split the change or: workflow.py set-field loc_limit_override <N> "
+                    + gate_diagnostics(workflow, delta=f"+{total}", limit=max_loc))
+        # Store current delta for status display — write directly to the active
+        # workflow JSON (no .active symlink; resolution is env/settings only).
         try:
-            from pathlib import Path as _P
-            wf_dir = _root / ".claude" / "workflows"
-            link = wf_dir / ".active"
-            if link.is_symlink():
-                target = _P(os.readlink(str(link)))
-                if not target.is_absolute():
-                    target = link.parent / target
+            name = get_active_workflow_name()
+            if name:
+                wf_dir = _root / ".claude" / "workflows"
+                target = wf_dir / f"{name}.json"
                 if target.exists():
                     import tempfile
                     data = json.loads(target.read_text())
@@ -271,7 +270,8 @@ def main():
 
     # 7. No workflow
     if not workflow:
-        block(f"BLOCKED: No active workflow for {Path(file_path).name}. Start with /context.")
+        block(f"BLOCKED: No active workflow for {Path(file_path).name}. Start with /context. "
+              + gate_diagnostics())
 
     phase = workflow.get("current_phase", "phase0_idle")
     wf_name = workflow.get("name", "unknown")
@@ -279,7 +279,8 @@ def main():
     # 8. Phase check
     if phase not in IMPL_PHASES:
         if not _has_override_token(wf_name):
-            block(f"BLOCKED: Phase {phase} does not allow code edits. Need phase6_implement+.")
+            block(f"BLOCKED: Phase {phase} does not allow code edits. Need phase6_implement+. "
+                  + gate_diagnostics(workflow))
 
     # 9. Override token skips TDD check
     if _has_override_token(wf_name):
@@ -296,7 +297,8 @@ def main():
                 red_arts = [a for a in workflow.get("test_artifacts", [])
                            if a.get("phase") == "phase5_tdd_red"]
                 if not red_arts:
-                    block("BLOCKED: No RED test artifacts. Run /tdd-red first.")
+                    block("BLOCKED: No RED test artifacts. Run /tdd-red first. "
+                          + gate_diagnostics(workflow))
 
     # 10b. Acceptance Criteria check (S2)
     ac_error = _check_acceptance_criteria(workflow)

@@ -7,7 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-06-22
+
 ### Added
+
+**Selbst-erklärende Gate-Block-Meldungen + Symlink-Drift-Cleanup**
+
+Auslöser: In einem abhängigen Projekt (`gregor_zwanzig`) wurden ~1,9 Mio Token verbrannt, weil ein Gate wiederholt blockte, die Block-Meldung aber die Ursache nicht enthielt — sie musste mühsam im Plumbing ergraben werden.
+
+- `hook_utils.resolve_active_workflow() -> tuple[str, str]`: liefert zusätzlich die Auflösungsquelle (`'env'` / `'settings'` / `'none'`). `get_active_workflow_name()` delegiert daran — Verhalten unverändert (reiner Name-String).
+- `hook_utils.gate_diagnostics(workflow=None, **extra)`: gemeinsamer, fail-safer Diagnose-Suffix-Builder (`[wf=… (quelle) | token=… | phase=… | …]`). Wirft nie; nicht ermittelbare Teilinfos werden `?`.
+- `edit_gate.py`: Diagnose-Suffix an die vier ursachenrelevanten Block-Meldungen angehängt (No active workflow / Phase does not allow / No RED test artifacts / LoC delta) — Auflösungsquelle und Token-Status sofort sichtbar.
+- `bash_gate.py`: Diagnose-Suffix an die AMBIGUOUS- und "verdict missing or not VERIFIED"-Commit-Block-Meldungen angehängt.
+
+Symlink-Drift bereinigt — einzige Wahrheit für den aktiven Workflow (`.active`-Symlink war als Auflösungsquelle bereits abgeschaltet, Reste hingen aber noch in vier Hooks und konnten in parallelen Sessions falschen Workflow-Bezug verursachen):
+
+- `edit_gate.py`: `loc_delta_current` wird nun direkt in `.claude/workflows/<name>.json` geschrieben statt über den Symlink.
+- `bash_gate.py`, `post_bash.py`, `phase_listener.py`: tote `.active`-Lesepfade (inkl. `os.readlink`-Fallbacks) entfernt; irreführende Docstrings korrigiert.
+- `migrate_state.py` bleibt bewusst unberührt (Einmal-Migrationsschritt, kein Auflösungspfad).
 
 **Workflow-Retro: `retro-list` + `retro [<name>]` + `/90-retro`**
 

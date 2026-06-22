@@ -69,31 +69,20 @@ def _matches(message: str, phrases: list[str]) -> bool:
 def _read_active_workflow() -> tuple[dict | None, Path | None]:
     """Read active workflow. Returns (data, file_path).
 
-    Priority:
-    1. OPENSPEC_ACTIVE_WORKFLOW env var (session-scoped, prevents cross-session
-       symlink collisions when multiple Claude Code instances run in parallel)
-    2. .active symlink (single-session default)
+    Resolution is env/settings only (via get_active_workflow_name), which is
+    session-scoped and prevents cross-session collisions when multiple Claude
+    Code instances run in parallel. No symlink fallback is used (single source
+    of truth, matching workflow.py).
     """
     env_name = get_active_workflow_name()
-    if env_name:
-        wf_file = _root / ".claude" / "workflows" / f"{env_name}.json"
-        if wf_file.exists():
-            try:
-                return json.loads(wf_file.read_text()), wf_file
-            except (OSError, json.JSONDecodeError):
-                pass
-
-    link = _root / ".claude" / "workflows" / ".active"
-    if not link.exists():
+    if not env_name:
         return None, None
-    try:
-        target = Path(os.readlink(str(link)))
-        if not target.is_absolute():
-            target = link.parent / target
-        if target.exists():
-            return json.loads(target.read_text()), target
-    except (OSError, json.JSONDecodeError):
-        pass
+    wf_file = _root / ".claude" / "workflows" / f"{env_name}.json"
+    if wf_file.exists():
+        try:
+            return json.loads(wf_file.read_text()), wf_file
+        except (OSError, json.JSONDecodeError):
+            pass
     return None, None
 
 
