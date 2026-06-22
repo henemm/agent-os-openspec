@@ -49,11 +49,11 @@ Was das bedeutet:
 - Mini-Spec (Bullets statt vollständige Spec) + User-Freigabe
 - Inline-Test während Implementierung (kein separates TDD-RED)
 - Kein Adversary Agent
-
-Leite den Workflow-Namen selbst aus dem Aufgaben-Titel ab (z.B. Issue-Nummer + Stichwort: "FEAT-123-login-flow" oder "fix-button-label"). Nicht beim User erfragen.
 ```
 
-### 3. Workflow starten (nach User-Bestätigung)
+**Workflow-Name:** Leite ihn selbst aus dem Aufgaben-Titel ab (Issue-Nummer + Stichwort, z.B. `fix-862-col-labels`). Nie beim User erfragen.
+
+### 3. Workflow starten (nach User-Bestätigung des Tracks)
 
 **Fast Track:**
 ```bash
