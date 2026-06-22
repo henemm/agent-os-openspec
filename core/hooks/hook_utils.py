@@ -156,12 +156,14 @@ def find_project_root() -> Path:
 
 
 def resolve_active_workflow() -> "tuple[str, str]":
-    """Return (name, source). source ∈ {'env', 'settings', 'none'}.
+    """Return (name, source). source ∈ {'env', 'settings', 'file', 'none'}.
 
     Checks env var first (injected by Claude Code from settings.local.json at session
     start). Falls back to reading settings.local.json directly — necessary when
     workflow.py start/switch was called AFTER the current session started, because
     Claude Code only reads settings files at startup, not on every hook invocation.
+    Third fallback: .claude/active_workflow text file — robust against Claude Code
+    overwriting settings.local.json (which removes the env section).
     """
     name = os.environ.get("OPENSPEC_ACTIVE_WORKFLOW", "").strip()
     if name:
@@ -174,6 +176,14 @@ def resolve_active_workflow() -> "tuple[str, str]":
             if name:
                 return name, "settings"
     except (OSError, json.JSONDecodeError, KeyError):
+        pass
+    try:
+        active_file = find_project_root() / ".claude" / "active_workflow"
+        if active_file.exists():
+            name = active_file.read_text().strip()
+            if name:
+                return name, "file"
+    except OSError:
         pass
     return "", "none"
 

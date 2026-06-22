@@ -346,3 +346,21 @@ Bei Feature-Requests:
 - Prüfe erst, ob das Feature in core/ oder als Modul gehört
 - Core = universell für alle Projekte
 - Module = domain-spezifisch
+
+## Adversary-Limit: Kein Fix-Loop nach VERIFIED
+
+**Regel:** Nach dem ersten VERIFIED-Verdict des `implementation-validator`-Agenten ist Schluss. Kein weiterer Fix-Zyklus, kein zweiter Adversary-Lauf.
+
+```
+phase6_implement → Adversary → VERIFIED → workflow.py phase phase7_validate → FERTIG
+                             ↘ BROKEN   → Gezielter Fix → nochmal Adversary (max. 1x)
+                             ↘ AMBIGUOUS → User fragen
+```
+
+**Begründung:** Der Agent-Kaskaden-Effekt (Developer → Adversary → Fix → Adversary → Fix → Adversary) hat in realen Sessions 177 Minuten und ~3M Output-Tokens verbraucht. Ein VERIFIED bedeutet, die Implementierung ist gut genug — weitere Runden sind Token-Verbrennung ohne Mehrwert.
+
+**Konkret:**
+- Nach VERIFIED: Sofort `workflow.py phase phase7_validate` ausführen
+- Bei BROKEN: Gezielten Fix-Agenten spawnen, dann NUR EINE weitere Adversary-Runde
+- Zweites VERIFIED nach Fix: direkt zu phase7, kein dritter Lauf
+- Zweites BROKEN nach Fix: Eskalation an User, kein weiterer Agent

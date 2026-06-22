@@ -222,6 +222,10 @@ def _persist_env(name: "str | None") -> None:
     Hook subprocesses inherit Claude Code's process environment, not individual Bash
     exports. Worktrees each have their own .claude/settings.local.json, so we must
     update the main project file AND every worktree's file.
+
+    Also writes .claude/active_workflow as a plain-text fallback — Claude Code
+    overwrites settings.local.json when adding Bash permissions, which silently
+    drops the env section. The text file is never touched by Claude Code.
     """
     project_root = find_project_root()
     targets = [project_root / ".claude" / "settings.local.json"]
@@ -249,6 +253,26 @@ def _persist_env(name: "str | None") -> None:
 
         settings_path.parent.mkdir(parents=True, exist_ok=True)
         _atomic_write(settings_path, settings)
+
+    # Plain-text fallback: .claude/active_workflow
+    active_file = project_root / ".claude" / "active_workflow"
+    if name:
+        active_file.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=str(active_file.parent), suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as f:
+                f.write(name)
+            os.rename(tmp, str(active_file))
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+    else:
+        try:
+            active_file.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def _save_active(data: dict) -> None:

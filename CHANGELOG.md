@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+**Robuster Workflow-Fallback + Adversary-Limit-Regel (post-#846-Retro)**
+
+Auslöser: In Session #846 (`gregor_zwanzig`) funktionierte das "go"-Keyword nicht, weil Claude Code `settings.local.json` beim Hinzufügen von Bash-Permissions überschreibt und dabei den `env`-Abschnitt (mit `OPENSPEC_ACTIVE_WORKFLOW`) entfernt. Konsequenz: `phase_listener.py` fand keinen aktiven Workflow → "go" wurde ignoriert → Phasenwechsel erfolgte manuell statt automatisch.
+
+- `hook_utils.resolve_active_workflow()`: Dritter Fallback über `.claude/active_workflow` (Plaintext-Datei). Diese Datei wird von Claude Code nie berührt. `source`-Wert erweitert: `'env' | 'settings' | 'file' | 'none'`.
+- `workflow.py _persist_env()`: Schreibt beim Workflow-Start/Switch zusätzlich in `.claude/active_workflow`. Beim `workflow.py complete` wird die Datei atomisch gelöscht.
+
+### Changed
+
+- `CLAUDE.md`: Neue Regel "Adversary-Limit: Kein Fix-Loop nach VERIFIED" — nach erstem VERIFIED-Verdict direkt zu phase7, kein zweiter Adversary-Zyklus. Begründung: Session #846 verbrannte 177 Min. / ~3M Output-Tokens durch unkontrollierte Developer→Adversary→Fix→Adversary-Kaskade.
+
 ## [3.4.0] - 2026-06-22
 
 ### Added
