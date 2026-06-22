@@ -224,6 +224,60 @@ Wenn ein Test-Run "passed" meldet → setzt automatisch `adversary_verdict = "VE
 
 ---
 
+## Agenten — Rollen, Modelle und Kontext
+
+Das Framework arbeitet mit spezialisierten Agenten, die vom Hauptkontext (Orchestrator) gespawnt werden. Jeder Agent bekommt bewusst nur den Kontext, den er für seine Aufgabe braucht — nicht mehr.
+
+### Warum Kontext-Isolation?
+
+Ein Agent, der beim Validieren denselben Gedankenfluss sieht wie der Implementierer, tendiert dazu, dessen Logik unbewusst zu bestätigen ("Conversation Drift"). Daher gilt:
+
+- Der **implementation-validator** sieht nie die Reasoning-Chain des Implementierers — nur Spec und Test-Output
+- Der **external-validator** liest nie den Source Code — nur Spec und die laufende App
+- Der **fresh-eyes-inspector** kennt nicht einmal den Bug-Kontext — er beschreibt nur, was er sieht
+
+### Alle Agenten im Überblick
+
+| Agent | Modell | Tools | Kontext, den er bekommt | Wann eingesetzt |
+|-------|--------|-------|-------------------------|-----------------|
+| **bug-intake** | Haiku | Read, Grep, Glob, Bash, Task | User-Symptom + Projekt-Codebase | `/00-bug`, Erstaufnahme |
+| **analysis-challenger** | Sonnet | Read, Grep, Glob | Fertige Bug-Analyse (kein Reasoning des Investigators) | Nach Bug-Analyse, Devil's Advocate |
+| **bug-investigator** | Sonnet | Read, Grep, Glob, Bash, Task, Write, Edit | Vollständiger Code-Zugriff + Bug-Kontext | Tiefe Bug-Analyse |
+| **feature-planner** | Sonnet | Read, Grep, Glob, Bash, Task, Write, Edit | Vollständiger Code-Zugriff + Feature-Beschreibung | Phase 1–3 bei Feature-Planung |
+| **spec-writer** | Sonnet | Read, Glob, Grep, Write | feature_name + analysis_summary + affected_files | Phase 3: Spec schreiben |
+| **spec-validator** | Haiku | Read, Glob, Grep | Nur die Spec-Datei | Nach spec-writer, Qualitätsprüfung |
+| **developer-agent** | Opus | Read, Grep, Glob, Bash, Edit, Write | Spec + affected_files + test_command (kein breiterer Kontext) | Phase 6: Implementieren |
+| **implementation-validator** | Sonnet | Read, Grep, Glob, Bash | Spec + Test-Outputs — **kein Implementierer-Reasoning** | Phase 6b: Adversary-Check |
+| **external-validator** | Sonnet | Bash, WebFetch | Nur Spec (ACs) + App-URL — **kein Source Code** | Phase 7: Externe Validierung |
+| **fresh-eyes-inspector** | Sonnet | Read | Nur Screenshots — **kein Bug-Kontext, kein Code** | Phase 6b: UI-Bewertung |
+| **test-runner** | Haiku | Bash, Read, Grep | Projekt-Typ (erkennt selbst), kein Feature-Kontext | `/82-test`, Phase 5+6 |
+| **docs-updater** | Sonnet | Read, Glob, Grep, Edit, Write | changed_files + feature_summary | Nach Implementierung |
+| **user-story-planner** | Opus | Read, Grep, Glob, Write, Edit | Vollständiger Kontext + interaktives JTBD-Interview | `/83-user-story` |
+
+### Modell-Logik
+
+| Modell | Wofür | Agenten |
+|--------|-------|---------|
+| **Haiku** | Schnelle, mechanische Aufgaben | bug-intake, spec-validator, test-runner |
+| **Sonnet** | Analytische und kreative Arbeit | analysis-challenger, bug-investigator, feature-planner, spec-writer, implementation-validator, external-validator, fresh-eyes-inspector, docs-updater |
+| **Opus** | Kern-Implementierung + User-Interaktion | developer-agent, user-story-planner, Orchestrator (Hauptkontext) |
+
+### Kontext-Details der kritischen Agenten
+
+**`developer-agent` (Opus):**
+Der Agent bekommt genau vier Inputs: Spec-Datei, affected_files, test_files, test_command. Er sieht keine vorherigen Gesprächsrunden, keine Analyse-Phasen, keine Entscheidungspfade — nur das, was er zum Implementieren braucht. Das verhindert Scope Creep durch Kontext-Rauschen.
+
+**`implementation-validator` (Sonnet):**
+Bekommt ausdrücklich *nicht* die Reasoning-Chain des Implementierers. Er liest die Spec, führt die Tests aus und sucht aktiv nach Gegenbeweisen. Das ist der Kern des Adversary-Prinzips: er soll die Implementierung angreifen, nicht bestätigen.
+
+**`external-validator` (Sonnet):**
+Liest keinen Source Code. Er interagiert mit der laufenden App über HTTP/WebFetch wie ein echter User und prüft jeden AC direkt gegen die App — nicht gegen die Implementierung.
+
+**`fresh-eyes-inspector` (Sonnet):**
+Bekommt nur einen Screenshot, keinen Bug-Bericht, keine Erwartung. Er beschreibt, was er sieht. Der Wert liegt in der Unvoreingenommenheit: Er findet andere Probleme als jemand, der den Bug-Kontext kennt.
+
+---
+
 ## Workflow-State: das Herzstück
 
 Jede Aufgabe speichert ihren State in einer eigenen JSON-Datei:
