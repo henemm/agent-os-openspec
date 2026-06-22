@@ -32,6 +32,8 @@ Workflow-Framework, das den Entwicklungsprozess in Phasen strukturiert und State
 ```
 Phase 0: Idle (kein aktiver Workflow)
    ↓
+Intake-Bewertung               /00-intake   [Track-Auswahl]
+   ↓
 Phase 1: Kontext sammeln        /10-context
    ↓
 Phase 2: Analysieren            /20-analyse
@@ -49,6 +51,8 @@ Phase 6b: Adversary-Check       → User sagt "go"        [GATE]
 Phase 7: Validieren             /60-validate
    ↓
 Phase 8: Abgeschlossen          → git commit möglich     [GATE]
+   ↓
+Deploy                         /70-deploy
 ```
 
 Für Bugs und schnelle Features gibt es verkürzte Tracks (siehe unten).
@@ -56,6 +60,22 @@ Für Bugs und schnelle Features gibt es verkürzte Tracks (siehe unten).
 ---
 
 ## Was passiert in jeder Phase
+
+### Vor dem Start — Intake (`/00-intake`)
+
+`/00-intake` ist immer der erste Schritt. Es bewertet die Aufgabe nach drei Kriterien:
+
+| Kriterium | Low (0) | Medium (1) | High (2) |
+|-----------|---------|------------|----------|
+| **Scope** | 1–3 Dateien, ≤30 LoC | 4–8 Dateien, ≤100 LoC | Neue Architektur |
+| **Blast Radius** | Isoliertes Utility | Service-Schnittstelle | Auth, Infra, Breaking Change |
+| **Unsicherheit** | Bekanntes Pattern | Teilweise bekannt | Neue Technologie |
+
+- **Summe 0** → Fast Track (`feature-fast`): Phasen 3 → 4 → 6 → 8
+- **Summe 1–3** → Standard (`feature`): alle Phasen
+- **Summe 4–6** → Full Process: alle Phasen, volle Tiefe, 2+ Adversary-Runden
+
+**Warum:** Verhindert, dass ein 10-Minuten-Fix durch alle 8 Phasen muss — und dass ein komplexes Feature ohne Analyse-Phasen startet.
 
 ### Phase 1 — Kontext sammeln (`/10-context`)
 
@@ -126,6 +146,12 @@ Der User sagt `go`. Dann startet der Adversary-Dialog:
 ### Phase 7 — Validieren (`/60-validate`)
 
 Manuelle Tests, Integration-Tests, UI-Checks. Claude dokumentiert den Validierungsstand. Am Ende: `workflow.py complete` archiviert den Workflow.
+
+### Nach dem Abschluss — Deploy (`/70-deploy`) und Reset (`/99-reset`)
+
+`/70-deploy` deployt den aktuellen Stand auf Produktion. Das Command ist projektspezifisch und muss angepasst werden — es enthält Pre-Flight-Checks (Branch, uncommitted changes, Rebase-Status) und das eigentliche Deploy-Kommando.
+
+`/99-reset` schließt und archiviert den aktiven Workflow, oder löscht ihn, wenn er sich noch in einer frühen Phase befindet. Sinnvoll nach erfolgreichem Abschluss oder wenn ein Workflow abgebrochen werden soll.
 
 ### Phase 8 — Abgeschlossen
 
@@ -350,17 +376,42 @@ Das verhindert, dass parallele Arbeiten sich gegenseitig den State überschreibe
 
 ---
 
-## Retrospektive
+## Retrospektive (`/90-retro`)
 
-Nach dem Abschluss eines Workflows kann eine Retro durchgeführt werden:
+Nach dem Abschluss eines Workflows analysiert `/90-retro` den archivierten Workflow:
 
-```bash
-workflow.py retro feature-login
+```
+/90-retro              → zuletzt abgeschlossenen Workflow analysieren
+/90-retro <name>       → bestimmten archivierten Workflow analysieren
+/90-retro list         → alle archivierten Workflows auflisten
 ```
 
 Zeigt: Phasen-Timeline, Dauer pro Phase, Qualitätssignale (Adversary-Findings, Fix-Loop-Iterationen), LoC-Delta, E2E-Scope.
 
 Nützlich für: Prozess-Verbesserungen, Team-Reflektionen, Schätzungs-Kalibrierung.
+
+---
+
+## Alle Slash-Commands auf einen Blick
+
+| Command | Phase | Beschreibung |
+|---------|-------|--------------|
+| `/00-intake` | vor 1 | Aufgabe bewerten, Track wählen (bug / feature-fast / feature) |
+| `/00-bug` | — | Bug-Analyse starten (Analysis-First) |
+| `/01-feature` | — | Feature planen (startet feature-planner Agent) |
+| `/10-context` | 1 | Relevanten Kontext sammeln |
+| `/20-analyse` | 2 | Anforderungen analysieren |
+| `/30-write-spec` | 3 | Spezifikation erstellen |
+| `/40-tdd-red` | 5 | Failing Tests schreiben (RED) |
+| `/50-implement` | 6 | Implementieren (Tests grün machen) |
+| `/60-validate` | 7 | Manuelle Validierung |
+| `/70-deploy` | nach 8 | Deploy auf Produktion (projektspezifisch anpassen) |
+| `/80-workflow` | — | Workflows verwalten (start, switch, status) |
+| `/81-add-artifact` | — | Test-Artefakte registrieren |
+| `/82-test` | — | Tests ausführen (startet test-runner Agent) |
+| `/83-user-story` | — | JTBD-basierte User Story Discovery |
+| `/90-retro` | nach 8 | Abgeschlossenen Workflow analysieren |
+| `/99-reset` | — | Workflow abschließen oder abbrechen |
 
 ---
 
