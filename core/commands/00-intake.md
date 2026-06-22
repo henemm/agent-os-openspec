@@ -50,7 +50,7 @@ Was das bedeutet:
 - Inline-Test während Implementierung (kein separates TDD-RED)
 - Kein Adversary Agent
 
-Nenn mir einen Namen für den Workflow (z.B. FEAT-123 oder "fix-button-label").
+Leite den Workflow-Namen selbst aus dem Aufgaben-Titel ab (z.B. Issue-Nummer + Stichwort: "FEAT-123-login-flow" oder "fix-button-label"). Nicht beim User erfragen.
 ```
 
 ### 3. Workflow starten (nach User-Bestätigung)
