@@ -17,17 +17,40 @@ for f in glob.glob('.claude/workflows/*.json'):
     name = os.path.basename(f)[:-5]
     if pat.search(name):
         d = json.load(open(f))
-        hits.append((name, d.get('current_phase'), d.get('spec_approved'), d.get('adversary_verdict')))
+        hits.append((name, d.get('current_phase'), d.get('spec_file') or 'Not created', d.get('adversary_verdict'), d.get('affected_files', [])))
 if not hits:
     print(f'KEIN laufender Workflow fuer #{issue} (evtl. abgeschlossen -> .claude/workflows/_archive/).')
 else:
-    for name, ph, spec, verd in hits:
+    for name, ph, spec, verd, aff in hits:
         print(f'GEFUNDEN: {name} | Phase={ph} | Spec={spec} | Verdict={verd}')
+        if aff: print(f'  affected_files: {", ".join(aff)}')
     print('\nexport OPENSPEC_ACTIVE_WORKFLOW=' + hits[0][0])
 PY
 ```
 
 Setze `OPENSPEC_ACTIVE_WORKFLOW=<name>`, fasse dem User in 2 Sätzen den Stand zusammen (Phase, Verdict) und fahre dann mit den Prerequisites fort.
+
+### Kontext laden (nur bei Wiedereinstieg nach `/clear`)
+
+Bevor du mit den Prerequisites fortfährst, lade den vollständigen Validierungs-Kontext — damit die nachfolgenden Agenten konkrete Werte statt Platzhalter erhalten.
+
+Dispatche einen **Explore/Haiku Subagenten**:
+
+```
+Task (Explore/haiku): "Lies folgende Ressourcen und extrahiere die konkreten Werte:
+  1. [spec_file aus dem Wiedereinstieg-Block oben] → Acceptance Criteria (AC-1 bis AC-N)
+  2. docs/artifacts/<workflow-name>/adversary-dialog.md → Adversary-Verdict und Findings
+  3. openspec.yaml (Feld test_command) → konkreter Test-Befehl
+
+  Gib zurück:
+  - spec_file_path: [konkreter Pfad, bereits aus Wiedereinstieg bekannt]
+  - affected_files: [bereits aus Wiedereinstieg bekannt]
+  - test_command: [konkreter Befehl]
+  - Acceptance Criteria: [Liste aller AC-N]
+  - adversary_verdict: [VERIFIED / BROKEN / AMBIGUOUS]"
+```
+
+Ersetze alle `[...]`-Platzhalter in Step 1 und Step 3 mit den geladenen Werten — kein Agent darf mit Platzhaltern gestartet werden.
 
 ## Prerequisites
 

@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+**`/60-validate`: Kontext-Lade-Schritt nach `/clear`-Wiedereinstieg ergänzt**
+
+Nach dem zweiten `/clear` (vor `/60-validate`) wurden Spec-Pfad, `affected_files` und
+Adversary-Dialog-Pfad nicht zurück in den Kontext geladen. Die 4 parallelen Haiku-Agenten
+starteten dadurch mit unaufgelösten Platzhaltern (`[spec_file_path]`, `[test_command]`).
+
+Zwei Korrekturen in `core/commands/60-validate.md`:
+- Python-Wiedereinstieg-Block liest jetzt `spec_file` (Pfad) und `affected_files` statt
+  nur `spec_approved` (boolean).
+- Neuer "Kontext laden"-Schritt direkt nach dem Wiedereinstieg: Explore/Haiku-Subagent
+  liest Spec, Adversary-Dialog und `test_command` — analog zu Step 2 in `50-implement.md`.
+
+`50-implement.md` ist nicht betroffen (hat bereits Step 2 als Kontext-Lade-Schritt).
+
 **Session-Singleton-Guard: Blockierende Logik wiederhergestellt**
 
 Die `session_singleton_guard.py` war bei der Portierung ins Framework auf eine reine Warning-Version (exit 0) reduziert worden. Damit wurde die Kerneigenschaft — zweite Session zwingen, via `EnterWorktree` in einen eigenen Worktree zu wechseln — vollständig verloren.
