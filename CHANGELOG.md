@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+**Session-Singleton-Guard: Blockierende Logik wiederhergestellt**
+
+Die `session_singleton_guard.py` war bei der Portierung ins Framework auf eine reine Warning-Version (exit 0) reduziert worden. Damit wurde die Kerneigenschaft — zweite Session zwingen, via `EnterWorktree` in einen eigenen Worktree zu wechseln — vollständig verloren.
+
+Wiederhergestellte Funktionalität:
+- `register`-Modus (SessionStart): Schreibt Sitzungseintrag mit `started_at`, `pid`, `last_seen`.
+- `guard`-Modus (PreToolUse, alle Tools): Bestimmt Inhaber (frühestes `started_at`). Nicht-Inhaber werden mit exit(2) blockiert. Einziger Rettungsweg: `EnterWorktree`.
+- `cleanup`-Modus (Stop): Löscht eigenen Eintrag.
+- Worktree-Sitzungen (CWD in `.claude/worktrees/<name>/`) werden nie blockiert — verhindert Endlos-Isolierung.
+- Fail-safe: Jede Exception → exit(0); der Guard sperrt niemals fälschlich aus.
+
+`hooks/hooks.json` entsprechend angepasst:
+- `SessionStart` → `register`
+- `PreToolUse` (leerer Matcher = alle Tools) → `guard` (als erstes, vor allen anderen Guards)
+- `Stop` → `cleanup` (war `--cleanup` mit Warning-only-Implementierung)
+- `UserPromptSubmit`-Eintrag für den Guard entfernt
+
 **Robuster Workflow-Fallback + Adversary-Limit-Regel (post-#846-Retro)**
 
 Auslöser: In Session #846 (`gregor_zwanzig`) funktionierte das "go"-Keyword nicht, weil Claude Code `settings.local.json` beim Hinzufügen von Bash-Permissions überschreibt und dabei den `env`-Abschnitt (mit `OPENSPEC_ACTIVE_WORKFLOW`) entfernt. Konsequenz: `phase_listener.py` fand keinen aktiven Workflow → "go" wurde ignoriert → Phasenwechsel erfolgte manuell statt automatisch.

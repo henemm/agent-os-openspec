@@ -47,7 +47,7 @@ ALWAYS_ALLOWED_PATTERNS = [
 ]
 
 PROTECTED_STATE_FILES = [
-    "workflows/", "workflow_state.json", "user_override_token.json",
+    ".claude/workflows/", "workflow_state.json", "user_override_token.json",
 ]
 
 INFRASTRUCTURE_DIRS = [".claude/hooks/", ".claude/agents/"]

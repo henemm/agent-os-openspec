@@ -1,6 +1,27 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/session_singleton_guard.py register",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/session_singleton_guard.py guard",
+            "timeout": 5
+          }
+        ]
+      },
       {
         "matcher": "Edit|Write|MultiEdit",
         "hooks": [
@@ -88,15 +109,6 @@
             "timeout": 5
           }
         ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/session_singleton_guard.py",
-            "timeout": 5
-          }
-        ]
       }
     ],
     "Stop": [
@@ -104,7 +116,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/session_singleton_guard.py --cleanup",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/session_singleton_guard.py cleanup",
             "timeout": 5
           }
         ]
