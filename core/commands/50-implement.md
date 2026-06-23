@@ -36,12 +36,13 @@ for f in glob.glob('.claude/workflows/*.json'):
     name = os.path.basename(f)[:-5]
     if pat.search(name):
         d = json.load(open(f))
-        hits.append((name, d.get('current_phase'), d.get('spec_approved'), d.get('adversary_verdict')))
+        hits.append((name, d.get('current_phase'), d.get('spec_file') or 'Not created', d.get('adversary_verdict'), d.get('affected_files', [])))
 if not hits:
     print(f'KEIN laufender Workflow fuer #{issue} (evtl. abgeschlossen -> .claude/workflows/_archive/).')
 else:
-    for name, ph, spec, verd in hits:
+    for name, ph, spec, verd, aff in hits:
         print(f'GEFUNDEN: {name} | Phase={ph} | Spec={spec} | Verdict={verd}')
+        if aff: print(f'  affected_files: {", ".join(aff)}')
     print('\nexport OPENSPEC_ACTIVE_WORKFLOW=' + hits[0][0])
 PY
 ```
