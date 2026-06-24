@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.1] - 2026-06-24
+
 ### Fixed
 
 **`/60-validate`: Kontext-Lade-Schritt nach `/clear`-Wiedereinstieg ergänzt**
