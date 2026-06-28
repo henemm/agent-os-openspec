@@ -159,12 +159,14 @@ def main() -> None:
         f"BLOCKED [post_implementation_gate]: Implementierung läuft seit {elapsed_min:.0f} Min.\n"
         f"  Workflow: {wf_name} · Phase: {current_phase}\n"
         f"\n"
-        f"  Bitte prüfe die bisherigen Änderungen bevor du weiterschreibst.\n"
+        f"  Lege dem User jetzt die bisherigen Änderungen vor und WARTE.\n"
         f"\n"
-        f"  Freigabe-Optionen:\n"
-        f"  A) Sage 'go', 'freigabe' oder 'approved' → Freigabe per Chat\n"
-        f"  B) Bash: touch .claude/user_approved_validation_{wf_name}\n"
+        f"  Freigabe — und zwar AUSSCHLIESSLICH durch den User:\n"
+        f"  Der User tippt 'go', 'freigabe' oder 'approved'. Der phase_listener-Hook\n"
+        f"  setzt den Freigabe-Marker dann selbst und legitim.\n"
         f"\n"
+        f"  Du kannst dieses Gate NICHT selbst öffnen. Erzeuge den Marker niemals\n"
+        f"  per Bash (touch/echo/…) — das ist eine blockierte Verifier-Manipulation.\n"
         f"  Danach ist der nächste Edit automatisch erlaubt."
     )
 

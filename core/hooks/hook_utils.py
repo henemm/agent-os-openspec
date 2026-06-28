@@ -46,10 +46,17 @@ def get_tool_input() -> dict:
 
 
 def get_user_message() -> str:
-    """Parse user message from stdin (for UserPromptSubmit hooks)."""
+    """Parse user message from stdin (for UserPromptSubmit hooks).
+
+    Claude Code sendet den Prompt-Text im Feld "prompt" (offizielle Hook-API).
+    "user_message" wird als Fallback fuer aeltere Versionen/Wrapper beibehalten.
+    Vor diesem Fix las der Hook ausschliesslich "user_message" und bekam daher
+    IMMER einen leeren String — der gesamte phase_listener (override, go/approval,
+    stop-lock, GREEN) war dadurch funktionslos.
+    """
     try:
         data = json.load(sys.stdin)
-        return data.get("user_message", "")
+        return data.get("prompt") or data.get("user_message", "")
     except (json.JSONDecodeError, Exception):
         return ""
 

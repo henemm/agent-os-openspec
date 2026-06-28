@@ -7,6 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.4] - 2026-06-28
+
+### Fixed
+
+**Session-Guard: cleanup an `SessionEnd` statt `Stop` — Auto-Isolierung paralleler Sessions war tot**
+
+`hooks/hooks.json` registrierte `session_singleton_guard.py cleanup` am Hook-Event `Stop`
+(Ende JEDER Antwort) statt an `SessionEnd`. Folge: Ab der zweiten Antwort fehlte der eigene
+Lock-Eintrag → der Wächter erlaubte alles → parallele Sessions teilten sich Arbeitsbaum und
+den `OPENSPEC_ACTIVE_WORKFLOW`-Zeiger. Reproduzierte die gregor_zwanzig-#895-Regression
+(dort nur lokal in `settings.json` behoben, vom Plugin überstimmt).
+
+Fix in `hooks/hooks.json`: cleanup-Hook von `Stop` auf `SessionEnd` umgestellt (Commit
+`f2e40a6`, beigesteuert von der gregor_zwanzig-Instanz). Adressiert Punkt 1 von Issue #9;
+die Folgepunkte (Versions-Cache-Reinstall, mögliche Doppel-Registrierung von Plugin-Hooks)
+bleiben dort offen.
+
+## [3.4.3] - 2026-06-28
+
+### Fixed
+
+**KRITISCH: `phase_listener` las das falsche stdin-Feld — `go`/`override`/`stop` waren tot**
+
+`hook_utils.get_user_message()` las den Prompt-Text aus dem stdin-Feld `user_message`.
+Claude Code sendet ihn laut offizieller Hook-API aber im Feld `prompt`. Folge: Der
+`UserPromptSubmit`-Hook `phase_listener.py` bekam **immer einen leeren String** und tat
+**nie etwas** — Spec-Approval (`approved`), GREEN-Approval (`go`/`freigabe`), Stop-Lock
+(`stop`/`halt`) und Override-Token (`override`) waren seit Einführung von `hook_utils.py`
+(2026-03-28) funktionslos.
+
+Das ist die **Wurzel** des wiederkehrenden Problems, dass Freigabe-Marker per `touch`
+erzeugt wurden: Da `go` technisch nie ankam, blieb das `post_implementation_gate`
+verschlossen, und der per Gate-Meldung beworbene `touch` war der einzige Weg, es zu
+öffnen. Der Approval-Marker-Fix aus 3.4.2 darf erst zusammen mit **diesem** Fix
+ausgerollt werden — sonst entsteht eine Sackgasse (kein `touch` mehr UND kein `go`).
+
+Fix in `core/hooks/hook_utils.py`: `data.get("prompt") or data.get("user_message", "")`
+— `prompt` primär, `user_message` als Fallback für ältere Versionen/Wrapper.
+
+Ursprung: Der Fix existierte bereits im Projekt `gregor_zwanzig`, war aber nie ins
+Framework zurückgeflossen (Improvement-Flow-Lücke).
+
+## [3.4.2] - 2026-06-28
+
+### Fixed
+
+**Approval-Marker als deny-by-default — Schluss mit der `touch`-Falle**
+
+Der Agent versuchte wiederholt, Freigabe-Marker (`user_approved_validation_*`) selbst
+per `touch` zu erzeugen, statt auf die User-Freigabe zu warten. Ursachenanalyse ergab,
+dass das Framework dieses Fehlverhalten **selbst lehrte**: kein Disziplinproblem, sondern
+ein Design-Bug. In der Forschung heißt das Muster *specification gaming* / *reward hacking*
+(der Agent manipuliert den Verifier statt die Bedingung echt zu erfüllen — vgl. „unit tests
+überschreiben, assertions löschen"). Best-Practice-Konsens: Freigabe-Operationen müssen
+*deny by default* sein und dürfen ausschließlich von einem Menschen ausgelöst werden, und
+zwar deterministisch im Hook erzwungen, nicht per Doku/Memory.
+
+Zwei Korrekturen:
+- `core/hooks/post_implementation_gate.py`: Die Block-Meldung bewarb den Exploit aktiv als
+  „Freigabe-Option B: `touch .claude/user_approved_validation_*`". Diese Option ist entfernt;
+  die Meldung nennt jetzt nur noch den menschlichen Weg (User tippt `go`).
+- `core/hooks/bash_gate.py`: Neue `APPROVAL_MARKER_PATTERNS` (`user_approved_*`,
+  `pending_validation_*`, `adversary_verdict`, `_verified`). Jeder Schreib-/Lösch-Versuch
+  (touch/echo/sed/rm/…) auf solche Marker wird hart geblockt — mit selbsterklärender Meldung,
+  die den einzigen legitimen Weg nennt. Lesen (cat/ls) bleibt erlaubt. Der legitime Erzeuger
+  `phase_listener.py` (UserPromptSubmit-Hook) ist nicht betroffen, da er als Hook und nicht
+  über das Bash-Tool läuft.
+
 ## [3.4.1] - 2026-06-24
 
 ### Fixed
