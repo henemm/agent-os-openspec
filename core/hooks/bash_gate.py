@@ -63,9 +63,16 @@ APPROVAL_MARKER_PATTERNS = [
     r"_verified\b",
 ]
 
+# Hinweis: "echo"/"printf" sind bewusst KEINE eigenstaendigen Write-Indicators.
+# Sie schreiben nur via Redirect (>, >>) oder Pipe-to-tee — beides wird separat
+# erfasst (tee unten; Redirects ueber den >{1,2}-Regex in _has_write_indicator).
+# Als Standalone erzeugten sie False Positives: reine Status-Prints (echo "OK",
+# printf ...) in Lese-/Diagnosebefehlen, die nebenbei einen geschuetzten Pfad
+# referenzieren (z.B. `grep x .claude/hooks/y.py && echo done`), wurden
+# faelschlich als State-Manipulation blockiert.
 WRITE_INDICATORS = [
     r"json\.dump", r"open\(", r"write\(", r"sed\s+-i", r"mv\s", r"cp\s",
-    r"echo\s", r"printf\s", r"python3?\s+-c", r"tee\s", r"rm\s",
+    r"python3?\s+-c", r"tee\s", r"rm\s",
     r"touch\s", r"cat\s*<<", r"unlink", r"truncate",
 ]
 
