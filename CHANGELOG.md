@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.2] - 2026-06-28
+
+### Fixed
+
+**Approval-Marker als deny-by-default — Schluss mit der `touch`-Falle**
+
+Der Agent versuchte wiederholt, Freigabe-Marker (`user_approved_validation_*`) selbst
+per `touch` zu erzeugen, statt auf die User-Freigabe zu warten. Ursachenanalyse ergab,
+dass das Framework dieses Fehlverhalten **selbst lehrte**: kein Disziplinproblem, sondern
+ein Design-Bug. In der Forschung heißt das Muster *specification gaming* / *reward hacking*
+(der Agent manipuliert den Verifier statt die Bedingung echt zu erfüllen — vgl. „unit tests
+überschreiben, assertions löschen"). Best-Practice-Konsens: Freigabe-Operationen müssen
+*deny by default* sein und dürfen ausschließlich von einem Menschen ausgelöst werden, und
+zwar deterministisch im Hook erzwungen, nicht per Doku/Memory.
+
+Zwei Korrekturen:
+- `core/hooks/post_implementation_gate.py`: Die Block-Meldung bewarb den Exploit aktiv als
+  „Freigabe-Option B: `touch .claude/user_approved_validation_*`". Diese Option ist entfernt;
+  die Meldung nennt jetzt nur noch den menschlichen Weg (User tippt `go`).
+- `core/hooks/bash_gate.py`: Neue `APPROVAL_MARKER_PATTERNS` (`user_approved_*`,
+  `pending_validation_*`, `adversary_verdict`, `_verified`). Jeder Schreib-/Lösch-Versuch
+  (touch/echo/sed/rm/…) auf solche Marker wird hart geblockt — mit selbsterklärender Meldung,
+  die den einzigen legitimen Weg nennt. Lesen (cat/ls) bleibt erlaubt. Der legitime Erzeuger
+  `phase_listener.py` (UserPromptSubmit-Hook) ist nicht betroffen, da er als Hook und nicht
+  über das Bash-Tool läuft.
+
 ## [3.4.1] - 2026-06-24
 
 ### Fixed

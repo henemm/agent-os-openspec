@@ -50,6 +50,19 @@ PROTECTED_FILE_PATTERNS = [
     r"\.claude/settings\.json",
 ]
 
+# Approval-/Erfolgs-Marker: Dateien, deren blosse Existenz einen Freigabe-
+# oder Erfolgszustand BEHAUPTET. Diese darf der Agent NIEMALS selbst per Bash
+# erzeugen/aendern/loeschen — das waere "specification gaming" (der Agent
+# manipuliert den Verifier statt die Bedingung echt zu erfuellen). Der einzige
+# legitime Erzeuger ist phase_listener.py (UserPromptSubmit-Hook), der nur
+# feuert, wenn der echte User "go"/"freigabe"/"approved" tippt. Deny by default.
+APPROVAL_MARKER_PATTERNS = [
+    r"user_approved_",
+    r"pending_validation_",
+    r"adversary_verdict",
+    r"_verified\b",
+]
+
 WRITE_INDICATORS = [
     r"json\.dump", r"open\(", r"write\(", r"sed\s+-i", r"mv\s", r"cp\s",
     r"echo\s", r"printf\s", r"python3?\s+-c", r"tee\s", r"rm\s",
@@ -111,6 +124,10 @@ def _is_whitelisted(command: str) -> bool:
 
 def _references_protected(command: str) -> bool:
     return any(re.search(p, command) for p in PROTECTED_FILE_PATTERNS)
+
+
+def _references_approval_marker(command: str) -> bool:
+    return any(re.search(p, command) for p in APPROVAL_MARKER_PATTERNS)
 
 
 def _has_write_indicator(command: str) -> bool:
@@ -215,7 +232,28 @@ def main():
     if command.lstrip().startswith("git ") and "git commit" not in command:
         allow()
 
-    # 3. State-integrity: protected file + write indicator
+    # 3a. Approval-/Erfolgs-Marker: deny by default, kein Bash-Weg erlaubt.
+    #     "approve" ist eine High-Risk-Operation, die NUR ein Mensch ausloesen
+    #     darf (vgl. specification gaming / reward hacking bei Coding-Agenten).
+    #     git ist ausgenommen: eine Commit-Message oder Doku DARF die Marker-
+    #     Namen erwaehnen — das ist keine Datei-Manipulation. Der Angriffsvektor
+    #     (touch/echo/sed/rm) startet nie mit "git ".
+    is_git_command = command.lstrip().startswith("git ")
+    if not is_git_command and _references_approval_marker(command) and _has_write_indicator(command):
+        block(
+            "BLOCKED: Freigabe-/Erfolgs-Marker duerfen NICHT per Bash erzeugt, "
+            "geaendert oder geloescht werden.\n"
+            "\n"
+            "  Diese Datei behauptet eine Freigabe, die NUR der User erteilen kann.\n"
+            "  Du kannst dieses Gate nicht selbst oeffnen — das waere die Manipulation\n"
+            "  des Pruefpunkts statt der echten Erfuellung der Bedingung.\n"
+            "\n"
+            "  Der einzige legitime Weg:\n"
+            "  -> Lege dem User die Ergebnisse vor und WARTE auf sein 'go' / 'freigabe'\n"
+            "     / 'approved'. Der phase_listener-Hook setzt den Marker dann selbst."
+        )
+
+    # 3b. State-integrity: protected file + write indicator
     if _references_protected(command):
         if _is_whitelisted(command):
             allow()
