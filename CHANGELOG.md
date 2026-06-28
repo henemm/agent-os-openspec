@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.6] - 2026-06-28
+
+### Fixed
+
+**`bash_gate`: `>` in quoted Argument-Text nicht mehr als Redirect fehlinterpretiert**
+
+Die Redirect-Erkennung der State-Integrity-Regel scannte den rohen Befehls-String
+und wertete jedes `>` als Schreib-Redirect — auch wenn es Teil von quoted
+Argument-Text war (z. B. `gh pr create --body "… a > b …"` oder `git commit -m`
+mit `>` in der Message). Zusammen mit einer `.claude/`-Pfad-Erwähnung im selben
+Text führte das zu fälschlichen Blocks (Workaround bisher: `--body-file`).
+
+Neue `_has_real_redirect()` nutzt `shlex`, sodass nur echte Operator-Token
+(`>`, `>>`, `2>`, `>file`) als Redirect zählen — `>` innerhalb quoted Tokens nicht.
+**Ohne Sicherheitsloch:** bei verschachtelter Shell (`sh -c "…"`, `eval`) oder
+Parse-Fehler fällt die Prüfung auf den rohen Scan zurück, sodass
+`bash -c "echo x > geschützt"` weiterhin blockiert. 11 Tests grün (False Positives
+erlaubt, echte Redirects + `sh -c`-Redirects + touch/rm geblockt).
+
 ## [3.4.5] - 2026-06-28
 
 ### Fixed

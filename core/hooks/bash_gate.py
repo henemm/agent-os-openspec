@@ -22,6 +22,7 @@ setup_path()
 import json
 import os
 import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -137,14 +138,46 @@ def _references_approval_marker(command: str) -> bool:
     return any(re.search(p, command) for p in APPROVAL_MARKER_PATTERNS)
 
 
-def _has_write_indicator(command: str) -> bool:
-    for p in WRITE_INDICATORS:
-        if re.search(p, command):
-            return True
+def _raw_redirect(command: str) -> bool:
+    """Roher Redirect-Scan ueber den gesamten String (konservativ)."""
     for m in re.finditer(r"(?<!\d)>{1,2}\s*(\S+)", command):
         if m.group(1) != "/dev/null":
             return True
     return False
+
+
+def _has_real_redirect(command: str) -> bool:
+    """True, wenn das Kommando einen echten Shell-Redirect auf ein Ziel != /dev/null hat.
+
+    Nutzt shlex, damit ein '>' INNERHALB von quoted Argument-Text (z.B.
+    `gh pr create --body "... a > b ..."`) NICHT als Redirect fehlinterpretiert
+    wird — der haeufigste False-Positive der State-Integrity-Regel.
+
+    Sicherheit: Bei verschachtelter Shell (`sh -c "…"`, `eval`) oder Parse-Fehler
+    faellt die Pruefung auf den rohen Scan zurueck — sonst koennte ein Redirect in
+    quoted Code (`bash -c "echo x > geschuetzt"`) den Gate umgehen.
+    """
+    if re.search(r"\b(?:ba|z|da|k)?sh\s+-c\b|\beval\b", command):
+        return _raw_redirect(command)
+    try:
+        tokens = shlex.split(command, posix=True)
+    except ValueError:
+        return _raw_redirect(command)
+    for i, tok in enumerate(tokens):
+        m = re.match(r"^\d*>{1,2}(.*)$", tok)  # echter Operator-Token: >  >>  2>  >file
+        if not m:
+            continue
+        target = m.group(1) or (tokens[i + 1] if i + 1 < len(tokens) else "")
+        if target and target != "/dev/null":
+            return True
+    return False
+
+
+def _has_write_indicator(command: str) -> bool:
+    for p in WRITE_INDICATORS:
+        if re.search(p, command):
+            return True
+    return _has_real_redirect(command)
 
 
 def _is_sensitive(path: str, patterns: list) -> bool:
