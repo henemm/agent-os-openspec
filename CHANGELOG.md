@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.5] - 2026-06-28
+
+### Fixed
+
+**`bash_gate` State-Integrity: `echo`/`printf` als False-Positive-Quelle entfernt**
+
+Die State-Integrity-Regel blockierte Befehle, die einen geschützten Pfad
+(`.claude/hooks/*.py`, `.claude/settings.json` …) referenzieren UND irgendwo ein
+`echo`/`printf` enthalten — auch wenn die Datei nur gelesen wurde und das `echo`
+ein reiner Status-Print war (z. B. `grep x .claude/hooks/y.py && echo done`). Das
+bremste legitime Lese-/Diagnosebefehle wiederholt aus.
+
+`echo`/`printf` sind keine eigenständigen Schreibvorgänge: Sie modifizieren Dateien
+nur via Redirect (`>`, `>>`) oder Pipe-to-`tee`, die in `_has_write_indicator`
+separat erfasst werden. Beide aus `WRITE_INDICATORS` entfernt. Echte
+Schreibvorgänge (touch/rm/`sed -i`/Redirect/tee) blockieren unverändert; mit 8
+Tests abgesichert (4 vormalige False Positives erlaubt, 4 echte Writes geblockt).
+
 ## [3.4.4] - 2026-06-28
 
 ### Fixed
