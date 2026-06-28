@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.4] - 2026-06-28
+
+### Fixed
+
+**Session-Guard: cleanup an `SessionEnd` statt `Stop` — Auto-Isolierung paralleler Sessions war tot**
+
+`hooks/hooks.json` registrierte `session_singleton_guard.py cleanup` am Hook-Event `Stop`
+(Ende JEDER Antwort) statt an `SessionEnd`. Folge: Ab der zweiten Antwort fehlte der eigene
+Lock-Eintrag → der Wächter erlaubte alles → parallele Sessions teilten sich Arbeitsbaum und
+den `OPENSPEC_ACTIVE_WORKFLOW`-Zeiger. Reproduzierte die gregor_zwanzig-#895-Regression
+(dort nur lokal in `settings.json` behoben, vom Plugin überstimmt).
+
+Fix in `hooks/hooks.json`: cleanup-Hook von `Stop` auf `SessionEnd` umgestellt (Commit
+`f2e40a6`, beigesteuert von der gregor_zwanzig-Instanz). Adressiert Punkt 1 von Issue #9;
+die Folgepunkte (Versions-Cache-Reinstall, mögliche Doppel-Registrierung von Plugin-Hooks)
+bleiben dort offen.
+
 ## [3.4.3] - 2026-06-28
 
 ### Fixed
