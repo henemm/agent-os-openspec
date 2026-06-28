@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.3] - 2026-06-28
+
+### Fixed
+
+**KRITISCH: `phase_listener` las das falsche stdin-Feld — `go`/`override`/`stop` waren tot**
+
+`hook_utils.get_user_message()` las den Prompt-Text aus dem stdin-Feld `user_message`.
+Claude Code sendet ihn laut offizieller Hook-API aber im Feld `prompt`. Folge: Der
+`UserPromptSubmit`-Hook `phase_listener.py` bekam **immer einen leeren String** und tat
+**nie etwas** — Spec-Approval (`approved`), GREEN-Approval (`go`/`freigabe`), Stop-Lock
+(`stop`/`halt`) und Override-Token (`override`) waren seit Einführung von `hook_utils.py`
+(2026-03-28) funktionslos.
+
+Das ist die **Wurzel** des wiederkehrenden Problems, dass Freigabe-Marker per `touch`
+erzeugt wurden: Da `go` technisch nie ankam, blieb das `post_implementation_gate`
+verschlossen, und der per Gate-Meldung beworbene `touch` war der einzige Weg, es zu
+öffnen. Der Approval-Marker-Fix aus 3.4.2 darf erst zusammen mit **diesem** Fix
+ausgerollt werden — sonst entsteht eine Sackgasse (kein `touch` mehr UND kein `go`).
+
+Fix in `core/hooks/hook_utils.py`: `data.get("prompt") or data.get("user_message", "")`
+— `prompt` primär, `user_message` als Fallback für ältere Versionen/Wrapper.
+
+Ursprung: Der Fix existierte bereits im Projekt `gregor_zwanzig`, war aber nie ins
+Framework zurückgeflossen (Improvement-Flow-Lücke).
+
 ## [3.4.2] - 2026-06-28
 
 ### Fixed
