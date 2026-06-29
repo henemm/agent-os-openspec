@@ -77,7 +77,13 @@ def _pid_alive(pid: int) -> bool:
 def _is_alive(entry: dict, now: float) -> bool:
     pid = entry.get("pid")
     if isinstance(pid, int) and not isinstance(pid, bool):
-        return _pid_alive(pid)
+        if _pid_alive(pid):
+            return True
+        # PID dead: fall back to last_seen. Hooks are invoked via a transient shell
+        # subprocess, so os.getppid() returns the shell's PID (not Claude's). The
+        # shell exits immediately after the hook, making the stored PID dead on the
+        # very next guard call — without this fallback, every live session's lock
+        # file would be reaped on its first PreToolUse, breaking isolation entirely.
     last_seen = entry.get("last_seen")
     return isinstance(last_seen, (int, float)) and (now - last_seen) < _STALE_SECONDS
 

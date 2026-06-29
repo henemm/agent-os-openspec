@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.9] - 2026-06-29
+
+### Fixed
+
+**`session_singleton_guard`: _is_alive fällt bei toter PID auf last_seen zurück**
+
+`_is_alive()` gab sofort `False` zurück wenn die gespeicherte PID tot war —
+ohne den `last_seen`-Fallback zu prüfen. Da Claude Hooks via transientem
+Shell-Subprocess aufruft, speichert `os.getppid()` die Shell-PID (nicht Claudes
+eigene PID). Die Shell stirbt sofort nach dem Hook, weshalb die gespeicherte PID
+beim allerersten nachfolgenden `_do_guard`-Aufruf bereits tot ist. `_reap_dead`
+löschte damit das eigene Lock-File jeder laufenden Session auf dem ersten
+PreToolUse — danach erlaubte der Guard alle Operationen lautlos (kein eigenes
+Lock-File → `sys.exit(0)`). Worktree-Isolation war dadurch vollständig wirkungslos.
+
+Fix: wenn PID tot, prüft `_is_alive` nun `last_seen`. Genuinen Absturz (PID tot
+UND `last_seen` > 900 Sek) erkennt der Timeout weiterhin korrekt.
+
+7 neue Tests in `tests/test_session_singleton_guard.py`.
+
 ## [3.4.8] - 2026-06-29
 
 ### Fixed
