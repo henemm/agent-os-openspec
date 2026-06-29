@@ -931,6 +931,39 @@ def cmd_retro(args: list[str]) -> None:
     print()
 
 
+def cmd_cleanup_stale_locks(args: list[str]) -> None:
+    """Remove pending_validation lock files for completed or archived workflows."""
+    claude_dir = find_project_root() / ".claude"
+    wf_dir = _workflows_dir()
+    archive = _archive_dir()
+    removed = []
+    skipped = []
+    for lock in sorted(claude_dir.glob("pending_validation_*.json")):
+        wf_name = lock.stem.replace("pending_validation_", "", 1)
+        # Active workflow still in progress?
+        active_file = wf_dir / f"{wf_name}.json"
+        if active_file.exists():
+            try:
+                data = _read_workflow(active_file)
+                phase = data.get("current_phase", "")
+                if phase == "phase6_implement":
+                    skipped.append(f"  SKIPPED {wf_name} (aktiv in {phase})")
+                    continue
+            except Exception:
+                pass
+        # Archived or past phase6 → safe to remove
+        lock.unlink(missing_ok=True)
+        approval = claude_dir / f"user_approved_validation_{wf_name}"
+        approval.unlink(missing_ok=True)
+        removed.append(f"  Removed: {lock.name}")
+    if removed:
+        print("\n".join(removed))
+    if skipped:
+        print("\n".join(skipped))
+    if not removed and not skipped:
+        print("Keine verwaisten Lock-Dateien gefunden.")
+
+
 COMMANDS = {
     "start": cmd_start,
     "switch": cmd_switch,
@@ -948,6 +981,7 @@ COMMANDS = {
     "list": cmd_list,
     "retro-list": cmd_retro_list,
     "retro": cmd_retro,
+    "cleanup-stale-locks": cmd_cleanup_stale_locks,
 }
 
 
