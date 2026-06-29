@@ -165,16 +165,41 @@ def find_project_root() -> Path:
 def resolve_active_workflow() -> "tuple[str, str]":
     """Return (name, source). source ∈ {'file', 'settings', 'env', 'none'}.
 
-    Priority: file > settings > env.
+    Worktree-aware priority — prevents cross-session contamination:
 
-    .claude/active_workflow (file) is written by workflow.py start/switch and never
-    touched by Claude Code → always reflects the LATEST workflow, even mid-session.
-    settings.local.json is second: also written by workflow.py, but Claude Code can
-    silently drop the env section when adding permissions.
-    OPENSPEC_ACTIVE_WORKFLOW (env) is frozen at session start — it becomes stale
-    when workflow.py start is called mid-session, so it is the last resort.
+    In a worktree session:
+      1. Worktree-local active_workflow file ({worktree_root}/.claude/active_workflow)
+         Written by workflow.py start/switch within THIS worktree. Never shared.
+      2. OPENSPEC_ACTIVE_WORKFLOW env var (frozen at session start from this worktree's
+         settings.local.json — set there by previous workflow.py start in the same worktree)
+      (Shared {project_root}/.claude/active_workflow is SKIPPED — it might belong to
+      a parallel session and would contaminate this session's context.)
+
+    In a main repo session (not a worktree):
+      1. Shared active_workflow file ({project_root}/.claude/active_workflow)
+      2. {project_root}/.claude/settings.local.json env section
+      3. OPENSPEC_ACTIVE_WORKFLOW env var (frozen at session start)
     """
     root = find_project_root()
+    worktree_root = _find_worktree_root()
+
+    if worktree_root is not None:
+        # Worktree session: worktree-local file takes priority
+        try:
+            active_file = worktree_root / ".claude" / "active_workflow"
+            if active_file.exists():
+                name = active_file.read_text().strip()
+                if name:
+                    return name, "file"
+        except OSError:
+            pass
+        # Env var (set by Claude Code from this worktree's settings.local.json at startup)
+        name = os.environ.get("OPENSPEC_ACTIVE_WORKFLOW", "").strip()
+        if name:
+            return name, "env"
+        return "", "none"
+
+    # Main repo session: existing priority chain
     try:
         active_file = root / ".claude" / "active_workflow"
         if active_file.exists():
@@ -196,6 +221,23 @@ def resolve_active_workflow() -> "tuple[str, str]":
     if name:
         return name, "env"
     return "", "none"
+
+
+def _find_worktree_root() -> "Path | None":
+    """If CWD is inside a git worktree, return the worktree root (dir with .git FILE).
+
+    Returns None if in the main repo (where .git is a directory, not a file).
+    Mirrors workflow._worktree_root_if_any() — kept local to avoid circular imports.
+    """
+    current = Path.cwd()
+    while current != current.parent:
+        git_marker = current / ".git"
+        if git_marker.is_file():
+            return current
+        if git_marker.is_dir():
+            return None
+        current = current.parent
+    return None
 
 
 def get_active_workflow_name() -> str:

@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.10] - 2026-06-29
+
+### Changed
+
+**`session_singleton_guard`: Worktree-Pflicht für alle Sessions (Redesign)**
+
+Grundlegendes Redesign des Guards: statt Inhaberschaft (erste Session gewinnt) gilt nun
+Worktree-Pflicht (jede Session muss im eigenen Worktree laufen).
+
+Altes Verhalten: parallele Sessions im Hauptverzeichnis wurden blockiert, die erste Session
+durfte aber weiterhin direkt im Haupt-Repo schreiben. Dies führte zu chaotischen Zuständen
+wenn mehrere Terminals gleichzeitig geöffnet waren, da alle im selben Verzeichnis schrieben.
+
+Neues Verhalten:
+- Schreibende Tools (`Edit`, `Write`, `MultiEdit`, `Bash`, `Task`, `Agent`) werden im
+  Hauptverzeichnis für ALLE Sessions blockiert.
+- Lesende Tools (`Read`, `Grep`, `ToolSearch`, `WebFetch`, etc.) bleiben immer erlaubt —
+  verhindert Deadlock beim Laden des EnterWorktree-Tools via ToolSearch.
+- `EnterWorktree` als einziger Rettungsweg: Claude ruft es selbstständig auf und wechselt
+  damit in einen isolierten Worktree. Kein User-Eingriff nötig.
+- Override-Token als Notausgang für Ausnahmefälle.
+- Sessions im `.claude/worktrees/<name>/`-Pfad sind vollständig uneingeschränkt.
+
+`_BLOCKING_TOOLS`-Konstante eingeführt; `_has_override_token()` Helper ergänzt.
+Lock-File-Logik in `_do_guard()` auf reinen Heartbeat-Update reduziert.
+
+12 neue Tests in `tests/test_session_singleton_guard.py` (7 aus 3.4.9 + 12 neue = 19 gesamt).
+
+**`workflow.py` + `hook_utils.py`: Workflow-State worktree-lokal — keine Cross-Session-Kontamination**
+
+`_persist_env()` schrieb `OPENSPEC_ACTIVE_WORKFLOW` bisher in die gemeinsame
+`settings.local.json` des Hauptverzeichnisses und die gemeinsame `active_workflow`-Datei —
+auch wenn es aus einer Worktree-Session aufgerufen wurde. Jede neue Session im Haupt-Repo
+erbte damit blind den Workflow einer anderen Session. Symptom: neue Claude-Instanz startet
+sofort "im" laufenden Workflow eines anderen Terminals.
+
+Fix: `_persist_env()` erkennt via `_worktree_root_if_any()` ob es in einer Worktree-Session
+läuft. Wenn ja: schreibt NUR in den Worktree-lokalen Speicher (`{worktree_root}/.claude/`).
+Beim Workflow-`complete` aus einem Worktree wird der Haupt-Repo-State zusätzlich bereinigt
+(für Altdaten aus der Zeit vor dieser Isolation).
+
+`resolve_active_workflow()` und `read_active_workflow_fast()` analog angepasst:
+- In Worktree: liest worktree-lokale `active_workflow`-Datei, dann eingefrorene Env-Var.
+- Im Haupt-Repo: liest gemeinsame `active_workflow`-Datei + `settings.local.json` (Rückwärts-
+  kompatibilität für Single-Session-Projekte).
+`_find_worktree_root()` als Hilfsfunktion in `hook_utils.py` ergänzt (spiegelt
+`_worktree_root_if_any()` in `workflow.py`, ohne zirkuläre Imports).
+
 ## [3.4.9] - 2026-06-29
 
 ### Fixed

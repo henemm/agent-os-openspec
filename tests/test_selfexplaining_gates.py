@@ -33,9 +33,14 @@ def test_ac4_resolve_from_env(monkeypatch, tmp_path):
 
 
 def test_ac4_resolve_file_beats_env(monkeypatch, tmp_path):
-    """active_workflow-Datei hat Vorrang vor Env-Var (mid-session-switch Fix)."""
+    """Worktree-lokale active_workflow-Datei hat Vorrang vor Env-Var.
+
+    Simuliert eine Worktree-Session: _find_worktree_root() gibt tmp_path zurück,
+    die Datei liegt in {tmp_path}/.claude/active_workflow.
+    """
     monkeypatch.setenv("OPENSPEC_ACTIVE_WORKFLOW", "stale-from-session-start")
     monkeypatch.setattr(hook_utils, "find_project_root", lambda: tmp_path)
+    monkeypatch.setattr(hook_utils, "_find_worktree_root", lambda: tmp_path)
     claude_dir = tmp_path / ".claude"
     claude_dir.mkdir(parents=True)
     (claude_dir / "active_workflow").write_text("fresh-from-workflow-start")
@@ -45,8 +50,13 @@ def test_ac4_resolve_file_beats_env(monkeypatch, tmp_path):
 
 
 def test_ac4_resolve_from_settings(monkeypatch, tmp_path):
-    """Keine Env-Var, Workflow nur in settings.local.json → (name, 'settings')."""
+    """Keine Env-Var, Workflow nur in settings.local.json → (name, 'settings').
+
+    Simuliert eine Main-Repo-Session: _find_worktree_root() gibt None zurück,
+    sodass der Shared-settings.local.json-Pfad verwendet wird.
+    """
     monkeypatch.delenv("OPENSPEC_ACTIVE_WORKFLOW", raising=False)
+    monkeypatch.setattr(hook_utils, "_find_worktree_root", lambda: None)
     claude_dir = tmp_path / ".claude"
     claude_dir.mkdir(parents=True)
     (claude_dir / "settings.local.json").write_text(
