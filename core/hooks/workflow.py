@@ -39,6 +39,23 @@ from pathlib import Path
 _NAME_RE = _re.compile(r'^[a-zA-Z0-9_-]{1,64}$')
 
 
+def _worktree_root_if_any() -> "Path | None":
+    """If CWD is inside a git worktree, return the worktree root (dir with .git FILE).
+
+    Used to keep workflow state worktree-local and prevent cross-session contamination.
+    Returns None if in the main repo (where .git is a directory, not a file).
+    """
+    current = Path.cwd()
+    while current != current.parent:
+        git_marker = current / ".git"
+        if git_marker.is_file():
+            return current
+        if git_marker.is_dir():
+            return None
+        current = current.parent
+    return None
+
+
 def _validate_name(name: str) -> None:
     """Reject names that would escape the workflows dir or corrupt glob patterns."""
     if not _NAME_RE.fullmatch(name):
@@ -206,28 +223,40 @@ def read_active_workflow_fast() -> "tuple[str, dict] | None":
     Unlike _read_active(), this never calls sys.exit(). Intended for hooks that
     should silently skip when no workflow is running.
 
-    Same file > settings > env priority as hook_utils.resolve_active_workflow():
-    the .claude/active_workflow file is always up-to-date even when workflow.py
-    start is called mid-session (env var frozen at session start would be stale).
+    Worktree-aware priority (same as hook_utils.resolve_active_workflow()):
+    - In worktree: worktree-local active_workflow file > env var
+    - In main repo: shared active_workflow file > shared settings.local.json > env var
     """
     root = find_project_root()
+    worktree_root = _worktree_root_if_any()
     name = ""
 
-    try:
-        active_file = root / ".claude" / "active_workflow"
-        if active_file.exists():
-            name = active_file.read_text().strip()
-    except OSError:
-        pass
-
-    if not name:
+    if worktree_root is not None:
+        # Worktree session: read from worktree-local active_workflow (written by _persist_env)
         try:
-            settings_path = root / ".claude" / "settings.local.json"
-            if settings_path.exists():
-                settings = json.loads(settings_path.read_text())
-                name = (settings.get("env") or {}).get("OPENSPEC_ACTIVE_WORKFLOW", "").strip()
-        except (OSError, json.JSONDecodeError, KeyError):
+            active_file = worktree_root / ".claude" / "active_workflow"
+            if active_file.exists():
+                name = active_file.read_text().strip()
+        except OSError:
             pass
+        # Fall through to env var if file not found (env set from worktree's settings.local.json)
+    else:
+        # Main repo session: read from shared active_workflow file
+        try:
+            active_file = root / ".claude" / "active_workflow"
+            if active_file.exists():
+                name = active_file.read_text().strip()
+        except OSError:
+            pass
+
+        if not name:
+            try:
+                settings_path = root / ".claude" / "settings.local.json"
+                if settings_path.exists():
+                    settings = json.loads(settings_path.read_text())
+                    name = (settings.get("env") or {}).get("OPENSPEC_ACTIVE_WORKFLOW", "").strip()
+            except (OSError, json.JSONDecodeError, KeyError):
+                pass
 
     if not name:
         name = _active_name_from_env()
@@ -256,25 +285,35 @@ def _set_active(name: str) -> None:
 
 
 def _persist_env(name: "str | None") -> None:
-    """Write (or remove) OPENSPEC_ACTIVE_WORKFLOW in ALL settings.local.json files.
+    """Write (or remove) OPENSPEC_ACTIVE_WORKFLOW to session-local storage.
 
-    Hook subprocesses inherit Claude Code's process environment, not individual Bash
-    exports. Worktrees each have their own .claude/settings.local.json, so we must
-    update the main project file AND every worktree's file.
+    Worktree-aware: when called from a worktree session, writes ONLY to the worktree's
+    own .claude/settings.local.json and active_workflow file. This prevents one session's
+    workflow from contaminating new sessions that open in the main repo — each session
+    starts with a clean slate and only inherits workflows from its own worktree.
 
-    Also writes .claude/active_workflow as a plain-text fallback — Claude Code
-    overwrites settings.local.json when adding Bash permissions, which silently
-    drops the env section. The text file is never touched by Claude Code.
+    When called from the main repo (not a worktree), writes to the main repo's
+    settings.local.json (backward compat for single-session projects).
+
+    On completion (name=None) from a worktree: also clears the main repo's settings to
+    avoid stale state if the main settings.local.json was set before isolation was in place.
     """
     project_root = find_project_root()
-    targets = [project_root / ".claude" / "settings.local.json"]
+    worktree_root = _worktree_root_if_any()
 
-    # Also update all worktrees: .claude/worktrees/*/.claude/settings.local.json
-    worktrees_dir = project_root / ".claude" / "worktrees"
-    if worktrees_dir.is_dir():
-        for wt in worktrees_dir.iterdir():
-            if wt.is_dir():
-                targets.append(wt / ".claude" / "settings.local.json")
+    if worktree_root is not None:
+        # Worktree session: write ONLY to this worktree's own .claude/
+        targets = [worktree_root / ".claude" / "settings.local.json"]
+        active_file = worktree_root / ".claude" / "active_workflow"
+
+        if not name:
+            # On complete: also clear the shared main repo locations so future
+            # main-repo sessions start clean (handles pre-isolation contamination).
+            _clear_shared_env(project_root)
+    else:
+        # Main repo: write to main locations (single-session backward compat)
+        targets = [project_root / ".claude" / "settings.local.json"]
+        active_file = project_root / ".claude" / "active_workflow"
 
     for settings_path in targets:
         try:
@@ -293,8 +332,6 @@ def _persist_env(name: "str | None") -> None:
         settings_path.parent.mkdir(parents=True, exist_ok=True)
         _atomic_write(settings_path, settings)
 
-    # Plain-text fallback: .claude/active_workflow
-    active_file = project_root / ".claude" / "active_workflow"
     if name:
         active_file.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=str(active_file.parent), suffix=".tmp")
@@ -312,6 +349,30 @@ def _persist_env(name: "str | None") -> None:
             active_file.unlink(missing_ok=True)
         except OSError:
             pass
+
+
+def _clear_shared_env(project_root: Path) -> None:
+    """Remove OPENSPEC_ACTIVE_WORKFLOW from the main repo's shared locations.
+
+    Called by _persist_env(None) from a worktree to ensure cleanup propagates
+    to the main repo's settings.local.json (handles pre-isolation contamination).
+    """
+    settings_path = project_root / ".claude" / "settings.local.json"
+    try:
+        settings = json.loads(settings_path.read_text()) if settings_path.exists() else {}
+        env = settings.get("env", {})
+        if "OPENSPEC_ACTIVE_WORKFLOW" in env:
+            env.pop("OPENSPEC_ACTIVE_WORKFLOW")
+            if not env:
+                settings.pop("env", None)
+            _atomic_write(settings_path, settings)
+    except (OSError, json.JSONDecodeError):
+        pass
+    active_file = project_root / ".claude" / "active_workflow"
+    try:
+        active_file.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def _save_active(data: dict) -> None:

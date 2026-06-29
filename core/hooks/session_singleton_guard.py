@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
 """
-Session Singleton Guard — Blockiert parallele Claude-Sitzungen im selben Repo.
+Session Singleton Guard — Erzwingt Worktree-Isolation für alle Sessions.
 
 Drei Modi (argv[1]):
-- register (SessionStart):  Sitzungseintrag anlegen / erneuern.
-- guard    (PreToolUse):    Nicht-Inhaber blockieren; Rescue via EnterWorktree.
+- register (SessionStart):  Sitzungseintrag anlegen / erneuern (für Diagnostik).
+- guard    (PreToolUse):    Schreibende Tools im Haupt-Repo blockieren.
+                            Rescue: EnterWorktree aufrufen.
 - cleanup  (Stop):          Eigenen Eintrag löschen.
+
+Kernregel: Jede Session muss im eigenen Worktree laufen.
+- Lesende Tools (Read, Grep, ToolSearch, …) sind immer erlaubt.
+- Schreibende Tools (_BLOCKING_TOOLS) sind im Hauptverzeichnis blockiert.
+- Worktree-Sessions (.claude/worktrees/<name>/) sind uneingeschränkt.
+- Override-Token: Notausgang für Ausnahmefälle.
 
 Fail-safe: Jede unerwartete Exception → exit(0). Der Guard darf niemals
 fälschlich blockieren.
-
-Inhaberschaft: Die Sitzung mit dem frühesten started_at ist Inhaber.
-Nur der Inhaber darf Tools ausführen — andere müssen via EnterWorktree in
-einen eigenen Worktree wechseln.
 """
 
 from __future__ import annotations
@@ -27,6 +30,12 @@ from pathlib import Path
 _STALE_SECONDS = int(os.environ.get("OPENSPEC_SESSION_STALE", "900"))
 
 _SHELL_METACHARS = (";", "&&", "||", "|", "$(", "`", "\n", ">", "<", "&")
+
+# Nur schreibende/ausführende Tools werden blockiert. Lesende Tools (Read,
+# Glob, Grep, WebFetch, ToolSearch, …) bleiben immer erlaubt — sonst führt
+# ein Lockout dazu, dass auch der Notausgang (EnterWorktree laden via
+# ToolSearch) nicht mehr erreichbar ist.
+_BLOCKING_TOOLS = {"Edit", "Write", "MultiEdit", "Bash", "Task", "Agent"}
 
 
 # ---------------------------------------------------------------------------
@@ -151,6 +160,15 @@ def _is_rescue_command(tool_name: str, tool_input: dict) -> bool:
     return tool_name == "EnterWorktree"
 
 
+def _has_override_token() -> bool:
+    """Prüft ob ein gültiger Override-Token existiert (Notausgang)."""
+    try:
+        from override_token import has_valid_token
+        return has_valid_token()
+    except Exception:
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Modi
 # ---------------------------------------------------------------------------
@@ -200,47 +218,45 @@ def _do_guard(payload: dict) -> None:
     if not session_id or not cwd:
         sys.exit(0)
 
-    # Worktree-Sitzungen niemals blockieren.
+    # Lesende Tools niemals blockieren — sonst ist auch EnterWorktree
+    # via ToolSearch nicht mehr ladbar (kompletter Deadlock).
+    if tool_name not in _BLOCKING_TOOLS:
+        sys.exit(0)
+
+    # Worktree-Sitzungen haben eigene Isolation — kein weiterer Check.
     if _is_worktree_cwd(cwd):
         sys.exit(0)
 
-    locks = _locks_dir()
-    own_file = locks / f"{_safe_sid(session_id)}.json"
-
-    # Kein eigener Eintrag (Bestands-Sitzung vor der Migration) → erlauben.
-    if not own_file.exists():
-        sys.exit(0)
-
-    now = time.time()
-
-    # Heartbeat aktualisieren.
-    try:
-        own = json.loads(own_file.read_text())
-        own["last_seen"] = now
-        own_file.write_text(json.dumps(own))
-    except Exception:
-        pass
-
-    alive = _reap_dead(_read_entries(locks), now)
-    owner = _owner_sid(alive)
-
-    if owner is None or owner == session_id:
-        sys.exit(0)
-
+    # EnterWorktree ist der einzige Rettungsweg aus dem Hauptverzeichnis.
     if _is_rescue_command(tool_name, tool_input):
         sys.exit(0)
 
+    # Override-Token: expliziter Notausgang für Ausnahmefälle.
+    if _has_override_token():
+        sys.exit(0)
+
+    # Heartbeat aktualisieren (für Diagnostik / reap_dead).
+    locks = _locks_dir()
+    own_file = locks / f"{_safe_sid(session_id)}.json"
+    now = time.time()
+    if own_file.exists():
+        try:
+            own = json.loads(own_file.read_text())
+            own["last_seen"] = now
+            own_file.write_text(json.dumps(own))
+        except Exception:
+            pass
+
     print(
         "============================================================\n"
-        "BLOCKIERT — Parallele Sitzung im selben Repo erkannt!\n"
+        "BLOCKIERT — Alle Sessions müssen im Worktree laufen!\n"
         "============================================================\n"
-        "CLAUDE: In diesem Arbeitsverzeichnis ist bereits eine andere\n"
-        "Sitzung aktiv. Isoliere dich SOFORT selbst, indem du das\n"
-        "Werkzeug EnterWorktree aufrufst (ohne Parameter genügt).\n"
-        "Danach kannst du normal weiterarbeiten — der Nutzer muss\n"
-        "nichts tun.\n"
+        "CLAUDE: Du befindest dich im Haupt-Repo. Schreibende Tools\n"
+        "sind hier gesperrt. Rufe SOFORT EnterWorktree auf (ohne\n"
+        "Parameter). Das Tool erstellt einen eigenen Worktree für\n"
+        "diese Sitzung. Danach kannst du normal weiterarbeiten.\n"
         "\n"
-        "(Nur EnterWorktree ist als nächste Aktion erlaubt.)\n",
+        "(Nur EnterWorktree und lesende Tools sind jetzt erlaubt.)\n",
         file=sys.stderr,
     )
     sys.exit(2)
