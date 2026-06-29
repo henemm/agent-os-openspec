@@ -23,12 +23,25 @@ import hook_utils  # noqa: E402
 # AC-4 + AC-7: quellen-bewusste Auflösung
 # --------------------------------------------------------------------------
 
-def test_ac4_resolve_from_env(monkeypatch):
-    """Env-Var gesetzt → (name, 'env')."""
+def test_ac4_resolve_from_env(monkeypatch, tmp_path):
+    """Env-Var gesetzt, kein file/settings → (name, 'env') als letzter Fallback."""
     monkeypatch.setenv("OPENSPEC_ACTIVE_WORKFLOW", "feature-x")
+    monkeypatch.setattr(hook_utils, "find_project_root", lambda: tmp_path)
     name, source = hook_utils.resolve_active_workflow()
     assert name == "feature-x"
     assert source == "env"
+
+
+def test_ac4_resolve_file_beats_env(monkeypatch, tmp_path):
+    """active_workflow-Datei hat Vorrang vor Env-Var (mid-session-switch Fix)."""
+    monkeypatch.setenv("OPENSPEC_ACTIVE_WORKFLOW", "stale-from-session-start")
+    monkeypatch.setattr(hook_utils, "find_project_root", lambda: tmp_path)
+    claude_dir = tmp_path / ".claude"
+    claude_dir.mkdir(parents=True)
+    (claude_dir / "active_workflow").write_text("fresh-from-workflow-start")
+    name, source = hook_utils.resolve_active_workflow()
+    assert name == "fresh-from-workflow-start"
+    assert source == "file"
 
 
 def test_ac4_resolve_from_settings(monkeypatch, tmp_path):
@@ -78,9 +91,10 @@ def test_ac4_resolve_null_env_settings(monkeypatch, tmp_path):
     assert source == "none"
 
 
-def test_ac7_get_active_workflow_name_returns_plain_string(monkeypatch):
-    """get_active_workflow_name() liefert weiterhin reinen Name-String (env)."""
+def test_ac7_get_active_workflow_name_returns_plain_string(monkeypatch, tmp_path):
+    """get_active_workflow_name() liefert weiterhin reinen Name-String (env als Fallback)."""
     monkeypatch.setenv("OPENSPEC_ACTIVE_WORKFLOW", "plain-name")
+    monkeypatch.setattr(hook_utils, "find_project_root", lambda: tmp_path)
     result = hook_utils.get_active_workflow_name()
     assert result == "plain-name"
     assert isinstance(result, str)
@@ -95,9 +109,10 @@ def test_ac7_get_active_workflow_name_empty(monkeypatch, tmp_path):
     assert isinstance(result, str)
 
 
-def test_ac7_get_active_workflow_name_matches_resolve(monkeypatch):
+def test_ac7_get_active_workflow_name_matches_resolve(monkeypatch, tmp_path):
     """get_active_workflow_name() delegiert an resolve_active_workflow()[0]."""
     monkeypatch.setenv("OPENSPEC_ACTIVE_WORKFLOW", "delegate-check")
+    monkeypatch.setattr(hook_utils, "find_project_root", lambda: tmp_path)
     assert hook_utils.get_active_workflow_name() == hook_utils.resolve_active_workflow()[0]
 
 

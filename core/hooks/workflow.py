@@ -205,14 +205,38 @@ def read_active_workflow_fast() -> "tuple[str, dict] | None":
 
     Unlike _read_active(), this never calls sys.exit(). Intended for hooks that
     should silently skip when no workflow is running.
+
+    Same file > settings > env priority as hook_utils.resolve_active_workflow():
+    the .claude/active_workflow file is always up-to-date even when workflow.py
+    start is called mid-session (env var frozen at session start would be stale).
     """
-    env_name = _active_name_from_env()
-    if env_name:
-        wf_file = _workflow_file(env_name)
+    root = find_project_root()
+    name = ""
+
+    try:
+        active_file = root / ".claude" / "active_workflow"
+        if active_file.exists():
+            name = active_file.read_text().strip()
+    except OSError:
+        pass
+
+    if not name:
+        try:
+            settings_path = root / ".claude" / "settings.local.json"
+            if settings_path.exists():
+                settings = json.loads(settings_path.read_text())
+                name = (settings.get("env") or {}).get("OPENSPEC_ACTIVE_WORKFLOW", "").strip()
+        except (OSError, json.JSONDecodeError, KeyError):
+            pass
+
+    if not name:
+        name = _active_name_from_env()
+
+    if name:
+        wf_file = _workflow_file(name)
         if wf_file.exists():
             data = _read_workflow(wf_file)
             return data.get("name", wf_file.stem), data
-        return None
     return None
 
 

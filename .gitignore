@@ -25,3 +25,10 @@ Thumbs.db
 
 # Example/test projects (not part of framework distribution)
 timebox-ios/
+
+# Runtime state (never commit)
+.claude/session-locks/
+.claude/stop_lock.json
+.claude/user_override_token.json
+.claude/workflows/
+docs/artifacts/

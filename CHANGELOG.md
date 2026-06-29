@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.8] - 2026-06-29
+
+### Fixed
+
+**`hook_utils` + `workflow`: resolve_active_workflow Priorität: file > settings > env (Issue #13)**
+
+`resolve_active_workflow()` las bisher die Env-Var `OPENSPEC_ACTIVE_WORKFLOW` zuerst.
+Claude Code setzt diese Variable einmalig beim Session-Start aus `settings.local.json` —
+ein mid-session `workflow.py start <neu>` schreibt zwar `settings.local.json` und
+`.claude/active_workflow`, aber die Env-Var bleibt eingefroren. Alle Hooks lösten
+dadurch den alten Workflow-Namen auf; `phase_listener` (go/override/stop/GREEN) wirkte
+am falschen Workflow.
+
+Neue Priorität: `.claude/active_workflow` (nur von `workflow.py` geschrieben, nie von
+Claude Code überschrieben) → `settings.local.json` → Env-Var als letzter Fallback.
+Gleiche Priorität in `read_active_workflow_fast()` ergänzt (verwendet von
+`post_implementation_gate.py` und `tdd_enforcement.py`).
+
+Symptome die damit behoben sind: User sagt "go" zur Spec-Freigabe → wirkungslos
+(Hook löste stale Workflow auf, dessen Phase nicht phase3_spec war). Zweite Session
+hinterließ stale Env-Zeiger in settings.local.json und vergiftete eine dritte Session.
+
+**`.gitignore`: Runtime-State-Dateien von Git ausschließen**
+
+`.claude/session-locks/`, `.claude/stop_lock.json`, `.claude/user_override_token.json`,
+`.claude/workflows/` und `docs/artifacts/` waren untracked aber nicht ignoriert.
+
 ## [3.4.7] - 2026-06-29
 
 ### Fixed
