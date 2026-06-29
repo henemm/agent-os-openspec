@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+**`CLAUDE.md`: Workflow-Isolation explizit dokumentiert**
+
+Neuer Abschnitt „Workflow-Isolation — häufiges Missverständnis" in den
+Arbeitsanweisungen für Claude. Klärt, dass Gates ausschließlich für den eigenen
+aktiven Workflow gelten — andere Workflows in anderen Worktrees blockieren Commits
+nie. Verhindert, dass Sessions sich selbst blockieren, weil sie fremde Workflows
+in `phase6`/`phase7` sehen.
+
 ## [3.4.11] - 2026-06-29
 
 ### Fixed
