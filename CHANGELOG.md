@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.7] - 2026-06-29
+
+### Fixed
+
+**`workflow`: Workflow-Namen-Validierung gegen Pfad-Traversal und Glob-Injektion**
+
+`cmd_start()` und `cmd_switch()` validierten den Workflow-Namen bisher nicht.
+Namen wie `../../etc/x` konnten außerhalb des `.claude/workflows/`-Verzeichnisses
+schreiben (Pfad-Traversal); Namen mit `*`/`?` korrumpierten `glob()`-Aufrufe
+in `cmd_status()` und `cmd_complete()`. Neue `_validate_name()` erzwingt
+Whitelist-Regex `^[a-zA-Z0-9_-]{1,64}$` — lehnt `/`, `..`, `*`, `?`, `[`, `]`,
+`{`, `}` ab.
+
+**`edit_gate`: AC-Einträge müssen ≥ 30 Zeichen Beschreibungstext haben**
+
+`_check_acceptance_criteria()` prüft jetzt die Länge jedes `AC-N`-Eintrags.
+Zu kurze Einträge (z. B. `AC-1: ok`) werden mit konkreter Zeichenzahl geblockt.
+Legacy-Specs (erstellt vor `ac_format_required_since` in der Konfiguration)
+werden automatisch durchgelassen.
+
+### Added
+
+**`workflow`: `cleanup-stale-locks` Befehl**
+
+Entfernt verwaiste `pending_validation_*.json`-Dateien für abgeschlossene
+Workflows. Überspringt Workflows, die noch aktiv in `phase6_implement` sind.
+Löst das Problem vieler akkumulierter Phantom-Lock-Dateien nach langen Sessions.
+
+**`config_loader`: `get_scope_loc_config()` API**
+
+Neue Funktion `get_scope_loc_config() -> tuple[int, list]` liefert
+`(max_loc_delta, loc_exclude_patterns)` aus der Konfiguration mit Defaults
+`(250, [])`. Ermöglicht sauberen externen Zugriff ohne direktes Config-Dict-Parsing.
+
+### Tests
+
+35 neue Tests für bisher unabgedeckte Verhaltensweisen (Issue #14):
+- `test_workflow_name_validation.py` — Namensvalidierung + AMBIGUOUS-Block (13)
+- `test_gate_coverage.py` — AC-Format, LoC-Delta, Config-API, Status (22)
+
 ## [3.4.6] - 2026-06-28
 
 ### Fixed
