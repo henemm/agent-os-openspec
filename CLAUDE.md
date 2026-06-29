@@ -342,6 +342,12 @@ Wenn du an diesem Framework arbeitest:
 3. **CHANGELOG**: Jede Änderung unter [Unreleased] dokumentieren
 4. **Versionierung**: Semantische Versionierung (MAJOR.MINOR.PATCH)
 
+### Workflow-Isolation — häufiges Missverständnis
+
+**Workflows blockieren sich gegenseitig NICHT.** Jeder Workflow läuft in einem eigenen Worktree und ist vollständig isoliert. Gates (Adversary-Verdict, Approval-Marker, Phase-Checks) gelten ausschließlich für den **eigenen aktiven Workflow** (`OPENSPEC_ACTIVE_WORKFLOW`).
+
+Siehst du einen anderen Workflow in `phase6` oder `phase7_validate` — das ist nicht dein Problem. Committe nur dann nicht, wenn dein eigener Workflow ein Gate auslöst. Niemals einen Commit verweigern oder dem User Befehle zur manuellen Ausführung geben, weil ein *fremder* Workflow in einer bestimmten Phase steckt.
+
 Bei Feature-Requests:
 - Prüfe erst, ob das Feature in core/ oder als Modul gehört
 - Core = universell für alle Projekte
