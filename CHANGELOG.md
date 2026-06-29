@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.11] - 2026-06-29
+
+### Fixed
+
+**`phase_listener`: Stop-Lock false positive bei Bindestrich-Komposita**
+
+`_matches()` verwendete `\b` (Wortgrenze) für Stop-Erkennung. In Regex ist `-` kein
+Wortzeichen, daher matchte `\bstop\b` auch in `stop-lock`, `Stop-Lock`, etc. Typischer
+Fall: User fragt "Hast du das Problem mit dem Stop-Lock schon mitbekommen?" — die Frage
+ÜBER den Stop-Lock aktivierte den Stop-Lock. Fix: erweiterte Lookahead/Lookbehind-Pattern
+`(?<![a-zA-Z0-9_\-])stop(?![a-zA-Z0-9_\-])` schließt auch Hyphene aus.
+
+**`phase_listener` + `bash_gate` + `edit_gate`: Stop-Lock session-lokal**
+
+Wie `active_workflow` und `workflow`-State war auch der Stop-Lock in der gemeinsamen
+`{project_root}/.claude/stop_lock.json` gespeichert. Ein "stop" in Session A blockierte
+alle anderen Sessions im selben Projekt — auch worktree-isolierte Sessions die das "stop"
+nie gesehen hatten.
+
+Fix: `_set_stop_lock()` schreibt jetzt in den worktree-lokalen Pfad
+(`{worktree_root}/.claude/stop_lock.json`) wenn in einer Worktree-Session. Im Haupt-Repo
+gilt weiterhin der gemeinsame Pfad. `_is_stop_locked()` in `bash_gate.py` und `edit_gate.py`
+liest analog: worktree-lokal (wenn im Worktree) oder gemeinsam (wenn im Haupt-Repo).
+
 ## [3.4.10] - 2026-06-29
 
 ### Changed
