@@ -30,10 +30,25 @@ setup_path()
 
 import json
 import os
+import re as _re
 import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
+
+_NAME_RE = _re.compile(r'^[a-zA-Z0-9_-]{1,64}$')
+
+
+def _validate_name(name: str) -> None:
+    """Reject names that would escape the workflows dir or corrupt glob patterns."""
+    if not _NAME_RE.fullmatch(name):
+        print(
+            f"INVALID workflow name: {name!r}\n"
+            "Allowed: letters, digits, hyphens, underscores (1–64 chars).\n"
+            "Rejected: / .. * ? [ ] { }",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
 PHASES = [
     "phase0_idle",
@@ -400,6 +415,7 @@ def cmd_start(args: list[str]) -> None:
         print(f"Unknown workflow type: {workflow_type!r}. Valid: feature, bug, feature-fast", file=sys.stderr)
         sys.exit(1)
     name = name_args[0]
+    _validate_name(name)
     wf_file = _workflow_file(name)
     if wf_file.exists():
         print(f"Workflow {name} already exists. Use 'switch' to activate.", file=sys.stderr)
@@ -443,6 +459,7 @@ def cmd_switch(args: list[str]) -> None:
         print("Usage: workflow.py switch <name>", file=sys.stderr)
         sys.exit(1)
     name = args[0]
+    _validate_name(name)
     wf_file = _workflow_file(name)
     if not wf_file.exists():
         print(f"Workflow {name} not found.", file=sys.stderr)
@@ -501,7 +518,11 @@ def cmd_status(args: list[str]) -> None:
     print(f"Test Artifacts: {artifacts}")
     print(f"Fix-Loop Iterations: {fix_loops}")
     print(f"Phase Transitions: {transitions}")
-    print(f"LoC Delta: {loc_delta}")
+    loc_override = data.get("loc_limit_override")
+    if loc_override:
+        print(f"LoC Delta: {loc_delta}/{loc_override} (override)")
+    else:
+        print(f"LoC Delta: {loc_delta}")
     print(f"Execution Log: {'Written' if log_written else 'Pending — run write-log before complete'}")
 
 

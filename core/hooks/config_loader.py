@@ -261,6 +261,18 @@ def get_ac_format_required_since() -> "str | None":
     return load_config().get("spec_validation", {}).get("ac_format_required_since")
 
 
+def get_scope_loc_config() -> tuple[int, list]:
+    """Return (max_loc_delta, loc_exclude_patterns) from config.
+
+    Defaults: (250, []) when scope_guard section is absent.
+    """
+    cfg = load_config()
+    scope = cfg.get("scope_guard", {})
+    max_loc = int(scope.get("max_loc_delta", 250))
+    excludes = list(scope.get("loc_exclude_patterns", []))
+    return max_loc, excludes
+
+
 if __name__ == "__main__":
     # Test: Print loaded config
     import json
