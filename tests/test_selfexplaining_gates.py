@@ -109,6 +109,8 @@ def test_ac1_diagnostics_no_active_workflow(monkeypatch, tmp_path):
     """Kein aktiver Workflow → '[wf=— (none) | token=keins]'."""
     monkeypatch.delenv("OPENSPEC_ACTIVE_WORKFLOW", raising=False)
     monkeypatch.setattr(hook_utils, "find_project_root", lambda: tmp_path)
+    import override_token
+    monkeypatch.setattr(override_token, "has_valid_token", lambda name=None: False)
     suffix = hook_utils.gate_diagnostics()
     assert "wf=— (none)" in suffix
     assert "token=keins" in suffix

@@ -147,13 +147,28 @@ def _is_stop_locked() -> bool:
 # --- S2: Acceptance Criteria check ---
 
 def _check_acceptance_criteria(workflow: dict) -> str | None:
-    """Block phase6 edits if spec has no AC-N acceptance criteria."""
+    """Block phase6 edits if spec has no valid AC-N acceptance criteria."""
     spec_file = workflow.get("spec_file")
     if not spec_file:
         return None
     spec_path = _root / spec_file
     if not spec_path.exists():
         return None
+
+    # Legacy-Stichtag: Spec erstellt vor ac_format_required_since → durchlassen
+    try:
+        from config_loader import get_ac_format_required_since
+        cutoff = get_ac_format_required_since()
+        if cutoff:
+            from datetime import datetime, timezone
+            mtime = spec_path.stat().st_mtime
+            created_dt = datetime.fromtimestamp(mtime, tz=timezone.utc)
+            cutoff_dt = datetime.fromisoformat(cutoff).replace(tzinfo=timezone.utc)
+            if created_dt < cutoff_dt:
+                return None  # Legacy-Spec: durchlassen
+    except Exception:
+        pass
+
     content = spec_path.read_text()
     if "## Acceptance Criteria" not in content:
         return ("BLOCKED: Spec missing '## Acceptance Criteria' section. "
@@ -161,6 +176,15 @@ def _check_acceptance_criteria(workflow: dict) -> str | None:
     if not re.search(r"\bAC-\d+", content):
         return ("BLOCKED: '## Acceptance Criteria' has no AC-N entries. "
                 "Format: '- **AC-1:** Given ... / When ... / Then ...'")
+
+    # Längencheck: jeder AC-Eintrag muss ≥ 30 Zeichen Beschreibungstext haben
+    for m in re.finditer(r'\bAC-\d+[:\s]+(.*)', content):
+        desc = m.group(1).strip()
+        if len(desc) < 30:
+            return (
+                f"BLOCKED: AC entry too short ({len(desc)} chars): '{desc[:50]}'\n"
+                "Each AC must have ≥ 30 chars of description text."
+            )
     return None
 
 
