@@ -135,7 +135,12 @@ def _has_override_token(workflow_name: str = None) -> bool:
 
 
 def _is_stop_locked() -> bool:
-    lock = _root / ".claude" / "stop_lock.json"
+    try:
+        from hook_utils import _find_worktree_root
+        wt = _find_worktree_root()
+        lock = (wt / ".claude" / "stop_lock.json") if wt is not None else (_root / ".claude" / "stop_lock.json")
+    except Exception:
+        lock = _root / ".claude" / "stop_lock.json"
     if not lock.exists():
         return False
     try:

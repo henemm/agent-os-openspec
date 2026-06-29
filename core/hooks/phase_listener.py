@@ -61,7 +61,12 @@ def _load_phrases() -> dict:
 def _matches(message: str, phrases: list[str]) -> bool:
     msg = message.lower().strip()
     for phrase in phrases:
-        if re.search(r"\b" + re.escape(phrase.lower()) + r"\b", msg):
+        # Require phrase not preceded or followed by a letter, digit, underscore, or
+        # hyphen. Plain \b would match "stop" inside "stop-lock" because "-" is a
+        # non-word character — that causes false positives when discussing the stop-lock
+        # mechanism itself.
+        pat = r"(?<![a-zA-Z0-9_\-])" + re.escape(phrase.lower()) + r"(?![a-zA-Z0-9_\-])"
+        if re.search(pat, msg):
             return True
     return False
 
@@ -113,8 +118,20 @@ def _create_override_token(workflow_name: str) -> None:
         token_file.write_text(json.dumps({"version": 2, "tokens": tokens}, indent=2))
 
 
+def _stop_lock_path() -> Path:
+    """Worktree-lokaler oder gemeinsamer Stop-Lock-Pfad."""
+    try:
+        from hook_utils import _find_worktree_root
+        wt = _find_worktree_root()
+        if wt is not None:
+            return wt / ".claude" / "stop_lock.json"
+    except Exception:
+        pass
+    return _root / ".claude" / "stop_lock.json"
+
+
 def _set_stop_lock(enabled: bool) -> None:
-    lock_file = _root / ".claude" / "stop_lock.json"
+    lock_file = _stop_lock_path()
     lock_file.parent.mkdir(parents=True, exist_ok=True)
     lock_file.write_text(json.dumps({"enabled": enabled}))
 
