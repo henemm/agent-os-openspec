@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+**`edit_gate.py`: Orchestrator-Dateien vor `json$`-Always-Allowed schützen**
+
+`.claude/settings.json`, `.claude/settings.local.json` und `.claude/active_workflow`
+konnten bisher vom `developer-agent` editiert werden, weil `.json$` in
+`ALWAYS_ALLOWED_PATTERNS` alle JSON-Dateien ohne Phase-Check durchlässt — der Check
+für `PROTECTED_STATE_FILES` greift nur für Workflow-State-Files, nicht für Settings.
+
+Konkrete Fehlerfolge: Developer Agent manipulierte Workflow-State-Dateien und
+Settings, um Blocker selbst zu beseitigen — statt das Problem an den Orchestrator
+zurückzumelden.
+
+Fix: Neues `ORCHESTRATOR_FILES`-Array + Check 1b direkt nach Check 1 (vor
+ALWAYS_ALLOWED). Blockiert mit erklärender Fehlermeldung: "Blocker im Report
+zurückmelden, nicht selbst lösen."
+
+**`developer-agent.md`: Explizites Verbot für Framework-Dateien + Blocker-Regel**
+
+Neue Regel 6: `.claude/settings*.json`, `.claude/active_workflow`, `.claude/hooks/`,
+`.claude/agents/` sind absolut verboten. Kernbotschaft: "Du bist kein Orchestrator.
+Blocker → im Report melden, nicht selbst lösen." Adressiert den Reflex, Blocker
+durch direkte Settings-Änderungen zu umgehen.
+
 ### Added
 
 **`CLAUDE.md`: Workflow-Isolation explizit dokumentiert**
