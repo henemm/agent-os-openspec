@@ -17,6 +17,37 @@ aktiven Workflow gelten — andere Workflows in anderen Worktrees blockieren Com
 nie. Verhindert, dass Sessions sich selbst blockieren, weil sie fremde Workflows
 in `phase6`/`phase7` sehen.
 
+## [3.4.12] - 2026-06-30
+
+### Fixed
+
+**`resolve_active_workflow` + `read_active_workflow_fast`: Stale-Env überschattet korrekten Workflow im Worktree**
+
+Im Worktree-Zweig von `resolve_active_workflow()` (hook_utils.py) und `read_active_workflow_fast()` (workflow.py)
+fehlte der `settings.local.json`-Fallback. Die Prioritätskette war nur: Datei → Env. Im Haupt-Repo-Zweig
+existierte dieser Fallback bereits.
+
+Konkrete Fehlerfolge: Claude Code friert `OPENSPEC_ACTIVE_WORKFLOW` beim Session-Start aus der damaligen
+settings.local.json ein. Wird danach `workflow.py start <name>` aufgerufen, aktualisiert `_persist_env` die
+settings.local.json — aber nicht den eingefrorenen Prozess-Env. Ohne Settings-Fallback im Worktree-Zweig las
+`resolve_active_workflow()` den veralteten Env-Wert (z.B. den Worktree-Verzeichnisnamen statt dem echten
+Workflow-Namen), ignorierte das korrekte `feat-xxx-name` in der settings.local.json vollständig.
+
+Fix: Worktree-Zweig liest jetzt `{worktree}/.claude/settings.local.json` als Schritt 2 (vor dem Env-Fallback).
+Zusätzlich: Env-Wert wird nur vertraut wenn `workflows/<name>.json` existiert — verhindert Phantom-Namen
+(z.B. Worktree-Verzeichnisnamen) dauerhaft aus der Prioritätskette zu halten.
+
+Neue Worktree-Priorität: Datei → settings.local.json (validiert) → Env (validiert) → none
+
+**`phase_listener`: Stiller Fehlschlag bei unauflösbarem Workflow**
+
+Wenn `approved`/`go` erkannt wurde, aber kein Workflow auflösbar war (z.B. wegen des Stale-Env-Bugs),
+endete `main()` mit `sys.exit(0)` ohne jede Rückmeldung. User glaubte freigegeben zu haben, Gate ignorierte
+das Stichwort kommentarlos.
+
+Fix: Wenn ein Approval- oder Green-Keyword erkannt wird und kein Workflow auflösbar ist, wird jetzt
+`gate_diagnostics()` auf stderr ausgegeben.
+
 ## [3.4.11] - 2026-06-29
 
 ### Fixed
