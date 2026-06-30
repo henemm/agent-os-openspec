@@ -223,25 +223,40 @@ def read_active_workflow_fast() -> "tuple[str, dict] | None":
     Unlike _read_active(), this never calls sys.exit(). Intended for hooks that
     should silently skip when no workflow is running.
 
-    Worktree-aware priority (same as hook_utils.resolve_active_workflow()):
-    - In worktree: worktree-local active_workflow file > env var
-    - In main repo: shared active_workflow file > shared settings.local.json > env var
+    Worktree-aware priority (mirrors hook_utils.resolve_active_workflow()):
+    - In worktree: active_workflow file > worktree settings.local.json (validated) > env (validated)
+    - In main repo: shared active_workflow file > shared settings.local.json > env
     """
     root = find_project_root()
     worktree_root = _worktree_root_if_any()
     name = ""
 
     if worktree_root is not None:
-        # Worktree session: read from worktree-local active_workflow (written by _persist_env)
+        # 1. Worktree-local active_workflow file
         try:
             active_file = worktree_root / ".claude" / "active_workflow"
             if active_file.exists():
                 name = active_file.read_text().strip()
         except OSError:
             pass
-        # Fall through to env var if file not found (env set from worktree's settings.local.json)
+        # 2. Worktree-local settings.local.json (updated live by workflow.py start/switch)
+        if not name:
+            try:
+                settings_path = worktree_root / ".claude" / "settings.local.json"
+                if settings_path.exists():
+                    settings = json.loads(settings_path.read_text())
+                    candidate = (settings.get("env") or {}).get("OPENSPEC_ACTIVE_WORKFLOW", "").strip()
+                    if candidate and _workflow_file(candidate).exists():
+                        name = candidate
+            except (OSError, json.JSONDecodeError, KeyError):
+                pass
+        # 3. Env var (frozen at session start) — validate before trusting
+        if not name:
+            candidate = _active_name_from_env()
+            if candidate and _workflow_file(candidate).exists():
+                name = candidate
     else:
-        # Main repo session: read from shared active_workflow file
+        # Main repo session: shared active_workflow file
         try:
             active_file = root / ".claude" / "active_workflow"
             if active_file.exists():
@@ -258,8 +273,8 @@ def read_active_workflow_fast() -> "tuple[str, dict] | None":
             except (OSError, json.JSONDecodeError, KeyError):
                 pass
 
-    if not name:
-        name = _active_name_from_env()
+        if not name:
+            name = _active_name_from_env()
 
     if name:
         wf_file = _workflow_file(name)

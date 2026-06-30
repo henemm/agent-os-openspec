@@ -14,7 +14,7 @@ Replaces 6 separate hooks with 1. Listens for keywords in user messages:
 Exit Codes: 0 always (never blocks, only updates state)
 """
 
-from hook_utils import setup_path, find_project_root, get_user_message, get_active_workflow_name
+from hook_utils import setup_path, find_project_root, get_user_message, get_active_workflow_name, gate_diagnostics, resolve_active_workflow
 setup_path()
 
 import json
@@ -167,6 +167,11 @@ def main():
         _set_stop_lock(False)
 
     if not wf_data or not wf_path:
+        if _matches(message, approval) or _matches(message, GREEN_PHRASES):
+            print(
+                f"WARNUNG: Stichwort erkannt, aber kein auflösbarer Workflow. {gate_diagnostics()}",
+                file=sys.stderr,
+            )
         sys.exit(0)
 
     changed = False

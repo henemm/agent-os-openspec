@@ -162,6 +162,14 @@ def find_project_root() -> Path:
     return cwd
 
 
+def _workflow_file_exists(root: Path, name: str) -> bool:
+    """Return True if workflows/<name>.json exists under the project root."""
+    try:
+        return (root / ".claude" / "workflows" / f"{name}.json").exists()
+    except OSError:
+        return False
+
+
 def resolve_active_workflow() -> "tuple[str, str]":
     """Return (name, source). source ∈ {'file', 'settings', 'env', 'none'}.
 
@@ -170,8 +178,13 @@ def resolve_active_workflow() -> "tuple[str, str]":
     In a worktree session:
       1. Worktree-local active_workflow file ({worktree_root}/.claude/active_workflow)
          Written by workflow.py start/switch within THIS worktree. Never shared.
-      2. OPENSPEC_ACTIVE_WORKFLOW env var (frozen at session start from this worktree's
-         settings.local.json — set there by previous workflow.py start in the same worktree)
+      2. Worktree-local settings.local.json env section (written live by workflow.py
+         start/switch — not frozen, reflects the latest call in this session).
+         Validated: skipped if workflows/<name>.json does not exist.
+      3. OPENSPEC_ACTIVE_WORKFLOW env var (frozen at session start by Claude Code).
+         Validated: skipped if it doesn't point to an existing workflow file.
+         Prevents stale values (e.g. the worktree directory name injected at startup)
+         from shadowing the correct settings value.
       (Shared {project_root}/.claude/active_workflow is SKIPPED — it might belong to
       a parallel session and would contaminate this session's context.)
 
@@ -184,7 +197,7 @@ def resolve_active_workflow() -> "tuple[str, str]":
     worktree_root = _find_worktree_root()
 
     if worktree_root is not None:
-        # Worktree session: worktree-local file takes priority
+        # 1. Worktree-local active_workflow file (written by workflow.py start/switch)
         try:
             active_file = worktree_root / ".claude" / "active_workflow"
             if active_file.exists():
@@ -193,9 +206,19 @@ def resolve_active_workflow() -> "tuple[str, str]":
                     return name, "file"
         except OSError:
             pass
-        # Env var (set by Claude Code from this worktree's settings.local.json at startup)
+        # 2. Worktree-local settings.local.json (updated live, not frozen like env)
+        try:
+            settings_path = worktree_root / ".claude" / "settings.local.json"
+            if settings_path.exists():
+                settings = json.loads(settings_path.read_text())
+                name = (settings.get("env") or {}).get("OPENSPEC_ACTIVE_WORKFLOW", "").strip()
+                if name and _workflow_file_exists(root, name):
+                    return name, "settings"
+        except (OSError, json.JSONDecodeError, KeyError):
+            pass
+        # 3. Env var (frozen at session start) — only trusted if it points to a real workflow
         name = os.environ.get("OPENSPEC_ACTIVE_WORKFLOW", "").strip()
-        if name:
+        if name and _workflow_file_exists(root, name):
             return name, "env"
         return "", "none"
 
