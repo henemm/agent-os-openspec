@@ -37,7 +37,7 @@ Bevor du mit den Prerequisites fortfährst, lade den vollständigen Validierungs
 Dispatche einen **Explore/Haiku Subagenten**:
 
 ```
-Task (Explore/haiku): "Lies folgende Ressourcen und extrahiere die konkreten Werte:
+Task (Explore/haiku, run_in_background: true): "Lies folgende Ressourcen und extrahiere die konkreten Werte:
   1. [spec_file aus dem Wiedereinstieg-Block oben] → Acceptance Criteria (AC-1 bis AC-N)
   2. docs/artifacts/<workflow-name>/adversary-dialog.md → Adversary-Verdict und Findings
   3. openspec.yaml (Feld test_command) → konkreter Test-Befehl
@@ -48,6 +48,11 @@ Task (Explore/haiku): "Lies folgende Ressourcen und extrahiere die konkreten Wer
   - test_command: [konkreter Befehl]
   - Acceptance Criteria: [Liste aller AC-N]
   - adversary_verdict: [VERIFIED / BROKEN / AMBIGUOUS]"
+```
+
+**TIMEOUT-PFLICHT — sofort nach dem Spawn:**
+```
+ScheduleWakeup(180, "Kontext-Agent Timeout [60-validate Wiedereinstieg]: TaskList → noch aktiv? JA → TaskStop, dann User: 'Kontext-Agent nach 3 Min gestoppt — bitte /60-validate neu starten.' NEIN → ignorieren, fertig.")
 ```
 
 Ersetze alle `[...]`-Platzhalter in Step 1 und Step 3 mit den geladenen Werten — kein Agent darf mit Platzhaltern gestartet werden.
@@ -81,24 +86,29 @@ Akzeptierte Verdicts: **VERIFIED** oder **AMBIGUOUS** (mit User-OK).
 Dispatche **4 parallele Haiku-Agenten** fuer umfassende Validierung:
 
 ```
-Task 1 (general-purpose/haiku) - TEST CHECK:
+Task 1 (general-purpose/haiku, run_in_background: true) - TEST CHECK:
   "Fuehre ALLE Tests aus: [test_command]
   Report: Anzahl passed/failed, Laufzeit, Fehlerdetails."
 
-Task 2 (general-purpose/haiku) - SPEC COMPLIANCE:
+Task 2 (general-purpose/haiku, run_in_background: true) - SPEC COMPLIANCE:
   "Lies die Spec: [spec_file_path]
   Pruefe jeden Acceptance Criterion gegen die Implementation.
   Report: Welche Kriterien sind erfuellt, welche nicht?"
 
-Task 3 (general-purpose/haiku) - REGRESSION CHECK:
+Task 3 (general-purpose/haiku, run_in_background: true) - REGRESSION CHECK:
   "Fuehre die vollstaendige Test-Suite aus (nicht nur Feature-Tests).
   Report: Gibt es Regressionen? Welche Tests die vorher gruen waren
   sind jetzt rot?"
 
-Task 4 (general-purpose/haiku) - SCOPE CHECK:
+Task 4 (general-purpose/haiku, run_in_background: true) - SCOPE CHECK:
   "Vergleiche die geaenderten Dateien mit der Spec.
   Wurden Dateien ausserhalb des Specs geaendert?
   Wurden mehr als 5 Dateien / 250 LoC geaendert?"
+```
+
+**TIMEOUT-PFLICHT — sofort nach dem Spawn (für alle 4 gemeinsam):**
+```
+ScheduleWakeup(300, "Validierungs-Agents Timeout [60-validate Step 1]: TaskList → noch aktive Haiku-Agents? JA → alle TaskStop, dann User: 'Validierungs-Agents nach 5 Min gestoppt — bitte /60-validate neu starten.' NEIN → ignorieren, fertig.")
 ```
 
 ### Step 2: Ergebnis-Auswertung
@@ -113,13 +123,18 @@ Werte die 4 Reports aus:
 Bei Fehlern dispatche einen **general-purpose/Sonnet Subagenten**:
 
 ```
-Task (general-purpose/sonnet): "Folgende Validierungsfehler wurden gefunden:
+Task (general-purpose/sonnet, run_in_background: true): "Folgende Validierungsfehler wurden gefunden:
   [Fehler-Liste aus den 4 Haiku-Reports]
 
   Behebe die Fehler. Beachte:
   - Nur die gemeldeten Fehler fixen, keine anderen Aenderungen
   - Scoping Limits einhalten
   - Tests nach dem Fix erneut ausfuehren"
+```
+
+**TIMEOUT-PFLICHT — sofort nach dem Spawn:**
+```
+ScheduleWakeup(300, "Auto-Fix Timeout [60-validate Step 2b]: TaskList → noch aktiv? JA → TaskStop, dann User: 'Auto-Fix-Agent nach 5 Min gestoppt — bitte manuell prüfen.' NEIN → ignorieren, fertig.")
 ```
 
 Nach dem Fix: Dispatche die relevanten Haiku-Checks erneut zur Verifikation.
@@ -129,7 +144,7 @@ Nach dem Fix: Dispatche die relevanten Haiku-Checks erneut zur Verifikation.
 Bei erfolgreicher Validierung dispatche den **docs-updater**:
 
 ```
-Task (general-purpose/sonnet): "Du bist der docs-updater Agent.
+Task (general-purpose/sonnet, run_in_background: true): "Du bist der docs-updater Agent.
 
   Input:
   - changed_files: [Liste der geaenderten Dateien]
@@ -137,6 +152,11 @@ Task (general-purpose/sonnet): "Du bist der docs-updater Agent.
   - spec_file_path: [Pfad zur Spec]
 
   Aktualisiere alle betroffene Dokumentation."
+```
+
+**TIMEOUT-PFLICHT — sofort nach dem Spawn:**
+```
+ScheduleWakeup(300, "Docs-Updater Timeout [60-validate Step 3]: TaskList → noch aktiv? JA → TaskStop, dann User: 'Docs-Updater nach 5 Min gestoppt — Dokumentation ggf. manuell prüfen.' NEIN → ignorieren, fertig.")
 ```
 
 ### Step 4: Workflow State aktualisieren

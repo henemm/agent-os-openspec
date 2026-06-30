@@ -43,7 +43,7 @@ Lies die Analyse-Ergebnisse aus `docs/context/[workflow-name].md` und das Templa
 Dispatche einen **general-purpose/Sonnet Subagenten** mit den spec-writer Instruktionen:
 
 ```
-Task (general-purpose/sonnet): "Du bist der spec-writer Agent.
+Task (general-purpose/sonnet, run_in_background: true): "Du bist der spec-writer Agent.
 
   Input:
   - feature_name: [Name]
@@ -56,16 +56,26 @@ Task (general-purpose/sonnet): "Du bist der spec-writer Agent.
   nach dem spec-writer Workflow. Beachte alle Qualitaetsregeln."
 ```
 
+**TIMEOUT-PFLICHT — sofort nach dem Spawn:**
+```
+ScheduleWakeup(300, "Spec-Writer Timeout [30-write-spec Step 2]: TaskList → noch aktiv? JA → TaskStop, dann User: 'Spec-Writer nach 5 Min gestoppt — bitte /30-write-spec neu starten.' NEIN → ignorieren, fertig.")
+```
+
 ### Step 3: Spec validieren (spec-validator/Haiku)
 
 Dispatche den **spec-validator/Haiku** zur Validierung:
 
 ```
-Task (general-purpose/haiku): "Du bist der spec-validator Agent.
+Task (general-purpose/haiku, run_in_background: true): "Du bist der spec-validator Agent.
 
   Validiere die Spec: docs/specs/[category]/[entity].md
   Pruefe alle Required Fields, Sections, Placeholders.
   Output: VALID oder INVALID mit Details."
+```
+
+**TIMEOUT-PFLICHT — sofort nach dem Spawn:**
+```
+ScheduleWakeup(180, "Spec-Validator Timeout [30-write-spec Step 3]: TaskList → noch aktiv? JA → TaskStop, dann User: 'Spec-Validator nach 3 Min gestoppt — bitte Step 3 neu starten.' NEIN → ignorieren, fertig.")
 ```
 
 **Bei INVALID:**
