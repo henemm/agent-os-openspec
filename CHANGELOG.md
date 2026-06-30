@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+**Agent-Timeout-Protokoll in allen Slash-Commands**
+
+Alle Commands die Subagenten spawnen (`20-analyse.md`, `30-write-spec.md`,
+`50-implement.md`, `60-validate.md`) schreiben Agenten jetzt zwingend mit
+`run_in_background: true` und setzen **sofort nach jedem Spawn** einen
+`ScheduleWakeup`-Timeout.
+
+Problem: Agenten liefen bisher synchron (Vordergrund). Bei Hänger oder Absturz
+wartete der Orchestrator passiv — in einer Session 36 Minuten, ohne Reaktion.
+
+Fix: Jedes Agent-Spawn-Block enthält jetzt einen TIMEOUT-PFLICHT-Abschnitt mit
+`ScheduleWakeup(N, "...: TaskList → noch aktiv? JA → TaskStop + User informieren.
+NEIN → ignorieren.")`. Timeouts nach Agenttyp: Explore/Haiku 180s, Sonnet 300s,
+Developer Agent 600s.
+
+---
+
 ### Fixed
 
 **`edit_gate.py`: Orchestrator-Dateien vor `json$`-Always-Allowed schützen**

@@ -25,14 +25,19 @@ Bestimme aus dem Kontext:
 Bei Features dispatche **3 parallele Subagenten** fuer schnelle Kontextsammlung:
 
 ```
-Task 1 (Explore/haiku): "Finde alle Dateien die von [Feature-Bereich] betroffen
+Task 1 (Explore/haiku, run_in_background: true): "Finde alle Dateien die von [Feature-Bereich] betroffen
   sind. Liste: Dateipfad, Typ (MODIFY/CREATE/DELETE), Begruendung."
 
-Task 2 (Explore/haiku): "Suche nach bestehenden Specs in docs/specs/ die
+Task 2 (Explore/haiku, run_in_background: true): "Suche nach bestehenden Specs in docs/specs/ die
   [Feature-Bereich] betreffen. Liste gefundene Specs mit Status."
 
-Task 3 (Explore/haiku): "Identifiziere Dependencies und Imports fuer
+Task 3 (Explore/haiku, run_in_background: true): "Identifiziere Dependencies und Imports fuer
   [Feature-Bereich]. Welche Module haengen davon ab? Welche werden importiert?"
+```
+
+**TIMEOUT-PFLICHT — sofort nach dem Spawn (für alle 3 gemeinsam):**
+```
+ScheduleWakeup(180, "Explore-Agents Timeout [20-analyse Step 2a]: TaskList → noch aktive Haiku-Agents? JA → alle TaskStop, dann User: 'Analyse-Agenten nach 3 Min gestoppt — bitte /20-analyse neu starten.' NEIN → ignorieren, fertig.")
 ```
 
 ### Step 2b: Bug-Analyse (bug-intake/Haiku)
@@ -40,9 +45,14 @@ Task 3 (Explore/haiku): "Identifiziere Dependencies und Imports fuer
 Bei Bugs dispatche den **bug-intake Agent**:
 
 ```
-Task (general-purpose/haiku): Verwende die bug-intake Instruktionen.
+Task (general-purpose/haiku, run_in_background: true): Verwende die bug-intake Instruktionen.
   Input: symptom=[Fehlerbeschreibung], context=[Wo/Wann]
   Fuehre parallele Investigation durch und erstelle Bug Report.
+```
+
+**TIMEOUT-PFLICHT — sofort nach dem Spawn:**
+```
+ScheduleWakeup(180, "Bug-Intake Timeout [20-analyse Step 2b]: TaskList → noch aktiv? JA → TaskStop, dann User: 'Bug-Intake-Agent nach 3 Min gestoppt — bitte /20-analyse neu starten.' NEIN → ignorieren, fertig.")
 ```
 
 ### Step 3: Strategische Bewertung (Plan/Sonnet)
@@ -50,7 +60,7 @@ Task (general-purpose/haiku): Verwende die bug-intake Instruktionen.
 Dispatche einen **Plan/Sonnet Subagenten** fuer die strategische Bewertung:
 
 ```
-Task (Plan/sonnet): "Basierend auf folgenden Investigation-Ergebnissen:
+Task (Plan/sonnet, run_in_background: true): "Basierend auf folgenden Investigation-Ergebnissen:
   [Ergebnisse aus Step 2]
 
   Bewerte:
@@ -59,6 +69,11 @@ Task (Plan/sonnet): "Basierend auf folgenden Investigation-Ergebnissen:
   3. Scope-Schaetzung (Dateien, LoC)
   4. Abhaengigkeiten und Reihenfolge
   5. Empfehlung (eine klare Empfehlung)"
+```
+
+**TIMEOUT-PFLICHT — sofort nach dem Spawn:**
+```
+ScheduleWakeup(300, "Plan-Agent Timeout [20-analyse Step 3]: TaskList → noch aktiv? JA → TaskStop, dann User: 'Strategie-Agent nach 5 Min gestoppt — bitte /20-analyse neu starten.' NEIN → ignorieren, fertig.")
 ```
 
 ### Step 4: Synthese praesentieren
