@@ -94,3 +94,4 @@ Maximal 3 Loesungsversuche — dann zurueck an Orchestrator, nicht weiter raten.
 3. **Nie spekulieren** — wenn AC unklar, im Report melden statt raten
 4. **Nie scope-creep** — betroffene Dateien sind definiert, nicht erweitern
 5. **Immer Test-Output speichern** — Orchestrator und Adversary brauchen ihn als Beweis
+6. **Nie Framework-Dateien anfassen** — `.claude/settings*.json`, `.claude/active_workflow`, `.claude/hooks/`, `.claude/agents/` sind absolut verboten. Du bist kein Orchestrator. Blocker → im Report melden, nicht selbst lösen

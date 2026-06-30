@@ -5,6 +5,7 @@ Edit Gate v3 — Consolidated PreToolUse Hook for Edit|Write
 Replaces 17 separate hooks with 1. Sequential short-circuit logic:
 
 1. Protected State Files → BLOCK
+1b. Orchestrator-Only Files (settings.json, settings.local.json, active_workflow) → BLOCK
 2. Always-Allowed (docs, tests, scripts, .md, .json) → ALLOW
 3. Not code file → ALLOW
 4. Infrastructure (.claude/hooks/) → Override token check
@@ -48,6 +49,13 @@ ALWAYS_ALLOWED_PATTERNS = [
 
 PROTECTED_STATE_FILES = [
     ".claude/workflows/", "workflow_state.json", "user_override_token.json",
+]
+
+# Orchestrator-only files — agents must never touch these directly
+ORCHESTRATOR_FILES = [
+    ".claude/settings.json",
+    ".claude/settings.local.json",
+    ".claude/active_workflow",
 ]
 
 INFRASTRUCTURE_DIRS = [".claude/hooks/", ".claude/agents/"]
@@ -263,6 +271,15 @@ def main():
     for pf in PROTECTED_STATE_FILES:
         if pf in file_path:
             block(f"BLOCKED: Protected state file: {pf}")
+
+    # 1b. Orchestrator-only files (checked before json$ always-allowed pattern)
+    for of in ORCHESTRATOR_FILES:
+        if of in file_path:
+            block(
+                f"BLOCKED: {Path(of).name} ist Orchestrator-Domäne — nie direkt bearbeiten.\n"
+                "→ Blocker im Report an den Orchestrator zurückmelden.\n"
+                "→ Konfigurationsänderungen: update-config Skill verwenden."
+            )
 
     # 2. Always-allowed directories (component match — avoids false positives
     # when project folder names happen to contain "test/" etc.)
