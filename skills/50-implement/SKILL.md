@@ -47,7 +47,7 @@ $WF status
 Dispatche einen **Explore/Haiku Subagenten** um den Implementierungs-Kontext zu laden:
 
 ```
-Task (Explore/haiku): "Lies folgende Dateien und fasse den relevanten Kontext
+Task (Explore/haiku, run_in_background: true): "Lies folgende Dateien und fasse den relevanten Kontext
   zusammen:
   - Spec: [spec_file_path]
   - Betroffene Dateien: [affected_files]
@@ -55,6 +55,11 @@ Task (Explore/haiku): "Lies folgende Dateien und fasse den relevanten Kontext
 
   Fasse zusammen: Welche Interfaces existieren, welche Methoden muessen
   implementiert werden, welche Imports werden benoetigt."
+```
+
+**TIMEOUT-PFLICHT — sofort nach dem Spawn:**
+```
+ScheduleWakeup(180, "Explore-Agent Timeout [50-implement Step 2]: TaskList → noch aktiv? JA → TaskStop, dann User: 'Kontext-Agent nach 3 Min gestoppt — bitte Step 2 neu starten.' NEIN → ignorieren, fertig.")
 ```
 
 ### Step 3: Developer Agent spawnen (ORCHESTRATOR-PRINZIP)
@@ -65,7 +70,7 @@ Der Hauptkontext ist ein **Orchestrator** — er koordiniert, plant, und entsche
 Code-Edits gehoeren ausschliesslich dem **Developer Agent**.
 
 ```
-Task (developer-agent/opus):
+Task (developer-agent/opus, run_in_background: true):
   "Implementiere gemaess Spec.
 
   Spec: [spec_file_path einfuegen]
@@ -88,6 +93,11 @@ Task (developer-agent/opus):
   - Refactoring das nicht zum Gruen benoetigt wird
   - Premature optimization
   - Mehr als 3 Loesungsversuche ohne Rueckmeldung"
+```
+
+**TIMEOUT-PFLICHT — sofort nach dem Spawn:**
+```
+ScheduleWakeup(600, "Developer Agent Timeout [50-implement Step 3]: TaskList → noch aktiv? JA → TaskStop, dann User: 'Developer Agent nach 10 Min gestoppt — bitte /50-implement neu starten.' NEIN → ignorieren, fertig.")
 ```
 
 **Nach Rueckmeldung des Developer Agent:**
@@ -165,7 +175,7 @@ Das zeigt dir die Expected-Behavior-Punkte die bewiesen werden muessen.
 Starte den `implementation-validator` Agent mit der Checkliste:
 
 ```
-Task (implementation-validator): "Pruefe den aktuellen Workflow gegen die Spec.
+Task (implementation-validator, run_in_background: true): "Pruefe den aktuellen Workflow gegen die Spec.
   Hier ist die Checkliste der zu beweisenden Punkte:
   [Punkte aus 8a einfuegen]
 
@@ -176,6 +186,11 @@ Task (implementation-validator): "Pruefe den aktuellen Workflow gegen die Spec.
   - Mindestens 2 Runden Dialog
   - Fuehre Tests aus und speichere Output
   - Nutze das Structured Findings Schema ($AD schema)"
+```
+
+**TIMEOUT-PFLICHT — sofort nach dem Spawn:**
+```
+ScheduleWakeup(300, "Adversary Validator Timeout [50-implement Step 8b]: TaskList → noch aktiv? JA → TaskStop, dann User: 'Adversary-Agent nach 5 Min gestoppt — bitte Step 8b neu starten.' NEIN → ignorieren, fertig.")
 ```
 
 Der Dialog laeuft als Hin-und-Her. **Du als Orchestrator koordinierst:**
