@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+**Skills `00-intake` und `90-retro` fehlten seit der v3.2-Plugin-Migration (Issue #24)**
+
+Bei der Migration von `core/commands/*.md` nach `skills/*/SKILL.md` (v3.2) wurden
+`00-intake` und `90-retro` übersehen. Projekte, die noch die alten, direkt kopierten
+`.claude/commands/00-intake.md` bzw. `90-retro.md` hatten (Pre-Plugin-Installs),
+zeigten den Command dadurch doppelt im Slash-Command-Menü — einmal ueber die
+lokale Legacy-Datei (bzw. eine globale Kopie unter `~/.claude/commands/`) und
+einmal ueber den Versuch des Plugins, den Skill bereitzustellen, der aber gar
+nicht existierte.
+
+Fix: `skills/00-intake/SKILL.md` und `skills/90-retro/SKILL.md` nachgezogen.
+`migrate_to_plugin.py` entfernt jetzt zusätzlich `.claude/commands/*.md`-Dateien,
+die einen gleichnamigen Plugin-Skill haben (`_find_removable_command_files`).
+
+---
+
 ### Added
 
 **Agent-Timeout-Protokoll in allen Slash-Commands**

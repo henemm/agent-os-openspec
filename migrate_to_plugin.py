@@ -4,6 +4,9 @@ Migrate existing OpenSpec project to Plugin Mode (v3.2)
 
 Scans .claude/settings.json and removes hook commands that reference
 local .claude/hooks/*.py files which are now provided by the plugin.
+Also removes legacy .claude/commands/*.md files that duplicate a
+plugin-provided skill of the same name (causes double slash-command
+entries in the palette, see issue #24).
 
 The plugin's hooks/hooks.json already declares all core hooks globally
 for every project with the plugin enabled. Project-level settings.json
@@ -129,6 +132,26 @@ def _find_removable_hook_files(project_path: Path) -> list[Path]:
     return [f for f in hooks_dir.glob("*.py") if f.name in removable]
 
 
+def _find_removable_command_files(project_path: Path) -> list[Path]:
+    """
+    Return .claude/commands/*.md files that duplicate a plugin-provided skill.
+
+    Legacy (pre-plugin) installs copied core/commands/*.md straight into the
+    project. Once the plugin is active, these show up a SECOND time next to
+    the plugin's own skill of the same name (duplicate slash command in the
+    palette). Only remove files that have a matching skills/<name>/SKILL.md
+    in the plugin — never touch project-specific custom commands.
+    """
+    commands_dir = project_path / ".claude" / "commands"
+    if not commands_dir.exists():
+        return []
+    skills_dir = PLUGIN_ROOT / "skills"
+    if not skills_dir.exists():
+        return []
+    provided = {p.name for p in skills_dir.iterdir() if p.is_dir()}
+    return [f for f in commands_dir.glob("*.md") if f.stem in provided]
+
+
 def _read_installed_modules(project_path: Path) -> list[str]:
     version_file = project_path / ".claude" / "framework_version.json"
     if version_file.exists():
@@ -218,6 +241,21 @@ def migrate(project_path: Path, dry_run: bool = True) -> None:
             print("  (will be removed with --apply)")
     else:
         print("\nNo plugin hook files found in .claude/hooks/ to remove.")
+
+    # --- 6. Remove legacy command files that duplicate plugin skills ---
+    removable_commands = _find_removable_command_files(project_path)
+    if removable_commands:
+        print(f"\n{len(removable_commands)} legacy command file(s) in .claude/commands/ duplicate a plugin skill and can be removed:")
+        for f in removable_commands:
+            print(f"  {f.relative_to(project_path)}")
+        if not dry_run:
+            for f in removable_commands:
+                f.unlink()
+                print(f"  Removed: {f.relative_to(project_path)}")
+        else:
+            print("  (will be removed with --apply)")
+    else:
+        print("\nNo legacy command files found in .claude/commands/ to remove.")
 
     print()
     if dry_run:
