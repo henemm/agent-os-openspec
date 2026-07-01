@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+**Adversary-Verdict-Gate wurde in `workflow.py complete` nicht geprüft (Issue gregor_zwanzig#960)**
+
+`_validate_transition()` verlangt für `phase8_complete`, dass `adversary_verdict`
+mit `VERIFIED` beginnt — aber diese Prüfung wurde ausschließlich von `cmd_phase()`
+aufgerufen. Der tatsächlich genutzte Abschluss-Pfad (`workflow.py write-log` gefolgt
+von `workflow.py complete`) rief `_validate_transition()` nirgends auf, sodass
+Workflows ohne (oder mit `BROKEN`/`AMBIGUOUS`) Adversary-Verdikt regulär abgeschlossen
+werden konnten. Ein Audit über `gregor_zwanzig` zeigte: 185 von 639 pflichtigen
+Workflows (~29 %) wurden ohne gültiges VERIFIED-Verdikt abgeschlossen, davon 10 trotz
+explizit fehlgeschlagener Tests (`BROKEN`).
+
+Fix: `cmd_complete()` ruft jetzt vor dem Setzen von `phase8_complete` ebenfalls
+`_validate_transition(data, "phase8_complete")` auf und bricht bei fehlendem/nicht-
+VERIFIED-Verdikt ab — analog zu `cmd_phase()`. `bug`- und `feature-fast`-Workflows
+bleiben wie vorgesehen vom Gate ausgenommen.
+
+---
+
 **Skills `00-intake` und `90-retro` fehlten seit der v3.2-Plugin-Migration (Issue #24)**
 
 Bei der Migration von `core/commands/*.md` nach `skills/*/SKILL.md` (v3.2) wurden

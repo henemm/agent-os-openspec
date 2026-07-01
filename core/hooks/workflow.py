@@ -784,6 +784,14 @@ def cmd_complete(args: list[str]) -> None:
         print(f"BLOCKED: No execution log for '{name}'. Run: workflow.py write-log [outcome]",
               file=sys.stderr)
         sys.exit(1)
+    # Must run the same prerequisite/adversary-verdict check as an explicit
+    # `phase phase8_complete` transition — this is the only completion path
+    # actually used in practice (write-log → complete), so skipping this
+    # check here silently defeats the adversary gate. See issue #960.
+    error = _validate_transition(data, "phase8_complete")
+    if error:
+        print(f"BLOCKED: {error}", file=sys.stderr)
+        sys.exit(1)
     data["current_phase"] = "phase8_complete"
     archive = _archive_dir()
     archive.mkdir(parents=True, exist_ok=True)
