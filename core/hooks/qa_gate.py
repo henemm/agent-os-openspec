@@ -19,7 +19,7 @@ Usage:
 Exit Codes: 0 = VERIFIED or AMBIGUOUS, 1 = BROKEN/FAILED
 """
 
-from hook_utils import setup_path, find_project_root, find_plugin_root
+from hook_utils import setup_path
 setup_path()
 
 import json
@@ -29,9 +29,6 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-
-_root = find_project_root()
-_plugin_root = find_plugin_root()
 
 # Generic test patterns (project-agnostic)
 TEST_PATTERNS = [
@@ -44,11 +41,18 @@ TEST_PATTERNS = [
 
 def _set_verdict(verdict: str) -> None:
     """Set adversary_verdict on active workflow via workflow.py CLI."""
-    workflow_py = _plugin_root / "core" / "hooks" / "workflow.py"
-    subprocess.run(
+    workflow_py = Path(__file__).parent / "workflow.py"
+    result = subprocess.run(
         [sys.executable, str(workflow_py), "set-field", "adversary_verdict", verdict],
         capture_output=True, text=True
     )
+    if result.returncode != 0:
+        print(
+            f"ERROR: Failed to persist adversary_verdict via workflow.py: "
+            f"{result.stderr.strip()}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
 
 def validate_test_output(filepath: str, infra: bool = False) -> tuple[bool, str]:
@@ -109,7 +113,7 @@ def main():
     args = sys.argv[1:]
 
     if not args or args[0] == "--check":
-        workflow_py = _plugin_root / "core" / "hooks" / "workflow.py"
+        workflow_py = Path(__file__).parent / "workflow.py"
         subprocess.run([sys.executable, str(workflow_py), "status"])
         sys.exit(0)
 
@@ -135,15 +139,23 @@ def main():
         print(f"Screenshot skipped: {reason}")
 
     # Get active workflow name
-    workflow_py = _plugin_root / "core" / "hooks" / "workflow.py"
+    workflow_py = Path(__file__).parent / "workflow.py"
     result = subprocess.run(
         [sys.executable, str(workflow_py), "status"],
         capture_output=True, text=True
     )
-    wf_name = "unknown"
-    for line in result.stdout.splitlines():
-        if line.startswith("Workflow:"):
-            wf_name = line.split(":", 1)[1].strip()
+    if result.returncode != 0:
+        print(
+            f"ERROR: Could not read workflow status via workflow.py: "
+            f"{result.stderr.strip()}",
+            file=sys.stderr,
+        )
+        wf_name = "unknown-error"
+    else:
+        wf_name = "unknown"
+        for line in result.stdout.splitlines():
+            if line.startswith("Workflow:"):
+                wf_name = line.split(":", 1)[1].strip()
 
     print(f"Validating test output: {filepath}")
 
