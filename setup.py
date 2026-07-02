@@ -772,6 +772,67 @@ def update_project(project_path: Path, modules: list, force: bool = False):
     print(f"\nFramework updated to version {FRAMEWORK_VERSION}")
 
 
+ALIAS_MARKER = "<!-- openspec-alias: do-not-treat-as-legacy-duplicate -->"
+
+
+def generate_command_aliases(project_path: Path) -> None:
+    """Generate short command aliases in .claude/commands/<name>.md.
+
+    For every skill under FRAMEWORK_ROOT/skills/ that has a SKILL.md, write a
+    tiny redirect command file so that `/name` maps to
+    `/agent-os-openspec:name`. Each generated file carries a marker on its first
+    line so migrate_to_plugin.py does not mistake it for a legacy duplicate.
+
+    Overwrite rules per target file:
+      - missing            → create
+      - marker first line  → update (overwrite)
+      - no marker          → skip (assumed project-specific custom command)
+    """
+    skills_dir = FRAMEWORK_ROOT / "skills"
+    commands_dir = project_path / ".claude" / "commands"
+    commands_dir.mkdir(parents=True, exist_ok=True)
+
+    names = sorted(
+        p.name
+        for p in skills_dir.iterdir()
+        if p.is_dir() and (p / "SKILL.md").exists()
+    )
+
+    created = 0
+    updated = 0
+    skipped: list[str] = []
+
+    for name in names:
+        target = commands_dir / f"{name}.md"
+        content = (
+            f"{ALIAS_MARKER}\n"
+            "---\n"
+            f"description: Kurz-Alias für /agent-os-openspec:{name}\n"
+            "---\n"
+            "\n"
+            f"/agent-os-openspec:{name} $ARGUMENTS\n"
+        )
+
+        if not target.exists():
+            target.write_text(content)
+            created += 1
+            continue
+
+        first_line = target.read_text().splitlines()[0] if target.read_text() else ""
+        if first_line.startswith("<!-- openspec-alias:"):
+            target.write_text(content)
+            updated += 1
+        else:
+            skipped.append(f"{name}.md")
+
+    print(
+        f"Command aliases: {created} created, {updated} updated, "
+        f"{len(skipped)} skipped."
+    )
+    for name in skipped:
+        print(f"  SKIPPED (custom command exists): {name}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Install or update OpenSpec Framework for a project",
@@ -789,6 +850,10 @@ Examples:
   # Update existing installation
   python3 setup.py /path/to/project --update
   python3 setup.py /path/to/project --update --force
+
+  # Generate short command aliases (/name → /agent-os-openspec:name)
+  python3 setup.py /path/to/project --command-aliases
+  python3 setup.py ~ --command-aliases          # global, across all projects
 
 Available modules:
   ios-swiftui     - iOS/SwiftUI standards, agents, and workflows
@@ -838,6 +903,15 @@ Available modules:
     )
 
     parser.add_argument(
+        "--command-aliases",
+        action="store_true",
+        help=(
+            "Generate short command aliases in .claude/commands/<name>.md that "
+            "redirect to /agent-os-openspec:<name> (opt-in, no install/update)"
+        )
+    )
+
+    parser.add_argument(
         "--version", "-v",
         action="version",
         version=f"OpenSpec Framework {FRAMEWORK_VERSION}"
@@ -850,6 +924,11 @@ Available modules:
     if not project_path.exists():
         print(f"ERROR: Project path does not exist: {project_path}")
         sys.exit(1)
+
+    # Command aliases mode
+    if args.command_aliases:
+        generate_command_aliases(project_path)
+        return
 
     # Update mode
     if args.update:

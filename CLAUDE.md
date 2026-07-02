@@ -293,6 +293,9 @@ python3 /path/to/agent-os-openspec/setup.py /path/to/project --update --force
 # Neues Modul hinzufügen
 python3 /path/to/agent-os-openspec/setup.py /path/to/project --module ios-swiftui
 
+# Kurze Slash-Command-Aliase generieren (z.B. /50-implement statt /agent-os-openspec:50-implement)
+python3 /path/to/agent-os-openspec/setup.py ~ --command-aliases   # empfohlen: global (~)
+
 # Version prüfen
 python3 /path/to/agent-os-openspec/setup.py --version
 ```

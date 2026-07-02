@@ -141,6 +141,11 @@ def _find_removable_command_files(project_path: Path) -> list[Path]:
     the plugin's own skill of the same name (duplicate slash command in the
     palette). Only remove files that have a matching skills/<name>/SKILL.md
     in the plugin — never touch project-specific custom commands.
+
+    Framework-generated short aliases (see setup.generate_command_aliases) carry
+    an `openspec-alias:` marker and must NOT be removed even though their name
+    matches a skill. Files whose content cannot be read are conservatively
+    kept (fail-safe: when in doubt, do not delete).
     """
     commands_dir = project_path / ".claude" / "commands"
     if not commands_dir.exists():
@@ -149,7 +154,19 @@ def _find_removable_command_files(project_path: Path) -> list[Path]:
     if not skills_dir.exists():
         return []
     provided = {p.name for p in skills_dir.iterdir() if p.is_dir()}
-    return [f for f in commands_dir.glob("*.md") if f.stem in provided]
+    removable = []
+    for f in commands_dir.glob("*.md"):
+        if f.stem not in provided:
+            continue
+        try:
+            content = f.read_text()
+        except Exception:
+            # Unreadable (binary/broken encoding): do not treat as removable.
+            continue
+        if "openspec-alias:" in content:
+            continue
+        removable.append(f)
+    return removable
 
 
 def _read_installed_modules(project_path: Path) -> list[str]:
