@@ -49,6 +49,8 @@ PROTECTED_FILE_PATTERNS = [
     r"user_override_token\.json",
     r"\.claude/hooks/[^\s]*\.py",
     r"\.claude/settings\.json",
+    r"\.claude/pending_validation_[^\s]*\.json",
+    r"\.claude/user_approved_validation_[^\s]*",
 ]
 
 # Approval-/Erfolgs-Marker: Dateien, deren blosse Existenz einen Freigabe-
@@ -57,11 +59,20 @@ PROTECTED_FILE_PATTERNS = [
 # manipuliert den Verifier statt die Bedingung echt zu erfuellen). Der einzige
 # legitime Erzeuger ist phase_listener.py (UserPromptSubmit-Hook), der nur
 # feuert, wenn der echte User "go"/"freigabe"/"approved" tippt. Deny by default.
-APPROVAL_MARKER_PATTERNS = [
-    r"user_approved_",
-    r"pending_validation_",
+# Tier 1: Feldnamen mit hohem Freitext-Risiko (Issue #30) — nur blocken, wenn
+# zusaetzlich ein echter Protected-Pfad im selben Kommando referenziert wird.
+# Diese Feldnamen tauchen plausibel in Bug-Reports/PR-Texten/Doku auf.
+APPROVAL_MARKER_PATTERNS_REQUIRE_PATH = [
     r"adversary_verdict",
     r"_verified\b",
+]
+
+# Tier 2: Marker-*Dateinamen*-Praefixe — erscheinen praktisch nie als Freitext,
+# bleiben unabhaengig vom Pfad-Kontext blockierend (verhindert cd-Obfuskation
+# wie `cd .claude && touch user_approved_validation_x`).
+APPROVAL_MARKER_PATTERNS_FILENAME = [
+    r"user_approved_",
+    r"pending_validation_",
 ]
 
 # Hinweis: "echo"/"printf" sind bewusst KEINE eigenstaendigen Write-Indicators.
@@ -139,15 +150,25 @@ def _references_protected(command: str) -> bool:
     return any(re.search(p, command) for p in PROTECTED_FILE_PATTERNS)
 
 
-def _references_approval_marker(command: str) -> bool:
-    return any(re.search(p, command) for p in APPROVAL_MARKER_PATTERNS)
+def _references_filename_marker(command: str) -> bool:
+    """Tier 2: Marker-Dateinamen-Praefix erwaehnt (pfad-unabhaengig blockierend)."""
+    return any(re.search(p, command) for p in APPROVAL_MARKER_PATTERNS_FILENAME)
+
+
+def _references_fieldname_marker(command: str) -> bool:
+    """Tier 1: Feldname-Marker erwaehnt (blockt nur mit Protected-Pfad-Referenz)."""
+    return any(re.search(p, command) for p in APPROVAL_MARKER_PATTERNS_REQUIRE_PATH)
 
 
 def _raw_redirect(command: str) -> bool:
     """Roher Redirect-Scan ueber den gesamten String (konservativ)."""
     for m in re.finditer(r"(?<!\d)>{1,2}\s*(\S+)", command):
-        if m.group(1) != "/dev/null":
-            return True
+        target = m.group(1)
+        if target == "/dev/null":
+            continue
+        if re.match(r"^&\d+$", target):
+            continue  # FD-Duplizierung (2>&1, >&2, ...) ist kein Datei-Write
+        return True
     return False
 
 
@@ -173,8 +194,11 @@ def _has_real_redirect(command: str) -> bool:
         if not m:
             continue
         target = m.group(1) or (tokens[i + 1] if i + 1 < len(tokens) else "")
-        if target and target != "/dev/null":
-            return True
+        if not target or target == "/dev/null":
+            continue
+        if re.match(r"^&\d+$", target):
+            continue  # FD-Duplizierung (2>&1, >&2, ...) ist kein Datei-Write
+        return True
     return False
 
 
@@ -284,19 +308,27 @@ def main():
     #     Namen erwaehnen — das ist keine Datei-Manipulation. Der Angriffsvektor
     #     (touch/echo/sed/rm) startet nie mit "git ".
     is_git_command = command.lstrip().startswith("git ")
-    if not is_git_command and _references_approval_marker(command) and _has_write_indicator(command):
-        block(
-            "BLOCKED: Freigabe-/Erfolgs-Marker duerfen NICHT per Bash erzeugt, "
-            "geaendert oder geloescht werden.\n"
-            "\n"
-            "  Diese Datei behauptet eine Freigabe, die NUR der User erteilen kann.\n"
-            "  Du kannst dieses Gate nicht selbst oeffnen — das waere die Manipulation\n"
-            "  des Pruefpunkts statt der echten Erfuellung der Bedingung.\n"
-            "\n"
-            "  Der einzige legitime Weg:\n"
-            "  -> Lege dem User die Ergebnisse vor und WARTE auf sein 'go' / 'freigabe'\n"
-            "     / 'approved'. Der phase_listener-Hook setzt den Marker dann selbst."
-        )
+    _marker_block_msg = (
+        "BLOCKED: Freigabe-/Erfolgs-Marker duerfen NICHT per Bash erzeugt, "
+        "geaendert oder geloescht werden.\n"
+        "\n"
+        "  Diese Datei behauptet eine Freigabe, die NUR der User erteilen kann.\n"
+        "  Du kannst dieses Gate nicht selbst oeffnen — das waere die Manipulation\n"
+        "  des Pruefpunkts statt der echten Erfuellung der Bedingung.\n"
+        "\n"
+        "  Der einzige legitime Weg:\n"
+        "  -> Lege dem User die Ergebnisse vor und WARTE auf sein 'go' / 'freigabe'\n"
+        "     / 'approved'. Der phase_listener-Hook setzt den Marker dann selbst."
+    )
+    if not is_git_command and _has_write_indicator(command):
+        # Tier 2 (Dateinamen-Marker): pfad-unabhaengig blocken. Verhindert
+        # cd-Obfuskation (`cd .claude && touch user_approved_validation_x`).
+        if _references_filename_marker(command):
+            block(_marker_block_msg)
+        # Tier 1 (Feldname-Marker): nur blocken, wenn zusaetzlich ein echter
+        # Protected-Pfad referenziert wird (Issue #30 — Freitext-Toleranz).
+        elif _references_fieldname_marker(command) and _references_protected(command):
+            block(_marker_block_msg)
 
     # 3b. State-integrity: protected file + write indicator
     if _references_protected(command):
