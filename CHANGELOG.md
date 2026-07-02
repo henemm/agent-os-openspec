@@ -33,6 +33,14 @@ Standard-Install-/Update-Flows.
 
 ### Fixed
 
+**Dokumentierter Artefakt-Typ `adversary_dialog` wurde von `workflow.py` abgelehnt (Issue #41)**
+
+Der Skill `50-implement` (Step 8c) dokumentiert `workflow.py add-artifact adversary_dialog ...`,
+aber `VALID_ARTIFACT_TYPES` in `core/hooks/workflow.py` kannte diesen Typ nicht — der
+dokumentierte Befehl schlug mit `Invalid artifact type` fehl (live in zwei Workflows getroffen,
+Workaround war jeweils der generische Typ `file`). `adversary_dialog` ist jetzt ein gültiger
+Artefakt-Typ.
+
 **`workflow.py` löste den aktiven Workflow-Namen zweifach dupliziert und unvollständig auf — Live-FATAL trotz gültiger Datei (Issues #13, #35)**
 
 `core/hooks/workflow.py` löste den Namen des aktiven Workflows an zwei Stellen
