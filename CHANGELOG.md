@@ -9,6 +9,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+**`bash_gate.py` blockierte harmlose Bash-Kommandos fälschlich als Marker-Manipulation (Issues #30, #31)**
+
+Live reproduziert: `gh pr create --body "... adversary_verdict ..." 2>&1` wurde von
+`bash_gate.py` geblockt, obwohl weder eine State-Datei geschrieben noch ein echter
+Datei-Redirect vorlag. Zwei Ursachen: (1) `_raw_redirect()`/`_has_real_redirect()`
+werteten `2>&1`/`>&2` (Stderr-zu-Stdout-FD-Duplizierung) fälschlich als echten
+Datei-Redirect (Issue #31). (2) `_references_approval_marker()` war ein reiner
+`re.search()` über den gesamten Kommando-String — jede Freitext-Erwähnung eines
+Marker-Begriffs (z.B. `adversary_verdict` in einem PR-Body) plus irgendein
+Write-Indicator irgendwo im Kommando reichte für einen Block, unabhängig davon, ob
+tatsächlich eine State-Datei betroffen war (Issue #30).
+
+Bei der Analyse fiel zusätzlich auf, dass `PROTECTED_FILE_PATTERNS` die real
+existierenden Freigabe-Marker-Pfade (`.claude/pending_validation_<wf>.json`,
+`.claude/user_approved_validation_<wf>`) gar nicht abdeckte — eine bis dahin
+unentdeckte Lücke, die durch den naheliegenden #30-Fix (Kopplung an
+`_references_protected()`) erst zu einer echten Regression geworden wäre.
+
+Fix: FD-Duplizierung wird in `_raw_redirect()`/`_has_real_redirect()` explizit
+ausgeschlossen (`^&\d+$`). `PROTECTED_FILE_PATTERNS` wurde um die beiden realen
+Marker-Pfade erweitert. Die Freitext-Marker-Prüfung wurde zweistufig aufgeteilt:
+Feldnamen-Marker (`adversary_verdict`, `_verified`) blocken nur noch bei
+zusätzlicher Protected-Pfad-Referenz im selben Kommando; Dateinamen-Präfixe
+(`user_approved_`, `pending_validation_`) blocken weiterhin pfad-unabhängig, weil
+eine erste Adversary-Runde bewies, dass die einheitliche Kopplung an
+`_references_protected()` einen `cd .claude && touch user_approved_validation_*`-
+Bypass geöffnet hätte. 17 neue Regressionstests in
+`tests/test_bash_gate_false_positives.py`. Siehe
+`docs/specs/bash-gate-false-positive-fix.md`.
+
+---
+
 **`qa_gate.py` schrieb `adversary_verdict` in Consumer-Projekten nie in den Workflow-State (Issue #29)**
 
 `_set_verdict()` und die Workflow-Namen-Ermittlung in `main()` lösten den Pfad zum
