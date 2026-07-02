@@ -29,6 +29,9 @@ python3 setup.py /path/to/your/project
 # With iOS/SwiftUI module
 python3 setup.py /path/to/your/project --module ios-swiftui
 
+# Add short slash-command aliases (e.g. /50-implement instead of /agent-os-openspec:50-implement)
+python3 setup.py ~ --command-aliases   # recommended: global (~), covers all projects
+
 # Update an existing installation
 python3 setup.py /path/to/your/project --update --force
 ```

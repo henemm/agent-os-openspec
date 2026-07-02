@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+**Kurz-Alias-Generierung für Skills mit Marker-Schutz gegen Cleanup-Löschung (Issue #24)**
+
+Seit der Plugin-Migration (v3.2) erscheinen alle Skills nur noch mit Namespace-Präfix
+(`/agent-os-openspec:50-implement` statt `/50-implement`). Neu: `setup.py` bietet das
+opt-in-Flag `--command-aliases`, das pro Skill (jedes `skills/<name>/SKILL.md`) eine kurze
+Redirect-Datei `.claude/commands/<name>.md` erzeugt, die auf
+`/agent-os-openspec:<name> $ARGUMENTS` weiterleitet.
+
+Jede generierte Alias-Datei trägt in der ersten Zeile den Marker
+`<!-- openspec-alias: do-not-treat-as-legacy-duplicate -->`. Ursache von Issue #24 war,
+dass `migrate_to_plugin.py::_find_removable_command_files()` Alias-Dateien mangels
+Inhalts-Unterscheidung fälschlich als Legacy-Duplikate mitlöschte. Fix: Der Cleanup prüft
+jetzt zusätzlich den Datei-Inhalt und entfernt eine namensgleiche Datei nur noch, wenn der
+Marker `openspec-alias:` NICHT enthalten ist (Lesefehler werden fail-safe als "nicht
+löschen" behandelt). Echte Legacy-Duplikate ohne Marker werden weiterhin entfernt.
+
+Overwrite-Regel je Zieldatei: fehlt → anlegen, Marker vorhanden → aktualisieren, kein
+Marker (vermuteter Custom-Command) → überspringen mit Warnung. Nutzung:
+`python3 setup.py <path> --command-aliases`; für alle Projekte global empfohlen
+`python3 setup.py ~ --command-aliases`. Die Generierung ist rein additiv und kein Teil des
+Standard-Install-/Update-Flows.
+
 ## [3.4.15] - 2026-07-02
 
 ### Fixed
