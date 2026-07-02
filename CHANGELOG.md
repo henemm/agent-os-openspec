@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+**`qa_gate.py` schrieb `adversary_verdict` in Consumer-Projekten nie in den Workflow-State (Issue #29)**
+
+`_set_verdict()` und die Workflow-Namen-Ermittlung in `main()` lösten den Pfad zum
+Geschwister-Skript `workflow.py` über `find_plugin_root()` aus `hook_utils.py` auf.
+Diese Funktion setzt bei fehlendem `CLAUDE_PLUGIN_ROOT` eine `core/hooks/`-
+Verzeichnisverschachtelung relativ zu `hook_utils.py` voraus. `setup.py` kopiert
+Hook-Dateien in Consumer-Projekten aber **flach** nach `.claude/hooks/` — dort zeigte
+`_plugin_root / "core" / "hooks" / "workflow.py"` ins Leere. Der `subprocess.run(...)`-
+Aufruf schlug daraufhin still fehl (Return-Code wurde nicht geprüft), sodass
+`qa_gate.py` trotzdem "Commit is now allowed." meldete, während `adversary_verdict`
+im Workflow-State `null` blieb. Downstream blockierte `bash_gate.py` Commits dadurch
+dauerhaft. Im Framework-Repo selbst trat der Bug nicht auf, weil dort zufällig ein
+passendes `core/hooks/`-Nesting existiert.
+
+Fix: Pfadauflösung an allen 3 betroffenen Stellen auf `Path(__file__).parent /
+"workflow.py"` umgestellt — robust unabhängig von `CLAUDE_PLUGIN_ROOT`-Zustand oder
+Installationsart. Beide `subprocess.run(...)`-Aufrufe prüfen jetzt den Return-Code
+und brechen bei Fehler laut ab (`_set_verdict()` mit `sys.exit(1)`), statt Fehler
+still zu verschlucken. Toter Import (`find_project_root`, `find_plugin_root`) entfernt.
+Regressionstests in `tests/test_qa_gate.py` simulieren das flache Consumer-Layout via
+`tmp_path`. Siehe `docs/specs/qa-gate-path-resolution.md`.
+
+---
+
 **Adversary-Verdict-Gate wurde in `workflow.py complete` nicht geprüft (Issue gregor_zwanzig#960)**
 
 `_validate_transition()` verlangt für `phase8_complete`, dass `adversary_verdict`
