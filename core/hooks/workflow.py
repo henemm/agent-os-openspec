@@ -100,6 +100,7 @@ KEYWORD_SENSITIVE_PHASES = {"phase3_spec", "phase6_implement", "phase7_validate"
 
 VALID_ARTIFACT_TYPES = [
     "screenshot", "email", "api_response", "log", "file", "test_output", "video", "audio",
+    "adversary_dialog",
 ]
 
 
