@@ -105,6 +105,13 @@ agent-os-openspec/
 Jeder Workflow bekommt ein eigenes JSON-File in `.claude/workflows/`.
 Aktiver Workflow wird **ausschliesslich** per `OPENSPEC_ACTIVE_WORKFLOW` Env-Var verwaltet.
 
+**Priorität bei der Namens-Auflösung:** `workflow.py` liest den aktiven Workflow-Namen NICHT
+direkt aus der Env-Var, sondern ueber `hook_utils.resolve_active_workflow()`. Priorität:
+worktree-lokale `.claude/active_workflow`-Datei > `settings.local.json` > `OPENSPEC_ACTIVE_WORKFLOW`
+Env-Var. Eine manuell inline gesetzte Env-Var (`OPENSPEC_ACTIVE_WORKFLOW=x python3 ...`) wird
+also von einer vorhandenen `active_workflow`-Datei ueberstimmt, wenn diese auf einen anderen,
+existierenden Workflow zeigt.
+
 **SYMLINK VERBOTEN:** Der `.active`-Symlink-Fallback ist deaktiviert. `workflow.py` bricht mit FATAL-Error ab wenn `OPENSPEC_ACTIVE_WORKFLOW` nicht gesetzt ist. Nach `workflow.py start <name>` gibt das Tool die notwendige `export`-Zeile direkt aus.
 
 ```

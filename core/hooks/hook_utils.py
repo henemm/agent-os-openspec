@@ -173,6 +173,11 @@ def _workflow_file_exists(root: Path, name: str) -> bool:
 def resolve_active_workflow() -> "tuple[str, str]":
     """Return (name, source). source ∈ {'file', 'settings', 'env', 'none'}.
 
+    Single source of truth for active-workflow name resolution. Both
+    workflow._read_active() and workflow.read_active_workflow_fast() delegate here
+    instead of duplicating the priority chain — keep this function authoritative
+    and change resolution behaviour ONLY here.
+
     Worktree-aware priority — prevents cross-session contamination:
 
     In a worktree session:

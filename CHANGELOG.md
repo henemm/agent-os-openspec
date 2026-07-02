@@ -31,6 +31,35 @@ Marker (vermuteter Custom-Command) → überspringen mit Warnung. Nutzung:
 `python3 setup.py ~ --command-aliases`. Die Generierung ist rein additiv und kein Teil des
 Standard-Install-/Update-Flows.
 
+### Fixed
+
+**`workflow.py` löste den aktiven Workflow-Namen zweifach dupliziert und unvollständig auf — Live-FATAL trotz gültiger Datei (Issues #13, #35)**
+
+`core/hooks/workflow.py` löste den Namen des aktiven Workflows an zwei Stellen
+(`_read_active()`-FATAL-Pfad und `read_active_workflow_fast()`) über eigene, duplizierte
+Logik auf, statt die bereits korrekte, worktree-aware Priorität aus
+`hook_utils.resolve_active_workflow()` zu nutzen. Folge (Issue #13): Der FATAL-Pfad las
+zuerst die (am Session-Start eingefrorene) `OPENSPEC_ACTIVE_WORKFLOW`-Env-Var, fand keine
+passende `workflows/<name>.json` und brach mit
+`FATAL: OPENSPEC_ACTIVE_WORKFLOW=... ist gesetzt aber keine passende Workflow-Datei existiert`
+ab — obwohl die worktree-lokale `.claude/active_workflow`-Datei und `settings.local.json`
+korrekt auf einen anderen, gültigen Workflow zeigten.
+
+Fix: Beide Funktionen delegieren die Namensauflösung jetzt an
+`hook_utils.resolve_active_workflow()` als einzige Quelle der Wahrheit. Damit gilt die
+worktree-aware Priorität konsistent: **die worktree-lokale `active_workflow`-Datei schlägt
+eine veraltete Env-Var** (Datei > `settings.local.json` > Env-Var). Das Außenverhalten
+bleibt sonst unverändert — `_read_active()` beendet weiterhin mit `sys.exit(1)` bei gar
+keinem auflösbaren Workflow, die FATAL-Meldung nennt jetzt generisch alle drei möglichen
+Quellen (file/settings/env); `read_active_workflow_fast()` liefert weiterhin `(name, data)`
+oder `None` ohne `sys.exit()` (Konsumenten `tdd_enforcement.py`,
+`post_implementation_gate.py` unverändert).
+
+Zusätzlich (Issue #35): Die zugehörigen In-Process-Tests wurden hermetisch gemacht, indem
+sie neben `find_project_root()` auch `_find_worktree_root()` mocken bzw. Subprozess-Tests
+`cwd=tmp_path` setzen — sie lesen dadurch nicht mehr den echten Worktree-Zustand der
+laufenden Test-Session.
+
 ## [3.4.15] - 2026-07-02
 
 ### Fixed

@@ -100,13 +100,18 @@ class TestSpecAcFormat:
 
 # --- Edit-Gate Live (Subprocess) ---
 
-def _run_edit_gate(env: dict, file_path: str) -> subprocess.CompletedProcess:
+def _run_edit_gate(env: dict, file_path: str, cwd: "str | None" = None) -> subprocess.CompletedProcess:
     payload = json.dumps({"tool_input": {"file_path": file_path}})
     full_env = dict(os.environ)
     full_env.update(env)
+    # cwd auf das jeweilige tmp_path setzen, damit _find_worktree_root() im
+    # Subprozess innerhalb des Test-Verzeichnisses startet statt im echten
+    # Worktree-CWD der Testsession (verhindert Cross-Session-Kontamination).
+    if cwd is None:
+        cwd = env.get("CLAUDE_PROJECT_DIR")
     return subprocess.run(
         [sys.executable, str(HOOKS_DIR / "edit_gate.py")],
-        input=payload, capture_output=True, text=True, env=full_env,
+        input=payload, capture_output=True, text=True, env=full_env, cwd=cwd,
     )
 
 
@@ -149,7 +154,7 @@ class TestEditGateLive:
             "CLAUDE_PROJECT_DIR": str(tmp_path),
             "OPENSPEC_ACTIVE_WORKFLOW": "test-wf",
         }
-        result = _run_edit_gate(env, str(code_file))
+        result = _run_edit_gate(env, str(code_file), cwd=str(tmp_path))
         assert result.returncode == 2
         assert "Acceptance Criteria" in result.stderr
 
@@ -330,7 +335,7 @@ class TestStatusLocOverride:
         env["OPENSPEC_ACTIVE_WORKFLOW"] = "test-wf"
         result = subprocess.run(
             [sys.executable, str(HOOKS_DIR / "workflow.py"), "status"],
-            capture_output=True, text=True, env=env,
+            capture_output=True, text=True, env=env, cwd=str(tmp_path),
         )
         assert result.returncode == 0
         assert "/500" in result.stdout

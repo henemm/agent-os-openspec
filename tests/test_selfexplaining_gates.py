@@ -27,6 +27,7 @@ def test_ac4_resolve_from_env(monkeypatch, tmp_path):
     """Env-Var gesetzt, kein file/settings → (name, 'env') als letzter Fallback."""
     monkeypatch.setenv("OPENSPEC_ACTIVE_WORKFLOW", "feature-x")
     monkeypatch.setattr(hook_utils, "find_project_root", lambda: tmp_path)
+    monkeypatch.setattr(hook_utils, "_find_worktree_root", lambda: None)
     name, source = hook_utils.resolve_active_workflow()
     assert name == "feature-x"
     assert source == "env"
@@ -72,6 +73,7 @@ def test_ac4_resolve_none(monkeypatch, tmp_path):
     """Weder Env-Var noch settings → ('', 'none')."""
     monkeypatch.delenv("OPENSPEC_ACTIVE_WORKFLOW", raising=False)
     monkeypatch.setattr(hook_utils, "find_project_root", lambda: tmp_path)
+    monkeypatch.setattr(hook_utils, "_find_worktree_root", lambda: None)
     name, source = hook_utils.resolve_active_workflow()
     assert name == ""
     assert source == "none"
@@ -84,6 +86,7 @@ def test_ac4_resolve_broken_settings(monkeypatch, tmp_path):
     claude_dir.mkdir(parents=True)
     (claude_dir / "settings.local.json").write_text("{ this is not json")
     monkeypatch.setattr(hook_utils, "find_project_root", lambda: tmp_path)
+    monkeypatch.setattr(hook_utils, "_find_worktree_root", lambda: None)
     name, source = hook_utils.resolve_active_workflow()
     assert name == ""
     assert source == "none"
@@ -96,6 +99,7 @@ def test_ac4_resolve_null_env_settings(monkeypatch, tmp_path):
     claude_dir.mkdir(parents=True)
     (claude_dir / "settings.local.json").write_text(json.dumps({"env": None}))
     monkeypatch.setattr(hook_utils, "find_project_root", lambda: tmp_path)
+    monkeypatch.setattr(hook_utils, "_find_worktree_root", lambda: None)
     name, source = hook_utils.resolve_active_workflow()
     assert name == ""
     assert source == "none"
@@ -105,6 +109,7 @@ def test_ac7_get_active_workflow_name_returns_plain_string(monkeypatch, tmp_path
     """get_active_workflow_name() liefert weiterhin reinen Name-String (env als Fallback)."""
     monkeypatch.setenv("OPENSPEC_ACTIVE_WORKFLOW", "plain-name")
     monkeypatch.setattr(hook_utils, "find_project_root", lambda: tmp_path)
+    monkeypatch.setattr(hook_utils, "_find_worktree_root", lambda: None)
     result = hook_utils.get_active_workflow_name()
     assert result == "plain-name"
     assert isinstance(result, str)
@@ -114,6 +119,7 @@ def test_ac7_get_active_workflow_name_empty(monkeypatch, tmp_path):
     """Kein Workflow → leerer String (unverändertes Verhalten)."""
     monkeypatch.delenv("OPENSPEC_ACTIVE_WORKFLOW", raising=False)
     monkeypatch.setattr(hook_utils, "find_project_root", lambda: tmp_path)
+    monkeypatch.setattr(hook_utils, "_find_worktree_root", lambda: None)
     result = hook_utils.get_active_workflow_name()
     assert result == ""
     assert isinstance(result, str)
@@ -134,6 +140,7 @@ def test_ac1_diagnostics_no_active_workflow(monkeypatch, tmp_path):
     """Kein aktiver Workflow → '[wf=— (none) | token=keins]'."""
     monkeypatch.delenv("OPENSPEC_ACTIVE_WORKFLOW", raising=False)
     monkeypatch.setattr(hook_utils, "find_project_root", lambda: tmp_path)
+    monkeypatch.setattr(hook_utils, "_find_worktree_root", lambda: None)
     import override_token
     monkeypatch.setattr(override_token, "has_valid_token", lambda name=None: False)
     suffix = hook_utils.gate_diagnostics()
@@ -146,6 +153,7 @@ def test_ac2_diagnostics_with_phase(monkeypatch, tmp_path):
     """Aktiver Workflow in phase3_spec → enthält name, source, token, phase."""
     monkeypatch.setenv("OPENSPEC_ACTIVE_WORKFLOW", "feature-x")
     monkeypatch.setattr(hook_utils, "find_project_root", lambda: tmp_path)
+    monkeypatch.setattr(hook_utils, "_find_worktree_root", lambda: None)
     suffix = hook_utils.gate_diagnostics({"current_phase": "phase3_spec"})
     assert "wf=feature-x (env)" in suffix
     assert "phase=phase3_spec" in suffix
@@ -239,15 +247,20 @@ def test_ac6_phase_listener_docstring_no_symlink_claim():
 # End-to-End: echter edit_gate-Block enthält den Diagnose-Suffix
 # --------------------------------------------------------------------------
 
-def _run_edit_gate(env, file_path):
+def _run_edit_gate(env, file_path, cwd=None):
     import subprocess
     payload = json.dumps({"tool_input": {"file_path": file_path}})
     full_env = dict(os.environ)
     full_env.update(env)
     full_env["CLAUDE_PROJECT_DIR"] = str(env.get("CLAUDE_PROJECT_DIR", REPO_ROOT))
+    # cwd auf das jeweilige tmp_path setzen, damit _find_worktree_root() im
+    # Subprozess innerhalb des Test-Verzeichnisses startet statt im echten
+    # Worktree-CWD der Testsession (verhindert Cross-Session-Kontamination).
+    if cwd is None:
+        cwd = full_env["CLAUDE_PROJECT_DIR"]
     proc = subprocess.run(
         [sys.executable, str(HOOKS_DIR / "edit_gate.py")],
-        input=payload, capture_output=True, text=True, env=full_env,
+        input=payload, capture_output=True, text=True, env=full_env, cwd=cwd,
     )
     return proc
 
