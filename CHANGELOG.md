@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.15] - 2026-07-02
+
 ### Fixed
 
 **`bash_gate.py` blockierte harmlose Bash-Kommandos fälschlich als Marker-Manipulation (Issues #30, #31)**
@@ -63,7 +65,9 @@ still zu verschlucken. Toter Import (`find_project_root`, `find_plugin_root`) en
 Regressionstests in `tests/test_qa_gate.py` simulieren das flache Consumer-Layout via
 `tmp_path`. Siehe `docs/specs/qa-gate-path-resolution.md`.
 
----
+## [3.4.14] - 2026-07-01
+
+### Fixed
 
 **Adversary-Verdict-Gate wurde in `workflow.py complete` nicht geprüft (Issue gregor_zwanzig#960)**
 
