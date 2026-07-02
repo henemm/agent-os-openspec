@@ -71,13 +71,18 @@ class TestCmdStartCallsValidate(object):
 
 # --- AMBIGUOUS-Block in bash_gate ---
 
-def _run_bash_gate(env: dict, command: str) -> subprocess.CompletedProcess:
+def _run_bash_gate(env: dict, command: str, cwd: "str | None" = None) -> subprocess.CompletedProcess:
     payload = json.dumps({"tool_input": {"command": command}})
     full_env = dict(os.environ)
     full_env.update(env)
+    # cwd auf das jeweilige tmp_path setzen, damit _find_worktree_root() im
+    # Subprozess innerhalb des Test-Verzeichnisses startet statt im echten
+    # Worktree-CWD der Testsession (verhindert Cross-Session-Kontamination).
+    if cwd is None:
+        cwd = env.get("CLAUDE_PROJECT_DIR")
     return subprocess.run(
         [sys.executable, str(HOOKS_DIR / "bash_gate.py")],
-        input=payload, capture_output=True, text=True, env=full_env,
+        input=payload, capture_output=True, text=True, env=full_env, cwd=cwd,
     )
 
 
@@ -103,7 +108,7 @@ class TestAmbiguousBlock:
             "CLAUDE_PROJECT_DIR": str(tmp_path),
             "OPENSPEC_ACTIVE_WORKFLOW": "test-wf",
         }
-        result = _run_bash_gate(env, "git commit -m test")
+        result = _run_bash_gate(env, "git commit -m test", cwd=str(tmp_path))
         assert result.returncode == 2
         assert "AMBIGUOUS" in result.stderr
 

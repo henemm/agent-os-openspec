@@ -169,31 +169,31 @@ def _active_name_from_env() -> str:
 def _read_active() -> tuple[dict, str]:
     """Read the active workflow. Returns (data, name).
 
-    Lookup order:
-    1. OPENSPEC_ACTIVE_WORKFLOW env var (set by Claude Code from settings.local.json at startup)
-    2. settings.local.json direct read (when workflow.py start/switch was called in the
-       current session — Claude Code only reads settings files at startup, not live)
+    Workflow-name resolution is delegated to hook_utils.resolve_active_workflow()
+    — the single source of truth with worktree-aware priority (worktree-local
+    active_workflow file > worktree settings.local.json > OPENSPEC_ACTIVE_WORKFLOW
+    env var, each validated where applicable). This fixes the live bug (Issue #13)
+    where the old FATAL path read the env var first and crashed when a stale env
+    value pointed at a non-existent workflow, even though the worktree-local file
+    and settings.local.json correctly pointed at a valid workflow.
+
+    The resolved name is validated against the concrete workflows/<name>.json.
     The .active symlink fallback is intentionally removed (causes cross-session drift).
     """
-    env_name = _active_name_from_env()
+    from hook_utils import resolve_active_workflow
 
-    # Fallback: read settings.local.json directly if env var absent
-    if not env_name:
-        try:
-            settings_path = find_project_root() / ".claude" / "settings.local.json"
-            if settings_path.exists():
-                settings = json.loads(settings_path.read_text())
-                env_name = settings.get("env", {}).get("OPENSPEC_ACTIVE_WORKFLOW", "").strip()
-        except (OSError, json.JSONDecodeError, KeyError):
-            pass
+    name, source = resolve_active_workflow()
 
-    if env_name:
-        wf_file = _workflow_file(env_name)
+    if name:
+        wf_file = _workflow_file(name)
         if wf_file.exists():
             data = _read_workflow(wf_file)
             return data, data.get("name", wf_file.stem)
         print(
-            f"FATAL: OPENSPEC_ACTIVE_WORKFLOW='{env_name}' is set but no matching workflow file exists.\n"
+            f"FATAL: Resolved active workflow '{name}' (source={source}) but no "
+            f"matching workflow file exists.\n"
+            f"  The name may come from the worktree active_workflow file, "
+            f"settings.local.json, or the OPENSPEC_ACTIVE_WORKFLOW env var.\n"
             f"  Run: python3 .claude/hooks/workflow.py list",
             file=sys.stderr,
         )
@@ -223,59 +223,13 @@ def read_active_workflow_fast() -> "tuple[str, dict] | None":
     Unlike _read_active(), this never calls sys.exit(). Intended for hooks that
     should silently skip when no workflow is running.
 
-    Worktree-aware priority (mirrors hook_utils.resolve_active_workflow()):
-    - In worktree: active_workflow file > worktree settings.local.json (validated) > env (validated)
-    - In main repo: shared active_workflow file > shared settings.local.json > env
+    Thin wrapper around hook_utils.resolve_active_workflow() (the single source of
+    truth for worktree-aware name resolution) plus the workflows/<name>.json
+    existence check. Return contract is unchanged: (name, data) or None.
     """
-    root = find_project_root()
-    worktree_root = _worktree_root_if_any()
-    name = ""
+    from hook_utils import resolve_active_workflow
 
-    if worktree_root is not None:
-        # 1. Worktree-local active_workflow file
-        try:
-            active_file = worktree_root / ".claude" / "active_workflow"
-            if active_file.exists():
-                name = active_file.read_text().strip()
-        except OSError:
-            pass
-        # 2. Worktree-local settings.local.json (updated live by workflow.py start/switch)
-        if not name:
-            try:
-                settings_path = worktree_root / ".claude" / "settings.local.json"
-                if settings_path.exists():
-                    settings = json.loads(settings_path.read_text())
-                    candidate = (settings.get("env") or {}).get("OPENSPEC_ACTIVE_WORKFLOW", "").strip()
-                    if candidate and _workflow_file(candidate).exists():
-                        name = candidate
-            except (OSError, json.JSONDecodeError, KeyError):
-                pass
-        # 3. Env var (frozen at session start) — validate before trusting
-        if not name:
-            candidate = _active_name_from_env()
-            if candidate and _workflow_file(candidate).exists():
-                name = candidate
-    else:
-        # Main repo session: shared active_workflow file
-        try:
-            active_file = root / ".claude" / "active_workflow"
-            if active_file.exists():
-                name = active_file.read_text().strip()
-        except OSError:
-            pass
-
-        if not name:
-            try:
-                settings_path = root / ".claude" / "settings.local.json"
-                if settings_path.exists():
-                    settings = json.loads(settings_path.read_text())
-                    name = (settings.get("env") or {}).get("OPENSPEC_ACTIVE_WORKFLOW", "").strip()
-            except (OSError, json.JSONDecodeError, KeyError):
-                pass
-
-        if not name:
-            name = _active_name_from_env()
-
+    name, _source = resolve_active_workflow()
     if name:
         wf_file = _workflow_file(name)
         if wf_file.exists():
@@ -608,8 +562,12 @@ def cmd_status(args: list[str]) -> None:
     loc_delta = data.get("loc_delta_current", "+0")
     log_dir = find_project_root() / ".claude" / "workflows" / "_log"
     log_written = log_dir.exists() and any(log_dir.glob(f"*_{name}.yaml"))
-    env_name = _active_name_from_env()
-    source_label = f"env:OPENSPEC_ACTIVE_WORKFLOW={env_name}" if env_name == name else ".active symlink"
+    from hook_utils import resolve_active_workflow
+    _resolved_name, source = resolve_active_workflow()
+    if source == "env":
+        source_label = f"env:OPENSPEC_ACTIVE_WORKFLOW={name}"
+    else:
+        source_label = source  # 'file', 'settings', ...
     print(f"Workflow: {name}  [{source_label}]")
     print(f"Phase: {phase_name}")
     print(f"Spec: {spec}")
@@ -846,12 +804,8 @@ def cmd_list(args: list[str]) -> None:
     if not wf_dir.exists():
         print("No workflows.")
         return
-    active_name = _active_name_from_env()
-    if not active_name:
-        link = _active_link()
-        if link.is_symlink():
-            target = os.readlink(str(link))
-            active_name = Path(target).stem
+    from hook_utils import resolve_active_workflow
+    active_name, _source = resolve_active_workflow()
     for f in sorted(wf_dir.glob("*.json")):
         data = _read_workflow(f)
         name = data.get("name", f.stem)
