@@ -92,6 +92,26 @@ bewusst unverändert. Version 3.6.2 → 3.7.0 (MINOR, neues Verhalten). Folgestu
 
 ### Fixed
 
+**Fast-Track fix-alias-disable-model-invocation: Kurz-Alias-Commands für TDD/Implement/Validate/Deploy-Phasen unbenutzbar (Issue #55, 3.8.4)**
+
+`generate_command_aliases()` erzeugte für JEDEN Skill denselben dünnen Text-Redirect
+(`/agent-os-openspec:<name> $ARGUMENTS`). Das funktioniert nur, wenn Claude den Redirect
+als Aufforderung liest und den Ziel-Skill selbst per Skill-Tool aufruft — genau das ist
+aber für die 7 Skills mit `disable-model-invocation: true` (40-tdd-red, 50-implement,
+60-validate, 70-deploy, 80-workflow, 81-add-artifact, 99-reset — bewusst auf reinen
+User-Trigger beschränkt) verboten. Live reproduziert in gregor_zwanzig: `/50-implement`
+scheiterte mit "cannot be used with Skill tool due to disable-model-invocation", der
+Kurz-Alias war für exakt die sicherheitsrelevanten Phasen komplett unbenutzbar.
+
+Fix: `generate_command_aliases()` unterscheidet jetzt zwei Strategien je Ziel-Skill.
+`disable-model-invocation: false` bleibt beim dünnen Text-Redirect (Skill-Tool-Weg ist
+erlaubt). `disable-model-invocation: true` bettet stattdessen den vollen SKILL.md-Inhalt
+in die Alias-Datei ein — der User-getippte `/name`-Befehl wird dann direkt vom Harness
+ausgeführt, ganz ohne Skill-Tool-Umweg. Das Gate bleibt für Modell-Selbstaufruf weiterhin
+wirksam, blockiert aber nicht mehr den legitimen Kurz-Alias-Weg des Users. Erweiterte
+Tests in `tests/test_setup_command_aliases.py` decken beide Strategien ab (Erzeugung,
+Update, Custom-Command-Schutz).
+
 **Fast-Track fix-53-secrets-guard-fp: Secrets-Guard False-Positives bei Freitext-Befehlen (Issue #53)**
 
 `secrets_guard.py` UND der Secrets-Check in `bash_gate.py` scannten den ROHEN

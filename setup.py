@@ -779,9 +779,22 @@ def generate_command_aliases(project_path: Path) -> None:
     """Generate short command aliases in .claude/commands/<name>.md.
 
     For every skill under FRAMEWORK_ROOT/skills/ that has a SKILL.md, write a
-    tiny redirect command file so that `/name` maps to
-    `/agent-os-openspec:name`. Each generated file carries a marker on its first
-    line so migrate_to_plugin.py does not mistake it for a legacy duplicate.
+    command file so that `/name` behaves like `/agent-os-openspec:name`. Each
+    generated file carries a marker on its first line so migrate_to_plugin.py
+    does not mistake it for a legacy duplicate.
+
+    Two alias strategies, depending on the target skill's
+    `disable-model-invocation` frontmatter:
+      - false (model may self-invoke) → thin text redirect
+        (`/agent-os-openspec:name $ARGUMENTS`). Claude resolves this via the
+        Skill tool, which is allowed for these skills.
+      - true (only direct user `/name` typing allowed, e.g. TDD/Implement/
+        Validate/Deploy phases) → a text redirect would still make Claude
+        resolve it via the Skill tool, which the harness then blocks with
+        "cannot be used with Skill tool due to disable-model-invocation" —
+        breaking the alias entirely. So instead the full SKILL.md body is
+        embedded verbatim: the harness then executes the alias command
+        directly as a real user-typed command, no Skill-tool call involved.
 
     Overwrite rules per target file:
       - missing            → create
@@ -804,14 +817,19 @@ def generate_command_aliases(project_path: Path) -> None:
 
     for name in names:
         target = commands_dir / f"{name}.md"
-        content = (
-            f"{ALIAS_MARKER}\n"
-            "---\n"
-            f"description: Kurz-Alias für /agent-os-openspec:{name}\n"
-            "---\n"
-            "\n"
-            f"/agent-os-openspec:{name} $ARGUMENTS\n"
-        )
+        skill_text = (skills_dir / name / "SKILL.md").read_text()
+
+        if "disable-model-invocation: true" in skill_text:
+            content = f"{ALIAS_MARKER}\n{skill_text}"
+        else:
+            content = (
+                f"{ALIAS_MARKER}\n"
+                "---\n"
+                f"description: Kurz-Alias für /agent-os-openspec:{name}\n"
+                "---\n"
+                "\n"
+                f"/agent-os-openspec:{name} $ARGUMENTS\n"
+            )
 
         if not target.exists():
             target.write_text(content)

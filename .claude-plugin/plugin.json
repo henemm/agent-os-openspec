@@ -1,6 +1,6 @@
 {
   "name": "agent-os-openspec",
-  "version": "3.8.3",
+  "version": "3.8.4",
   "description": "8-Phase Workflow Engine with TDD Enforcement for Claude Code",
   "author": {
     "name": "henemm",
