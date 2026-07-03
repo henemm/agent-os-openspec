@@ -382,12 +382,12 @@ def main():
             try:
                 fetch = subprocess.run(
                     ["git", "fetch", "origin", "main", "--quiet"],
-                    cwd=_root, capture_output=True, timeout=10
+                    cwd=os.getcwd(), capture_output=True, timeout=10
                 )
                 if fetch.returncode == 0:
                     behind_result = subprocess.run(
                         ["git", "rev-list", "--count", "HEAD..origin/main"],
-                        cwd=_root, capture_output=True, text=True, timeout=5
+                        cwd=os.getcwd(), capture_output=True, text=True, timeout=5
                     )
                     behind = int(behind_result.stdout.strip() or "0")
                     if behind > 0:

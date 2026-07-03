@@ -310,9 +310,9 @@ def main():
         block("BLOCKED: Stop-lock active.")
 
     # 6. Find workflow for file
-    workflow = _find_workflow_for_file(file_path)
+    workflow = _read_active_workflow()
     if not workflow:
-        workflow = _read_active_workflow()
+        workflow = _find_workflow_for_file(file_path)
 
     # 7. No workflow
     if not workflow:

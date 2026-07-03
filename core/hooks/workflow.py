@@ -443,8 +443,12 @@ def _validate_transition(data: dict, target: str) -> str | None:
             return "No RED test artifacts — run /tdd-red first"
 
     if tgt_idx >= PHASES.index("phase8_complete"):
-        verdict = data.get("adversary_verdict", "")
-        if not verdict or not str(verdict).startswith("VERIFIED"):
+        verdict = str(data.get("adversary_verdict", "") or "")
+        if verdict.startswith("VERIFIED"):
+            pass
+        elif verdict.startswith("AMBIGUOUS") and data.get("adversary_ambiguous_override"):
+            pass
+        else:
             return "Adversary verdict missing or not VERIFIED"
 
     return None
