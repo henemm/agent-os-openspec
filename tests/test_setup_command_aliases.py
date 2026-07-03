@@ -26,8 +26,20 @@ def _skill_names():
     )
 
 
+def _is_model_invocable(name: str) -> bool:
+    skill_text = (setup.FRAMEWORK_ROOT / "skills" / name / "SKILL.md").read_text()
+    return "disable-model-invocation: true" not in skill_text
+
+
 def test_generates_alias_file_per_skill_with_marker_and_redirect(tmp_path):
-    """AC-1: Für jeden Skill entsteht eine Alias-Datei mit Marker + Redirect."""
+    """AC-1: Für jeden Skill entsteht eine Alias-Datei mit Marker.
+
+    Skills mit disable-model-invocation:false bekommen einen Text-Redirect
+    (das Modell darf ihn per Skill-Tool aufloesen). Skills mit
+    disable-model-invocation:true bekommen den vollen SKILL.md-Inhalt
+    eingebettet, weil ein Text-Redirect am Skill-Tool-Gate scheitern wuerde
+    (siehe generate_command_aliases-Docstring).
+    """
     setup.generate_command_aliases(tmp_path)
 
     commands_dir = tmp_path / ".claude" / "commands"
@@ -42,14 +54,35 @@ def test_generates_alias_file_per_skill_with_marker_and_redirect(tmp_path):
         assert content.splitlines()[0] == MARKER, (
             f"Erste Zeile von {name}.md ist nicht der Marker"
         )
-        # Redirect-Zeile vorhanden
-        assert f"/agent-os-openspec:{name} $ARGUMENTS" in content
-        # YAML-Frontmatter description
-        assert f"description: Kurz-Alias für /agent-os-openspec:{name}" in content
+        if _is_model_invocable(name):
+            # Redirect-Zeile vorhanden
+            assert f"/agent-os-openspec:{name} $ARGUMENTS" in content
+            # YAML-Frontmatter description
+            assert f"description: Kurz-Alias für /agent-os-openspec:{name}" in content
+        else:
+            # Voller SKILL.md-Inhalt eingebettet, kein Redirect (kein Skill-Tool-Aufruf noetig)
+            skill_text = (setup.FRAMEWORK_ROOT / "skills" / name / "SKILL.md").read_text()
+            assert content == f"{MARKER}\n{skill_text}"
+            assert f"/agent-os-openspec:{name} $ARGUMENTS" not in content
 
 
 def test_updates_existing_marker_file(tmp_path):
     """AC-3: Vorhandene Marker-Datei mit veraltetem Inhalt wird überschrieben."""
+    commands_dir = tmp_path / ".claude" / "commands"
+    commands_dir.mkdir(parents=True)
+    stale = commands_dir / "10-context.md"
+    stale.write_text(MARKER + "\nveralteter inhalt der ueberschrieben werden muss\n")
+
+    setup.generate_command_aliases(tmp_path)
+
+    content = stale.read_text()
+    assert content.splitlines()[0] == MARKER
+    assert "/agent-os-openspec:10-context $ARGUMENTS" in content
+    assert "veralteter inhalt" not in content
+
+
+def test_updates_existing_marker_file_for_disabled_model_invocation_skill(tmp_path):
+    """AC-3b: Gilt auch fuer Skills mit disable-model-invocation:true (voller Embed)."""
     commands_dir = tmp_path / ".claude" / "commands"
     commands_dir.mkdir(parents=True)
     stale = commands_dir / "50-implement.md"
@@ -59,8 +92,9 @@ def test_updates_existing_marker_file(tmp_path):
 
     content = stale.read_text()
     assert content.splitlines()[0] == MARKER
-    assert "/agent-os-openspec:50-implement $ARGUMENTS" in content
     assert "veralteter inhalt" not in content
+    skill_text = (setup.FRAMEWORK_ROOT / "skills" / "50-implement" / "SKILL.md").read_text()
+    assert content == f"{MARKER}\n{skill_text}"
 
 
 def test_skips_custom_command_without_marker(tmp_path):
