@@ -33,6 +33,38 @@ Standard-Install-/Update-Flows.
 
 ### Changed
 
+**`migrate_to_plugin.py`: vollständige Core-Hook-Liste + Shim-Ersetzung statt Löschung (Issue #33 Stufe 2)**
+
+`migrate_to_plugin.py --apply` hatte zwei Lücken, die die geplante Stufe 3 (Entfernung der
+Legacy-Kopien in Consumer-Projekten) unsicher machten:
+
+1. **6 Framework-Hooks fehlten in `CORE_HOOKS`** und blieben nach `--apply` als tote Kopien
+   liegen: `claude_md_protection.py`, `edit_verify.py`, `post_implementation_gate.py`,
+   `secrets_guard.py`, `tdd_enforcement.py`, `worktree_write_guard.py`. Sie sind jetzt in
+   `CORE_HOOKS` und werden mitentfernt (16 Core-Hooks statt zuvor 12 inkl. der beiden
+   verschobenen Utilities).
+2. **`hook_utils.py` und `config_loader.py` wären blind gelöscht worden**, obwohl
+   projekteigene Hooks sie importieren (z. B. in gregor_zwanzig `renderer_mail_gate.py` —
+   ein registrierter PreToolUse-Bash-Hook — sowie `track_token_usage.py`, `plan_validator.py`
+   u. a.). Löschen hätte dort jede Bash-Ausführung gebrochen. Beide sind aus `CORE_HOOKS`
+   herausgenommen und bilden die neue Kategorie `SHIM_HOOKS`.
+
+Neu: `SHIM_HOOKS` wird bei `--apply` nicht gelöscht, sondern durch einen dünnen Shim ersetzt.
+Der Shim (Marker `# openspec-shim: resolves to installed plugin version` in Zeile 1) löst den
+Plugin-Pfad über `~/.claude/plugins/installed_plugins.json` auf (Key `agent-os-openspec@*`,
+user-scope bevorzugt, Existenz-Check — dieselbe Logik wie das Skill-Snippet aus Stufe 1),
+lädt das echte Modul via `importlib.util.spec_from_file_location` und re-exportiert alle
+öffentlichen Attribute per `globals().update(...)` — funktioniert für `import hook_utils`
+und `from hook_utils import X`. Ist das Plugin nicht auflösbar, wirft der Shim einen
+`ImportError` mit klarer Meldung statt stillem Fehlverhalten. Die Ersetzung ist idempotent:
+ein zweiter `--apply`-Lauf erkennt bestehende Shims am Marker und lässt sie unverändert. Die
+Dry-Run-Ausgabe listet Shim-Ersetzungen als eigene Kategorie. Read-only-Verhalten ohne
+`--apply`, die Alias-Marker-Command-Bereinigung (#24) und der Schutz projektspezifischer
+Hooks bleiben unverändert. Neuer Regressionstest `tests/test_migrate_shims.py` (Fixture,
+`--apply`-Verhalten, projekteigener Hook läuft nach Migration via Shim im Subprozess mit
+Fake-HOME, Idempotenz, ImportError-Fall). Version 3.7.0 → 3.8.0 (MINOR, neue Fähigkeit).
+Folgestufe #33 Stufe 3 (Legacy-Entfernung in gregor_zwanzig) ist ein separater Workflow.
+
 **Dreistufige Hook-Pfad-Auflösung in allen Plugin-Skills (Issue #33 Stufe 1)**
 
 Das Setup-Snippet in allen hook-nutzenden `skills/*/SKILL.md` (11 Skills) wurde um eine
