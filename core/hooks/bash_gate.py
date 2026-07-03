@@ -43,6 +43,11 @@ CONTENT_OUTPUT_COMMANDS = [
     r"\bsed\b.*-n.*p", r"\bawk\b.*print",
 ]
 
+# Flags, deren Argument Freitext ist (Commit-Message, PR-/Issue-Body, Feld-
+# werte) — nie ein Datei-Pfad. Deren Wert wird bei der Secrets-Datei-Token-
+# Analyse uebersprungen (Issue #53). Identische Liste wie in secrets_guard.py.
+SECRETS_FREETEXT_FLAGS = {"-m", "--message", "--body", "--title", "-F"}
+
 PROTECTED_FILE_PATTERNS = [
     r"\.claude/workflows/[^\s]*\.json",
     r"workflow_state\.json",
@@ -213,6 +218,40 @@ def _is_sensitive(path: str, patterns: list) -> bool:
     return any(re.search(p, path, re.IGNORECASE) for p in patterns)
 
 
+def _references_sensitive_file(command: str, patterns: list) -> bool:
+    """True, wenn ein sensibles Muster auf ein echtes DATEI-Token des Befehls passt.
+
+    Freitext-Argumente von -m/--body/--title/-F (Commit-Messages, PR-/Issue-
+    Bodies, grep-Muster hinter diesen Flags) sind keine Datei-Token und werden
+    ausgenommen — genau diese Freitexte erzeugten die False-Positives aus #53.
+
+    Sicherheit: Bei verschachtelter Shell (`sh -c "…"`, `eval`) oder shlex-
+    Parse-Fehler (kaputte Quotes) faellt die Pruefung auf den bisherigen Roh-
+    Scan zurueck — sonst koennte ein Zugriff in quoted Code das Gate umgehen.
+    Identisches Muster wie `_has_real_redirect()` (3.4.15) und wie die gleich-
+    namige Funktion in secrets_guard.py (kein Guard-Drift).
+    """
+    if re.search(r"\b(?:ba|z|da|k)?sh\s+-c\b|\beval\b", command):
+        return _is_sensitive(command, patterns)
+    try:
+        tokens = shlex.split(command, posix=True)
+    except ValueError:
+        return _is_sensitive(command, patterns)
+    skip_next = False
+    for tok in tokens:
+        if skip_next:
+            skip_next = False
+            continue
+        if tok in SECRETS_FREETEXT_FLAGS:
+            skip_next = True
+            continue
+        if tok.startswith("-"):
+            continue  # Flag (auch --body=… Attached-Form) — kein Datei-Token
+        if _is_sensitive(tok, patterns):
+            return True
+    return False
+
+
 def _outputs_content(command: str) -> bool:
     return any(re.search(p, command) for p in CONTENT_OUTPUT_COMMANDS)
 
@@ -341,8 +380,8 @@ def main():
     sensitive_patterns = config.get("secrets_guard", {}).get("sensitive_patterns", SENSITIVE_PATTERNS)
     always_blocked = config.get("secrets_guard", {}).get("always_blocked", ALWAYS_BLOCKED_SECRETS)
 
-    if _is_sensitive(command, sensitive_patterns) and _outputs_content(command):
-        if _is_sensitive(command, always_blocked):
+    if _references_sensitive_file(command, sensitive_patterns) and _outputs_content(command):
+        if _references_sensitive_file(command, always_blocked):
             block("BLOCKED: Secrets guard — sensitive credentials/keys.")
         staging = (_root / ".claude" / "staging").exists()
         if not staging:
