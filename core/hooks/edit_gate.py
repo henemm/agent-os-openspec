@@ -273,13 +273,30 @@ def main():
             block(f"BLOCKED: Protected state file: {pf}")
 
     # 1b. Orchestrator-only files (checked before json$ always-allowed pattern)
-    for of in ORCHESTRATOR_FILES:
-        if of in file_path:
-            block(
-                f"BLOCKED: {Path(of).name} ist Orchestrator-Domäne — nie direkt bearbeiten.\n"
-                "→ Blocker im Report an den Orchestrator zurückmelden.\n"
-                "→ Konfigurationsänderungen: update-config Skill verwenden."
-            )
+    #     Exception (#48): the GLOBAL user config under ~/.claude/ is not a
+    #     project file — the orchestrator lock only protects project-local
+    #     settings. Applies EXACTLY to ~/.claude/..., not ~/some-project/.claude/...
+    _home_claude = (Path.home() / ".claude").resolve()
+    try:
+        _resolved_fp = Path(file_path).expanduser().resolve()
+    except (OSError, RuntimeError, ValueError):
+        _resolved_fp = Path(file_path)
+    try:
+        _under_home_claude = _resolved_fp.is_relative_to(_home_claude)
+    except (ValueError, AttributeError):
+        _under_home_claude = str(_resolved_fp).startswith(str(_home_claude) + os.sep)
+    if not _under_home_claude:
+        for of in ORCHESTRATOR_FILES:
+            if of in file_path:
+                # Valid user override token releases the file (#48) — same
+                # mechanism / consume behaviour as the infrastructure step below.
+                if _has_override_token("__infra__") or _has_override_token():
+                    allow()
+                block(
+                    f"BLOCKED: {Path(of).name} ist Orchestrator-Domäne — nie direkt bearbeiten.\n"
+                    "→ Blocker im Report an den Orchestrator zurückmelden.\n"
+                    "→ Konfigurationsänderungen: update-config Skill verwenden."
+                )
 
     # 2. Always-allowed directories (component match — avoids false positives
     # when project folder names happen to contain "test/" etc.)

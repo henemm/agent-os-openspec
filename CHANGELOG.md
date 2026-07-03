@@ -92,6 +92,29 @@ bewusst unverändert. Version 3.6.2 → 3.7.0 (MINOR, neues Verhalten). Folgestu
 
 ### Fixed
 
+**Fast-Track fix-48-49-gate-hermetic: Orchestrator-Sperre + hermetische Guard-Tests (Issues #48, #49)**
+
+- **#48 — ORCHESTRATOR_FILES-Sperre traf globale User-Config & war nicht
+  überschreibbar:** In `core/hooks/edit_gate.py` (Schritt 1b) blockte der
+  Substring-Match `.claude/settings.json` fälschlich auch die GLOBALE
+  User-Konfiguration `~/.claude/settings.json` (außerhalb jedes Projekts), und
+  der Block feuerte vor jeder Override-Prüfung — der in der Fehlermeldung
+  empfohlene Ausweg (update-config Skill) war identisch geblockt. Fix:
+  (a) Pfade unterhalb von `Path.home() / ".claude"` sind von der Sperre
+  ausgenommen (exakt `~/.claude/...`, nicht `~/projekt/.claude/...`);
+  (b) vor dem `block()` prüft der Hook den User-Override-Token
+  (`override_token.has_valid_token`, gleiches Muster wie die Infrastructure-Sperre)
+  → gültiger Token gibt die Projekt-Datei frei. Projekt-lokale
+  `settings.json`/`settings.local.json`/`active_workflow` bleiben ohne Override
+  weiterhin gesperrt.
+- **#49 — session_singleton_guard-Tests nicht hermetisch:** Die drei Block-Tests
+  `test_guard_edit/write/bash_blocked_in_main_repo` in
+  `tests/test_session_singleton_guard.py` riefen `_do_guard()` gegen den echten
+  Projekt-Zustand auf — ein real vorhandener User-Override-Token ließ sie
+  fälschlich "allow" (Exit 0) statt Block (Exit 2) sehen. Fix: Die Tests mocken
+  jetzt `_has_override_token` auf `False` und lenken `_locks_dir` auf `tmp_path`
+  (Muster analog #35). Keine Änderung am Guard selbst — reines Test-Problem.
+
 **Fast-Track fix-gate-bugs-26-38-34: Drei Wächter-Fehler behoben (Issues #26, #38, #34)**
 
 - **#26 — Rebase-Check prüfte den falschen Branch:** In `core/hooks/bash_gate.py`
