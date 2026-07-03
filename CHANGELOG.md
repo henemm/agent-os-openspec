@@ -92,6 +92,31 @@ bewusst unverändert. Version 3.6.2 → 3.7.0 (MINOR, neues Verhalten). Folgestu
 
 ### Fixed
 
+**Fast-Track fix-53-secrets-guard-fp: Secrets-Guard False-Positives bei Freitext-Befehlen (Issue #53)**
+
+`secrets_guard.py` UND der Secrets-Check in `bash_gate.py` scannten den ROHEN
+Befehlsstring mit unverankerten Regexen. Lange Befehle mit Freitext (Commit-Messages,
+PR-/Issue-Bodies, grep-Muster) triggerten False-Positives, obwohl keine sensible Datei
+berührt wird — dreifach live reproduziert (z.B. `git commit -m "…" && gh pr create --body
+"…"`, `gh issue create --body "…"`). Ursache: sensible Wörter wie `.env`/`credentials.json`
+im Fließtext matchten die Datei-Patterns, gekoppelt an Ausgabe-Kommando-Keywords, die
+ebenfalls über den Gesamttext gescannt wurden.
+
+Fix (analog zu #30/#31, 3.4.15): Neue Funktion `_references_sensitive_file()` in BEIDEN
+Guards matcht sensible Datei-Patterns nur noch gegen echte DATEI-Token (shlex-
+Tokenisierung). Freitext-Argumente von `-m`/`--message`/`--body`/`--title`/`-F` werden
+übersprungen. Konservativer Fallback auf den bisherigen Roh-Scan bei verschachtelter Shell
+(`sh -c "…"`, `eval`) oder shlex-Parse-Fehler (kaputte Quotes) — kein neues Loch. Die
+Ausgabe-Kommando-Bedingung (`_DANGEROUS_CMD_RE` / `_outputs_content`) bleibt als zweite
+Bedingung erhalten und wird nur relevant, wenn ein echtes Datei-Token matcht. Identische
+Behandlung an beiden Stellen verhindert Guard-Drift.
+
+Sicherheits-Invarianten unverändert (je als Gegenprobe getestet): `cat .env`,
+`head credentials.json`, `grep x private.key`, quoted Pfade mit Leerzeichen und
+nicht-parsebare Befehle blocken weiterhin; die `grep -l`-Ausnahme und das Staging-Verhalten
+bleiben erhalten. Neue Regressionstests: `tests/test_secrets_guard_false_positives.py`
+(16 Tests, beide Guards).
+
 **Fast-Track fix-46-notification-keyword-bypass: Freigabe-Keywords in Notifications umgingen die User-Zustimmung (Issue #46, sicherheitsrelevant)**
 
 `core/hooks/phase_listener.py` (UserPromptSubmit-Hook) erkannte Freigabe-Stichworte
