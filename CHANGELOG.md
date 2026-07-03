@@ -33,6 +33,29 @@ Standard-Install-/Update-Flows.
 
 ### Fixed
 
+**Fast-Track fix-gate-bugs-26-38-34: Drei Wächter-Fehler behoben (Issues #26, #38, #34)**
+
+- **#26 — Rebase-Check prüfte den falschen Branch:** In `core/hooks/bash_gate.py`
+  liefen `git fetch origin main` und `git rev-list --count HEAD..origin/main` mit
+  `cwd=_root` (Hauptrepo). Lag das Hauptrepo-`main` hinter `origin/main`, blockte der
+  Hook jeden Commit in JEDEM Worktree — auch bei aktuellem Worktree-Branch. Fix: Beide
+  git-Aufrufe laufen jetzt im tatsächlichen Aufrufkontext (`os.getcwd()`), wo der zu
+  prüfende Commit stattfindet. Kein-Netz-Verhalten (silent skip) und Meldungstext
+  unverändert.
+- **#38 — Fremder stale Workflow kaperte Datei-Ownership:** In `core/hooks/edit_gate.py`
+  lief `_find_workflow_for_file()` (Match über `affected_files` aller nicht-archivierten
+  Workflows) VOR `_read_active_workflow()`, sodass ein verwaister Workflow-State den
+  aktiven übersteuern konnte. Fix: Priorität getauscht — der aktive Workflow gewinnt
+  immer; das `affected_files`-Matching bleibt nur Fallback ohne aktiven Workflow.
+- **#34 — override-ambiguous wirkte nicht im Phase-Abschluss:** `_validate_transition()`
+  in `core/hooks/workflow.py` verlangte für `phase8_complete` ausschließlich einen
+  `VERIFIED`-Prefix und ignorierte `adversary_ambiguous_override`. Fix: Transition auch
+  erlaubt, wenn das Verdikt mit `AMBIGUOUS` beginnt UND `adversary_ambiguous_override`
+  gesetzt ist — exakt die Regel aus `bash_gate.py` (Commit-Gate). VERIFIED-Pfad
+  unverändert; BROKEN und AMBIGUOUS-ohne-Override bleiben blockiert.
+
+Tests: `tests/test_gate_fixes_26_38_34.py` (8 Tests inkl. aller drei Gegenproben).
+
 **Dokumentierter Artefakt-Typ `adversary_dialog` wurde von `workflow.py` abgelehnt (Issue #41)**
 
 Der Skill `50-implement` (Step 8c) dokumentiert `workflow.py add-artifact adversary_dialog ...`,
