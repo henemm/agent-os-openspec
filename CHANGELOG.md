@@ -92,6 +92,32 @@ bewusst unverändert. Version 3.6.2 → 3.7.0 (MINOR, neues Verhalten). Folgestu
 
 ### Fixed
 
+**Fast-Track fix-46-notification-keyword-bypass: Freigabe-Keywords in Notifications umgingen die User-Zustimmung (Issue #46, sicherheitsrelevant)**
+
+`core/hooks/phase_listener.py` (UserPromptSubmit-Hook) erkannte Freigabe-Stichworte
+(`approved`/`go`/`override`/…) per Wortgrenzen-Regex irgendwo im gesamten Prompt-Text.
+Task-Notifications (Ergebnistexte von Background-Agenten) laufen durch denselben Pfad —
+enthielt so ein Text die Phrase nur als **Erwähnung** ("Bestätige mit 'approved' um
+fortzufahren"), wurde die Freigabe gesetzt, ohne dass der User je zugestimmt hatte. Live
+in `gregor_zwanzig` aufgetreten. Zwei Verteidigungslinien:
+
+- **Verteidigung 1 — Notification-Turns überspringen:** Neue Guard-Funktion
+  `_is_notification_turn()` am Anfang von `main()`. Enthält der Prompt einen der Marker
+  `<task-notification>`, `[SYSTEM NOTIFICATION`, `<system-reminder>`, `<bash-input>`,
+  `<local-command-caveat>`, wird SÄMTLICHE Keyword-Erkennung für diesen Turn übersprungen
+  (Exit 0 ohne Aktion). Diese Marker kommen nur in harness-injizierten Turns vor.
+- **Verteidigung 2 — Stichwort muss vorne stehen:** `_matches()` erhält den Parameter
+  `leading_only`. Für die freigabe-relevanten Sets (approval/GREEN/override) muss die
+  Phrase in der **ersten Zeile** UND innerhalb der **ersten 120 Zeichen** stehen. Echte
+  User-Freigaben führen mit dem Stichwort; zitierte Erwähnungen stehen typischerweise tief
+  im Text. Stop-Lock-Phrasen (`stop`/`halt`) bleiben BEWUSST unverändert großzügig (matchen
+  überall) — ein Not-Aus darf eher zu oft als zu selten greifen.
+
+Regressionstests in `tests/test_phase_listener_keyword_guard.py` inkl. Realfall-
+Rückwärtskompatibilität ("approved (oder kann ich nicht einfach…)" → Freigabe), Angriffs-
+Fälle (eingebettete Erwähnung + `<task-notification>`-Tag → keine Freigabe) und Stop-Lock-
+Regression (Stop-Phrase mitten im Text greift weiterhin).
+
 **Fast-Track fix-48-49-gate-hermetic: Orchestrator-Sperre + hermetische Guard-Tests (Issues #48, #49)**
 
 - **#48 — ORCHESTRATOR_FILES-Sperre traf globale User-Config & war nicht
