@@ -31,6 +31,33 @@ Marker (vermuteter Custom-Command) → überspringen mit Warnung. Nutzung:
 `python3 setup.py ~ --command-aliases`. Die Generierung ist rein additiv und kein Teil des
 Standard-Install-/Update-Flows.
 
+### Changed
+
+**Dreistufige Hook-Pfad-Auflösung in allen Plugin-Skills (Issue #33 Stufe 1)**
+
+Das Setup-Snippet in allen hook-nutzenden `skills/*/SKILL.md` (11 Skills) wurde um eine
+mittlere Auflösungsstufe erweitert. Bisher galt nur die Zweistufen-Kette
+`CLAUDE_PLUGIN_ROOT` → `.claude/hooks`. Da `CLAUDE_PLUGIN_ROOT` ausschließlich in
+Harness-Hook-Subprozessen gesetzt ist (nie in manuellen Bash-Aufrufen der Skills), griff
+in Consumer-Projekten immer der `.claude/hooks`-Fallback und traf dort eingefrorene
+Legacy-Kopien, die nie Plugin-Updates bekommen — strukturelle Doppelentwicklung, real
+zweimal passiert (#960 Adversary-Gate-Bypass, #29). Die neue Prioritätskette:
+
+1. `CLAUDE_PLUGIN_ROOT` (wie bisher, wenn gesetzt)
+2. **NEU:** `~/.claude/plugins/installed_plugins.json` lesen (python3-Einzeiler): erster
+   Eintrag für Plugin-Key `agent-os-openspec@*` (user-scope bevorzugt), dessen
+   `installPath` + `/core/hooks` — aber nur, wenn das Verzeichnis tatsächlich existiert
+   (`[ -d ]`-Guard gegen stale JSON). Kein Glob auf den Cache-Ordner (Versionsnummer im
+   Pfad!); ausschließlich die JSON ist autoritativ. Fehler beim JSON-Lesen (Datei fehlt,
+   kaputt, kein Eintrag) werden verschluckt (`2>/dev/null`) → saubere Durchfall auf Stufe 3.
+3. `.claude/hooks` (Fallback wie bisher — Projekte ohne Plugin funktionieren unverändert).
+
+Harness-Hook-Kontext und Projekte ohne installiertes Plugin verhalten sich identisch wie
+zuvor. Neuer Regressionstest `tests/test_skill_path_resolution.py` prüft alle Stufen
+hermetisch via Fake-HOME. `core/commands/*.md` (Legacy-Verteilweg via `setup.py`) bleiben
+bewusst unverändert. Version 3.6.2 → 3.7.0 (MINOR, neues Verhalten). Folgestufen (#33c
+`migrate_to_plugin.py`, #33a Legacy-Entfernung in gregor_zwanzig) sind separate Workflows.
+
 ### Fixed
 
 **Fast-Track fix-gate-bugs-26-38-34: Drei Wächter-Fehler behoben (Issues #26, #38, #34)**
