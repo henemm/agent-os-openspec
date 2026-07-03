@@ -38,6 +38,24 @@ CONTINUE_PHRASES = ["weiter", "continue", "weitermachen", "fortfahren", "resume"
 OVERRIDE_PHRASES = ["override", "ich genehmige", "genehmige", "ueberschreiben"]
 GREEN_PHRASES = ["go", "green ok", "tests ok", "gruen ok"]
 
+# Marker die AUSSCHLIESSLICH in harness-injizierten Turns vorkommen
+# (Task-Notifications von Background-Agenten, System-Reminder, Bash-Input etc.),
+# nie in echten User-Eingaben. Enthält ein Prompt einen dieser Marker, wird die
+# gesamte Keyword-Erkennung für diesen Turn übersprungen (Issue #46,
+# sicherheitsrelevant). Verhindert, dass eine bloße Erwähnung einer Freigabe-
+# Phrase im Ergebnistext eines Agenten die Freigabe setzt.
+NOTIFICATION_MARKERS = [
+    "<task-notification>",
+    "[SYSTEM NOTIFICATION",
+    "<system-reminder>",
+    "<bash-input>",
+    "<local-command-caveat>",
+]
+
+# Position innerhalb derer freigabe-relevante Phrasen (approval/GREEN/override)
+# stehen müssen: erste Zeile UND erste 120 Zeichen.
+LEADING_CHARS = 120
+
 
 # --- Config loading ---
 
@@ -58,8 +76,30 @@ def _load_phrases() -> dict:
 
 # --- Helpers ---
 
-def _matches(message: str, phrases: list[str]) -> bool:
+def _is_notification_turn(message: str) -> bool:
+    """True, wenn der Prompt einen harness-injizierten Notification-Marker enthält.
+
+    Diese Marker kommen nur in vom Harness erzeugten Turns vor (Task-Notifications,
+    System-Reminder, Bash-Input). In solchen Turns wird JEGLICHE Keyword-Erkennung
+    übersprungen — eine zitierte Freigabe-Phrase im Agenten-Ergebnistext darf keine
+    echte User-Freigabe auslösen (Issue #46).
+    """
+    lower = message.lower()
+    return any(marker.lower() in lower for marker in NOTIFICATION_MARKERS)
+
+
+def _matches(message: str, phrases: list[str], leading_only: bool = False) -> bool:
+    """Prüft, ob eine der Phrasen im Prompt vorkommt (mit Wortgrenzen).
+
+    leading_only=True (für freigabe-relevante Sets approval/GREEN/override):
+    Die Phrase muss innerhalb der ersten Zeile UND der ersten 120 Zeichen stehen.
+    Echte User-Freigaben führen mit dem Stichwort; zitierte Erwähnungen in Agenten-/
+    Meta-Texten stehen typischerweise tief im Text. Stop-Lock-Phrasen bleiben bewusst
+    ohne diese Einschränkung (Not-Aus darf großzügig greifen).
+    """
     msg = message.lower().strip()
+    if leading_only:
+        msg = msg.split("\n", 1)[0][:LEADING_CHARS]
     for phrase in phrases:
         # Require phrase not preceded or followed by a letter, digit, underscore, or
         # hyphen. Plain \b would match "stop" inside "stop-lock" because "-" is a
@@ -143,6 +183,11 @@ def main():
     if not message:
         sys.exit(0)
 
+    # Verteidigung 1 (Issue #46): harness-injizierte Notification-Turns komplett
+    # überspringen — bevor irgendeine Keyword-Verarbeitung stattfindet.
+    if _is_notification_turn(message):
+        sys.exit(0)
+
     phrases = _load_phrases()
     approval = phrases.get("approval", APPROVAL_PHRASES)
     stop = phrases.get("stop", STOP_PHRASES)
@@ -152,7 +197,7 @@ def main():
     wf_data, wf_path = _read_active_workflow()
 
     # Override token (works even without workflow)
-    if _matches(message, override):
+    if _matches(message, override, leading_only=True):
         wf_name = wf_data["name"] if wf_data else "__global__"
         _create_override_token(wf_name)
         print(f"Override token created for workflow: {wf_name}", file=sys.stderr)
@@ -167,7 +212,7 @@ def main():
         _set_stop_lock(False)
 
     if not wf_data or not wf_path:
-        if _matches(message, approval) or _matches(message, GREEN_PHRASES):
+        if _matches(message, approval, leading_only=True) or _matches(message, GREEN_PHRASES, leading_only=True):
             print(
                 f"WARNUNG: Stichwort erkannt, aber kein auflösbarer Workflow. {gate_diagnostics()}",
                 file=sys.stderr,
@@ -177,7 +222,7 @@ def main():
     changed = False
 
     # Approval
-    if _matches(message, approval):
+    if _matches(message, approval, leading_only=True):
         phase = wf_data.get("current_phase", "")
         if phase in ("phase3_spec",) and not wf_data.get("spec_approved"):
             wf_data["spec_approved"] = True
@@ -196,7 +241,7 @@ def main():
         changed = True
 
     # GREEN approval
-    if _matches(message, GREEN_PHRASES):
+    if _matches(message, GREEN_PHRASES, leading_only=True):
         phase = wf_data.get("current_phase", "")
         if phase in ("phase6_implement", "phase6b_adversary"):
             wf_data["green_approved"] = True
