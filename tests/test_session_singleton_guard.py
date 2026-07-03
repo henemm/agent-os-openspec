@@ -144,20 +144,35 @@ def test_guard_toolsearch_always_allowed_in_main_repo():
     assert _run_guard(payload) == 0
 
 
-def test_guard_edit_blocked_in_main_repo():
+def _hermetic_guard(monkeypatch, tmp_path):
+    """Isolate _do_guard from live project state (#49).
+
+    _do_guard reads the real project's override token and locks dir. A real
+    override token in the project root would make these block tests see 'allow'.
+    Pin both to hermetic values so the test proves guard logic, not environment.
+    """
+    monkeypatch.setattr(ssg, "_has_override_token", lambda: False)
+    locks = tmp_path / ".claude" / "session-locks"
+    monkeypatch.setattr(ssg, "_locks_dir", lambda: locks)
+
+
+def test_guard_edit_blocked_in_main_repo(tmp_path, monkeypatch):
     """Edit is a blocking tool — blocked in main repo."""
+    _hermetic_guard(monkeypatch, tmp_path)
     payload = _make_guard_payload("Edit", MAIN_CWD)
     assert _run_guard(payload) == 2
 
 
-def test_guard_write_blocked_in_main_repo():
+def test_guard_write_blocked_in_main_repo(tmp_path, monkeypatch):
     """Write is a blocking tool — blocked in main repo."""
+    _hermetic_guard(monkeypatch, tmp_path)
     payload = _make_guard_payload("Write", MAIN_CWD)
     assert _run_guard(payload) == 2
 
 
-def test_guard_bash_blocked_in_main_repo():
+def test_guard_bash_blocked_in_main_repo(tmp_path, monkeypatch):
     """Bash is a blocking tool — blocked in main repo."""
+    _hermetic_guard(monkeypatch, tmp_path)
     payload = _make_guard_payload("Bash", MAIN_CWD)
     assert _run_guard(payload) == 2
 
