@@ -93,7 +93,14 @@ Drei parallele Explore-Agenten durchsuchen den Code nach: (a) betroffenen Kompon
 
 Claude schreibt eine formale Spezifikation in `docs/specs/<bereich>/<feature>.md`. Diese enthält zwingend:
 - `## Acceptance Criteria` mit nummerierten ACs (`AC-1`, `AC-2`, ...)
-- `## Expected Behavior` (für den späteren Adversary-Check)
+
+Optional (Legacy/zusätzlich möglich): `## Expected Behavior` mit Bullet-Punkten.
+Beide Sections werden vom Adversary-Dialog-Parser (`adversary_dialog.py`) gelesen
+und zur Checkliste zusammengeführt — `## Acceptance Criteria` allein reicht für
+den späteren Adversary-Check bereits aus, eine separate `## Expected Behavior`-
+Section ist nicht mehr erforderlich. Sind beide Sections vorhanden, werden ihre
+Punkte additiv gemergt (Expected-Behavior-Punkte zuerst, siehe
+`docs/specs/fix-965-ac-n-parse.md`).
 
 Das edit_gate.py prüft später, ob diese Struktur vorhanden ist, bevor Code-Edits erlaubt werden.
 

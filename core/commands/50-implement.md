@@ -186,7 +186,7 @@ python3 .claude/hooks/workflow.py phase phase6b_adversary
 python3 .claude/hooks/adversary_dialog.py parse <spec-pfad>
 ```
 
-Das zeigt dir die Expected-Behavior-Punkte die bewiesen werden muessen.
+Das zeigt dir die zu beweisenden Punkte — geparst aus `## Expected Behavior` und/oder `## Acceptance Criteria` (`- **AC-N:** ...`) der Spec, je nachdem welche Section(s) vorhanden sind.
 
 #### 8b. Adversary-Dialog fuehren
 
