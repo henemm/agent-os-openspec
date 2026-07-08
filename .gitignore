@@ -27,6 +27,7 @@ Thumbs.db
 timebox-ios/
 
 # Runtime state (never commit)
+.claude/active_workflow
 .claude/session-locks/
 .claude/stop_lock.json
 .claude/user_override_token.json
