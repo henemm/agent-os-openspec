@@ -92,6 +92,33 @@ bewusst unverändert. Version 3.6.2 → 3.7.0 (MINOR, neues Verhalten). Folgestu
 
 ### Fixed
 
+**Fast-Track fix-965-ac-n-parse: AC-N-Format wurde vom Adversary-Dialog-Parser nicht erkannt (gregor_zwanzig#965)**
+
+`parse_spec_expected_behavior()` in `core/hooks/adversary_dialog.py` erkannte
+ausschließlich das alte `## Expected Behavior`-Bullet-Format. Das seit Epic #191
+(gregor_zwanzig) vorgeschriebene AC-N-Format (`## Acceptance Criteria` mit
+`- **AC-N:** Given.../When.../Then...`-Bullets, oft mehrzeilig per Soft-Wrap,
+teils mit Klammer-Zusätzen wie `AC-8 (präzisiert)` und eingerückten
+`- Test:`-Sub-Bullets) wurde komplett übersehen — der Adversary-Dialog erhielt
+"Keine Expected-Behavior-Punkte gefunden." statt der tatsächlichen Checkliste,
+obwohl die Spec formal vollständig war (live in gregor_zwanzig#965 aufgetreten).
+
+Fix: Section-Erkennung parst jetzt zusätzlich `## Acceptance Criteria`
+(section-gebunden, kein globaler Regex). Ein AC-Bullet wird per
+`^-\s+\*\*AC-\d+[^*:]*:\*\*` erkannt (Klammer-Toleranz für alle 4
+Label-Varianten). Fortsetzungszeilen ohne `-`-Präfix werden anhand der
+Einrückung der Rohzeile an den laufenden AC-Punkt angehängt (Soft-Wrap-
+Support), eingerückte `- Test:`-Sub-Bullets werden verworfen. Sind sowohl
+`## Expected Behavior` als auch `## Acceptance Criteria` in derselben Spec
+vorhanden, werden beide Punktlisten additiv gemergt (Expected-Behavior-Punkte
+zuerst). Der bestehende `Expected Behavior`-Zweig bleibt unverändert — keine
+Regression für Specs im alten Format. Neue Tests in
+`tests/test_adversary_dialog_parse.py` (12 Fälle, u. a. Klammer-Zusatz,
+Soft-Wrap, Sub-Bullet-Ausschluss, Koexistenz beider Sections, Regression
+gegen echte Repo-Specs wie `docs/specs/qa-gate-path-resolution.md` und
+`docs/specs/bash-gate-false-positive-fix.md`). Spec:
+`docs/specs/fix-965-ac-n-parse.md`.
+
 **Fast-Track fix-alias-disable-model-invocation: Kurz-Alias-Commands für TDD/Implement/Validate/Deploy-Phasen unbenutzbar (Issue #55, 3.8.4)**
 
 `generate_command_aliases()` erzeugte für JEDEN Skill denselben dünnen Text-Redirect

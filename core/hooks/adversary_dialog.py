@@ -50,15 +50,22 @@ CATEGORIES = (
 
 
 def parse_spec_expected_behavior(spec_path: str) -> list[str]:
-    """Parse a spec file and extract Expected Behavior bullet points.
+    """Parse a spec file and extract Expected-Behavior- und AC-N-Checklist-Punkte.
 
-    Sucht nach einer '## Expected Behavior' Section und extrahiert
-    alle Bullet-Points (Zeilen die mit '- ' beginnen) bis zur naechsten
-    '## ' Section oder Dateiende.
+    Erkennt zwei Formate:
+      - '## Expected Behavior': Single-Line-Bullets ('- ' oder 'N. '),
+        section-gebunden (unveraendertes Bestandsverhalten).
+      - AC-N-Bullets ('- **AC-N:** ...', auch mit Klammer-Zusatz wie
+        '(praezisiert)'): global erkannt, inkl. eingerueckter Soft-Wrap-
+        Fortsetzungszeilen, exkl. eingerueckter '- Test:'-Sub-Bullets.
+
+    Bei Koexistenz werden die Punkte additiv gemergt: zuerst alle
+    Expected-Behavior-Punkte, danach alle AC-N-Punkte (jeweils in
+    Dateireihenfolge), ohne Deduplizierung.
 
     Returns:
-        Liste von Strings, jeder ein Expected-Behavior-Punkt.
-        Leere Liste wenn keine Section gefunden.
+        Liste von Strings, jeder ein Checklist-Punkt.
+        Leere Liste wenn nichts gefunden.
     """
     path = Path(spec_path)
     if not path.exists():
@@ -67,30 +74,67 @@ def parse_spec_expected_behavior(spec_path: str) -> list[str]:
     content = path.read_text(errors="replace")
     lines = content.splitlines()
 
-    in_section = False
-    points = []
+    # AC-Bullet-Start: unindentierte '- ...AC-N...:'-Zeile. Deckt vier
+    # Label-Varianten ab:
+    #   '- **AC-1:** ...'            (Doppelpunkt innerhalb Bold)
+    #   '- **AC-1**: ...'            (Doppelpunkt ausserhalb Bold)
+    #   '- **AC-8 (praezisiert):** ' (Klammer-Zusatz + Doppelpunkt in Bold)
+    #   '- AC-1: ...'                (ganz ohne Bold)
+    ac_bullet_re = re.compile(r"^-\s+\*{0,2}AC-\d+[^:*]*\*{0,2}\s*:")
+
+    section = None  # None | "expected_behavior" | "acceptance_criteria"
+    ac_active = False
+    eb_points = []
+    ac_points = []
 
     for line in lines:
         stripped = line.strip()
+        indented = line[:1].isspace()
 
-        # Section-Start erkennen (case-insensitive)
+        # Section-State pflegen (case-insensitive)
         if re.match(r"^##\s+Expected Behavior", stripped, re.IGNORECASE):
-            in_section = True
+            section = "expected_behavior"
+            ac_active = False
+            continue
+        if re.match(r"^##\s+Acceptance Criteria", stripped, re.IGNORECASE):
+            section = "acceptance_criteria"
+            ac_active = False
+            continue
+        # Jede andere H2-Section beendet die aktuelle Section
+        if re.match(r"^##\s+", stripped):
+            section = None
+            ac_active = False
             continue
 
-        # Naechste Section beendet Expected Behavior
-        if in_section and re.match(r"^##\s+", stripped):
-            break
+        if section == "acceptance_criteria":
+            # AC-Bullet nur INNERHALB der Acceptance-Criteria-Section
+            if not indented and ac_bullet_re.match(stripped):
+                ac_points.append(re.sub(r"^-\s+", "", stripped))
+                ac_active = True
+                continue
+            # Innerhalb eines offenen AC-Blocks: Sub-Bullet vs. Fortsetzung
+            if ac_active and indented:
+                if stripped.startswith("-"):
+                    # Eingerueckter Sub-Bullet (z.B. '- Test:') -> verwerfen
+                    continue
+                if stripped:
+                    # Fortsetzungszeile (Soft-Wrap) -> an aktuellen AC anhaengen
+                    ac_points[-1] = ac_points[-1] + " " + stripped
+                continue
+            # Unindentierte Nicht-AC-Zeile beendet einen offenen AC-Block
+            if not indented and stripped:
+                ac_active = False
+            continue
 
-        # Bullet-Points und nummerierte Listen sammeln
-        if in_section and (
-            re.match(r"^-\s+", stripped) or re.match(r"^\d+\.\s+", stripped)
-        ):
-            point = re.sub(r"^(-\s+|\d+\.\s+)", "", stripped)
-            if point:
-                points.append(point)
+        if section == "expected_behavior":
+            # Bullet-Points und nummerierte Listen (unveraendertes Verhalten)
+            if re.match(r"^-\s+", stripped) or re.match(r"^\d+\.\s+", stripped):
+                point = re.sub(r"^(-\s+|\d+\.\s+)", "", stripped)
+                if point:
+                    eb_points.append(point)
+            continue
 
-    return points
+    return eb_points + ac_points
 
 
 def create_checklist(points: list[str]) -> list[dict]:

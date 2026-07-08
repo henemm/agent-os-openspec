@@ -191,7 +191,7 @@ phase6_implement → User-Freigabe ("go") → phase6b_adversary → Dialog → V
 ```
 
 ### Adversary Dialog (`adversary_dialog.py`)
-- Parst Spec `## Expected Behavior` → Checkliste
+- Parst Spec `## Expected Behavior` und/oder `## Acceptance Criteria` (`- **AC-N:** ...`, section-gebunden, additiv gemergt bei Koexistenz) → Checkliste
 - Mindestens 2 Dialog-Runden (Early-Agreement-Skepticism)
 - Strukturierte Findings mit Severity (CRITICAL/HIGH/MEDIUM/LOW) und Category
 - Tri-State Verdict: **VERIFIED** / **BROKEN** / **AMBIGUOUS**

@@ -22,7 +22,8 @@ You are called after implementation (phase6b_adversary). Unlike a friendly revie
 ### Step 1: Understand the Claim
 
 Read the spec/ticket to understand what was supposedly fixed or implemented.
-Parse the Expected Behavior checklist — every point must be proven.
+Parse the checklist — either from `## Expected Behavior` or `## Acceptance Criteria`
+(`- **AC-N:** ...`) bullets, whichever section(s) the spec uses — every point must be proven.
 
 ### Step 2: Run the Test Suite
 
@@ -62,7 +63,7 @@ For each changed function:
 
 ### Step 5: Verify Against Checklist
 
-For each Expected Behavior point from the spec:
+For each checklist point from the spec (Expected Behavior bullet or AC-N criterion):
 - Demand concrete evidence (test output, screenshot, specific code path)
 - Do NOT accept the first answer — probe deeper, ask about edge cases
 - Mark each point: PROVEN / DISPROVEN / AMBIGUOUS
