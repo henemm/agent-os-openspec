@@ -225,15 +225,24 @@ def main():
     if _matches(message, approval, leading_only=True):
         phase = wf_data.get("current_phase", "")
         if phase in ("phase3_spec",) and not wf_data.get("spec_approved"):
-            wf_data["spec_approved"] = True
             try:
-                from workflow import _log_phase_transition
-                _log_phase_transition(wf_data, "phase4_approved")
+                from workflow import _check_adr
+                adr_err = _check_adr(wf_data)
             except Exception:
-                pass
-            wf_data["current_phase"] = "phase4_approved"
-            changed = True
-            print(f"Spec approved for '{wf_data['name']}'! You may now run /tdd-red", file=sys.stderr)
+                adr_err = None
+            if adr_err:
+                print(f"Freigabe blockiert: {adr_err}", file=sys.stderr)
+                # spec_approved NICHT setzen, current_phase bleibt phase3_spec
+            else:
+                wf_data["spec_approved"] = True
+                try:
+                    from workflow import _log_phase_transition
+                    _log_phase_transition(wf_data, "phase4_approved")
+                except Exception:
+                    pass
+                wf_data["current_phase"] = "phase4_approved"
+                changed = True
+                print(f"Spec approved for '{wf_data['name']}'! You may now run /tdd-red", file=sys.stderr)
 
     # New UI flag
     if "neues ui" in message.lower() or "new ui" in message.lower():

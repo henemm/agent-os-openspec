@@ -45,6 +45,11 @@ tags: []
 
 - [Any limitations]
 
+## Architektur-Entscheidung (ADR)
+
+- **ADR-Nr.:** [ADR-NNNN oder "keine"]
+- **Rationale:** [kurz: warum diese Entscheidung bzw. warum keine nötig ist]
+
 ## Changelog
 
 - YYYY-MM-DD: Initial spec created

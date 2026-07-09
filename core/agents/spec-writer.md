@@ -100,6 +100,11 @@ workflow: [workflow-name]
 - [ ] Criterion 1
 - [ ] Criterion 2
 
+## Architektur-Entscheidung (ADR)
+
+- **ADR-Nr.:** [ADR-NNNN oder "keine"]
+- **Rationale:** [kurz: warum diese Entscheidung bzw. warum keine nötig ist]
+
 ## Changelog
 
 - [YYYY-MM-DD]: Initial spec created
@@ -117,6 +122,7 @@ Vor dem Speichern MUSS verifiziert werden:
 6. **Scope vollstaendig** - Alle betroffenen Dateien mit Aenderungstyp
 7. **Acceptance Criteria** - Mindestens 2 messbare Kriterien
 8. **Keine Code-Bloecke >30 Zeilen** - Verweis auf Dateien stattdessen
+9. **ADR-Feld ausgefuellt** - In `## Architektur-Entscheidung (ADR)` immer eine ADR-Nr. ODER ein begruendetes „keine" eintragen, nie den Platzhalter `[ADR-NNNN oder "keine"]` belassen
 
 ## Output
 
