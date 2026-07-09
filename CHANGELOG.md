@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+**ADR-Reflexions-Gate bei der Spec-Freigabe (Issue #63)**
+
+Neues Gate, das bei der Phase-3→4-Transition (Spec-Freigabe) erzwingt, dass eine Spec bewusst
+über ihre Architektur-Relevanz reflektiert: Die Sektion `## Architektur-Entscheidung (ADR)` muss
+ausgefüllt sein (ADR-Nummer ODER begründetes „keine"), bevor die Freigabe greift. Damit wird die
+ADR-Entscheidung nicht faktisch aufs Commit-Gate verschoben und dort mit `[no-adr]` umgangen.
+
+Neuer Helfer `workflow.py::_check_adr(data)` prüft die ADR-Sektion (Bracket-Platzhalter werden vor
+der Prüfung entfernt, damit der leere Template-Platzhalter nicht fälschlich als ausgefüllt gilt).
+Zwei Einhängepunkte: harter Block in `_validate_transition` (beide `phase4_approved`-Pfade, Standard
++ feature-fast) und Soft-Block im Approval-Block von `phase_listener.py` (spec_approved bleibt False,
+Exit-0-Vertrag gewahrt). Präsenzbasiertes Grandfathering: Fehlt die ADR-Sektion ganz, greift das
+Gate nicht. Kill-Switch via `config.yaml` → `adr_gate.enabled: false`. Die ADR-Sektion wurde ins
+Spec-Template (`docs/specs/_template.md`), in den `spec-writer`-Flow und die `spec-validator`-Required-
+Sections aufgenommen, damit sich das Framework nicht selbst blockiert.
+
 **Kurz-Alias-Generierung für Skills mit Marker-Schutz gegen Cleanup-Löschung (Issue #24)**
 
 Seit der Plugin-Migration (v3.2) erscheinen alle Skills nur noch mit Namespace-Präfix

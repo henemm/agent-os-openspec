@@ -395,6 +395,84 @@ def _log_phase_transition(data: dict, new_phase: str) -> None:
     log.append({"phase": new_phase, "entered_at": now, "exited_at": None, "duration_min": None})
 
 
+# --- ADR Reflection Gate ---
+
+def _check_adr(data: dict) -> "str | None":
+    """Enforce a filled '## Architektur-Entscheidung (ADR)' section at spec approval.
+
+    Returns an error message if the spec has an ADR section that is not filled
+    (no ADR number and no justified 'keine'/'none'), otherwise None. Lenient by
+    design: the hook must never break — missing config, missing/unreadable spec,
+    or a missing ADR section all return None (grandfathering).
+    """
+    # 1. Kill-switch — only an explicit enabled: False disables the gate.
+    try:
+        from config_loader import load_config
+        config = load_config()
+        adr_cfg = config.get("adr_gate", {}) if isinstance(config, dict) else {}
+        if isinstance(adr_cfg, dict) and adr_cfg.get("enabled") is False:
+            return None
+    except Exception:
+        pass  # Config load failure → feature stays ON (lenient)
+
+    # 2. Spec path
+    spec_file = data.get("spec_file")
+    if not spec_file:
+        return None
+    spec_path = find_project_root() / spec_file
+
+    # 3. Read
+    try:
+        content = spec_path.read_text()
+    except Exception:
+        return None
+
+    # 4. Extract the ADR section body (case-insensitive heading match).
+    #    Accept ## or ### headings; body reaches up to the next heading of ANY
+    #    rank 1-3 (#, ## or ###) or end of file. The end-lookahead must stop at
+    #    #-level H1 too, otherwise an unrelated '**ADR-Nr.:**' line under a later
+    #    H1 heading (e.g. '# Anhang') leaks into the section and falsely passes
+    #    the gate even though the real ADR section is empty (F003).
+    match = _re.search(
+        r"^#{2,3}\s*Architektur-Entscheidung\s*\(ADR\)\s*$(.*?)(?=^#{1,3}\s|\Z)",
+        content,
+        _re.IGNORECASE | _re.MULTILINE | _re.DOTALL,
+    )
+    if not match:
+        return None  # Grandfathering: no ADR section → not blocked
+    body = match.group(1)
+
+    # 5. Extract ONLY the value of the '**ADR-Nr.:**' bullet line (tolerate small
+    #    format variants: bullet/dash optional, colon inside or outside the **).
+    #    Intra-line whitespace only ([ \t]*, never \s*): a \s* after the closing
+    #    ** would eat the newline and capture the following Rationale line when the
+    #    value is empty (F001).
+    nr_match = _re.search(
+        r"(?im)^[ \t]*[-*]?[ \t]*\*\*[ \t]*ADR-Nr\.?[ \t]*:?[ \t]*\*\*[ \t]*:?[ \t]*(.*)$",
+        body,
+    )
+    if not nr_match:
+        # Section present but without the canonical '**ADR-Nr.:**' field →
+        # treat as not filled (the canonical template always emits this line).
+        return (
+            "Spec ohne ausgefülltes ADR-Feld — Sektion "
+            "'## Architektur-Entscheidung (ADR)' braucht ADR-Nr. oder begründetes 'keine'."
+        )
+    value = nr_match.group(1)
+
+    # 6. Strip bracket placeholders from the value, then apply the criterion ONLY
+    #    to that value (never to the free-form Rationale prose).
+    v = _re.sub(r"\[[^\]]*\]", "", value).lower()
+    if _re.search(r"adr-\d+", v) or _re.search(r"\bkeine\b|\bnone\b", v):
+        return None
+
+    # 7. Not filled
+    return (
+        "Spec ohne ausgefülltes ADR-Feld — Sektion "
+        "'## Architektur-Entscheidung (ADR)' braucht ADR-Nr. oder begründetes 'keine'."
+    )
+
+
 # --- Phase Transition Validation ---
 
 def _validate_transition(data: dict, target: str) -> str | None:
@@ -413,6 +491,9 @@ def _validate_transition(data: dict, target: str) -> str | None:
                 return "spec_file not set — run /30-write-spec first"
             if not data.get("spec_approved"):
                 return "Spec not approved — user must say 'approved'"
+            adr_err = _check_adr(data)
+            if adr_err:
+                return adr_err
         return None
 
     current = data.get("current_phase", "phase0_idle")
@@ -435,6 +516,9 @@ def _validate_transition(data: dict, target: str) -> str | None:
             return "spec_file not set — run /write-spec first"
         if not data.get("spec_approved"):
             return "Spec not approved — user must say 'approved'"
+        adr_err = _check_adr(data)
+        if adr_err:
+            return adr_err
 
     if tgt_idx >= PHASES.index("phase6_implement"):
         red_artifacts = [a for a in data.get("test_artifacts", [])

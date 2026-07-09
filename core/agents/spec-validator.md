@@ -40,6 +40,7 @@ status: required       # Values: draft, active, deprecated
 - [ ] **Scope** - Affected Files + Estimated Changes
 - [ ] **Test Plan** - Mindestens 1 Test
 - [ ] **Acceptance Criteria** - Mindestens 1 Kriterium
+- [ ] **Architektur-Entscheidung (ADR)** - Sektion `## Architektur-Entscheidung (ADR)` mit ADR-Nr. + Rationale
 - [ ] **Changelog** - Mindestens Initial-Eintrag
 
 ### 3. No Placeholders

@@ -232,7 +232,7 @@ Einmal-Bypass fuer Gates:
   Intern: Test-Output-Detection → Adversary-Verdict
 
 **UserPromptSubmit:** `phase_listener.py` → [module hooks]
-  Intern: Override → Stop-Lock → Approval → New-UI → GREEN
+  Intern: Override → Stop-Lock → Approval (inkl. ADR-Reflexions-Gate via `workflow.py::_check_adr`) → New-UI → GREEN
 
 ## Konventionen für dieses Repository
 

@@ -93,6 +93,7 @@ phase8_complete ─── write-log ───► Execution log + archive
 
 | Gate | What's checked | Consequence if failed |
 |------|---------------|----------------------|
+| Approval (phase3→4) | `## Architektur-Entscheidung (ADR)` section filled (ADR number or justified "none") | Approval blocked |
 | Edit in phase6+ | RED artifacts + `## Acceptance Criteria` in spec | Edit blocked |
 | LoC limit | `git diff HEAD` ≤ 250 lines | Edit blocked |
 | git commit | Adversary verdict = VERIFIED | Commit blocked |
@@ -278,6 +279,7 @@ agent-os-openspec/
 ### Core (Always installed)
 - 8-phase workflow enforcement
 - Spec-first development with human approval gate
+- ADR reflection gate at spec approval (grandfathered if section absent, disable via `config.yaml → adr_gate.enabled: false`)
 - TDD with real artifacts (screenshots, logs — no placeholders)
 - Adversary verification with tri-state verdict (VERIFIED / BROKEN / AMBIGUOUS)
 - Fix-loop counter and phase transition audit trail

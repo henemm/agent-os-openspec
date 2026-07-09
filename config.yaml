@@ -204,6 +204,11 @@ adversary_gate:
       pass_pattern: "test result: ok"
       fail_pattern: "test result: FAILED"
 
+# ADR Reflection Gate — enforce filled "## Architektur-Entscheidung (ADR)" at spec approval
+# Used by workflow.py _check_adr (phase3→4). Set enabled: false to opt out.
+adr_gate:
+  enabled: true
+
 # Specs Configuration
 specs:
   base_path: "docs/specs"
