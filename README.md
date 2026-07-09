@@ -2,7 +2,7 @@
 
 A modular workflow enforcement system for Claude Code that ensures quality through spec-first development, TDD with real artifacts, and hook-enforced phase gating.
 
-**Version**: 3.1.0 · [Changelog](CHANGELOG.md) · [GitHub Issues](https://github.com/henemm/agent-os-openspec/issues)
+**Version**: 3.9.0 · [Changelog](CHANGELOG.md) · [GitHub Issues](https://github.com/henemm/agent-os-openspec/issues)
 
 ---
 
@@ -18,6 +18,35 @@ The core finding from three projects using this framework: *"CLAUDE.md rules are
 ---
 
 ## Quick Start
+
+### Option A — As a Claude Code Plugin (recommended)
+
+Since v3.2, the framework ships as an installable [Claude Code plugin](https://docs.claude.com/en/docs/claude-code/plugins). Hooks, agents, and skills (slash commands) are provided globally by the plugin — no files are copied into your project.
+
+```bash
+# 1. Register this repo as a marketplace (one-time, any project)
+claude plugin marketplace add henemm/agent-os-openspec
+
+# 2. Install the plugin
+claude plugin install agent-os-openspec
+
+# 3. Update to the latest version later
+claude plugin marketplace update henemm/agent-os-openspec
+claude plugin update agent-os-openspec
+```
+
+Slash commands are then available with the `agent-os-openspec:` namespace prefix (e.g. `/agent-os-openspec:50-implement`). To get short aliases (`/50-implement`) in a specific project, generate redirect files once:
+
+```bash
+cd /path/to/your/project
+python3 /path/to/agent-os-openspec/setup.py . --command-aliases
+```
+
+Optional domain modules (iOS/SwiftUI, Home Assistant) are enabled per project via `config.yaml` — see [Available Modules](#available-modules).
+
+### Option B — As Framework Files Copied into Your Project
+
+Without the plugin system, `setup.py` copies hooks/agents/commands directly into your project's `.claude/` directory.
 
 ```bash
 # Clone the framework
@@ -35,6 +64,8 @@ python3 setup.py ~ --command-aliases   # recommended: global (~), covers all pro
 # Update an existing installation
 python3 setup.py /path/to/your/project --update --force
 ```
+
+Already on Option B and want to switch to the plugin? Run `python3 migrate_to_plugin.py /path/to/project --apply` — it removes the now-redundant local hook copies and points your project at the plugin instead.
 
 ---
 
