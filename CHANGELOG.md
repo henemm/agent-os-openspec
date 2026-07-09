@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+**README.md und CLAUDE.md hinkten der tatsächlichen Hook-/Command-Struktur hinterher**
+
+Beide Dokus listeten nur 4 Hooks und ein unvollständiges Slash-Command-Set (fehlten:
+`00-intake`, `70-deploy`, `90-retro`, `99-reset`), obwohl `hooks/hooks.json` inzwischen
+11 registrierte Hook-Skripte enthält (u.a. `session_singleton_guard.py`,
+`worktree_write_guard.py`, `claude_md_protection.py`, `tdd_enforcement.py`,
+`post_implementation_gate.py`, `edit_verify.py`, `secrets_guard.py` — zusätzlich zu den
+4 Kern-Gates) und `core/commands/` 16 Slash-Commands enthält. Das Architektur-Diagramm in
+CLAUDE.md nannte zudem noch die alten, unnummerierten Command-Dateinamen
+(`context.md` statt `10-context.md` usw.). Beide Dateien wurden auf den Ist-Stand gebracht.
+
 ### Added
 
 **ADR-Reflexions-Gate bei der Spec-Freigabe (Issue #63)**

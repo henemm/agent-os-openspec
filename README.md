@@ -137,18 +137,22 @@ phase8_complete ─── write-log ───► Execution log + archive
 
 | Command | Phase | Description |
 |---------|-------|-------------|
+| `/00-intake` | — | Classify a task (Fast Track / Standard / Full Process) — always run first |
+| `/00-bug` | — | Analyse a bug (Analysis-First, creates GitHub Issue) |
+| `/01-feature` | — | Plan a new feature (creates GitHub Issue) |
 | `/10-context` | 1 | Collect relevant context |
 | `/20-analyse` | 2 | Analyse requirements |
 | `/30-write-spec` | 3 | Create specification |
 | `/40-tdd-red` | 5 | Write failing tests |
 | `/50-implement` | 6 | Implement (make tests green) |
 | `/60-validate` | 7 | Final validation |
-| `/00-bug` | — | Analyse a bug (Analysis-First, creates GitHub Issue) |
-| `/01-feature` | — | Plan a new feature (creates GitHub Issue) |
+| `/70-deploy` | — | Deploy to production (project-specific template, customize it) |
 | `/80-workflow` | — | Manage workflows |
 | `/81-add-artifact` | — | Register test artifacts |
-| `/83-user-story` | — | JTBD-based user story discovery |
 | `/82-test` | — | Run tests via test-runner agent |
+| `/83-user-story` | — | JTBD-based user story discovery |
+| `/90-retro` | — | Analyse a completed/archived workflow (phase timings, quality signals) |
+| `/99-reset` | — | Complete/archive the current workflow and start fresh |
 
 ---
 
@@ -228,16 +232,23 @@ python3 .claude/hooks/workflow.py set-field github_issue 42
 
 ---
 
-## Hook Architecture (v3)
+## Hook Architecture
 
-4 consolidated hooks replace the previous 30+:
+4 consolidated core gates, plus a set of standalone guards for cross-cutting concerns (worktree isolation, secrets, post-implementation review). All hooks are registered centrally in `hooks/hooks.json`; order within an event follows that file.
 
 | Hook | Trigger | Checks |
 |------|---------|--------|
-| `edit_gate.py` | Edit/Write | Phase, RED artifacts, Acceptance Criteria, LoC delta, stop-lock, override |
-| `bash_gate.py` | Bash | Stop-lock, state integrity, secrets, commit gates (VERIFIED/AMBIGUOUS) |
+| `edit_gate.py` | Edit/Write/MultiEdit | Phase, RED artifacts, Acceptance Criteria, LoC delta, stop-lock, override *(core gate)* |
+| `bash_gate.py` | Bash | Stop-lock, state integrity, secrets, commit gates (VERIFIED/AMBIGUOUS) *(core gate)* |
 | `post_bash.py` | Bash (post) | Test output detection, adversary verdict auto-set |
 | `phase_listener.py` | UserPromptSubmit | Approval keyword, stop-lock, override token, GREEN signal |
+| `session_singleton_guard.py` | SessionStart / all tools (pre) / SessionEnd | Registers the session and blocks writes outside a worktree |
+| `worktree_write_guard.py` | Edit/Write/MultiEdit | Blocks writes to the main repo while running in a worktree (split-brain prevention) |
+| `claude_md_protection.py` | Edit/Write/MultiEdit | Blocks disallowed patterns / doc bloat in CLAUDE.md |
+| `tdd_enforcement.py` | Edit/Write/MultiEdit | Deep RED-artifact validation, complements `edit_gate.py`'s boolean check |
+| `post_implementation_gate.py` | Edit/Write/MultiEdit | Forces user review of implementation results before further edits |
+| `edit_verify.py` | Edit/Write/MultiEdit (post) | Confirms the edit actually landed on disk |
+| `secrets_guard.py` | Bash + Read | Blocks access to `.env`, credentials, private keys |
 
 **Exit codes:** `0` = allowed, `2` = blocked (stderr shown to Claude)
 
@@ -276,19 +287,26 @@ agent-os-openspec/
 ├── CHANGELOG.md             # Version history
 │
 ├── core/
-│   ├── hooks/               # 4 consolidated hooks + utilities
-│   │   ├── edit_gate.py         # PreToolUse Edit|Write
-│   │   ├── bash_gate.py         # PreToolUse Bash
-│   │   ├── post_bash.py         # PostToolUse Bash
-│   │   ├── phase_listener.py    # UserPromptSubmit
-│   │   ├── workflow.py          # Workflow State CLI
-│   │   ├── qa_gate.py           # Test output validation
-│   │   ├── adversary_dialog.py  # Adversary dialog protocol
-│   │   ├── override_token.py    # Override token management
-│   │   ├── hook_utils.py        # Shared bootstrap
-│   │   └── config_loader.py     # YAML config loader
+│   ├── hooks/               # 4 consolidated core gates + standalone guards + utilities
+│   │   ├── edit_gate.py                 # PreToolUse Edit|Write (core gate)
+│   │   ├── bash_gate.py                 # PreToolUse Bash (core gate)
+│   │   ├── post_bash.py                 # PostToolUse Bash
+│   │   ├── phase_listener.py            # UserPromptSubmit
+│   │   ├── session_singleton_guard.py   # SessionStart / all tools (pre) / SessionEnd
+│   │   ├── worktree_write_guard.py      # PreToolUse Edit|Write
+│   │   ├── claude_md_protection.py      # PreToolUse Edit|Write
+│   │   ├── tdd_enforcement.py           # PreToolUse Edit|Write
+│   │   ├── post_implementation_gate.py  # PreToolUse Edit|Write
+│   │   ├── edit_verify.py               # PostToolUse Edit|Write
+│   │   ├── secrets_guard.py             # PreToolUse Bash + Read
+│   │   ├── workflow.py                  # Workflow State CLI
+│   │   ├── qa_gate.py                   # Test output validation
+│   │   ├── adversary_dialog.py          # Adversary dialog protocol
+│   │   ├── override_token.py            # Override token management
+│   │   ├── hook_utils.py                # Shared bootstrap
+│   │   └── config_loader.py             # YAML config loader
 │   ├── agents/              # Agent definitions (Markdown)
-│   └── commands/            # Slash command definitions
+│   └── commands/            # Slash command definitions (16 commands, see table above)
 │
 ├── modules/                 # Optional domain-specific modules
 │   ├── ios-swiftui/         # iOS/SwiftUI: TDD, localization, UI testing
