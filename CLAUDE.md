@@ -34,27 +34,32 @@ Warum: Separation of concerns verhindert Conversation Drift (der Implementierer 
 ```
 agent-os-openspec/
 ├── core/                    # Basis-System (immer installiert)
-│   ├── hooks/               # v3: 4 konsolidierte Hooks + Utilities
-│   │   ├── edit_gate.py             # PreToolUse Edit|Write (ersetzt 17 Hooks)
-│   │   ├── bash_gate.py             # PreToolUse Bash (ersetzt 15 Hooks)
-│   │   ├── post_bash.py             # PostToolUse Bash (Adversary Detection)
-│   │   ├── phase_listener.py        # UserPromptSubmit (ersetzt 6 Hooks)
-│   │   ├── workflow.py              # Workflow State CLI (isolierte JSON-Files)
-│   │   ├── qa_gate.py              # QA-Gate: Test-Output validieren, Verdict setzen
-│   │   ├── override_token.py       # Shared Override-Token Management (TTL, Multi-WF)
-│   │   ├── migrate_state.py         # v2 → v3 State-Migration
-│   │   ├── hook_utils.py            # Shared Bootstrap (Imports, Parsing, Exit)
-│   │   └── config_loader.py         # Config-Loader (YAML + Local Overrides)
+│   ├── hooks/               # 4 konsolidierte Kern-Gates + ergänzende Guards (Registrierung: hooks/hooks.json)
+│   │   ├── edit_gate.py                 # PreToolUse Edit|Write (Kern-Gate: Phase/TDD/LoC)
+│   │   ├── bash_gate.py                 # PreToolUse Bash (Kern-Gate: Stop-Lock/Secrets/Commit)
+│   │   ├── post_bash.py                 # PostToolUse Bash (Adversary Detection)
+│   │   ├── phase_listener.py            # UserPromptSubmit (Approval/Stop-Lock/Override)
+│   │   ├── session_singleton_guard.py   # SessionStart/PreToolUse(alle)/SessionEnd: erzwingt Worktree-Pflicht
+│   │   ├── worktree_write_guard.py      # PreToolUse Edit|Write: blockt Schreibzugriff aufs Main-Repo bei Worktree-Split
+│   │   ├── claude_md_protection.py      # PreToolUse Edit|Write: schuetzt CLAUDE.md vor verbotenen Patterns/Aufblaehung
+│   │   ├── tdd_enforcement.py           # PreToolUse Edit|Write: tiefe RED-Artefakt-Validierung (ergaenzt edit_gate.py)
+│   │   ├── post_implementation_gate.py  # PreToolUse Edit|Write: erzwingt User-Review nach Implementierung
+│   │   ├── edit_verify.py               # PostToolUse Edit|Write: prueft ob Aenderung wirklich auf Disk landete
+│   │   ├── secrets_guard.py             # PreToolUse Bash+Read: blockt Zugriff auf .env/Credentials/Keys
+│   │   ├── workflow.py                  # Workflow State CLI (isolierte JSON-Files)
+│   │   ├── qa_gate.py                   # QA-Gate: Test-Output validieren, Verdict setzen
+│   │   ├── adversary_dialog.py          # Adversary-Dialog: Spec-Checkliste, Tri-State-Verdict
+│   │   ├── override_token.py            # Shared Override-Token Management (TTL, Multi-WF)
+│   │   ├── migrate_state.py             # v2 → v3 State-Migration
+│   │   ├── hook_utils.py                # Shared Bootstrap (Imports, Parsing, Exit)
+│   │   └── config_loader.py             # Config-Loader (YAML + Local Overrides)
 │   ├── agents/              # Agent-Definitionen (Markdown)
-│   └── commands/            # Slash-Commands
-│       ├── context.md       # Phase 1: Kontext sammeln
-│       ├── analyse.md       # Phase 2: Analysieren
-│       ├── write-spec.md    # Phase 3: Spec schreiben
-│       ├── tdd-red.md       # Phase 5: Failing Tests
-│       ├── implement.md     # Phase 6: Implementieren
-│       ├── validate.md      # Phase 7: Validieren
-│       ├── workflow.md      # Workflow-Management
-│       └── add-artifact.md  # Test-Artefakte registrieren
+│   └── commands/            # Slash-Commands (siehe "Slash-Commands Übersicht" unten)
+│       ├── 00-intake.md, 00-bug.md, 01-feature.md
+│       ├── 10-context.md, 20-analyse.md, 30-write-spec.md
+│       ├── 40-tdd-red.md, 50-implement.md, 60-validate.md
+│       ├── 70-deploy.md, 80-workflow.md, 81-add-artifact.md
+│       └── 82-test.md, 83-user-story.md, 90-retro.md, 99-reset.md
 ├── modules/                 # Domain-spezifische Erweiterungen
 │   ├── ios-swiftui/         # iOS/SwiftUI Standards, TDD, Localization
 │   └── home-assistant/      # HA Config-Validation, Dashboard-QA
@@ -220,19 +225,31 @@ Einmal-Bypass fuer Gates:
 - `edit_gate.py` prueft Token und ueberspringt Phase-/TDD-Check
 - Keywords konfigurierbar via `openspec.yaml` → `override_token`
 
-## Hook-Architektur (v3 — 4 Hooks)
+## Hook-Architektur (4 Kern-Gates + ergänzende Guards)
 
-**PreToolUse Edit|Write:** `edit_gate.py` → [module hooks]
-  Intern: Protected State → Always-Allowed → Code-Check → Infra → Stop-Lock → Workflow → Phase → Override → TDD
+Registrierung zentral in `hooks/hooks.json` (Plugin-Modus) bzw. `.claude/settings.json` (Copy-Modus). Reihenfolge innerhalb eines Events entspricht der Listen-Reihenfolge in `hooks.json`.
 
-**PreToolUse Bash:** `bash_gate.py` → [module hooks]
-  Intern: Stop-Lock → Git Fast-Path → State-Integrity → Secrets → Commit-Gates
+**SessionStart:** `session_singleton_guard.py register` — legt Sitzungseintrag an
+
+**PreToolUse, alle Tools:** `session_singleton_guard.py guard` — erzwingt Worktree-Pflicht (blockt Schreib-Tools im Haupt-Repo)
+
+**PreToolUse Edit|Write|MultiEdit** (in dieser Reihenfolge): `worktree_write_guard.py` → `claude_md_protection.py` → `edit_gate.py` → `tdd_enforcement.py` → `post_implementation_gate.py` → [module hooks]
+  Intern (edit_gate.py, das Kern-Gate): Protected State → Always-Allowed → Code-Check → Infra → Stop-Lock → Workflow → Phase → Override → TDD
+
+**PreToolUse Bash:** `secrets_guard.py` → `bash_gate.py` → [module hooks]
+  Intern (bash_gate.py, das Kern-Gate): Stop-Lock → Git Fast-Path → State-Integrity → Secrets → Commit-Gates
+
+**PreToolUse Read:** `secrets_guard.py`
 
 **PostToolUse Bash:** `post_bash.py` → [module hooks]
   Intern: Test-Output-Detection → Adversary-Verdict
 
+**PostToolUse Edit|Write|MultiEdit:** `edit_verify.py` — prueft, dass die Aenderung tatsaechlich auf Disk gelandet ist
+
 **UserPromptSubmit:** `phase_listener.py` → [module hooks]
   Intern: Override → Stop-Lock → Approval (inkl. ADR-Reflexions-Gate via `workflow.py::_check_adr`) → New-UI → GREEN
+
+**SessionEnd:** `session_singleton_guard.py cleanup`
 
 ## Konventionen für dieses Repository
 
@@ -247,15 +264,15 @@ Einmal-Bypass fuer Gates:
 
 | Pfad | Zweck |
 |------|-------|
-| `core/hooks/*.py` | v3: 4 konsolidierte Hooks + Utilities |
+| `core/hooks/*.py` | 4 konsolidierte Kern-Gates + ergänzende Guards + Utilities |
 | `core/agents/*.md` | Agent-Definitionen mit YAML-Frontmatter |
 | `core/commands/*.md` | Slash-Command-Definitionen |
 | `modules/<name>/` | Domain-Module mit eigener config.yaml |
 | `templates/` | Wiederverwendbare Spec-Templates |
 
-### Hook-Entwicklung (v3)
+### Hook-Entwicklung
 
-v3 konsolidiert alle Checks in 4 Hooks. Neue Checks gehoeren IN die bestehenden Hooks, nicht als separate Dateien. Modul-spezifische Hooks werden via `modules/<name>/config.yaml` → `hooks:` registriert.
+Checks, die zum Phase-/TDD-/Commit-Gate gehoeren, kommen IN die 4 Kern-Hooks (`edit_gate.py`, `bash_gate.py`, `post_bash.py`, `phase_listener.py`), nicht als separate Dateien. Ein eigenstaendiger neuer Hook (wie `secrets_guard.py`, `worktree_write_guard.py`) ist nur gerechtfertigt, wenn der Check ein eigenes Event/eigene Matcher-Kombination braucht oder unabhaengig von den Kern-Gates greifen muss (z.B. Session-/Worktree-Enforcement). Neue Hooks IMMER in `hooks/hooks.json` registrieren. Modul-spezifische Hooks werden via `modules/<name>/config.yaml` → `hooks:` registriert.
 
 ```python
 # Modul-Hook schreiben — nutze hook_utils fuer Bootstrap:
@@ -314,10 +331,17 @@ python3 /path/to/agent-os-openspec/setup.py --version
 | `setup.py` | Installations- und Update-Tool (v3.0) |
 | `config.yaml` | Template fuer Projektkonfiguration |
 | `CHANGELOG.md` | Versionshistorie |
-| `core/hooks/edit_gate.py` | Konsolidierter Edit/Write Guard (ersetzt 17 Hooks) |
-| `core/hooks/bash_gate.py` | Konsolidierter Bash Guard (ersetzt 15 Hooks) |
+| `core/hooks/edit_gate.py` | Kern-Gate Edit/Write (Phase/TDD/LoC/Acceptance-Criteria) |
+| `core/hooks/bash_gate.py` | Kern-Gate Bash (Stop-Lock/State-Integrity/Secrets/Commit-Gates) |
 | `core/hooks/post_bash.py` | PostToolUse Bash (Adversary Detection) |
-| `core/hooks/phase_listener.py` | UserPromptSubmit Listener (ersetzt 6 Hooks) |
+| `core/hooks/phase_listener.py` | UserPromptSubmit Listener (Approval/Stop-Lock/Override/ADR-Gate) |
+| `core/hooks/session_singleton_guard.py` | SessionStart/PreToolUse/SessionEnd: erzwingt Worktree-Pflicht |
+| `core/hooks/worktree_write_guard.py` | PreToolUse Edit/Write: blockt Split-Brain-Schreibzugriff aufs Main-Repo |
+| `core/hooks/claude_md_protection.py` | PreToolUse Edit/Write: schuetzt CLAUDE.md vor verbotenen Patterns/Aufblaehung |
+| `core/hooks/tdd_enforcement.py` | PreToolUse Edit/Write: tiefe RED-Artefakt-Validierung |
+| `core/hooks/post_implementation_gate.py` | PreToolUse Edit/Write: erzwingt User-Review nach Implementierung |
+| `core/hooks/edit_verify.py` | PostToolUse Edit/Write: prueft Edit tatsaechlich auf Disk gelandet |
+| `core/hooks/secrets_guard.py` | PreToolUse Bash+Read: blockt Zugriff auf .env/Credentials/Keys |
 | `core/hooks/workflow.py` | Workflow State CLI (isolierte JSON-Files pro Workflow) |
 | `core/hooks/qa_gate.py` | QA-Gate: Test-Output validieren, Verdict setzen |
 | `core/hooks/override_token.py` | Shared Override-Token Management (TTL, Multi-WF) |
@@ -331,17 +355,22 @@ python3 /path/to/agent-os-openspec/setup.py --version
 
 | Command | Phase | Beschreibung |
 |---------|-------|--------------|
+| `/00-intake` | - | Aufgaben-Klassifikation (Fast Track/Standard/Full Process) — immer der erste Schritt |
+| `/00-bug` | - | Bug analysieren (Analysis-First, erstellt GitHub Issue) |
+| `/01-feature` | - | Feature planen (startet feature-planner Agent, erstellt GitHub Issue) |
 | `/10-context` | 1 | Relevanten Kontext sammeln |
 | `/20-analyse` | 2 | Anforderungen analysieren |
 | `/30-write-spec` | 3 | Spezifikation erstellen |
 | `/40-tdd-red` | 5 | Failing Tests schreiben |
 | `/50-implement` | 6 | Implementieren (Tests grün) |
 | `/60-validate` | 7 | Manuelle Validierung |
+| `/70-deploy` | - | Deployment (projektspezifisches Template, muss angepasst werden) |
 | `/80-workflow` | - | Workflows verwalten |
 | `/81-add-artifact` | - | Test-Artefakte registrieren |
-| `/83-user-story` | - | JTBD-basierte User Story Discovery |
-| `/01-feature` | - | Feature planen (startet feature-planner Agent) |
 | `/82-test` | - | Tests ausführen (startet test-runner Agent) |
+| `/83-user-story` | - | JTBD-basierte User Story Discovery |
+| `/90-retro` | - | Abgeschlossenen (archivierten) Workflow analysieren (Phasenzeiten, Qualitätssignale) |
+| `/99-reset` | - | Aktuellen Workflow abschließen/archivieren, neu starten |
 
 ## Arbeitsanweisungen für Claude
 
