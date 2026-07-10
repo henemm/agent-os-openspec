@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.9.1] - 2026-07-10
+
 ### Fixed
 
 **README.md und CLAUDE.md hinkten der tatsächlichen Hook-/Command-Struktur hinterher**
