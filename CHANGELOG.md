@@ -22,6 +22,18 @@ CLAUDE.md nannte zudem noch die alten, unnummerierten Command-Dateinamen
 
 ### Added
 
+**Triage-Marker in Intake-Agenten (Issue #67)**
+
+`bug-intake.md`, `bug-investigator.md` und `feature-planner.md` weisen jetzt in ihrem
+`gh issue create`-Template darauf hin, dass die erste Body-Zeile einen `[triage:x]`-Marker
+tragen muss (`a` = nutzersichtbares Fehlverhalten, `b` = Datenverlust-/Sicherheitsrisiko,
+`c` = fälschlich blockierendes Gate, `po` = PO-Auftrag). Hintergrund: gregor_zwanzig
+erzwingt diese Marker projektseitig per Nebenbefund-Gate (Analyse: 36% aller Issues waren
+unkontrollierte Folge-Issues), die drei Agenten liefen bislang ohne Marker dagegen. Der
+Marker wird situativ vom jeweiligen Agenten gewählt, nicht hartcodiert; keine Repo- oder
+Issue-Nummern im Plugin. Eine generische Marker-Prüfung im Plugin-`bash_gate` selbst ist
+als eigene Architektur-Entscheidung nach #68 ausgelagert.
+
 **ADR-Reflexions-Gate bei der Spec-Freigabe (Issue #63)**
 
 Neues Gate, das bei der Phase-3→4-Transition (Spec-Freigabe) erzwingt, dass eine Spec bewusst

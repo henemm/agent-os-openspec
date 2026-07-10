@@ -38,10 +38,17 @@ Jede Bug-Analyse MUSS enden mit diesen Schritten:
    ```
 
 2. **DANN: GitHub Issue erstellen** (wenn kein Duplikat gefunden)
+
+   **Triage-Marker (Pflicht als erste Body-Zeile):** Das Ziel-Repo blockt `gh issue create` ohne Marker. Waehle nach gefundener Root Cause:
+   - `[triage:a]` — nutzersichtbares Fehlverhalten
+   - `[triage:b]` — Datenverlust-/Sicherheitsrisiko
+   - `[triage:po]` — falls der PO die Analyse beauftragt hat
    ```bash
    gh issue create \
      --title "bug: [Kurze Beschreibung]" \
-     --body "## Symptom
+     --body "[triage:x]
+
+   ## Symptom
    [Was passiert falsch]
 
    ## Erwartetes Verhalten

@@ -100,10 +100,17 @@ Aus den 3 Investigation-Ergebnissen:
 
 ## Step 6: GitHub Issue erstellen (falls kein Duplikat)
 
+**Triage-Marker (Pflicht als erste Body-Zeile):** Das Ziel-Repo blockt `gh issue create` ohne Marker. Waehle situativ:
+- `[triage:a]` — nutzersichtbares Fehlverhalten (Standard fuer Bugs)
+- `[triage:b]` — Datenverlust-/Sicherheitsrisiko
+- `[triage:po]` — Aufnahme wurde direkt vom PO angestossen
+
 ```bash
 gh issue create \
   --title "bug: [Kurze Beschreibung]" \
-  --body "## Symptom
+  --body "[triage:x]
+
+## Symptom
 [Exakte Beschreibung]
 
 ## Betroffene Dateien

@@ -54,10 +54,16 @@ Die folgenden Standards MUESSEN befolgt werden (Pfad relativ zu Projekt-Root):
 Jede Feature-Planung MUSS enden mit diesen Schritten:
 
 1. **ZUERST: GitHub Issue erstellen** (zentraler Tracking-Einstiegspunkt!)
+
+   **Triage-Marker (Pflicht als erste Body-Zeile):** Das Ziel-Repo blockt `gh issue create` ohne Marker. Standardfall fuer Feature-Planung ist `[triage:po]` (vom PO angestossen). Alternativen:
+   - `[triage:a]` — Feature ist aus einem konkreten Nutzerproblem abgeleitet
+   - `[triage:c]` — Feature adressiert ein faelschlich blockierendes Gate
    ```bash
    gh issue create \
      --title "feat: [Feature Name]" \
-     --body "## Beschreibung
+     --body "[triage:po]
+
+   ## Beschreibung
    [1-2 Saetze was das Feature tut]
 
    ## Kategorie
