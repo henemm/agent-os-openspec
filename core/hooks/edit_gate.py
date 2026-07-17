@@ -20,7 +20,7 @@ Replaces 17 separate hooks with 1. Sequential short-circuit logic:
 Exit Codes: 0 = allowed, 2 = blocked
 """
 
-from hook_utils import setup_path, find_project_root, get_tool_input, block, allow, get_active_workflow_name, gate_diagnostics
+from hook_utils import setup_path, find_project_root, get_tool_input, block, allow, get_active_workflow_name, gate_diagnostics, extract_ac_entries
 setup_path()
 
 import json
@@ -159,12 +159,43 @@ def _is_stop_locked() -> bool:
 
 # --- S2: Acceptance Criteria check ---
 
-def _check_acceptance_criteria(workflow: dict) -> str | None:
-    """Block phase6 edits if spec has no valid AC-N acceptance criteria."""
+def _check_acceptance_criteria(workflow: dict, file_path: str = None) -> str | None:
+    """Block phase6 edits if spec has no valid AC-N acceptance criteria.
+
+    Repo-Scoping: liegt `file_path` ausserhalb von Worktree- und Hauptrepo-
+    Wurzel, greift der Check nicht (return None). Ohne `file_path` (direkter
+    Aufruf, z.B. Unit-Test) entfaellt das Scoping. Spec-Aufloesung: eine im
+    Worktree vorhandene Spec gewinnt vor dem Hauptrepo (dort ist der
+    Arbeitsstand). AC-Erkennung ueber die geteilte hook_utils.extract_ac_entries.
+    """
+    try:
+        from hook_utils import _find_worktree_root
+        wt = _find_worktree_root()
+    except Exception:
+        wt = None
+
+    # Repo-Pfad-Scoping: nur Pfade innerhalb Worktree- oder Hauptrepo-Wurzel
+    # werden geprueft. Nicht auflösbarer Pfad → fail-safe: nicht blocken.
+    if file_path:
+        try:
+            resolved = Path(file_path).expanduser().resolve()
+            roots = [_root.resolve()]
+            if wt is not None:
+                roots.append(wt.resolve())
+            inside = any(
+                resolved == r or str(resolved).startswith(str(r) + os.sep)
+                for r in roots
+            )
+            if not inside:
+                return None
+        except (OSError, RuntimeError, ValueError):
+            return None
+
     spec_file = workflow.get("spec_file")
     if not spec_file:
         return None
-    spec_path = _root / spec_file
+    # Worktree gewinnt vor Hauptrepo (Vorbild: _is_stop_locked()).
+    spec_path = (wt / spec_file) if (wt is not None and (wt / spec_file).exists()) else (_root / spec_file)
     if not spec_path.exists():
         return None
 
@@ -186,13 +217,17 @@ def _check_acceptance_criteria(workflow: dict) -> str | None:
     if "## Acceptance Criteria" not in content:
         return ("BLOCKED: Spec missing '## Acceptance Criteria' section. "
                 "Add AC-1, AC-2, ... entries before implementing.")
-    if not re.search(r"\bAC-\d+", content):
+
+    # Section-gebundene AC-Erkennung (geteilte Funktion). Leere Liste trotz
+    # vorhandener Section = keine echten AC-N-Deklarationen.
+    entries = extract_ac_entries(content)
+    if not entries:
         return ("BLOCKED: '## Acceptance Criteria' has no AC-N entries. "
                 "Format: '- **AC-1:** Given ... / When ... / Then ...'")
 
     # Längencheck: jeder AC-Eintrag muss ≥ 30 Zeichen Beschreibungstext haben
-    for m in re.finditer(r'\bAC-\d+[:\s]+(.*)', content):
-        desc = m.group(1).strip()
+    for label, desc, raw in entries:
+        desc = desc.strip()
         if len(desc) < 30:
             return (
                 f"BLOCKED: AC entry too short ({len(desc)} chars): '{desc[:50]}'\n"
@@ -364,7 +399,7 @@ def main():
                           + gate_diagnostics(workflow))
 
     # 10b. Acceptance Criteria check (S2)
-    ac_error = _check_acceptance_criteria(workflow)
+    ac_error = _check_acceptance_criteria(workflow, file_path)
     if ac_error:
         block(ac_error)
 

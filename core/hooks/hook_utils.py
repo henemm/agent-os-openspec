@@ -15,8 +15,95 @@ Usage in any hook:
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
+
+
+# AC-Bullet-Start: unindentierte '- ...AC-N...:'-Zeile. Deckt vier
+# Label-Varianten ab:
+#   '- **AC-1:** ...'            (Doppelpunkt innerhalb Bold)
+#   '- **AC-1**: ...'            (Doppelpunkt ausserhalb Bold)
+#   '- **AC-8 (praezisiert):** ' (Klammer-Zusatz + Doppelpunkt in Bold)
+#   '- AC-1: ...'                (ganz ohne Bold)
+_AC_BULLET_RE = re.compile(r"^-\s+\*{0,2}AC-\d+[^:*]*\*{0,2}\s*:")
+# Split-Variante: trennt Label (inkl. Klammer-Zusatz) vom Beschreibungstext.
+# Konsumiert Bold-Marker auf beiden Seiten des Doppelpunkts.
+_AC_SPLIT_RE = re.compile(r"^-\s+\*{0,2}(AC-\d+[^:*]*?)\*{0,2}\s*:\s*\*{0,2}\s*(.*)$")
+
+
+def extract_ac_entries(content: str) -> "list[tuple[str, str, str]]":
+    """Section-gebunden AC-N-Bullets aus '## Acceptance Criteria' extrahieren.
+
+    Liefert (label, description, raw) je Bullet, z.B.
+    ("AC-1", "Given ... Then ...", "**AC-1:** Given ... Then ...").
+    raw = Original-Bulletzeile (inkl. Soft-Wrap-Fortsetzungen) OHNE fuehrendes
+    "- ", damit Konsumenten den unveraenderten Quelltext erhalten koennen.
+    Soft-Wrap-Fortsetzungszeilen werden angehaengt, eingerueckte Sub-Bullets
+    (z.B. '- Test:') verworfen. Nur Bullets INNERHALB der Section zaehlen --
+    weder Fliesstext-Querverweise noch Tabellenzellen noch Vorkommen in
+    anderen Sections.
+
+    Section-gebundene State-Machine, 1:1 aus der bisherigen Inline-Logik in
+    adversary_dialog.parse_spec_expected_behavior uebernommen; einziger
+    Unterschied: Label, Beschreibungstext UND der Original-Rohtext werden
+    getrennt zurueckgegeben statt als ein rekonstruierter String.
+    """
+    lines = content.splitlines()
+    in_section = False
+    ac_active = False
+    entries: "list[list[str]]" = []  # [label, description, raw], mutable fuer Soft-Wrap
+
+    for line in lines:
+        stripped = line.strip()
+        indented = line[:1].isspace()
+
+        # Section-State pflegen (case-insensitive)
+        if re.match(r"^##\s+Expected Behavior", stripped, re.IGNORECASE):
+            in_section = False
+            ac_active = False
+            continue
+        if re.match(r"^##\s+Acceptance Criteria", stripped, re.IGNORECASE):
+            in_section = True
+            ac_active = False
+            continue
+        # Jede andere H2-Section beendet die aktuelle Section
+        if re.match(r"^##\s+", stripped):
+            in_section = False
+            ac_active = False
+            continue
+
+        if not in_section:
+            continue
+
+        # AC-Bullet nur INNERHALB der Acceptance-Criteria-Section (unindentiert)
+        if not indented and _AC_BULLET_RE.match(stripped):
+            raw = re.sub(r"^-\s+", "", stripped)  # Original-Bullet ohne "- "
+            m = _AC_SPLIT_RE.match(stripped)
+            if m:
+                label = m.group(1).strip()
+                desc = m.group(2).strip()
+            else:  # Defensive: sollte nie eintreten (Split ist Superset)
+                label = ""
+                desc = raw
+            entries.append([label, desc, raw])
+            ac_active = True
+            continue
+        # Innerhalb eines offenen AC-Blocks: Sub-Bullet vs. Fortsetzung
+        if ac_active and indented:
+            if stripped.startswith("-"):
+                # Eingerueckter Sub-Bullet (z.B. '- Test:') -> verwerfen
+                continue
+            if stripped:
+                # Fortsetzungszeile (Soft-Wrap) -> an desc UND raw anhaengen
+                entries[-1][1] = (entries[-1][1] + " " + stripped).strip()
+                entries[-1][2] = (entries[-1][2] + " " + stripped).strip()
+            continue
+        # Unindentierte Nicht-AC-Zeile beendet einen offenen AC-Block
+        if not indented and stripped:
+            ac_active = False
+
+    return [(label, desc, raw) for label, desc, raw in entries]
 
 
 def setup_path():

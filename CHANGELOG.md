@@ -5,7 +5,46 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.9.2] - 2026-07-17
+
+### Fixed
+
+**Gate-Parsing: section-gebundener AC-Scan, Repo-Scoping, Worktree-Spec-Auflösung, letzter Verdict-Block (Issues #60, #69)**
+
+Zwei naive globale Regex-Scans über strukturierte Markdown-Artefakte wurden behoben und die
+AC-Erkennung in eine einzige geteilte Funktion konsolidiert (Consumer-Tracker:
+henemm/gregor_zwanzig#1295).
+
+- **#60 — `edit_gate.py` AC-Längencheck matchte Prosa:** Der Check scannte mit
+  `re.finditer(r'\bAC-\d+[:\s]+(.*)', content)` die *gesamte* Spec-Datei. Jede AC-Erwähnung im
+  Fließtext, in Tabellenzellen oder als Querverweis erzeugte einen kurzen Rest-Text unter der
+  30-Zeichen-Schwelle und blockierte fälschlich. Der Check nutzt jetzt die neue geteilte
+  Funktion `hook_utils.extract_ac_entries()`, die AC-N-Bullets **section-gebunden** innerhalb
+  der `## Acceptance Criteria`-Section extrahiert (Label + Beschreibungstext getrennt, inkl.
+  Soft-Wrap-Merge und Sub-Bullet-Ausschluss). `adversary_dialog.py::parse_spec_expected_behavior()`
+  nutzt für den AC-Teil dieselbe Funktion — die section-gebundene Bullet-Erkennung existiert
+  damit nur noch an einer Stelle.
+- **Repo-Pfad-Scoping:** Liegt der Zielpfad eines Edits außerhalb von Haupt- und
+  Worktree-Wurzel, greift der AC-Check nicht mehr, unabhängig vom Workflow-Status.
+- **Worktree-Spec-Auflösung (Verhaltenswechsel — Gate strenger):** Existiert die referenzierte
+  Spec-Datei nur im aktuellen Worktree (nicht im Hauptrepo), wird sie jetzt gefunden und
+  inhaltlich geprüft, statt den Check stillschweigend zu überspringen (Vorbild: `_is_stop_locked()`).
+  Worktree gewinnt vor Hauptrepo. Bewusste, dokumentierte Verschärfung: Worktree-Specs, die nie
+  nach `main` gespiegelt werden, wurden bisher nie geprüft.
+- **#69 — `adversary_dialog.py::validate_dialog_artifact()` las den ersten statt den letzten
+  Verdict-Block:** `re.search` lieferte bei mehreren `## Verdict`-Blöcken (Fix-Loop-Runden)
+  immer den ersten, veralteten Block. Ausgewertet wird jetzt der letzte
+  (`re.finditer(...)[-1]`).
+- **Struktur-Scans fence- und zeilenanfangs-bewusst (Härtung aus 8 Adversary-Runden,
+  Findings F001–F007):** In Codeblöcken *zitierte* Strukturzeilen (`## Verdict`, `### Runde`,
+  `- [x]`) zählten als echte Struktur — ein zitiertes VERIFIED-Beispiel konnte ein echtes
+  finales BROKEN überschreiben (False-Pass). `validate_dialog_artifact()` blendet Fenced-Code-
+  Blöcke jetzt vor allen Struktur-Checks aus; die Fence-Erkennung implementiert die
+  CommonMark-Regeln vollständig (Backtick-/Tilde-Fences, Marker-Typ- und Längen-Bindung beim
+  Schließen, Info-String-Regeln inkl. Backtick-Verbot bei Backtick-Fences, Einrückung 0–3
+  Spaces, unbalancierte Fence fail-safe) — dokumentiert als Bedingungsmatrix C1–C10 im
+  Docstring von `_strip_fenced_code_blocks()`. Alle Struktur-Regexe sind zudem mit `(?m)^` am
+  Zeilenanfang verankert.
 
 ## [3.9.1] - 2026-07-10
 

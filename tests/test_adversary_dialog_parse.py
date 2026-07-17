@@ -189,3 +189,59 @@ def test_real_spec_template_two_acs_no_test_sub_bullets():
     assert ac_points[0].startswith("**AC-1:**")
     assert ac_points[1].startswith("**AC-2:**")
     assert not any(p.strip().startswith("Test:") for p in points)
+
+
+# --- F002 (MEDIUM): Original-Rohtext statt Rekonstruktion ('Ergebnisse unveraendert identisch') ---
+
+
+def _first_ac_source_line(spec_path: Path) -> str:
+    """Erste '- ...AC-1...:'-Bulletzeile der Spec, fuehrendes '- ' entfernt.
+
+    Reproduziert exakt das Vor-Konsolidierungs-Verhalten
+    (`re.sub(r'^-\s+', '', stripped)`) fuer einen einzeiligen AC-Bullet.
+    """
+    for raw in spec_path.read_text().splitlines():
+        s = raw.strip()
+        if s.startswith("- ") and "AC-1" in s and ":" in s:
+            import re as _re
+            return _re.sub(r"^-\s+", "", s)
+    raise AssertionError(f"kein AC-1-Bullet in {spec_path}")
+
+
+def test_f002_colon_outside_bold_preserves_raw_text():
+    """F002: '- **AC-1**: ...' (Doppelpunkt AUSSERHALB Bold) bleibt byte-identisch.
+
+    Vor der Konsolidierung lieferte parse_spec_expected_behavior() den rohen
+    Zeilentext ('**AC-1**: GIVEN ...'). Die Rekonstruktion 'f"**{label}:** {desc}"'
+    verschiebt den Doppelpunkt nach innen ('**AC-1:** GIVEN ...') -- das
+    widerspricht Test-Plan Test 8 ('Ergebnisse unveraendert identisch'). Erwartet:
+    exakt der Original-Rohtext, NICHT die '**AC-1:**'-Rekonstruktion.
+    """
+    spec = REPO_ROOT / "docs" / "specs" / "resolve-execution-context-consolidation.md"
+    points = parse_spec_expected_behavior(str(spec))
+    ac_points = [p for p in points if "AC-" in p]
+    expected = _first_ac_source_line(spec)
+    assert ac_points[0] == expected, (
+        f"Rohtext muss erhalten bleiben.\n  erwartet: {expected!r}\n  erhalten: {ac_points[0]!r}"
+    )
+    # Distinktives Merkmal: Doppelpunkt bleibt AUSSERHALB des Bold.
+    assert ac_points[0].startswith("**AC-1**:")
+    assert not ac_points[0].startswith("**AC-1:**")
+
+
+def test_f002_no_bold_label_preserves_raw_text():
+    """F002: '- AC-1: ...' (GANZ OHNE Bold) bleibt byte-identisch, kein Bold neu hinzugefuegt.
+
+    Die Rekonstruktion fuegte '**...**'-Markup hinzu, das im Quelltext nie stand.
+    Erwartet: exakt der Original-Rohtext ('AC-1: ...'), OHNE neues Bold-Markup.
+    """
+    spec = REPO_ROOT / "docs" / "specs" / "fast" / "retro-command.md"
+    points = parse_spec_expected_behavior(str(spec))
+    ac_points = [p for p in points if "AC-" in p]
+    expected = _first_ac_source_line(spec)
+    assert ac_points[0] == expected, (
+        f"Rohtext muss erhalten bleiben.\n  erwartet: {expected!r}\n  erhalten: {ac_points[0]!r}"
+    )
+    # Distinktives Merkmal: kein Bold-Markup wurde hinzugefuegt.
+    assert ac_points[0].startswith("AC-1:")
+    assert not ac_points[0].startswith("**")
