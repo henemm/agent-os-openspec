@@ -55,6 +55,43 @@ def _set_verdict(verdict: str) -> None:
         sys.exit(1)
 
 
+def _find_pytest_summary_line(content: str) -> str | None:
+    """Findet die letzte echte pytest-Summary-Zeile in der Testausgabe.
+
+    Bindet den Scan an das strukturelle pytest-Summary-Format (Liste aus
+    '<N> <status>'-Tokens, optional von '='-Rahmen umschlossen, optional mit
+    'in X.Ys' Laufzeit-Suffix) statt an eine beliebige Fundstelle im
+    Gesamttext. Verhindert False-BLOCK durch anderswo zitierten Text
+    (z.B. eine Zeile, die ueber den Fix berichtet und dabei eine Zahl+"failed"
+    nennt) UND False-PASS durch zitierten Text (eine Zahl+"passed" ohne
+    echte Summary-Zeile).
+
+    Liegen mehrere echte Summary-Zeilen vor (mehrere aneinandergehaengte
+    Testlaeufe in derselben Datei), wird die LETZTE zurueckgegeben.
+    """
+    # Summary-Zeile: Liste aus '<N> <status>'-Tokens, danach optional ein
+    # Laufzeit-Suffix in EINER von zwei real genutzten Formen -- pytest
+    # 'in X.Ys' ODER Playwright 'X.Ys' in Klammern (F001) -- ODER '='-Rahmen.
+    # Der Klammer-Inhalt MUSS eine Dauer (\d+(\.\d+)?s) sein und die Zeile
+    # bleibt full-line-verankert: Prosa mit Klammer ohne Dauer (z.B.
+    # '5 passed (siehe oben)') matcht dadurch weiterhin NICHT (AC-4-Grenze).
+    line_re = re.compile(
+        r"^\s*=*\s*(?:\d+\s+\w+\s*,?\s*)+"
+        r"(?:in\s+[\d.]+s\s*|\(\d+(?:\.\d+)?s\)\s*)?=*\s*$"
+    )
+    status_re = re.compile(r"\d+\s+(passed|failed|error)")
+    # Terminal-Runner (Playwright/farbiges pytest) schreiben ANSI-Steuercodes
+    # vor die Summary-Zeile; die werden pro Zeile entfernt, bevor die
+    # full-line-Verankerung greift.
+    ansi_re = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+    last = None
+    for raw in content.splitlines():
+        line = ansi_re.sub("", raw)
+        if line_re.match(line) and status_re.search(line):
+            last = line
+    return last
+
+
 def validate_test_output(filepath: str, infra: bool = False) -> tuple[bool, str]:
     """Validate test output file. Returns (valid, message)."""
     path = Path(filepath)
@@ -87,13 +124,19 @@ def validate_test_output(filepath: str, infra: bool = False) -> tuple[bool, str]
             return False, f"Tests FAILED: {failures}/{total} failures"
         return True, f"Tests PASSED: {total} tests, 0 failures"
 
-    # Pattern: pytest "N passed"
-    pytest_match = re.search(r"(\d+) passed", content)
-    pytest_fail = re.search(r"(\d+) failed", content)
-    if pytest_match:
-        if pytest_fail:
+    # Pattern: pytest summary line ("N passed, M failed, ...").
+    # Bound to the real summary line (not a whole-text scan) and check the
+    # failure count > 0, so a green suite ("0 failed") is not blocked and a
+    # quoted "N failed"/"N passed" outside the summary can't flip the verdict.
+    summary_line = _find_pytest_summary_line(content)
+    if summary_line is not None:
+        pytest_fail = re.search(r"(\d+)\s+failed", summary_line)
+        pytest_pass = re.search(r"(\d+)\s+passed", summary_line)
+        if pytest_fail and int(pytest_fail.group(1)) > 0:
             return False, f"Tests FAILED: {pytest_fail.group(1)} failed"
-        return True, f"Tests PASSED: {pytest_match.group(1)} passed"
+        if pytest_pass or pytest_fail:
+            n = pytest_pass.group(1) if pytest_pass else "0"
+            return True, f"Tests PASSED: {n} passed"
 
     # Pattern: "test result: ok" (cargo/rust)
     if "test result: ok" in content:

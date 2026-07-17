@@ -5,6 +5,31 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.9.3] - 2026-07-17
+
+### Fixed
+
+**qa_gate: pytest-Erfolgsmeldung `0 failed` wurde als Fehlschlag gewertet (Issue #71)**
+
+Der pytest-Zweig in `core/hooks/qa_gate.py::validate_test_output()` scannte mit zwei naiven
+globalen Regexes (`(\d+) passed` / `(\d+) failed`) über den *gesamten* Testausgabe-Text und
+prüfte den Fehler-Treffer nur auf Truthiness statt auf `> 0`. Beide Fehler zusammen kippten eine
+vollständig grüne Suite wie `754 passed, 0 failed, 3 skipped` in die widersprüchliche Blockmeldung
+`Tests FAILED: 0 failed`. Dieselbe naive Ganztext-Scan-Fehlerklasse wie die in 3.9.2 behobenen
+Fälle (Consumer-Tracker: henemm/gregor_zwanzig#1281).
+
+- Neue Hilfsfunktion `_find_pytest_summary_line()` bindet die Erkennung **zeilenweise** an die
+  echte pytest-Summary-Zeile (Liste aus `<N> <status>`-Tokens, optional `=`-gerahmt, optional mit
+  `in X.Ys`-Suffix); bei mehreren Summary-Zeilen gewinnt die letzte.
+- Der Fehler-Treffer wird jetzt auf `int(...) > 0` geprüft — `0 failed` in der echten Summary-Zeile
+  wird korrekt als Erfolg gewertet, `N failed` mit `N > 0` blockt weiterhin.
+- **In RED bewiesener False-PASS-Fall:** Zuvor wurde ein irgendwo im Text zitiertes `N passed`
+  (z.B. eine Prosa-/Log-Zeile `Fremdes Tool meldete 10 passed`) ohne echte Summary-Zeile
+  fälschlich als bestanden gewertet. Jetzt wird eine solche Fundstelle ignoriert und der Fallback
+  (`Could not determine test result.`) greift.
+- Der node/Go-TAP-Zweig (`Executed N tests, with M failures`) bleibt unverändert — er hatte die
+  `> 0`-Prüfung bereits und ist von diesem Doppel-Fehler nicht betroffen.
+
 ## [3.9.2] - 2026-07-17
 
 ### Fixed
