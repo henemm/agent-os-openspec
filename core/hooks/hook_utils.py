@@ -273,12 +273,18 @@ def resolve_active_workflow() -> "tuple[str, str]":
       2. Worktree-local settings.local.json env section (written live by workflow.py
          start/switch — not frozen, reflects the latest call in this session).
          Validated: skipped if workflows/<name>.json does not exist.
-      3. OPENSPEC_ACTIVE_WORKFLOW env var (frozen at session start by Claude Code).
-         Validated: skipped if it doesn't point to an existing workflow file.
-         Prevents stale values (e.g. the worktree directory name injected at startup)
-         from shadowing the correct settings value.
+      (The frozen OPENSPEC_ACTIVE_WORKFLOW env var is NOT a source here — see below.)
       (Shared {project_root}/.claude/active_workflow is SKIPPED — it might belong to
       a parallel session and would contaminate this session's context.)
+
+      The env var (frozen at session start by Claude Code) is deliberately NOT used
+      as a positive source inside a worktree (Issue #58). All workflow JSONs live in
+      the SHARED {main_repo}/.claude/workflows/ dir, so a frozen value pointing at a
+      parallel session's workflow would pass a mere "file exists" check and hijack
+      this session's identity (false-block, symmetric false-pass risk). The documented
+      flow (workflow.py start) always writes an active workflow worktree-locally
+      (priorities 1 and 2), so dropping the env fallback loses nothing legitimate: if
+      both worktree-local sources are empty, this worktree has no active workflow.
 
     In a main repo session (not a worktree):
       1. Shared active_workflow file ({project_root}/.claude/active_workflow)
@@ -308,10 +314,10 @@ def resolve_active_workflow() -> "tuple[str, str]":
                     return name, "settings"
         except (OSError, json.JSONDecodeError, KeyError):
             pass
-        # 3. Env var (frozen at session start) — only trusted if it points to a real workflow
-        name = os.environ.get("OPENSPEC_ACTIVE_WORKFLOW", "").strip()
-        if name and _workflow_file_exists(root, name):
-            return name, "env"
+        # No worktree-local source → no active workflow for THIS worktree.
+        # The frozen env var is intentionally NOT consulted here (Issue #58): it may
+        # carry a parallel session's workflow name, which would pass a shared-dir
+        # "file exists" check and hijack this session.
         return "", "none"
 
     # Main repo session: existing priority chain

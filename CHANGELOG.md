@@ -5,6 +5,37 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.9.4] - 2026-07-24
+
+### Fixed
+
+**Worktree-Identitäts-Kaperung: eingefrorene `OPENSPEC_ACTIVE_WORKFLOW`-Env-Var als Quelle im Worktree entfernt (Issue #58)**
+
+`core/hooks/hook_utils.py::resolve_active_workflow()` erlaubte in einer Worktree-Session, dass die
+bei Session-Start eingefrorene `OPENSPEC_ACTIVE_WORKFLOW`-Env-Var (Priorität 3) den aktiven Workflow
+bestimmt, sobald ihr Wert auf *irgendeine* existierende `workflows/<name>.json` zeigte. Da alle
+Workflow-JSONs im geteilten Hauptrepo-Verzeichnis (`{main_repo}/.claude/workflows/`) liegen, bestand
+der Wert einer *fremden* parallelen Session diese `_workflow_file_exists()`-Prüfung und die fremde
+Workflow-Identität wurde übernommen — mit realem False-Block (`tdd_enforcement.py` blockte einen
+legitimen Write mit dem Phase-/Artefaktzustand eines fremden Workflows) und symmetrischem
+False-Pass-Risiko (Consumer-Beleg: reproduziert in henemm/gregor_zwanzig, Plugin 3.9.3).
+
+- Im **Worktree-Zweig** von `resolve_active_workflow()` entfällt die Env-Var als Auflösungsquelle:
+  Sind Prio 1 (worktree-lokale `active_workflow`-Datei) und Prio 2 (worktree-`settings.local.json`
+  env) beide leer, liefert die Auflösung `("", "none")` statt auf die eingefrorene Env
+  zurückzufallen.
+- **Kein Verlust an legitimem Verhalten:** Der dokumentierte Ablauf (`workflow.py start`) schreibt
+  einen aktiven Workflow immer worktree-lokal (Prio 1 + 2); die eingefrorene Env ist im Worktree nur
+  ein Startzeit-Schnappschuss der launchenden Session.
+- **Main-Repo-Zweig unverändert:** In einer Nicht-Worktree-Session bleibt die Env-Var Priorität 3
+  (Rückwärtskompatibilität für Single-Session-Projekte).
+- Kein neues Persistenzfeld, keine Migration — verworfen wurde bewusst der Ownership-Feld-Ansatz
+  (neues `worktree`-Feld im Workflow-JSON), der für bestehende Workflows ohnehin auf dasselbe sichere
+  „nicht vertrauen" hinausläuft, bei mehr Code und Migrationsaufwand.
+- Tests: `tests/test_workflow_resolution_consolidation.py` um 6 Fälle erweitert (fremde Env wird
+  ignoriert — `resolve`/`fast`/`_read_active`; Datei schlägt Env; Settings schlagen Env;
+  Main-Repo-Env bleibt gültig). Alle bestehenden Tests unverändert grün.
+
 ## [3.9.3] - 2026-07-17
 
 ### Fixed

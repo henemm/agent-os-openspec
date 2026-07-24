@@ -111,11 +111,21 @@ Jeder Workflow bekommt ein eigenes JSON-File in `.claude/workflows/`.
 Aktiver Workflow wird **ausschliesslich** per `OPENSPEC_ACTIVE_WORKFLOW` Env-Var verwaltet.
 
 **Priorität bei der Namens-Auflösung:** `workflow.py` liest den aktiven Workflow-Namen NICHT
-direkt aus der Env-Var, sondern ueber `hook_utils.resolve_active_workflow()`. Priorität:
-worktree-lokale `.claude/active_workflow`-Datei > `settings.local.json` > `OPENSPEC_ACTIVE_WORKFLOW`
-Env-Var. Eine manuell inline gesetzte Env-Var (`OPENSPEC_ACTIVE_WORKFLOW=x python3 ...`) wird
-also von einer vorhandenen `active_workflow`-Datei ueberstimmt, wenn diese auf einen anderen,
-existierenden Workflow zeigt.
+direkt aus der Env-Var, sondern ueber `hook_utils.resolve_active_workflow()`. Die Priorität haengt
+davon ab, ob die Session in einem Worktree laeuft:
+
+- **Worktree-Session:** worktree-lokale `.claude/active_workflow`-Datei > worktree-lokale
+  `settings.local.json`-Env-Section. Die eingefrorene `OPENSPEC_ACTIVE_WORKFLOW`-Env-Var wird
+  bewusst NICHT konsultiert (Issue #58): sie ist ein Startzeit-Schnappschuss und koennte auf den
+  Workflow einer parallelen Session zeigen — da alle Workflow-JSONs im geteilten Hauptrepo liegen,
+  wuerde ein fremder Name sonst die "Datei existiert"-Pruefung bestehen und die Session kapern.
+  Sind beide worktree-lokalen Quellen leer, gilt: kein aktiver Workflow.
+- **Main-Repo-Session (kein Worktree):** `.claude/active_workflow`-Datei > `settings.local.json` >
+  `OPENSPEC_ACTIVE_WORKFLOW`-Env-Var (Rueckwaertskompatibilitaet fuer Single-Session-Projekte).
+
+Eine manuell inline gesetzte Env-Var (`OPENSPEC_ACTIVE_WORKFLOW=x python3 ...`) wird also von einer
+vorhandenen `active_workflow`-Datei ueberstimmt, wenn diese auf einen anderen, existierenden
+Workflow zeigt — und im Worktree ueberhaupt nicht mehr als Quelle herangezogen.
 
 **SYMLINK VERBOTEN:** Der `.active`-Symlink-Fallback ist deaktiviert. `workflow.py` bricht mit FATAL-Error ab wenn `OPENSPEC_ACTIVE_WORKFLOW` nicht gesetzt ist. Nach `workflow.py start <name>` gibt das Tool die notwendige `export`-Zeile direkt aus.
 

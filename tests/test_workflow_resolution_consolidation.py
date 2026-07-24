@@ -180,3 +180,87 @@ def test_9_fast_signature_is_tuple_or_none(monkeypatch, tmp_path):
     name, data = result
     assert isinstance(name, str)
     assert isinstance(data, dict)
+
+
+# --------------------------------------------------------------------------
+# Fix #58: Worktree ignoriert die eingefrorene OPENSPEC_ACTIVE_WORKFLOW-Env-Var
+#
+# Kernaussage: In einer Worktree-Session ist die bei Session-Start eingefrorene
+# Env-Var KEINE gültige Auflösungsquelle mehr. Da alle Workflow-JSONs im geteilten
+# Hauptrepo liegen, würde ein fremder Workflow-Name aus einer parallelen Session
+# sonst die schwache "Datei existiert irgendwo"-Prüfung bestehen und die eigene
+# Session kapern (Issue #58). Worktree-lokale Quellen (Datei > settings) bleiben
+# maßgeblich; der Main-Repo-Zweig bleibt unverändert (Env dort weiterhin Prio 3).
+# --------------------------------------------------------------------------
+
+def test_5_worktree_ignores_foreign_env(monkeypatch, tmp_path):
+    """AC-1/EB-1: Worktree, Env→fremder existierender Workflow, keine Datei/Settings → none."""
+    _write_workflow(tmp_path, "foreign-wf")  # existiert im geteilten Hauptrepo
+    monkeypatch.setenv("OPENSPEC_ACTIVE_WORKFLOW", "foreign-wf")
+    _bind_context(monkeypatch, tmp_path, worktree=tmp_path)
+
+    name, source = hook_utils.resolve_active_workflow()
+
+    assert (name, source) == ("", "none")
+
+
+def test_5b_worktree_foreign_env_fast_none(monkeypatch, tmp_path):
+    """AC-1/EB-5: read_active_workflow_fast() liefert None statt der fremden Env-Identität."""
+    _write_workflow(tmp_path, "foreign-wf")
+    monkeypatch.setenv("OPENSPEC_ACTIVE_WORKFLOW", "foreign-wf")
+    _bind_context(monkeypatch, tmp_path, worktree=tmp_path)
+
+    assert wf_module.read_active_workflow_fast() is None
+
+
+def test_5c_worktree_foreign_env_read_active_exits(monkeypatch, tmp_path):
+    """EB-5: _read_active() beendet mit sys.exit(1), da im Worktree nichts Eigenes auflösbar."""
+    _write_workflow(tmp_path, "foreign-wf")
+    monkeypatch.setenv("OPENSPEC_ACTIVE_WORKFLOW", "foreign-wf")
+    _bind_context(monkeypatch, tmp_path, worktree=tmp_path)
+
+    with pytest.raises(SystemExit) as exc:
+        wf_module._read_active()
+
+    assert exc.value.code == 1
+
+
+def test_6_worktree_file_beats_env(monkeypatch, tmp_path):
+    """AC-2/EB-2: Worktree-Datei (A) gewinnt gegen existierende Env (B)."""
+    _write_workflow(tmp_path, "workflow-a")
+    _write_workflow(tmp_path, "workflow-b")
+    (tmp_path / ".claude" / "active_workflow").write_text("workflow-a")
+    monkeypatch.setenv("OPENSPEC_ACTIVE_WORKFLOW", "workflow-b")
+    _bind_context(monkeypatch, tmp_path, worktree=tmp_path)
+
+    name, source = hook_utils.resolve_active_workflow()
+
+    assert (name, source) == ("workflow-a", "file")
+
+
+def test_7_worktree_settings_beats_env(monkeypatch, tmp_path):
+    """AC-3/EB-3: Worktree-settings.local.json (C) gewinnt gegen existierende Env (B)."""
+    _write_workflow(tmp_path, "workflow-c")
+    _write_workflow(tmp_path, "workflow-b")
+    claude_dir = tmp_path / ".claude"
+    claude_dir.mkdir(parents=True, exist_ok=True)
+    (claude_dir / "settings.local.json").write_text(
+        json.dumps({"env": {"OPENSPEC_ACTIVE_WORKFLOW": "workflow-c"}})
+    )
+    monkeypatch.setenv("OPENSPEC_ACTIVE_WORKFLOW", "workflow-b")
+    _bind_context(monkeypatch, tmp_path, worktree=tmp_path)
+
+    name, source = hook_utils.resolve_active_workflow()
+
+    assert (name, source) == ("workflow-c", "settings")
+
+
+def test_8_mainrepo_env_still_resolves(monkeypatch, tmp_path):
+    """AC-4/EB-4: Main-Repo (kein Worktree) — Env bleibt gültige Prio-3-Quelle (Regression)."""
+    _write_workflow(tmp_path, "workflow-env")
+    monkeypatch.setenv("OPENSPEC_ACTIVE_WORKFLOW", "workflow-env")
+    _bind_context(monkeypatch, tmp_path, worktree=None)
+
+    name, source = hook_utils.resolve_active_workflow()
+
+    assert (name, source) == ("workflow-env", "env")
