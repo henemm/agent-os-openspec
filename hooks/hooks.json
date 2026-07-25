@@ -19,6 +19,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/session_singleton_guard.py guard",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/secret_egress_guard.py",
+            "timeout": 5
           }
         ]
       },
