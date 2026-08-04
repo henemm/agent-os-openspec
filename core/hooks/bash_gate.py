@@ -16,7 +16,11 @@ Project-specific gates (sim_enforcer, build_lock) belong in module hooks.
 Exit Codes: 0 = allowed, 2 = blocked
 """
 
-from hook_utils import setup_path, find_project_root, get_tool_input, block, allow, get_active_workflow_name, gate_diagnostics
+from hook_utils import (
+    setup_path, find_project_root, get_tool_input, block, allow,
+    get_active_workflow_name, gate_diagnostics, strip_heredoc_bodies,
+    SECRETS_SENSITIVE_PATTERNS, SECRETS_ALWAYS_BLOCKED, SECRETS_FREETEXT_FLAGS as _SHARED_FREETEXT_FLAGS,
+)
 setup_path()
 
 import json
@@ -28,15 +32,12 @@ from pathlib import Path
 
 # --- Defaults (overridable via config.yaml) ---
 
-SENSITIVE_PATTERNS = [
-    r"\.env", r"credentials\.json", r"service[_-]?account.*\.json",
-    r"_key", r"_secret", r"\.pem$", r"\.key$",
-]
+# Geteilte Muster aus hook_utils (Issue #75): identisch mit secrets_guard.py.
+# Die frueheren bash_gate-eigenen Breitmuster `_key`/`_secret` blockierten
+# Befehle wegen blosser Dateinamen (tests/test_secret_egress_guard.py).
+SENSITIVE_PATTERNS = list(SECRETS_SENSITIVE_PATTERNS)
 
-ALWAYS_BLOCKED_SECRETS = [
-    r"credentials\.json", r"service[_-]?account.*\.json",
-    r"_key", r"_secret", r"\.pem$", r"\.key$",
-]
+ALWAYS_BLOCKED_SECRETS = list(SECRETS_ALWAYS_BLOCKED)
 
 CONTENT_OUTPUT_COMMANDS = [
     r"\bcat\b", r"\bhead\b", r"\btail\b", r"\bless\b", r"\bmore\b",
@@ -44,9 +45,9 @@ CONTENT_OUTPUT_COMMANDS = [
 ]
 
 # Flags, deren Argument Freitext ist (Commit-Message, PR-/Issue-Body, Feld-
-# werte) — nie ein Datei-Pfad. Deren Wert wird bei der Secrets-Datei-Token-
-# Analyse uebersprungen (Issue #53). Identische Liste wie in secrets_guard.py.
-SECRETS_FREETEXT_FLAGS = {"-m", "--message", "--body", "--title", "-F"}
+# werte) — nie ein Datei-Pfad. Deren Wert wird bei Datei-Token-Analysen
+# uebersprungen (Issue #53). Geteilte Quelle: hook_utils (kein Guard-Drift).
+SECRETS_FREETEXT_FLAGS = _SHARED_FREETEXT_FLAGS
 
 PROTECTED_FILE_PATTERNS = [
     r"\.claude/workflows/[^\s]*\.json",
@@ -87,10 +88,13 @@ APPROVAL_MARKER_PATTERNS_FILENAME = [
 # printf ...) in Lese-/Diagnosebefehlen, die nebenbei einen geschuetzten Pfad
 # referenzieren (z.B. `grep x .claude/hooks/y.py && echo done`), wurden
 # faelschlich als State-Manipulation blockiert.
+# Kurz-Kommandos MIT Wortgrenze am Anfang (Issue #64): ohne `\b` matchte
+# `rm\s` jedes Wort, das auf rm endet ("Langform ", "Plattform ") — Freitext
+# in Issue-Bodies/Doku loeste den State-Integrity-Block aus.
 WRITE_INDICATORS = [
-    r"json\.dump", r"open\(", r"write\(", r"sed\s+-i", r"mv\s", r"cp\s",
-    r"python3?\s+-c", r"tee\s", r"rm\s",
-    r"touch\s", r"cat\s*<<", r"unlink", r"truncate",
+    r"json\.dump", r"open\(", r"write\(", r"\bsed\s+-i", r"\bmv\s", r"\bcp\s",
+    r"python3?\s+-c", r"\btee\s", r"\brm\s",
+    r"\btouch\s", r"\bcat\s*<<", r"\bunlink\b", r"\btruncate\b",
 ]
 
 WHITELIST_COMMANDS = [
@@ -152,7 +156,16 @@ def _is_whitelisted(command: str) -> bool:
 
 
 def _references_protected(command: str) -> bool:
-    return any(re.search(p, command) for p in PROTECTED_FILE_PATTERNS)
+    """True, wenn ein Protected-Muster auf ein echtes DATEI-Token passt.
+
+    Token-Analyse mit Freitext-Flag-Ausnahme — dieselbe Logik wie beim
+    Secrets-Check (Issue #53), jetzt auch fuer den State-Integrity-Pfad
+    (Issue #64): ein Protected-Pfad, der nur in einem -m/--body/--title/-F-
+    Freitext ZITIERT wird (Issue-Body, Doku), ist keine Datei-Referenz.
+    Nested Shell/eval und shlex-Fehler fallen konservativ auf den Roh-Scan
+    zurueck (kein Gate-Bypass ueber quoted Code).
+    """
+    return _matches_file_token(command, PROTECTED_FILE_PATTERNS)
 
 
 def _references_filename_marker(command: str) -> bool:
@@ -218,8 +231,8 @@ def _is_sensitive(path: str, patterns: list) -> bool:
     return any(re.search(p, path, re.IGNORECASE) for p in patterns)
 
 
-def _references_sensitive_file(command: str, patterns: list) -> bool:
-    """True, wenn ein sensibles Muster auf ein echtes DATEI-Token des Befehls passt.
+def _matches_file_token(command: str, patterns: list) -> bool:
+    """True, wenn eines der Muster auf ein echtes DATEI-Token des Befehls passt.
 
     Freitext-Argumente von -m/--body/--title/-F (Commit-Messages, PR-/Issue-
     Bodies, grep-Muster hinter diesen Flags) sind keine Datei-Token und werden
@@ -250,6 +263,11 @@ def _references_sensitive_file(command: str, patterns: list) -> bool:
         if _is_sensitive(tok, patterns):
             return True
     return False
+
+
+def _references_sensitive_file(command: str, patterns: list) -> bool:
+    """Sensibles Muster auf echtem Datei-Token (Issue #53) — siehe _matches_file_token."""
+    return _matches_file_token(command, patterns)
 
 
 def _outputs_content(command: str) -> bool:
@@ -332,6 +350,15 @@ def main():
 
     config = _load_config_values()
 
+    # Heredoc-Bodies sind stdin-DATEN, kein Kommandotext (Issues #64/#75):
+    # fuer die Muster-Scans (Protected-Pfad, Write-Indicator, Secrets-Token)
+    # werden sie entfernt. Konservativ: Bodies, die ein Interpreter auf der
+    # Oeffner-Zeile ausfuehrt (python/sh/node/...), bleiben im Scan-Text.
+    # Der Credentials-Scan (4b) laeuft bewusst weiter auf dem VOLLEN Text —
+    # ein hartkodiertes Secret in einem Heredoc (z.B. .env-Schreiben) muss
+    # weiterhin auffallen.
+    scan_cmd = strip_heredoc_bodies(command)
+
     # 1. Stop-lock
     if _is_stop_locked():
         block("BLOCKED: Stop-lock active.")
@@ -359,29 +386,29 @@ def main():
         "  -> Lege dem User die Ergebnisse vor und WARTE auf sein 'go' / 'freigabe'\n"
         "     / 'approved'. Der phase_listener-Hook setzt den Marker dann selbst."
     )
-    if not is_git_command and _has_write_indicator(command):
+    if not is_git_command and _has_write_indicator(scan_cmd):
         # Tier 2 (Dateinamen-Marker): pfad-unabhaengig blocken. Verhindert
         # cd-Obfuskation (`cd .claude && touch user_approved_validation_x`).
-        if _references_filename_marker(command):
+        if _references_filename_marker(scan_cmd):
             block(_marker_block_msg)
         # Tier 1 (Feldname-Marker): nur blocken, wenn zusaetzlich ein echter
         # Protected-Pfad referenziert wird (Issue #30 — Freitext-Toleranz).
-        elif _references_fieldname_marker(command) and _references_protected(command):
+        elif _references_fieldname_marker(scan_cmd) and _references_protected(scan_cmd):
             block(_marker_block_msg)
 
     # 3b. State-integrity: protected file + write indicator
-    if _references_protected(command):
+    if _references_protected(scan_cmd):
         if _is_whitelisted(command):
             allow()
-        if _has_write_indicator(command):
+        if _has_write_indicator(scan_cmd):
             block("BLOCKED: Direct state file manipulation. Use workflow.py CLI.")
 
     # 4. Secrets guard
     sensitive_patterns = config.get("secrets_guard", {}).get("sensitive_patterns", SENSITIVE_PATTERNS)
     always_blocked = config.get("secrets_guard", {}).get("always_blocked", ALWAYS_BLOCKED_SECRETS)
 
-    if _references_sensitive_file(command, sensitive_patterns) and _outputs_content(command):
-        if _references_sensitive_file(command, always_blocked):
+    if _references_sensitive_file(scan_cmd, sensitive_patterns) and _outputs_content(scan_cmd):
+        if _references_sensitive_file(scan_cmd, always_blocked):
             block("BLOCKED: Secrets guard — sensitive credentials/keys.")
         staging = (_root / ".claude" / "staging").exists()
         if not staging:

@@ -207,6 +207,8 @@ class TestFailOpen:
 
     def test_unreadable_env_does_not_block(self, tmp_path):
         """6c) .env ohne Leserecht -> fail-open statt Dauerblockade."""
+        if os.geteuid() == 0:
+            pytest.skip("chmod 000 sperrt root nicht aus — Test braucht Nicht-Root")
         env = _write_env(tmp_path)
         env.chmod(0o000)
         try:

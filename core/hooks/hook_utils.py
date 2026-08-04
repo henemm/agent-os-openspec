@@ -168,6 +168,81 @@ def allow():
     sys.exit(0)
 
 
+# --- Geteilte Secrets-Muster (Issue #75) ---
+# EINE Quelle fuer bash_gate.py UND secrets_guard.py. Vorher fuehrte bash_gate
+# die aelteren Breitmuster `_key`/`_secret` (Substring ohne Anker), waehrend
+# secrets_guard bereits die geschaerften Formen hatte — der Drift blockierte
+# Befehle wegen blosser Dateinamen (tests/test_secret_egress_guard.py).
+SECRETS_SENSITIVE_PATTERNS = [
+    r"\.env",
+    r"credentials\.json",
+    r"service[_-]?account.*\.json",
+    r"private[_.]key",
+    r"[_.]secret\.",
+    r"\.pem$",
+    r"\.key$",
+]
+
+SECRETS_ALWAYS_BLOCKED = [
+    r"credentials\.json",
+    r"service[_-]?account.*\.json",
+    r"private[_.]key",
+    r"[_.]secret\.",
+    r"\.pem$",
+    r"\.key$",
+]
+
+# Flags, deren Argument Freitext ist (Commit-Message, PR-/Issue-Body) — nie
+# ein Datei-Pfad. Wird bei Datei-Token-Analysen uebersprungen (Issue #53).
+SECRETS_FREETEXT_FLAGS = {"-m", "--message", "--body", "--title", "-F"}
+
+
+# Heredoc-Body-Stripping (Issues #64/#75): shlex kennt keine Heredoc-Syntax,
+# darum landeten Body-Woerter (Doku-Freitext, Commit-Messages) als normale
+# Tokens in den Datei-/Kommando-Scans. Ein Heredoc-Body ist DATEN, kein
+# Kommando — ausser ein Interpreter auf der Oeffner-Zeile fuehrt ihn aus.
+_HEREDOC_OPEN_RE = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+_HEREDOC_INTERPRETER_RE = re.compile(
+    r"\b(python3?|node|perl|ruby|php|(?:ba|z|da|k)?sh)\b"
+)
+
+
+def strip_heredoc_bodies(command: str) -> str:
+    """Entfernt Heredoc-BODIES aus einem Kommandotext, Oeffner-Zeilen bleiben.
+
+    Sicherheitsmodell:
+    - Der Body ist stdin-DATEN des empfangenden Kommandos; Schreibziele
+      (Redirects, tee-Argumente) stehen auf der Oeffner-Zeile und bleiben
+      fuer die Gates sichtbar.
+    - Steht auf der Oeffner-Zeile ein Interpreter (python/sh/node/...), ist
+      der Body potenziell CODE — dann wird er NICHT entfernt (konservativ).
+    - Terminator-Erkennung POSIX-genau: Zeile == Marker; bei `<<-` sind
+      fuehrende Tabs erlaubt. Ein nie geschlossenes Heredoc verschluckt den
+      Rest — exakt wie die Shell selbst.
+    """
+    if "<<" not in command:
+        return command
+    out = []
+    pending: list[tuple[str, bool]] = []  # (marker, allow_tab_indent)
+    for line in command.split("\n"):
+        if pending:
+            marker, dash = pending[0]
+            candidate = line.lstrip("\t") if dash else line
+            if candidate == marker:
+                pending.pop(0)
+            continue  # Body-Zeile (oder Terminator) — nie uebernehmen
+        openers = [
+            (m.group(2), m.group(0).startswith("<<-"))
+            for m in _HEREDOC_OPEN_RE.finditer(line)
+            # `<<<` (Here-String) ist kein Heredoc-Oeffner
+            if not (m.start() > 0 and line[m.start() - 1] == "<")
+        ]
+        if openers and not _HEREDOC_INTERPRETER_RE.search(line):
+            pending.extend(openers)
+        out.append(line)
+    return "\n".join(out)
+
+
 def get_file_path(tool_input: dict = None) -> str:
     """Extract file_path from tool input."""
     if tool_input is None:
