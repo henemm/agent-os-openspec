@@ -5,10 +5,15 @@ Post-Bash v3 — PostToolUse Hook for Bash
 Extensible post-execution hook. Base implementation is minimal.
 Module hooks (e.g., iOS build_lock_release) extend this via config.
 
+Der Test-Output kommt im PostToolUse-Payload unter `tool_response`
+(stdout/stderr), NICHT unter `tool_input` — der fruehere Zugriff auf
+tool_input["stdout"] war immer leer, die dokumentierte automatische
+Verdict-Erkennung damit funktionslos (gefunden bei der Analyse zu #77/#82).
+
 Exit Codes: 0 always (never blocks)
 """
 
-from hook_utils import setup_path, find_project_root, get_tool_input, get_active_workflow_name
+from hook_utils import setup_path, find_project_root, get_tool_result, get_active_workflow_name
 setup_path()
 
 import json
@@ -19,8 +24,39 @@ from pathlib import Path
 
 _root = find_project_root()
 
+# Fail-Guard: bei JEDER Fehler-Evidenz im Output wird NIE VERIFIED gesetzt.
+# Ohne diesen Guard wuerde '2 failed, 3 passed' ueber das 'passed'-Muster
+# faelschlich als gruen gewertet (False-Pass-Richtung, ausgeschlossen).
+_FAILURE_EVIDENCE_RE = re.compile(
+    r"\b[1-9]\d*\s+(?:failed|errors?)\b"
+    r"|--- FAIL:"
+    r"|^FAIL\b"
+    r"|\*\* TEST FAILED \*\*"
+    r"|test result: FAILED",
+    re.MULTILINE | re.IGNORECASE,
+)
 
-def _detect_test_output(command: str, tool_input: dict) -> None:
+
+def _extract_stdout(payload: dict) -> str:
+    """stdout aus dem PostToolUse-Payload (tool_response) lesen.
+
+    tool_response ist bei Bash ein Objekt mit stdout/stderr; aeltere
+    Wrapper lieferten teils einen String oder ein 'output'-Feld.
+    Legacy-Fallback: manche Test-Harnesse legten stdout in tool_input.
+    """
+    resp = payload.get("tool_response", {})
+    if isinstance(resp, str) and resp:
+        return resp
+    if isinstance(resp, dict):
+        out = resp.get("stdout") or resp.get("output") or ""
+        if isinstance(out, str) and out:
+            return out
+    tool_input = payload.get("tool_input") or {}
+    legacy = tool_input.get("stdout", "")
+    return legacy if isinstance(legacy, str) else ""
+
+
+def _detect_test_output(command: str, stdout: str) -> None:
     """Detect test framework output and update adversary_verdict in active workflow."""
     # Only process test-like commands
     test_indicators = ["pytest", "jest", "xcodebuild", "go test", "cargo test",
@@ -28,14 +64,15 @@ def _detect_test_output(command: str, tool_input: dict) -> None:
     if not any(t in command for t in test_indicators):
         return
 
-    # Read stdout from tool result (if available via env)
-    stdout = tool_input.get("stdout", "")
     if not stdout:
         return
 
+    if _FAILURE_EVIDENCE_RE.search(stdout):
+        return  # Fehler-Evidenz → niemals automatisch VERIFIED
+
     # Check for framework-specific pass patterns
     pass_patterns = [
-        (r"passed", "pytest"),
+        (r"\b\d+\s+passed\b", "pytest"),
         (r"Tests:.*passed", "jest"),
         (r"\*\* TEST SUCCEEDED \*\*", "xcodebuild"),
         (r"^ok\s+", "go_test"),
@@ -82,12 +119,13 @@ def _set_adversary_verdict(verdict: str) -> None:
 
 
 def main():
-    tool_input = get_tool_input()
+    payload = get_tool_result()
+    tool_input = payload.get("tool_input") or {}
     command = tool_input.get("command", "")
     if not command:
         sys.exit(0)
 
-    _detect_test_output(command, tool_input)
+    _detect_test_output(command, _extract_stdout(payload))
 
     sys.exit(0)
 

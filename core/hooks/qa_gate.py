@@ -251,11 +251,21 @@ def main():
     is_ambiguous = False
     if checklist:
         try:
-            from adversary_dialog import validate_dialog_artifact
-            cl_valid, cl_message = validate_dialog_artifact(checklist)
+            from adversary_dialog import validate_dialog_artifact_ex
+            cl_valid, cl_message, cl_kind = validate_dialog_artifact_ex(checklist)
             if not cl_valid:
                 print(f"\nCHECKLIST FAILED — {cl_message}")
-                _set_verdict(f"BROKEN:{cl_message}")
+                if cl_kind == "content":
+                    # Das Artefakt belegt ein inhaltlich negatives Ergebnis
+                    # (BROKEN-Verdict, offene Punkte) → als BROKEN persistieren.
+                    _set_verdict(f"BROKEN:{cl_message}")
+                else:
+                    # Reiner FORMfehler (unbekanntes Vokabular, fehlende
+                    # Marker, Alter) ist KEIN inhaltliches Urteil: das
+                    # adversary_verdict bleibt unangetastet, statt ein
+                    # womoeglich positives Validator-Ergebnis als BROKEN
+                    # zu ueberschreiben (Issue #77).
+                    print("Formfehler im Artefakt — adversary_verdict bleibt unveraendert.")
                 sys.exit(1)
             print(f"Checklist: {cl_message}")
             if "AMBIGUOUS" in cl_message:

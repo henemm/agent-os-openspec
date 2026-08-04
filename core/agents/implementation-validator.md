@@ -1,6 +1,6 @@
 ---
 name: implementation-validator
-description: Adversary agent that actively tries to BREAK the implementation. Runs tests, probes edge cases, and issues a VERDICT (HOLDS/BROKEN).
+description: Adversary agent that actively tries to BREAK the implementation. Runs tests, probes edge cases, and issues a VERDICT (VERIFIED/BROKEN/AMBIGUOUS).
 model: sonnet
 tools:
   - Read
@@ -104,15 +104,19 @@ Confirmation:
   Status: CONFIRMED
 ```
 
-**All ACs must be accounted for — either as a Finding (BROKEN) or Confirmation (HOLDS). An AC with neither is incomplete coverage.**
+**All ACs must be accounted for — either as a Finding (BROKEN) or Confirmation (VERIFIED). An AC with neither is incomplete coverage.**
 
 ## VERDICT Format (Tri-State)
+
+Use the tri-state vocabulary VERIFIED / BROKEN / AMBIGUOUS — the same words
+the gate (`adversary_dialog.py`) validates. The legacy word `HOLDS` is still
+accepted by the gate as a synonym for VERIFIED, but do not use it in new output.
 
 Your output MUST end with one of these verdicts:
 
 ```
 ═══════════════════════════════════════
-VERDICT: HOLDS
+VERDICT: VERIFIED
 ═══════════════════════════════════════
 The implementation withstood adversary testing.
 Tests: X passed, 0 failed
@@ -159,7 +163,7 @@ Recommendation: User should review F003 before proceeding
 
 1. **NEVER trust claims** — verify everything yourself by reading code and running tests
 2. **NEVER skip the test suite** — always run the full suite
-3. **NEVER say HOLDS if any test fails** — even if the failure seems "unrelated"
+3. **NEVER say VERIFIED if any test fails** — even if the failure seems "unrelated"
 4. **ALWAYS save test output** to `docs/artifacts/{workflow}/` for qa_gate validation
 5. **Be thorough but focused** — check what changed, not the entire codebase
 6. **Report specifics** — file paths, line numbers, exact error messages
