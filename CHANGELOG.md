@@ -5,6 +5,33 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.10.1] - 2026-08-04
+
+Nachversionierung des direkt auf `main` gelandeten Fixes `5f2c17e` (Refs:
+gregor_zwanzig#1431) — kein neuer Code, nur Release-Hygiene: CHANGELOG-Eintrag
+und Versions-Bump gemäß Repo-Konvention.
+
+### Fixed
+
+**bash_gate: Gate-Erkennung tokenbasiert — git-Aufrufform umgeht keine Prüfung mehr**
+
+- Die Gates entschieden per Teilstring (`"git commit" in command`), ob sie
+  überhaupt prüfen. Jede git-Form mit Optionen zwischen `git` und Unterbefehl
+  (`git -C /pfad commit`, `git -c k=v commit`, `git --no-pager commit`) umging
+  sie still — am schwersten wog der Fast Path in `bash_gate.py`, der bei
+  `startswith("git ")` sofort erlaubte, BEVOR Secrets-Guard, Credential-Prüfung
+  und Commit-Gates liefen.
+- Entscheidungsfrage umgedreht: nicht "erkenne ich einen Aufruf?", sondern
+  "bin ich sicher, dass hier KEINER drinsteckt?" — Zerlegung findet den Aufruf
+  → prüfen; Zerlegung sauber ohne Fund → durchlassen (behebt Fehlalarme bei
+  bloßer Erwähnung im Freitext); Lexer gescheitert → Teilstring als
+  Untergrenze, prüfen.
+- Fast Path greift nur noch, wenn JEDES Kommando-Segment ein git-Aufruf ist —
+  ein an `git status` angehängtes `touch` auf Freigabe-Marker unter `.claude/`
+  kann sich keine Nutzer-Freigabe mehr erschleichen.
+- Neue geteilte Tokenizer-Helfer in `hook_utils.py`; Regressionstests in
+  `tests/test_git_invocation_detection.py` (Suite: 455 passed).
+
 ## [3.10.0] - 2026-08-04
 
 Sammelrelease gegen fünf False-Positive-Klassen der Gates (#64, #73, #75, #76, #79)
