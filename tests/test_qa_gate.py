@@ -215,6 +215,8 @@ def test_f001_real_playwright_artifact_is_pass(tmp_path):
     issue_273_green_output.txt (Playwright, ANSI-Codes + '  2 passed (12.0s)')
     muss als PASSED erkannt werden."""
     src = Path("/home/hem/gregor_zwanzig/docs/artifacts/issue_273_green_output.txt")
+    if not src.exists():
+        pytest.skip("Realdaten-Fixture nur auf dem Ursprungsrechner vorhanden")
     dst = tmp_path / "issue_273_green_output.txt"
     shutil.copy(src, dst)  # copy() setzt mtime=jetzt -> Frische-Check ok
     valid, message = qa_gate.validate_test_output(str(dst))
