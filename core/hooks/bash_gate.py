@@ -20,6 +20,7 @@ from hook_utils import (
     setup_path, find_project_root, get_tool_input, block, allow,
     get_active_workflow_name, gate_diagnostics, strip_heredoc_bodies,
     SECRETS_SENSITIVE_PATTERNS, SECRETS_ALWAYS_BLOCKED, SECRETS_FREETEXT_FLAGS as _SHARED_FREETEXT_FLAGS,
+    git_subcommands, git_head_subcommands, is_git_subcommand, is_pure_git_command,
 )
 setup_path()
 
@@ -149,10 +150,51 @@ def _is_stop_locked() -> bool:
         return False
 
 
+def _whitelist_matches(command: str, entry: str) -> bool:
+    """Ein Whitelist-Eintrag greift nur bei echtem AUFRUF, nicht bei Erwaehnung.
+
+    Zwei Eintragsformen, eine Semantik (Issue #1431):
+      * "git <unterbefehl>" -> tokenbasierte git-Erkennung, deckt damit auch
+        `git -C /pfad add`, `git -c k=v commit`, `git --no-pager push` ab.
+      * alles andere ("workflow.py", "qa_gate.py", Projekt-Whitelist) ->
+        Token-Folge im Kommando. Das erste Wort darf als Pfad auftreten
+        (`python3 .claude/hooks/workflow.py` trifft "workflow.py"), Folgewoerter
+        muessen exakt als eigene Token stehen.
+
+    Unzerlegbares Kommando (kaputte Quotes) -> altes Teilstring-Verhalten,
+    damit die Whitelist fail-open bleibt und niemand ausgesperrt wird.
+    """
+    parts = entry.split()
+    if not parts:
+        return False
+    if len(parts) == 2 and parts[0] == "git":
+        # Bewusst die STRENGE Variante: ein Whitelist-Treffer ueberspringt
+        # State-Integrity und Credential-Pruefung. Ueber-Erkennung ist hier die
+        # gefaehrliche Richtung — die Zweifels-Regel von is_git_subcommand()
+        # darf eine blosse Erwaehnung nicht zum Freifahrtschein machen
+        # (`python3 -c "…"  # git commit`).
+        return parts[1] in git_head_subcommands(command)
+    try:
+        tokens = shlex.split(command, posix=True)
+    except ValueError:
+        return entry in command
+    n = len(parts)
+    for i in range(len(tokens) - n + 1):
+        head = tokens[i]
+        if head != parts[0] and not head.endswith("/" + parts[0]):
+            continue
+        if tokens[i + 1:i + n] == parts[1:]:
+            return True
+    return False
+
+
 def _is_whitelisted(command: str) -> bool:
     config = _load_config_values()
     project_whitelist = config.get("bash_gate", {}).get("whitelist", [])
-    return any(allowed in command for allowed in WHITELIST_COMMANDS + project_whitelist)
+    return any(
+        _whitelist_matches(command, allowed)
+        for allowed in WHITELIST_COMMANDS + project_whitelist
+    )
 
 
 def _references_protected(command: str) -> bool:
@@ -364,7 +406,22 @@ def main():
         block("BLOCKED: Stop-lock active.")
 
     # 2. Git commands fast path
-    if command.lstrip().startswith("git ") and "git commit" not in command:
+    # Tokenbasiert (Issue #1431). Die alte Form
+    #   command.lstrip().startswith("git ") and "git commit" not in command
+    # war doppelt zu weit: `git -C /pfad commit` erfuellte BEIDE Bedingungen und
+    # beendete den Hook VOR Secrets-Guard, Credential-Pruefung und den Commit-
+    # Gates; und `git status && touch <freigabe-marker>` beginnt zwar mit "git ",
+    # ist aber genau der Angriffsvektor, den Abschnitt 3a abwehren soll.
+    # Der Fast Path greift jetzt nur, wenn JEDES Segment ein git-Aufruf ist.
+    git_only = is_pure_git_command(command)
+    if (
+        not git_only
+        and not git_subcommands(command)          # nicht zerlegbar (kaputte Quotes)
+        and command.lstrip().startswith("git ")
+        and "git commit" not in command
+    ):
+        git_only = True  # fail-open: exakt das bisherige Verhalten
+    if git_only and not is_git_subcommand(command, "commit"):
         allow()
 
     # 3a. Approval-/Erfolgs-Marker: deny by default, kein Bash-Weg erlaubt.
@@ -373,7 +430,10 @@ def main():
     #     git ist ausgenommen: eine Commit-Message oder Doku DARF die Marker-
     #     Namen erwaehnen — das ist keine Datei-Manipulation. Der Angriffsvektor
     #     (touch/echo/sed/rm) startet nie mit "git ".
-    is_git_command = command.lstrip().startswith("git ")
+    #     Tokenbasiert (Issue #1431): die Ausnahme gilt nur, wenn JEDES Segment
+    #     ein git-Aufruf ist (`git commit -m "... user_approved ..."` ja,
+    #     `git status && touch <marker>` nein).
+    is_git_command = git_only
     _marker_block_msg = (
         "BLOCKED: Freigabe-/Erfolgs-Marker duerfen NICHT per Bash erzeugt, "
         "geaendert oder geloescht werden.\n"
@@ -420,8 +480,8 @@ def main():
         if cred_type:
             block(f"BLOCKED: Hardcoded {cred_type} detected. Use env vars or secrets.env instead.")
 
-    # 5. Git commit gates
-    if "git commit" in command:
+    # 5. Git commit gates (tokenbasiert, Issue #1431 — Erwaehnung ist kein Aufruf)
+    if is_git_subcommand(command, "commit"):
         import subprocess
 
         # Get staged files (reused across 5a, 5b, 5c)

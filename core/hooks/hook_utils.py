@@ -16,8 +16,296 @@ Usage in any hook:
 import json
 import os
 import re
+import shlex
 import sys
 from pathlib import Path
+
+
+# --- git-Aufrufform-Erkennung (Issue #1431) --------------------------------
+# Ersetzt die naive Teilstring-Pruefung `"git commit" in command`, die in
+# BEIDE Richtungen falsch lag: jede Form mit etwas zwischen `git` und dem
+# Unterbefehl (`git -C /pfad commit`, `git -c k=v commit`, `git --no-pager
+# commit`) rutschte still durch, waehrend die blosse ERWAEHNUNG der Zeichen-
+# folge (`grep -rn "git commit"`, `gh issue create --body "... git commit ..."`)
+# faelschlich anschlug.
+#
+# GRUNDHALTUNG (PO-Richtungswechsel nach drei Adversary-Runden): NICHT
+# "erkenne ich einen Aufruf? nein -> durchlassen", sondern "bin ich sicher,
+# dass hier keiner drinsteckt? nur dann durchlassen". Eine Kommandozeile ist
+# beliebig verschachtelbar (Backticks, `$( … )`, Schleifen-Schluesselwoerter,
+# `eval`, Heredocs) — wer sie vollstaendig verstehen will, jagt endlos die
+# naechste Variante. Drei Faelle:
+#
+#   1. Zerlegung findet den Aufruf                       -> pruefen
+#   2. Zerlegung findet nichts, Kommando sauber zerlegbar -> durchlassen
+#   3. Zerlegung findet nichts, Kommando NICHT sicher
+#      zerlegbar, Zeichenfolge kommt vor                 -> im Zweifel pruefen
+#
+# Damit ist die alte Teilstring-Pruefung die Untergrenze: was sie fing, wird
+# weiterhin geprueft — ausser das Kommando ist sauber zerlegbar und enthaelt
+# nachweislich nur eine Erwaehnung (das behebt den `grep`-Fehlalarm).
+
+_GIT_SHELL_BINARY_RE = re.compile(r"^(?:ba|z|da|k)?sh$")
+# Zeichen, die shlex als eigenstaendige Punktuations-Token liefern soll. Der
+# Standardsatz von punctuation_chars=True ist "();<>|&"; "\n" und der Backtick
+# kommen dazu (s. _git_lex bzw. Adversary-Befund F005).
+_GIT_PUNCTUATION = "();<>|&\n`"
+_GIT_PUNCTUATION_CHARS = frozenset(_GIT_PUNCTUATION)
+# Zeichen, die ein Kommando-Segment BEENDEN. "<" und ">" allein tun das NICHT —
+# ein Redirect gehoert zum selben Kommando (`git show x > y` ist EIN Aufruf).
+# Prozess-Substitution "<(" beendet es dagegen sehr wohl; deshalb entscheidet
+# nicht der ganze Token, sondern ob ein echtes Trenner-Zeichen darin vorkommt.
+_GIT_SEPARATOR_CHARS = frozenset("&|;()\n`")
+# Trenner-Woerter: Gruppierungszeichen, die shlex nur bei umgebendem
+# Whitespace abtrennt.
+#
+# Bash-Schluesselwoerter (`do`, `then`, `fi`, …) standen hier zwischenzeitlich
+# ebenfalls, als Antwort auf Adversary-Befund F006 (`for … do git commit …`).
+# Sie sind wieder raus: die Positions-Suche (_git_subcommands_in_segment)
+# erledigt denselben Fall allgemeiner, und KEINE Mutation der Schluesselwort-
+# Liste konnte danach noch einen Test roten — unfalsifizierbarer Code, der nur
+# neue Fehlerquellen mitbringt (ein Dateiname "do" haette Segmente zerrissen).
+_GIT_SEPARATOR_WORDS = frozenset({"{", "}", "!"})
+# Zeilenfortsetzung: "\" + Zeilenumbruch ist in der Shell schlicht NICHTS —
+# sie wird ERSATZLOS entfernt, sie ist kein Trennzeichen. Ohne Normalisierung
+# zerfaellt `git \<umbruch> commit` in zwei Segmente; mit einem Leerzeichen als
+# Ersatz zerfaellt umgekehrt `gi\<umbruch>t` in zwei Woerter und es bleibt gar
+# kein git-Token uebrig (Adversary-Befund F009). Beide Zeilenenden, weil
+# `\`+CRLF sonst als maskiertes "\r" ueberlebt und als Unterbefehl gilt.
+# Bewusst NICHT betroffen: "\" + Leerzeichen (maskiertes Leerzeichen in einem
+# Dateinamen) und jeder andere Backslash.
+_GIT_LINE_CONTINUATIONS = ("\\\r\n", "\\\n")
+# git-Vor-Optionen (vor dem Unterbefehl), deren WERT ein eigenes Token ist.
+_GIT_OPTS_WITH_VALUE = {
+    "-c", "-C", "--exec-path", "--git-dir", "--work-tree",
+    "--namespace", "--super-prefix", "--config-env",
+}
+# Wrapper, die vor `git` stehen duerfen, ohne die Bedeutung zu aendern.
+_GIT_COMMAND_PREFIXES = {"sudo", "env", "nice", "command", "time", "nohup"}
+_ENV_ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def _looks_like_git(token: str) -> bool:
+    return token == "git" or token.endswith("/git")
+
+
+def _git_subcommand_after(tokens: "list[str]", i: int) -> "str | None":
+    """Erstes Nicht-Options-Token nach einem `git`-Token (= der Unterbefehl)."""
+    while i < len(tokens):
+        tok = tokens[i]
+        if _is_git_separator(tok):
+            return None  # Kommando endet, bevor ein Unterbefehl kam
+        if tok in _GIT_OPTS_WITH_VALUE:
+            i += 2  # Vor-Option + ihr Wert (`-C /pfad`, `-c k=v`)
+            continue
+        if tok.startswith("-"):
+            i += 1  # `--no-pager`, `--git-dir=…`, `-p`, …
+            continue
+        return tok
+    return None
+
+
+def _git_subcommand_of_segment(tokens: "list[str]") -> "str | None":
+    """Unterbefehl EINES Kommando-Segments, wenn `git` ganz vorn steht.
+
+    Streng kopf-gebunden — das ist die Grundlage von `is_pure_git_command`.
+    Fuer 'git steckt irgendwo drin' (`xargs … git commit`) dient
+    `_git_subcommands_in_segment`.
+    """
+    i = 0
+    while i < len(tokens) and (
+        _ENV_ASSIGN_RE.match(tokens[i]) or tokens[i] in _GIT_COMMAND_PREFIXES
+    ):
+        i += 1
+    if i >= len(tokens) or not _looks_like_git(tokens[i]):
+        return None
+    return _git_subcommand_after(tokens, i + 1)
+
+
+def _git_subcommands_in_segment(tokens: "list[str]") -> "list[str]":
+    """Unterbefehle zu JEDEM `git`-Token des Segments, nicht nur zum ersten.
+
+    Faengt Wrapper, die wir nicht namentlich kennen (`xargs -I{} git commit`,
+    `timeout 5 git commit`). Der Preis ist Ueber-Erkennung bei UNGEQUOTETER
+    Erwaehnung (`echo the git commit is broken`) — die sichere Richtung: das
+    Gate laeuft zusaetzlich, statt zu fehlen. Eine gequotete Erwaehnung
+    (`grep -rn "git commit"`) ist EIN Token und wird hier nicht getroffen.
+    """
+    out: "list[str]" = []
+    for i, tok in enumerate(tokens):
+        if _looks_like_git(tok):
+            sub = _git_subcommand_after(tokens, i + 1)
+            if sub:
+                out.append(sub)
+    return out
+
+
+def _git_nested_subcommands(segment: "list[str]", depth: int) -> "list[str]":
+    """Unterbefehle aus verschachtelten Shells (`sh -c "…"`, `eval "…"`)."""
+    if depth >= 2:
+        return []
+    found: "list[str]" = []
+    for i, tok in enumerate(segment):
+        base = tok.rsplit("/", 1)[-1]
+        if _GIT_SHELL_BINARY_RE.match(base):
+            if i + 2 < len(segment) and segment[i + 1] == "-c":
+                found.extend(git_subcommands(segment[i + 2], depth + 1))
+        elif base == "eval":
+            for nested in segment[i + 1:]:
+                found.extend(git_subcommands(nested, depth + 1))
+    return found
+
+
+def _git_lex(command: str) -> "list[str] | None":
+    """Tokenisieren, mit Shell-Trennern als EIGENE Token; None bei kaputten Quotes.
+
+    `shlex.split()` genuegt hier nicht (Adversary-Befunde F001/F002 zu #1431):
+
+      * `cd /tmp&&git commit -m x` — ohne Leerzeichen um den Trenner verklebt
+        split() `/tmp&&git` zu EINEM Token; die Verkettung wird unsichtbar.
+        Das war eine Verschlechterung gegenueber der alten Teilstring-Pruefung,
+        die diesen Fall noch fing.
+      * `git status\\ntouch <marker>` — den Zeilenumbruch verschluckt split()
+        als gewoehnlichen Whitespace; das angehaengte Kommando verschwand.
+
+    `punctuation_chars` loest beides mit Bordmitteln: shlex liefert
+    "&& || ; | & ( )" als eigene Token, unabhaengig von Leerzeichen, und laesst
+    Quoting unberuehrt — `-m "a && b"` und mehrzeilige Commit-Messages bleiben
+    EIN Token. Der Zeilenumbruch wird zusaetzlich aus dem Whitespace-Satz
+    genommen, sonst greift die Whitespace-Regel vor der Punktuations-Regel.
+    `commenters` wird geleert, damit `#` wie bei `shlex.split()` normaler Text
+    bleibt (sonst wuerde `git log --grep=#1431` abgeschnitten).
+    """
+    for _continuation in _GIT_LINE_CONTINUATIONS:
+        command = command.replace(_continuation, "")
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=_GIT_PUNCTUATION)
+    lexer.whitespace_split = True
+    lexer.whitespace = " \t\r"
+    lexer.commenters = ""
+    try:
+        return list(lexer)
+    except ValueError:
+        return None
+
+
+def _is_git_separator(token: str) -> bool:
+    """Ist das Token ein Kommando-Trenner (und kein Argument)?
+
+    Zwei Sorten:
+      * Trenner-WOERTER — Bash-Schluesselwoerter (`do`, `then`, `fi`, …) und
+        Gruppierungszeichen. Nur als eigenstaendiges Token, eine gequotete
+        Erwaehnung ("do") ist Teil eines groesseren Tokens und faellt nicht auf.
+      * Trenner-ZEICHEN — shlex fasst aufeinanderfolgende Punktuationszeichen
+        zu einem Token zusammen ("&&", ";\\n", "\\n\\n", "|&", "<("), deshalb
+        Zeichen-Pruefung statt Gleichheit. Ein Token muss ausschliesslich aus
+        Punktuationszeichen bestehen UND mindestens ein echtes Trenner-Zeichen
+        enthalten: ">" / ">>" / "<" sind Redirects und trennen NICHT, "<(" und
+        ">(" (Prozess-Substitution) dagegen schon.
+    """
+    if not token:
+        return False
+    if token in _GIT_SEPARATOR_WORDS:
+        return True
+    if not all(ch in _GIT_PUNCTUATION_CHARS for ch in token):
+        return False
+    return any(ch in _GIT_SEPARATOR_CHARS for ch in token)
+
+
+def _is_confidently_decomposed(command: str) -> bool:
+    """Traut sich die Zerlegung eine vollstaendige Aussage zu?
+
+    Nein, wenn der Lexer scheitert — kaputte oder absichtlich unbalancierte
+    Quotes. Genau dieser Fall loest 'im Zweifel pruefen' aus.
+
+    Heredocs (`<<EOF`) standen hier zwischenzeitlich als zweiter Grund. Sie
+    sind wieder raus: ihr Rumpf wird mit-tokenisiert, ein `git commit` darin
+    findet die Positions-Suche ohnehin (Fall 1), und ein Rumpf mit ungeraden
+    Anfuehrungszeichen laesst den Lexer scheitern (Fall 3). Eine Mutation der
+    Heredoc-Sonderregel konnte keinen Test roten — sie war wirkungslos.
+    """
+    return _git_lex(command) is not None
+
+
+def _git_segments(command: str) -> "list[list[str]] | None":
+    """Kommando in Segmente zerlegen; None, wenn nicht verlaesslich zerlegbar."""
+    tokens = _git_lex(command)
+    if tokens is None:
+        return None
+    segments: "list[list[str]]" = [[]]
+    for tok in tokens:
+        if _is_git_separator(tok):
+            segments.append([])
+        else:
+            segments[-1].append(tok)
+    return [s for s in segments if s]
+
+
+def git_subcommands(command: str, depth: int = 0) -> "list[str]":
+    """Alle git-Unterbefehle, die in `command` tatsaechlich AUFGERUFEN werden.
+
+    Erkennt: direkte Form, `-c k=v`, `-C /pfad`, `--no-pager`,
+    `--git-dir=… --work-tree=…`, Verkettungen (`x && git commit …`),
+    absolute Pfade (`/usr/bin/git commit`) und verschachtelte Shells
+    (`bash -c "git commit"`).
+
+    Erkennt NICHT (korrekt so): blosse Erwaehnung in `grep`/`echo`, in
+    `--body`/`-m`-Freitext oder in `git log --grep="commit"`.
+
+    Fail-open: ein nicht zerlegbares Kommando (kaputte Quotes) liefert eine
+    leere Liste — ein Gate darf daran weder blockieren noch abstuerzen.
+    """
+    segments = _git_segments(command)
+    if segments is None:
+        return []
+    found: "list[str]" = []
+    for segment in segments:
+        found.extend(_git_subcommands_in_segment(segment))
+        found.extend(_git_nested_subcommands(segment, depth))
+    return found
+
+
+def git_head_subcommands(command: str) -> "list[str]":
+    """Nur Unterbefehle, bei denen `git` am ANFANG eines Segments steht.
+
+    Strenge Variante ohne Zweifels-Regel — fuer Entscheidungen, bei denen
+    Ueber-Erkennung die GEFAEHRLICHE Richtung ist (Whitelist: ein Treffer
+    ueberspringt Schutzpruefungen). Unter-Erkennung heisst dort nur, dass
+    zusaetzlich geprueft wird.
+    """
+    segments = _git_segments(command)
+    if segments is None:
+        return []
+    return [s for s in (_git_subcommand_of_segment(seg) for seg in segments) if s]
+
+
+def is_git_subcommand(command: str, subcommand: str) -> bool:
+    """Muss dieses Kommando als `git <subcommand>` behandelt werden?
+
+    Nicht "erkenne ich einen Aufruf?", sondern "bin ich sicher, dass keiner
+    drinsteckt?" — die drei Faelle stehen oben im Modul-Kommentar. Fall 3 ist
+    die Untergrenze: was die alte Teilstring-Pruefung fing, wird weiterhin
+    geprueft, sobald die Zerlegung sich keine vollstaendige Aussage zutraut.
+    """
+    if subcommand in git_subcommands(command):
+        return True  # Fall 1
+    if _is_confidently_decomposed(command):
+        return False  # Fall 2 — behebt den grep-/echo-Fehlalarm
+    return f"git {subcommand}" in command  # Fall 3 — im Zweifel pruefen
+
+
+def is_pure_git_command(command: str) -> bool:
+    """True, wenn JEDES Segment des Kommandos ein reiner git-Aufruf ist.
+
+    Fuer Ausnahmen, die 'das ist nur git' voraussetzen: `git commit -m "…"`
+    bleibt ausgenommen, `git status && touch <freigabe-marker>` NICHT. Im
+    Zweifel (nicht sicher zerlegbar) wird die Ausnahme NICHT gewaehrt.
+    """
+    if not _is_confidently_decomposed(command):
+        return False
+    segments = _git_segments(command)
+    if not segments:
+        return False
+    return all(_git_subcommand_of_segment(s) is not None for s in segments)
 
 
 # AC-Bullet-Start: unindentierte '- ...AC-N...:'-Zeile. Deckt vier
