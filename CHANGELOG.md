@@ -5,6 +5,93 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.10.0] - 2026-08-04
+
+Sammelrelease gegen fünf False-Positive-Klassen der Gates (#64, #73, #75, #76, #79)
+und die Verdict-Pipeline (#77, #82). Gemeinsame Wurzeln: (1) Substring-Muster ohne
+Wortgrenze/Token-Kontext auf Freitext angewandt, (2) Ausgabe-Parser an eine einzige
+beobachtete Formatausprägung gebunden, (3) Duplikat-Drift zwischen Zwillings-
+Implementierungen. Fehlerrichtung aller Fixes: blockierend bleibt blockierend, wo
+echte Schreibziele/Geheimnisse/Fehler im Spiel sind — nur Freitext und legitime
+Formate kommen durch.
+
+### Fixed
+
+**qa_gate/tdd_enforcement: Parser lesen reale Runner-Formate (#73, #76, #79)**
+
+- pytest-Summenzeilen mit Laufzeit ≥ 60s (`in 68.29s (0:01:08)`) werden erkannt —
+  das Laufzeit-Suffix ist jetzt als Folge statt als Entweder-oder modelliert (#79).
+- Playwright-Klammer-Dauern in allen real genutzten Einheiten (`ms`/`s`/`m`/`h`,
+  z.B. `39 passed (1.5m)`) werden erkannt; Prosa mit Klammer (`5 passed (siehe
+  oben)`) bleibt abgewiesen (#76).
+- go-test-Ausgaben (`--- PASS:`/`--- FAIL:`, `ok <pkg> <dauer>`) haben einen
+  eigenen Auswertungszweig; TAP-Zeilen (`ok 1 - …`) können NICHT als Go-Paketzeile
+  durchgehen — die Dauer-/Cache-Pflicht im Paketmuster schließt den False-Pass aus
+  (#76, Kommentar).
+- tdd_enforcement strippt TAP-Summary-Zeilen (`# todo 0` etc.) vor der
+  Platzhalter-Prüfung — node-`--test`-RED-Artefakte gelten nicht mehr als
+  "gefälscht"; die Fehler-Evidenz-Prüfung läuft weiter auf dem Original (#73).
+
+**bash_gate/secrets_guard: Freitext ist keine Datei-Referenz (#64, #75)**
+
+- `WRITE_INDICATORS` mit Wortgrenze: "Langform ", "Plattform " in Issue-Bodies
+  sind keine Schreib-Indikatoren mehr (#64).
+- Der Protected-Pfad-Scan läuft token-basiert mit Freitext-Flag-Ausnahme
+  (-m/--body/--title/-F) — dieselbe Logik wie der Secrets-Fix #53; nested
+  shell/eval fällt weiter konservativ auf den Roh-Scan zurück (#64).
+- Heredoc-Bodies sind stdin-DATEN und werden vor den Muster-Scans entfernt
+  (`hook_utils.strip_heredoc_bodies()`, POSIX-genaue Terminator-Erkennung).
+  Interpreter-Heredocs (python/sh/node/… auf der Öffner-Zeile) bleiben
+  ungestrippt; Schreibziele stehen auf der Öffner-Zeile und bleiben sichtbar;
+  der Hardcoded-Credentials-Scan läuft weiter auf dem vollen Text (#64/#75).
+- Secrets-Muster vereinheitlicht: EINE geteilte Quelle in `hook_utils`
+  (`private[_.]key`, `[_.]secret\.`) für bash_gate UND secrets_guard. Die alten
+  bash_gate-Breitmuster `_key`/`_secret` blockierten Befehle wegen bloßer
+  Dateinamen (`tests/test_secret_egress_guard.py`); ein Drift-Guard-Test
+  verhindert das Wiederauseinanderlaufen (#75).
+
+**Verdict-Pipeline: Gate und Validator sprechen dieselbe Sprache (#77)**
+
+- `adversary_dialog` akzeptiert das dokumentierte Vokabular und Format des
+  `implementation-validator`: `HOLDS` als Synonym für `VERIFIED`, das Verdict
+  einzeilig (`## Verdict: X`) und als `VERDICT: X`-Zeile, `Status: CONFIRMED`-
+  Confirmation-Blöcke als Checklisten-Fallback (Checkboxen bleiben maßgeblich,
+  wenn vorhanden). Alle Formen fence-bereinigt und zeilenanfangs-verankert;
+  bei mehreren Verdicts zählt weiterhin das letzte.
+- `validate_dialog_artifact_ex()` klassifiziert Fehlschläge als `content`
+  (BROKEN-Verdict, offene Punkte) vs. `format` (unbekanntes Vokabular, fehlende
+  Marker, Alter); die 2-Tupel-API bleibt rückwärtskompatibel.
+- qa_gate persistiert bei reinen FORMfehlern kein `BROKEN` mehr — vorher wurde
+  `Unbekanntes Verdict: 'HOLDS'` als BROKEN in den Workflow-State geschrieben
+  und machte ein positives Urteil zum inhaltlichen Fehlschlag.
+- `implementation-validator.md` nutzt das Tri-State-Vokabular
+  VERIFIED/BROKEN/AMBIGUOUS; HOLDS bleibt gate-seitig als Legacy-Synonym gültig.
+
+**post_bash: automatische Verdict-Erkennung war funktionslos (Neubefund aus #77/#82-Analyse)**
+
+- stdout kommt im PostToolUse-Payload unter `tool_response`, nicht `tool_input` —
+  der bisherige Zugriff war IMMER leer, die in CLAUDE.md dokumentierte
+  automatische Verdict-Setzung feuerte nie. Jetzt wird `tool_response`
+  (dict/str, `stdout`/`output`) gelesen, mit Legacy-Fallback auf `tool_input`.
+- Fail-Guard ergänzt: bei Fehler-Evidenz im Output (`2 failed, 3 passed`,
+  `--- FAIL:`, `** TEST FAILED **`) wird NIE automatisch VERIFIED gesetzt —
+  das alte `passed`-Substring-Muster hätte gemischte Läufe false-gepasst.
+
+### Added
+
+**workflow.py `abandon` — ehrlicher Abbruch für Workflows ohne Prüfgegenstand (#82)**
+
+- `workflow.py abandon --reason "<text>"`: archiviert mit Status `abandoned`
+  (nicht `complete`), Pflicht-Begründung, Phase bleibt unverändert — sichtbar
+  bleibt, dass KEIN Nachweis geführt wurde. Beseitigt den bisher einzigen
+  Ausweg (Typ-Umklassifizierung, um das Adversary-Gate loszuwerden).
+  `complete` bleibt unverändert streng. `retro-list` zeigt "abgebrochen".
+- Statusmeldung entschärft: "kein aktiver Workflow" nach einem Abschluss ist
+  der GEWOLLTE Zustand — kein `FATAL` mehr, und der `switch`-Hinweis kommt nur
+  noch, wenn der veraltete `.active`-Symlink auf einen NICHT archivierten
+  Workflow zeigt (vorher: Empfehlung, den gerade archivierten Workflow zu
+  reaktivieren).
+
 ## [3.9.4] - 2026-07-24
 
 ### Fixed

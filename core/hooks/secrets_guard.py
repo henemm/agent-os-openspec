@@ -34,7 +34,10 @@ def _setup():
 
 _setup()
 
-from hook_utils import find_project_root  # noqa: E402
+from hook_utils import (  # noqa: E402
+    find_project_root, strip_heredoc_bodies,
+    SECRETS_SENSITIVE_PATTERNS, SECRETS_ALWAYS_BLOCKED, SECRETS_FREETEXT_FLAGS,
+)
 
 try:
     from config_loader import load_config
@@ -42,26 +45,12 @@ except ImportError:
     def load_config():
         return {}
 
-# Standardmuster für sensible Dateien
-_DEFAULT_SENSITIVE = [
-    r"\.env",
-    r"credentials\.json",
-    r"service[_-]?account.*\.json",
-    r"private[_.]key",
-    r"[_.]secret\.",
-    r"\.pem$",
-    r"\.key$",
-]
+# Standardmuster für sensible Dateien — geteilte Quelle in hook_utils
+# (Issue #75: kein Drift mehr zwischen secrets_guard und bash_gate).
+_DEFAULT_SENSITIVE = list(SECRETS_SENSITIVE_PATTERNS)
 
 # Immer blockiert — auch im Staging-Modus
-_DEFAULT_ALWAYS_BLOCKED = [
-    r"credentials\.json",
-    r"service[_-]?account.*\.json",
-    r"private[_.]key",
-    r"[_.]secret\.",
-    r"\.pem$",
-    r"\.key$",
-]
+_DEFAULT_ALWAYS_BLOCKED = list(SECRETS_ALWAYS_BLOCKED)
 
 # Shell-Befehle die Dateiinhalt ausgeben (nicht grep -l)
 _DANGEROUS_CMD_RE = re.compile(
@@ -73,8 +62,8 @@ _DANGEROUS_CMD_RE = re.compile(
 
 # Flags, deren Argument Freitext ist (Commit-Message, PR-/Issue-Body, Feld-
 # werte) — nie ein Datei-Pfad. Deren Wert wird bei der Datei-Token-Analyse
-# uebersprungen (Issue #53).
-_FREETEXT_FLAGS = {"-m", "--message", "--body", "--title", "-F"}
+# uebersprungen (Issue #53). Geteilte Quelle: hook_utils.
+_FREETEXT_FLAGS = SECRETS_FREETEXT_FLAGS
 
 # Verschachtelte Shell / eval: hier kann ein sensibler Datei-Zugriff in
 # quoted Code stecken (`bash -c "cat .env"`) — konservativer Roh-Scan.
@@ -160,7 +149,11 @@ def main() -> None:
     staging = _is_staging()
 
     if tool_name == "Bash":
-        cmd = tool_input.get("command", "")
+        # Heredoc-Bodies sind stdin-Daten, kein Kommandotext (Issues #64/#75):
+        # Freitext darin (Commit-Messages, Doku) darf die Datei-Token- und
+        # Ausgabe-Kommando-Scans nicht ausloesen. Interpreter-Heredocs
+        # (python/sh/... auf der Oeffner-Zeile) bleiben ungestrippt.
+        cmd = strip_heredoc_bodies(tool_input.get("command", ""))
         if _references_sensitive_file(cmd, sensitive) and _DANGEROUS_CMD_RE.search(cmd):
             if _references_sensitive_file(cmd, always):
                 print(

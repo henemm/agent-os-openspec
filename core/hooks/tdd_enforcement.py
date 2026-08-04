@@ -62,6 +62,15 @@ _PLACEHOLDER_RE = re.compile(
     re.IGNORECASE,
 )
 
+# TAP-Summary-Zeilen von `node --test` (enden IMMER mit '# todo 0' etc.) —
+# werden VOR der Platzhalter-Pruefung entfernt, damit das TODO-Pattern nicht
+# jedes echte node-Test-Artefakt als "gefaelscht" blockt (Issue #73).
+# Die Fehler-Evidenz-Pruefung (_FAILURE_RE) laeuft weiter auf dem
+# Original-Inhalt, denn '# fail 3' ist echte Evidenz.
+_TAP_SUMMARY_RE = re.compile(
+    r"(?m)^#\s*(tests|suites|pass|fail|cancelled|skipped|todo|duration_ms)\b.*$"
+)
+
 
 def _validate_artifact(art: dict, project_root: Path) -> "str | None":
     """Prüft ein einzelnes Artefakt. Gibt Fehlermeldung zurück oder None."""
@@ -100,7 +109,7 @@ def _validate_artifact(art: dict, project_root: Path) -> "str | None":
         except OSError:
             return f"Artefakt-Datei nicht lesbar: {path_str}"
 
-        if _PLACEHOLDER_RE.search(content):
+        if _PLACEHOLDER_RE.search(_TAP_SUMMARY_RE.sub("", content)):
             return (
                 f"Artefakt enthält Platzhalter-Text: {path_str}\n"
                 f"  → Echte Testausgabe eintragen, kein Copy-Paste-Beispiel."

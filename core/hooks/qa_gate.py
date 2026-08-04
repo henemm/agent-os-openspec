@@ -36,7 +36,17 @@ TEST_PATTERNS = [
     r"Executed \d+ test", r"passed|failed", r"PASSED|FAILED",
     r"tests?, \d+ failures?", r"test result:",
     r"\d+ tests? ran", r"OK \(", r"FAIL",
+    r"--- (PASS|FAIL|SKIP):",      # go test -v (je Test) — Issue #76
+    r"(?m)^(ok|FAIL)\s+\S+",       # go test (je Paket) — Issue #76
 ]
+
+# go test: Paket-Summenzeile MIT Dauer-/Cache-Suffix. Das Suffix ist Pflicht,
+# damit TAP-Zeilen (`ok 1 - beschreibung`) nicht als Go-Paketzeile durchgehen —
+# sonst würde eine TAP-Ausgabe mit `not ok`-Fails über den Go-Zweig als
+# PASSED gewertet (False-Pass-Richtung, ausgeschlossen).
+_GO_TEST_RE = re.compile(r"(?m)^--- (PASS|FAIL|SKIP): ")
+_GO_PKG_OK_RE = re.compile(r"(?m)^ok\s+\S+\s+(?:[\d.]+s|\(cached\))")
+_GO_PKG_FAIL_RE = re.compile(r"(?m)^FAIL\s+\S+")
 
 
 def _set_verdict(verdict: str) -> None:
@@ -70,14 +80,18 @@ def _find_pytest_summary_line(content: str) -> str | None:
     Testlaeufe in derselben Datei), wird die LETZTE zurueckgegeben.
     """
     # Summary-Zeile: Liste aus '<N> <status>'-Tokens, danach optional ein
-    # Laufzeit-Suffix in EINER von zwei real genutzten Formen -- pytest
-    # 'in X.Ys' ODER Playwright 'X.Ys' in Klammern (F001) -- ODER '='-Rahmen.
-    # Der Klammer-Inhalt MUSS eine Dauer (\d+(\.\d+)?s) sein und die Zeile
+    # Laufzeit-Suffix in den real vorkommenden Formen:
+    #   - pytest:     'in X.Ys', ab 60s Laufzeit zusaetzlich '(H:MM:SS)'
+    #                 dahinter — als Folge, nicht Alternative (Issue #79)
+    #   - Playwright: '(X.Ys)' in Klammern; ab 60s in Minuten '(1.5m)',
+    #                 real genutzte Einheiten: ms / s / m / h (Issue #76)
+    # Der Klammer-Inhalt MUSS eine Dauer oder H:MM:SS-Zeit sein und die Zeile
     # bleibt full-line-verankert: Prosa mit Klammer ohne Dauer (z.B.
     # '5 passed (siehe oben)') matcht dadurch weiterhin NICHT (AC-4-Grenze).
     line_re = re.compile(
         r"^\s*=*\s*(?:\d+\s+\w+\s*,?\s*)+"
-        r"(?:in\s+[\d.]+s\s*|\(\d+(?:\.\d+)?s\)\s*)?=*\s*$"
+        r"(?:in\s+[\d.]+s\s*(?:\(\d+:\d{2}:\d{2}\)\s*)?"
+        r"|\(\d+(?:\.\d+)?(?:ms|s|m|h)\)\s*)?=*\s*$"
     )
     status_re = re.compile(r"\d+\s+(passed|failed|error)")
     # Terminal-Runner (Playwright/farbiges pytest) schreiben ANSI-Steuercodes
@@ -137,6 +151,19 @@ def validate_test_output(filepath: str, infra: bool = False) -> tuple[bool, str]
         if pytest_pass or pytest_fail:
             n = pytest_pass.group(1) if pytest_pass else "0"
             return True, f"Tests PASSED: {n} passed"
+
+    # Pattern: go test — '--- PASS:'/'--- FAIL:' je Test, 'ok <pkg> <dauer>'/
+    # 'FAIL <pkg>' je Paket (Issue #76). Greift nur, wenn keine pytest-Summary
+    # gefunden wurde. Fehlerrichtung: jede FAIL-Evidenz gewinnt gegen PASS.
+    go_results = _GO_TEST_RE.findall(content)
+    go_pkg_ok = _GO_PKG_OK_RE.search(content)
+    go_pkg_fail = _GO_PKG_FAIL_RE.search(content)
+    if go_results or go_pkg_ok or go_pkg_fail:
+        go_fails = sum(1 for r in go_results if r == "FAIL")
+        if go_fails or go_pkg_fail:
+            return False, f"Tests FAILED: {go_fails or 1} failed (go test)"
+        go_passes = sum(1 for r in go_results if r == "PASS")
+        return True, f"Tests PASSED: {go_passes or 'ok'} passed (go test)"
 
     # Pattern: "test result: ok" (cargo/rust)
     if "test result: ok" in content:
@@ -224,11 +251,21 @@ def main():
     is_ambiguous = False
     if checklist:
         try:
-            from adversary_dialog import validate_dialog_artifact
-            cl_valid, cl_message = validate_dialog_artifact(checklist)
+            from adversary_dialog import validate_dialog_artifact_ex
+            cl_valid, cl_message, cl_kind = validate_dialog_artifact_ex(checklist)
             if not cl_valid:
                 print(f"\nCHECKLIST FAILED — {cl_message}")
-                _set_verdict(f"BROKEN:{cl_message}")
+                if cl_kind == "content":
+                    # Das Artefakt belegt ein inhaltlich negatives Ergebnis
+                    # (BROKEN-Verdict, offene Punkte) → als BROKEN persistieren.
+                    _set_verdict(f"BROKEN:{cl_message}")
+                else:
+                    # Reiner FORMfehler (unbekanntes Vokabular, fehlende
+                    # Marker, Alter) ist KEIN inhaltliches Urteil: das
+                    # adversary_verdict bleibt unangetastet, statt ein
+                    # womoeglich positives Validator-Ergebnis als BROKEN
+                    # zu ueberschreiben (Issue #77).
+                    print("Formfehler im Artefakt — adversary_verdict bleibt unveraendert.")
                 sys.exit(1)
             print(f"Checklist: {cl_message}")
             if "AMBIGUOUS" in cl_message:

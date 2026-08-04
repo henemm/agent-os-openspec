@@ -96,6 +96,17 @@ python3 .claude/hooks/workflow.py set-field loc_limit_override 500
 python3 .claude/hooks/workflow.py complete
 ```
 
+### Abandon Workflow (ehrlicher Abbruch ohne Abschluss-Gates)
+```bash
+# Fuer Workflows OHNE Pruefgegenstand (reine Analyse-/Kontext-Arbeit,
+# nie in phase6_implement): complete verlangt ein Adversary-Verdict,
+# das es hier nie geben kann. NICHT den workflow_type umklassifizieren,
+# um das Gate loszuwerden — stattdessen:
+python3 .claude/hooks/workflow.py abandon --reason "Analyse-Vorlauf, Umsetzung in FEAT_002 abgeschlossen"
+```
+Archiviert mit Status `abandoned` (nicht `complete`) — in `retro-list`
+als "abgebrochen" sichtbar. Die Begruendung ist Pflicht.
+
 ## Workflow Phases
 
 | Phase | Name | Description |

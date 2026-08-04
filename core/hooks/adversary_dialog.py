@@ -402,24 +402,42 @@ def _strip_fenced_code_blocks(content: str) -> str:
 
 
 def validate_dialog_artifact(artifact_path: str) -> tuple[bool, str]:
+    """Validiert ein Dialog-Artifact. Rueckwaertskompatible 2-Tupel-Form.
+
+    Siehe validate_dialog_artifact_ex() fuer die Variante mit
+    Fehlerklassifikation (content vs. format).
+    """
+    valid, message, _kind = validate_dialog_artifact_ex(artifact_path)
+    return valid, message
+
+
+def validate_dialog_artifact_ex(artifact_path: str) -> "tuple[bool, str, str | None]":
     """Validiert ein Dialog-Artifact.
 
     Prueft:
     1. Datei existiert
     2. Datei ist < MAX_AGE_MINUTES alt
-    3. Alle Checklisten-Punkte sind [x] (abgehakt)
+    3. Alle Checklisten-Punkte sind [x] (abgehakt) — oder, als Fallback,
+       Confirmation-Bloecke des implementation-validator ('Status: CONFIRMED')
     4. Mindestens MIN_ROUNDS Dialog-Runden dokumentiert
-    5. Verdict ist VERIFIED oder AMBIGUOUS (nicht BROKEN)
+    5. Verdict ist VERIFIED/HOLDS oder AMBIGUOUS (nicht BROKEN) —
+       HOLDS ist das dokumentierte Vokabular des implementation-validator
+       und wird als Synonym fuer VERIFIED akzeptiert (Issue #77)
     6. Circuit Breaker nicht ausgeloest ohne Eskalation
 
     Returns:
-        (valid: bool, message: str)
+        (valid, message, failure_kind) — failure_kind ist None bei Erfolg,
+        'content' wenn das Artefakt ein INHALTLICH negatives Ergebnis belegt
+        (BROKEN-Verdict, offene Checklisten-Punkte), 'format' wenn nur die
+        FORM nicht lesbar ist (fehlende/unbekannte Marker, Alter, fehlende
+        Datei). Die Unterscheidung braucht qa_gate: ein Formfehler darf kein
+        BROKEN-Verdict in den Workflow-State schreiben (Issue #77).
     """
     path = Path(artifact_path)
 
     # 1. Existenz
     if not path.exists():
-        return False, f"Dialog artifact not found: {artifact_path}"
+        return False, f"Dialog artifact not found: {artifact_path}", "format"
 
     # 2. Alter
     age_min = (time.time() - path.stat().st_mtime) / 60
@@ -427,7 +445,7 @@ def validate_dialog_artifact(artifact_path: str) -> tuple[bool, str]:
         return False, (
             f"Dialog artifact is {age_min:.0f} min old "
             f"(max {MAX_AGE_MINUTES}). Re-run dialog."
-        )
+        ), "format"
 
     content = path.read_text(errors="replace")
     # Struktur-Checks (Checkliste, Runden, Verdict) laufen auf einem Inhalt OHNE
@@ -453,10 +471,15 @@ def validate_dialog_artifact(artifact_path: str) -> tuple[bool, str]:
         return False, (
             f"{unchecked} Checklisten-Punkt(e) noch offen. "
             "Alle muessen bewiesen sein."
-        )
+        ), "content"
 
     if checked == 0:
-        return False, "Keine Checklisten-Punkte gefunden."
+        # Fallback (Issue #77): der implementation-validator dokumentiert
+        # bewiesene ACs als Confirmation-Bloecke ('Status: CONFIRMED') statt
+        # als Checkbox-Zeilen. Beide Formen sind gueltige Beweisfuehrung.
+        checked = len(re.findall(r"(?mi)^\s*Status:\s*CONFIRMED\b", scan))
+        if checked == 0:
+            return False, "Keine Checklisten-Punkte gefunden.", "format"
 
     # 4. Mindestens MIN_ROUNDS Runden
     rounds = len(re.findall(r"(?m)^### Runde \d+", scan))
@@ -464,32 +487,48 @@ def validate_dialog_artifact(artifact_path: str) -> tuple[bool, str]:
         return False, (
             f"Nur {rounds} Dialog-Runde(n) dokumentiert. "
             f"Minimum sind {MIN_ROUNDS} Runden."
-        )
+        ), "format"
 
-    # 5. Verdict — bei mehreren Bloecken (Fix-Loop-Runden) zaehlt der LETZTE.
-    verdict_matches = list(re.finditer(r"(?m)^## Verdict\s*\n\*\*(.+?)\*\*", scan))
-    verdict_match = verdict_matches[-1] if verdict_matches else None
-    if not verdict_match:
-        return False, "Kein Verdict im Artifact gefunden."
+    # 5. Verdict — drei real vorkommende Formen (Issue #77); bei mehreren
+    #    Bloecken (Fix-Loop-Runden) zaehlt der LETZTE im Dokument:
+    #      a) '## Verdict' mit Fettschrift-Folgezeile (render_dialog_artifact)
+    #      b) einzeilig '## Verdict: X' bzw. '### VERDICT: X'
+    #      c) 'VERDICT: X' am Zeilenanfang — das dokumentierte Abschluss-
+    #         format des implementation-validator-Agenten
+    #    Alle Formen sind zeilenanfangs-verankert und laufen auf dem
+    #    fence-bereinigten Scan-Text (zitierte Verdicts zaehlen nicht).
+    verdict_res = [
+        re.compile(r"(?m)^## Verdict\s*\n\*\*(.+?)\*\*"),
+        re.compile(r"(?mi)^#{2,3}\s*Verdict\s*:\s*(.+?)\s*$"),
+        re.compile(r"(?m)^VERDICT:\s*(.+?)\s*$"),
+    ]
+    verdict_matches = [m for rx in verdict_res for m in rx.finditer(scan)]
+    if not verdict_matches:
+        return False, "Kein Verdict im Artifact gefunden.", "format"
+    verdict_match = max(verdict_matches, key=lambda m: m.start())
 
-    verdict_text = verdict_match.group(1).strip()
+    verdict_text = verdict_match.group(1).strip().strip("*").strip()
+    v = verdict_text.upper()
 
-    if verdict_text.startswith("BROKEN"):
-        return False, f"Verdict ist '{verdict_text}' — nicht VERIFIED."
+    if v.startswith("BROKEN"):
+        return False, f"Verdict ist '{verdict_text}' — nicht VERIFIED.", "content"
 
-    if verdict_text.startswith("AMBIGUOUS"):
+    if v.startswith("AMBIGUOUS"):
         return True, (
             f"Dialog valid (AMBIGUOUS): {checked} Punkte bewiesen, "
             f"{rounds} Runden. User-Review empfohlen."
-        )
+        ), None
 
-    if not verdict_text.startswith("VERIFIED"):
-        return False, f"Unbekanntes Verdict: '{verdict_text}'"
+    if v.startswith("HOLDS"):
+        v = "VERIFIED"  # Validator-Vokabular — Synonym (Issue #77)
+
+    if not v.startswith("VERIFIED"):
+        return False, f"Unbekanntes Verdict: '{verdict_text}'", "format"
 
     return True, (
         f"Dialog valid: {checked} Punkte bewiesen, "
         f"{rounds} Runden, Verdict VERIFIED."
-    )
+    ), None
 
 
 def print_finding_schema():
