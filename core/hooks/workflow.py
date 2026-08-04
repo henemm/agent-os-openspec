@@ -22,6 +22,7 @@ Usage:
     python3 workflow.py write-log [outcome]
     python3 workflow.py override-ambiguous <reason>
     python3 workflow.py complete
+    python3 workflow.py abandon --reason "<warum kein Abschluss>"
     python3 workflow.py list
 """
 
@@ -201,18 +202,22 @@ def _read_active() -> tuple[dict, str]:
         sys.exit(1)
 
     # Symlink fallback is DISABLED. If a stale .active symlink exists, tell the user
-    # what to do instead of silently using it.
+    # what to do instead of silently using it — but ONLY if the target still
+    # exists as an active workflow. After complete/abandon is "no active
+    # workflow" the WANTED state (Issue #82): no FATAL, and never suggest
+    # re-activating the workflow that was just archived.
     link = _active_link()
     if link.is_symlink():
         target = Path(os.readlink(str(link)))
         name = target.stem
-        print(
-            f"FATAL: No active workflow found.\n"
-            f"  A .active symlink points to '{name}', but symlink fallback is disabled.\n"
-            f"  Run: python3 .claude/hooks/workflow.py switch {name}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        if _workflow_file(name).exists():
+            print(
+                f"No active workflow set.\n"
+                f"  A .active symlink points to '{name}', but symlink fallback is disabled.\n"
+                f"  Run: python3 .claude/hooks/workflow.py switch {name}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
     print("No active workflow. Run: python3 .claude/hooks/workflow.py start <name>", file=sys.stderr)
     sys.exit(1)
@@ -853,6 +858,52 @@ def cmd_complete(args: list[str]) -> None:
     print(f"Workflow {name} completed and archived.")
 
 
+def cmd_abandon(args: list[str]) -> None:
+    """Bricht den aktiven Workflow ehrlich ab — ohne Abschluss-Gates.
+
+    Fuer Workflows OHNE Pruefgegenstand (reine Analyse-/Kontext-Arbeit, nie
+    in phase6_implement): `complete` verlangt ein Adversary-Verdict, das es
+    hier nie geben kann; der bisher einzige Ausweg war eine Typ-
+    Umklassifizierung — genau das Gaming-Muster, das die Gates verhindern
+    sollen (Issue #82). `abandon` archiviert stattdessen mit status
+    'abandoned' + Pflicht-Begruendung: sichtbar bleibt, dass hier KEIN
+    Nachweis gefuehrt wurde.
+    """
+    reason = ""
+    rest = []
+    i = 0
+    while i < len(args):
+        if args[i] == "--reason" and i + 1 < len(args):
+            reason = args[i + 1]
+            i += 2
+        else:
+            rest.append(args[i])
+            i += 1
+    if not reason:
+        reason = " ".join(rest).strip()
+    if not reason:
+        print("Usage: workflow.py abandon --reason \"<warum kein Abschluss>\"", file=sys.stderr)
+        print("  Die Begruendung ist Pflicht — sie ersetzt den fehlenden Nachweis.", file=sys.stderr)
+        sys.exit(1)
+
+    data, name = _read_active()
+    data["status"] = "abandoned"
+    data["abandon_reason"] = reason
+    data["abandoned_at"] = datetime.now().isoformat()
+    archive = _archive_dir()
+    archive.mkdir(parents=True, exist_ok=True)
+    _atomic_write(archive / f"{name}.json", data)
+    wf_file = _workflow_file(name)
+    if wf_file.exists():
+        wf_file.unlink()
+    link = _active_link()
+    if link.is_symlink():
+        link.unlink()
+    _persist_env(None)
+    print(f"Workflow {name} abgebrochen (abandoned) und archiviert — NICHT abgeschlossen.")
+    print(f"  Grund: {reason}")
+
+
 def cmd_phase_log(args: list[str]) -> None:
     data, name = _read_active()
     log = data.get("phase_log", [])
@@ -937,7 +988,10 @@ def cmd_retro_list(args: list[str]) -> None:
         wf_type = data.get("workflow_type", "feature")
         created = data.get("created", "")[:10]
         log = _retro_load_log(name)
-        outcome = log.get("outcome", "–")
+        if data.get("status") == "abandoned":
+            outcome = "abgebrochen"
+        else:
+            outcome = log.get("outcome", "–")
         total_min = sum(
             e.get("duration_min") or 0.0
             for e in data.get("phase_log", [])
@@ -1129,6 +1183,7 @@ COMMANDS = {
     "write-log": cmd_write_log,
     "override-ambiguous": cmd_override_ambiguous,
     "complete": cmd_complete,
+    "abandon": cmd_abandon,
     "list": cmd_list,
     "retro-list": cmd_retro_list,
     "retro": cmd_retro,
