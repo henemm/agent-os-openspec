@@ -194,6 +194,23 @@ als Legacy-Duplikate löscht (Issue #24 / Commit `71608aa`).
 
 ## Known Limitations
 
+- **Global-Lauf shadowed Projekt-Commands (Issue #87, bestätigt):** Claude Code
+  löst Namenskollisionen zwischen `~/.claude/commands/<name>.md` (User-Scope) und
+  `<project>/.claude/commands/<name>.md` (Projekt-Scope) so auf, dass **User-Scope
+  gewinnt** — obwohl die Claude-Code-Dokumentation Projekt-Scope als vorrangig
+  beschreibt. Live reproduziert in `henemm/gregor_zwanzig`: `/70-deploy` lädt dort
+  nachweislich den generischen `~/.claude/commands/70-deploy.md`-Alias statt der
+  echten, unmarkierten projekteigenen `.claude/commands/70-deploy.md`. Betroffen
+  sind alle 7 `disable-model-invocation: true`-Skills (Volltext-Einbettung, siehe
+  Issue #55), da nur diese unter demselben Klarnamen wie ein projekteigener Custom-
+  Command kollidieren können (Thin-Redirects sind namespaced-sicher). Root Cause
+  liegt im Claude-Code-Harness, nicht in diesem Framework — `generate_command_aliases()`
+  gibt daher seit #87 eine explizite Laufzeit-Warnung aus, wenn `project_path`
+  auf `Path.home()` auflöst, und die CLI-Hilfe empfiehlt den Pro-Projekt-Lauf als
+  Standard. Mitigation bis zu einem Upstream-Fix: `--command-aliases` projektweise
+  statt global ausführen, sobald ein Projekt eine eigene Version eines der 7 Namen
+  pflegt; bereits global geschriebene Dateien in `~/.claude/commands/` müssen dafür
+  manuell entfernt werden (das Framework überschreibt/löscht dort nichts automatisch).
 - Die Alias-Generierung ist rein additiv und nicht Teil des Standard-Install-/
   Update-Flows — Consumer-Projekte müssen `--command-aliases` bewusst und manuell
   ausführen (kein Auto-Migrate für bestehende Installationen).

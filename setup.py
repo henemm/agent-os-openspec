@@ -800,6 +800,16 @@ def generate_command_aliases(project_path: Path) -> None:
       - missing            → create
       - marker first line  → update (overwrite)
       - no marker          → skip (assumed project-specific custom command)
+
+    KNOWN ISSUE (#87): Claude Code resolves same-named commands from
+    `~/.claude/commands/` (user scope) and `<project>/.claude/commands/`
+    (project scope) with **user scope winning**, contrary to the documented
+    project > user precedence. Running this function against the home
+    directory therefore silently shadows any project's own unmarked
+    `.claude/commands/<name>.md` for every project on the machine — verified
+    live for `70-deploy` (see #87). This is a Claude Code harness behaviour,
+    not something this function can correct at runtime; see the warning
+    printed below and `docs/specs/short-command-aliases.md` for mitigation.
     """
     skills_dir = FRAMEWORK_ROOT / "skills"
     commands_dir = project_path / ".claude" / "commands"
@@ -850,6 +860,28 @@ def generate_command_aliases(project_path: Path) -> None:
     for name in skipped:
         print(f"  SKIPPED (custom command exists): {name}")
 
+    if project_path.resolve() == Path.home().resolve():
+        full_content_names = [
+            name for name in names
+            if "disable-model-invocation: true"
+            in (skills_dir / name / "SKILL.md").read_text()
+        ]
+        if full_content_names:
+            print(
+                "\nWARNING: Global run detected (~/.claude/commands/). Claude "
+                "Code currently resolves same-named commands with user scope "
+                "winning over project scope (confirmed bug, project scope is "
+                "documented to win — see issue #87). The files just written "
+                f"for {', '.join(full_content_names)} will therefore SHADOW "
+                "any project's own .claude/commands/<name>.md of the same "
+                "name on this machine, even projects with a real, unmarked "
+                "custom command for that name. Check every project that "
+                "defines its own version of these commands before relying "
+                "on '/<name>' there — prefer running --command-aliases "
+                "per-project instead of globally if any project customizes "
+                "these names."
+            )
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -870,8 +902,14 @@ Examples:
   python3 setup.py /path/to/project --update --force
 
   # Generate short command aliases (/name → /agent-os-openspec:name)
-  python3 setup.py /path/to/project --command-aliases
-  python3 setup.py ~ --command-aliases          # global, across all projects
+  python3 setup.py /path/to/project --command-aliases   # recommended default: per-project
+  python3 setup.py ~ --command-aliases          # global — see WARNING below if any
+                                                 # project has its own custom version of
+                                                 # 40-tdd-red/50-implement/60-validate/
+                                                 # 70-deploy/80-workflow/81-add-artifact/
+                                                 # 99-reset (issue #87: global shadows
+                                                 # project commands due to a Claude Code
+                                                 # scope-precedence bug)
 
 Available modules:
   ios-swiftui     - iOS/SwiftUI standards, agents, and workflows

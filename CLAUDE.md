@@ -2,7 +2,7 @@
 
 > **Meta-Projekt**: Dies ist das zentrale Framework-Repository, das abstraktes Projekt- und Workflow-Wissen konsolidiert. Alle Projekte können Improvements hierher zurückführen und von Verbesserungen aus anderen Projekten profitieren.
 
-**Version**: 3.10.1
+**Version**: 3.10.2
 
 ## Projektzweck
 
@@ -328,7 +328,10 @@ python3 /path/to/agent-os-openspec/setup.py /path/to/project --update --force
 python3 /path/to/agent-os-openspec/setup.py /path/to/project --module ios-swiftui
 
 # Kurze Slash-Command-Aliase generieren (z.B. /50-implement statt /agent-os-openspec:50-implement)
-python3 /path/to/agent-os-openspec/setup.py ~ --command-aliases   # empfohlen: global (~)
+python3 /path/to/agent-os-openspec/setup.py /path/to/project --command-aliases   # empfohlen: pro Projekt
+# Global (~) NUR falls kein Projekt eine eigene Version von 40-tdd-red/50-implement/
+# 60-validate/70-deploy/80-workflow/81-add-artifact/99-reset pflegt — sonst shadowed
+# der globale Alias die Projekt-Datei (Issue #87, Claude-Code-Scope-Präzedenz-Bug)
 
 # Version prüfen
 python3 /path/to/agent-os-openspec/setup.py --version

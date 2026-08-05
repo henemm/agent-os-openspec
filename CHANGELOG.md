@@ -5,6 +5,30 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.10.2] - 2026-08-05
+
+### Fixed
+
+**Global generierte Kurz-Alias-Commands shadowen Projekt-eigene Commands (Issue #87)**
+
+`setup.py ~ --command-aliases` (bisher als bevorzugter Weg empfohlen, siehe README/CLAUDE.md)
+schreibt für die 7 `disable-model-invocation: true`-Skills (`40-tdd-red`, `50-implement`,
+`60-validate`, `70-deploy`, `80-workflow`, `81-add-artifact`, `99-reset`) den vollen
+Alias-Inhalt nach `~/.claude/commands/<name>.md`. Live in `henemm/gregor_zwanzig` bestätigt:
+`/70-deploy` lud dort den generischen globalen Alias statt der echten, unmarkierten
+projekteigenen `.claude/commands/70-deploy.md` — Claude Code löst die Namenskollision
+zwischen User- und Projekt-Scope mit **User-Scope gewinnt** auf, obwohl die Dokumentation
+Projekt-Scope als vorrangig beschreibt. Root Cause liegt im Claude-Code-Harness und ist
+nicht im Framework korrigierbar.
+
+Mitigation innerhalb des Frameworks: `generate_command_aliases()` gibt jetzt eine explizite
+Laufzeit-Warnung aus, sobald `project_path` auf `Path.home()` auflöst und mindestens einer
+der 7 Volltext-Aliase betroffen ist. CLI-Hilfe (`--help`) und `CLAUDE.md` empfehlen den
+Pro-Projekt-Lauf jetzt als Standard statt des globalen Laufs; der globale Lauf bleibt möglich,
+aber nur noch mit explizitem Hinweis auf das Kollisionsrisiko. `docs/specs/short-command-aliases.md`
+dokumentiert den bestätigten Befund unter Known Limitations. Kein Verhaltensbruch für bestehende
+Installationen ohne kollidierende Projekt-Commands.
+
 ## [3.10.1] - 2026-08-04
 
 Nachversionierung des direkt auf `main` gelandeten Fixes `5f2c17e` (Refs:
