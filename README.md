@@ -264,8 +264,10 @@ strict_code_gate:
   always_allowed_dirs: ["Tests/", "docs/"]
 
 scope_guard:
-  max_loc_delta: 250
+  max_loc_delta: 250            # Limit fuer hinzugefuegte Zeilen Produktivcode (nur `added`, nicht `added+deleted`)
   loc_exclude_patterns: ["\\.xcstrings$", "\\.po$"]
+  max_test_loc_delta: 500       # Eigenes, hoeheres Limit fuer Testcode (Default 500)
+  test_path_patterns: []        # Optional: eigene Regex statt eingebauter Testpfad-Konventionen (tests/, *_test.py, ...)
 
 secrets_guard:
   sensitive_patterns: ["\\.env", "credentials\\.json"]

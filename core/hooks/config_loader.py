@@ -273,6 +273,30 @@ def get_scope_loc_config() -> tuple[int, list]:
     return max_loc, excludes
 
 
+# Built-in test path conventions (regex, matched via re.search on the path)
+DEFAULT_TEST_PATH_PATTERNS = [
+    r"(^|/)tests?/",
+    r"(^|/)test_[^/]*\.py$",
+    r"[^/]*_test\.py$",
+    r"(^|/)__tests__/",
+    r"[^/]*\.test\.[jt]sx?$",
+    r"[^/]*\.spec\.[jt]sx?$",
+]
+
+
+def get_scope_test_loc_config() -> tuple[int, list]:
+    """Return (max_test_loc_delta, test_path_patterns) from config.
+
+    Defaults: (500, DEFAULT_TEST_PATH_PATTERNS) when the keys are absent —
+    no project config change required (Issue #94, AC-6).
+    """
+    cfg = load_config()
+    scope = cfg.get("scope_guard", {})
+    max_test_loc = int(scope.get("max_test_loc_delta", 500))
+    patterns = list(scope.get("test_path_patterns", DEFAULT_TEST_PATH_PATTERNS))
+    return max_test_loc, patterns
+
+
 if __name__ == "__main__":
     # Test: Print loaded config
     import json

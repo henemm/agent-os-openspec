@@ -5,6 +5,30 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+**LoC-Limit-Gate zaehlte Aenderungs-Churn statt Risiko (Issue #94)**
+
+`_check_loc_delta()` in `core/hooks/edit_gate.py` summierte bisher `added + deleted`
+Zeilen aus `git diff --numstat` gegen ein einziges Limit (`max_loc_delta`, Default 250) —
+das bestrafte reine Umbenennungen/Verschiebungen doppelt (1 Zeile geloescht + 1 Zeile neu
+zaehlte als 2) und behandelte Testcode genauso streng wie Produktivcode. Ergebnis:
+Fehlalarme bei Sessions mit umfangreichen, aber risikoarmen Test-Ergaenzungen.
+
+Jetzt zaehlt nur noch `added` (Umbenennungen zaehlen 1x statt 2x), und Test- und
+Produktivcode werden getrennt gegen eigene Schwellwerte geprueft: `max_loc_delta`
+(unveraendert 250) fuer Produktivcode, neu `max_test_loc_delta` (Default 500) fuer Code
+in Pfaden, die `scope_guard.test_path_patterns` matchen (eingebaute Defaults fuer
+`tests/`, `test_*.py`, `*_test.py`, `__tests__/`, `*.test.[jt]sx?`, `*.spec.[jt]sx?` —
+konfigurierbar, kein Config-Update noetig). Neues Override-Feld
+`test_loc_limit_override` analog zu `loc_limit_override`; die Blockade-Meldung weist
+beide Buckets getrennt aus (`Produktiv X/250, Tests Y/500`). Neues Status-Feld
+`loc_delta_test_current` in der Workflow-JSON.
+
+Details: `openspec/changes/feat-94-loc-limit-risk/specs/scope-guard/spec.md`.
+
 ## [3.11.0] - 2026-08-09
 
 ### Fixed

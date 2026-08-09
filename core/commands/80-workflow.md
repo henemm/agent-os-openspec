@@ -87,7 +87,8 @@ python3 .claude/hooks/workflow.py set-field github_issue 42
 
 ### Override LoC Limit
 ```bash
-python3 .claude/hooks/workflow.py set-field loc_limit_override 500
+python3 .claude/hooks/workflow.py set-field loc_limit_override 500          # Produktivcode
+python3 .claude/hooks/workflow.py set-field test_loc_limit_override 800     # Testcode (eigenes Limit)
 ```
 
 ### Complete Workflow
@@ -145,7 +146,9 @@ Code files can only be modified in:
 And only if:
 - TDD RED phase artifacts exist
 - Spec has `## Acceptance Criteria` with at least one `AC-N` entry
-- LoC delta does not exceed project limit (default 250)
+- LoC delta does not exceed project limit — separately for Produktivcode
+  (`max_loc_delta`, default 250) and Testcode (`max_test_loc_delta`, default 500);
+  only added lines count, not `added + deleted` (Issue #94)
 
 ## Phase Transition Audit Trail
 

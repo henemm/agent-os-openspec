@@ -133,7 +133,7 @@ Ein spezialisierter Developer Agent bekommt die Spec und die failing Tests und s
 **Was technisch passiert:** Das edit_gate.py prüft vor jedem Datei-Edit:
 1. Gibt es RED-Artefakte aus Phase 5? (Blockiert sonst)
 2. Hat die Spec Acceptance Criteria? (Blockiert sonst)
-3. Überschreitet der kumulierte Code-Delta das LoC-Limit (default 250)? (Blockiert sonst)
+3. Überschreitet der kumulierte Code-Delta das LoC-Limit? Produktivcode (default 250) und Testcode (default 500) werden getrennt geprüft, gezählt werden nur hinzugefügte Zeilen (Blockiert sonst)
 
 ### Phase 6b — Adversary-Check [GATE]
 
@@ -200,7 +200,7 @@ Läuft **bevor Claude eine Datei schreibt oder bearbeitet**. Prüft sequenziell:
 9. Override-Token vorhanden? → ALLOW (überspringt Rest)
 10. Keine RED-Artefakte? → BLOCK (außer bug/feature-fast)
 11. Spec ohne Acceptance Criteria? → BLOCK
-12. LoC-Delta > Limit? → BLOCK
+12. LoC-Delta (Produktiv oder Test, getrennt geprüft) > jeweiliges Limit? → BLOCK
 → ALLOW
 ```
 
@@ -310,7 +310,8 @@ Der aktive Workflow wird über die Umgebungsvariable `OPENSPEC_ACTIVE_WORKFLOW` 
 | `test_artifacts` | Registrierte Artefakte (RED-Tests, Screenshots) |
 | `red_test_done` | Wurden RED-Tests durchgeführt? |
 | `adversary_verdict` | VERIFIED / BROKEN / AMBIGUOUS |
-| `loc_delta_current` | Aktueller Code-Delta in Lines |
+| `loc_delta_current` | Aktueller Code-Delta in Lines (Produktivcode, nur `added`) |
+| `loc_delta_test_current` | Aktueller Code-Delta in Lines (Testcode, nur `added`, eigenes Limit) |
 | `phase_log` | Timeline aller Phasen mit Zeiten |
 
 ---
@@ -357,7 +358,7 @@ Die Klammer am Ende zeigt immer:
 - Welcher Workflow aktiv ist und wie er aufgelöst wurde (`env` = Umgebungsvariable)
 - Ob ein Override-Token vorhanden ist
 - Die aktuelle Phase
-- Bei LoC-Blocks: aktuelles Delta und Limit
+- Bei LoC-Blocks: aktuelles Delta und Limit, getrennt für Produktiv- und Testcode
 
 ---
 
@@ -391,7 +392,7 @@ Agent versucht src/auth.py zu bearbeiten
       - Phase 6? ✓
       - RED-Artefakte vorhanden? ✓
       - Spec hat ACs? ✓
-      - LoC-Delta < 250? ✓
+      - LoC-Delta < 250 (Produktiv) / < 500 (Test)? ✓
       → ALLOW
 Agent schreibt Code
     ↓
@@ -482,7 +483,9 @@ Das Framework wird über `openspec.yaml` im Projektverzeichnis konfiguriert. Wic
 
 | Parameter | Default | Bedeutung |
 |-----------|---------|-----------|
-| `scope_guard.max_loc_delta` | 250 | Maximale Lines of Code pro Workflow |
+| `scope_guard.max_loc_delta` | 250 | Maximale hinzugefuegte Lines of Code (Produktivcode) |
+| `scope_guard.max_test_loc_delta` | 500 | Maximale hinzugefuegte Lines of Code (Testcode, eigenes Limit) |
+| `scope_guard.test_path_patterns` | eingebaute Testpfad-Konventionen | Regex-Liste, die Dateien dem Test-Bucket zuordnet |
 | `bug_fix.require_tdd` | false | TDD-Pflicht auch für Bugs |
 | `bug_fix.max_files` | 4 | Maximale geänderte Dateien bei Bugs |
 | `workflow.approval_phrases` | [approved, lgtm, ...] | Freigabe-Keywords |
@@ -499,7 +502,7 @@ Das Framework wird über `openspec.yaml` im Projektverzeichnis konfiguriert. Wic
 | Code-Edit ohne Spec-Freigabe | edit_gate | Phase zu früh |
 | Code-Edit ohne RED-Tests | edit_gate | TDD-Pflicht |
 | Code-Edit ohne Acceptance Criteria | edit_gate | Spec unvollständig |
-| Code-Edit > 250 LoC Delta | edit_gate | Scope zu groß |
+| Code-Edit > 250 LoC Delta (Produktiv) / > 500 (Test) | edit_gate | Scope zu groß |
 | Bash nach "stop" | bash_gate | Stop-Lock aktiv |
 | git commit ohne VERIFIED | bash_gate | Adversary-Check fehlt |
 | git commit, Branch hinter main | bash_gate | Rebase-Pflicht |
