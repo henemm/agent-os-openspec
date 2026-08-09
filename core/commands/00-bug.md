@@ -108,7 +108,7 @@ export OPENSPEC_ACTIVE_WORKFLOW=BUG-<N>
 
 # 4. Abschließen
 python3 .claude/hooks/workflow.py write-log success
-python3 .claude/hooks/workflow.py complete
+python3 .claude/hooks/workflow.py finish
 ```
 
 **Was wegfällt beim Fast Track:**

@@ -83,7 +83,7 @@ Neuer Abschnitt am Ende:
 3. `export OPENSPEC_ACTIVE_WORKFLOW=BUG-<N>`
 4. Fix direkt implementieren (kein Spec, kein TDD-Red erforderlich)
 5. Manuell testen
-6. `workflow.py complete`
+6. `workflow.py finish`
 ```
 
 ### 5. `openspec.yaml` — Konfiguration

@@ -144,7 +144,7 @@ export OPENSPEC_ACTIVE_WORKFLOW=feature-login   # ← SOFORT setzen
 # Alle weiteren Befehle immer mit Env-Var-Prefix
 OPENSPEC_ACTIVE_WORKFLOW=feature-login python3 .claude/hooks/workflow.py status
 OPENSPEC_ACTIVE_WORKFLOW=feature-login python3 .claude/hooks/workflow.py phase phase6_implement
-OPENSPEC_ACTIVE_WORKFLOW=feature-login python3 .claude/hooks/workflow.py complete
+OPENSPEC_ACTIVE_WORKFLOW=feature-login python3 .claude/hooks/workflow.py finish
 ```
 
 Beim Agent-Spawn den Workflow-Namen immer im Prompt uebergeben: `export OPENSPEC_ACTIVE_WORKFLOW=<name>` als erste Pflicht-Zeile im Agent-Brief.

@@ -18,7 +18,7 @@ Completes and archives the current workflow, or removes it if in early phases.
 
 ```bash
 # Complete and archive the current workflow
-python3 .claude/hooks/workflow.py complete
+python3 .claude/hooks/workflow.py finish
 
 # Or start fresh with a new workflow
 python3 .claude/hooks/workflow.py start "new-feature"
