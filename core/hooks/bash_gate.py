@@ -93,7 +93,10 @@ APPROVAL_MARKER_PATTERNS_FILENAME = [
 # `rm\s` jedes Wort, das auf rm endet ("Langform ", "Plattform ") — Freitext
 # in Issue-Bodies/Doku loeste den State-Integrity-Block aus.
 WRITE_INDICATORS = [
-    r"json\.dump", r"open\(", r"write\(", r"\bsed\s+-i", r"\bmv\s", r"\bcp\s",
+    # Issue #1478 Teil 1: Wortgrenze noetig, sonst matcht "json\.dump" als
+    # Praefix auch innerhalb von "json.dumps(...)" (reines Serialisieren,
+    # kein Schreibvorgang).
+    r"json\.dump\b", r"open\(", r"write\(", r"\bsed\s+-i", r"\bmv\s", r"\bcp\s",
     r"python3?\s+-c", r"\btee\s", r"\brm\s",
     r"\btouch\s", r"\bcat\s*<<", r"\bunlink\b", r"\btruncate\b",
 ]
@@ -221,8 +224,13 @@ def _references_fieldname_marker(command: str) -> bool:
 
 
 def _raw_redirect(command: str) -> bool:
-    """Roher Redirect-Scan ueber den gesamten String (konservativ)."""
-    for m in re.finditer(r"(?<!\d)>{1,2}\s*(\S+)", command):
+    """Roher Redirect-Scan ueber den gesamten String (konservativ).
+
+    Issue #1478 Teil 1: ein Bindestrich direkt vor '>' ist die Arrow-Notation
+    ('->', z.B. in printf-Formatstrings wie '%-52s -> %s\\n'), kein Redirect-
+    Operator -- analog zum bestehenden Ziffern-Lookbehind fuer '2>&1'.
+    """
+    for m in re.finditer(r"(?<![\d-])>{1,2}\s*(\S+)", command):
         target = m.group(1)
         if target == "/dev/null":
             continue

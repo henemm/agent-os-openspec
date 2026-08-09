@@ -48,6 +48,52 @@ class TestFdDuplicationNotRedirect:
         assert bash_gate._raw_redirect(cmd) is True
 
 
+# --- Issue #1478 Teil 1: "->" (Arrow-Notation) faelschlich als Redirect ---
+
+class TestArrowNotationNotRedirect:
+    """`_raw_redirect()` (Fallback fuer sh -c/eval) hielt bislang jedes '>' fuer
+    einen Redirect-Operator, sobald ihm kein Ziffernzeichen vorausging -- ein
+    Bindestrich direkt davor (Arrow-Notation '->') wurde nicht ausgenommen.
+    Gemeldet an printf-Format-Strings wie '%-52s -> %s\\n' innerhalb eines
+    verschachtelten sh -c/eval-Aufrufs (Issue #1478)."""
+
+    def test_raw_redirect_ignores_arrow_notation(self):
+        cmd = "printf '%-52s -> %s\\n' foo bar"
+        assert bash_gate._raw_redirect(cmd) is False
+
+    def test_raw_redirect_arrow_inside_nested_shell_not_blocked(self):
+        cmd = 'sh -c "printf \'%-52s -> %s\\n\' foo bar"'
+        assert bash_gate._has_real_redirect(cmd) is False
+
+    def test_raw_redirect_still_detects_real_target_after_arrow(self):
+        # Eine echte Redirect-Ziel-Angabe muss weiterhin erkannt werden, auch
+        # wenn zuvor eine Arrow-Notation im selben Kommando vorkommt.
+        cmd = 'sh -c "printf \'a -> b\\n\'; echo x > .claude/workflows/y.json"'
+        assert bash_gate._raw_redirect(cmd) is True
+
+
+# --- Issue #1478 Teil 1: "json.dumps" faelschlich als "json.dump"-Schreibindikator ---
+
+class TestJsonDumpsNotWriteIndicator:
+    """WRITE_INDICATORS enthielt das Muster ``json\\.dump`` ohne Wortgrenze --
+    das matcht als Praefix auch innerhalb von ``json.dumps(...)`` (reines
+    Serialisieren, kein Schreibvorgang). Gemeldet an einem Testskript, das
+    Beispielkommandos ueber ``json.dumps(...)`` aufbaute (Issue #1478)."""
+
+    def test_json_dumps_call_is_not_write_indicator(self):
+        # Isoliert von den anderen WRITE_INDICATORS (kein python3 -c, open(),
+        # write() etc. im Kommando) -- reiner Lesebefehl (grep), der zufaellig
+        # die Zeichenfolge "json.dumps(" enthaelt.
+        cmd = 'grep -rn "json.dumps(" src/'
+        assert bash_gate._has_write_indicator(cmd) is False
+
+    def test_json_dump_call_still_detected_as_write_indicator(self):
+        # Gleiches Isolations-Prinzip: nur "json.dump(" im Kommando, kein
+        # zusaetzliches WRITE_INDICATORS-Muster.
+        cmd = 'grep -rn "json.dump(" src/'
+        assert bash_gate._has_write_indicator(cmd) is True
+
+
 # --- Teil 2: PROTECTED_FILE_PATTERNS deckt reale Marker-Pfade ab ---
 
 class TestProtectedFilePatternsCoverMarkerPaths:
