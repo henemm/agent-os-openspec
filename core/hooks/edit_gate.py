@@ -239,18 +239,33 @@ def _check_acceptance_criteria(workflow: dict, file_path: str = None) -> str | N
 # --- S3: LoC delta check ---
 
 def _check_loc_delta(config: dict, workflow: dict) -> str | None:
-    """Block when cumulative uncommitted LoC delta exceeds project limit."""
-    max_loc = int(workflow.get("loc_limit_override") or
-                  config.get("scope_guard", {}).get("max_loc_delta", 250))
-    exclude_patterns = config.get("scope_guard", {}).get("loc_exclude_patterns", [
-        r"\.xcstrings$", r"\.strings$", r"\.po$", r"Localizable\.",
-    ])
+    """Block when uncommitted LoC delta exceeds the project limits.
+
+    Only ADDED lines count (not added+deleted) and production code is counted
+    separately from test code, each against its own threshold (Issue #94).
+    """
+    from config_loader import get_scope_loc_config, get_scope_test_loc_config
+    max_loc, exclude_patterns = get_scope_loc_config()
+    max_test_loc, test_patterns = get_scope_test_loc_config()
+    # Explicitly passed config values win over the loaded project config.
+    scope = (config or {}).get("scope_guard", {})
+    if "max_loc_delta" in scope:
+        max_loc = int(scope["max_loc_delta"])
+    if "loc_exclude_patterns" in scope:
+        exclude_patterns = list(scope["loc_exclude_patterns"])
+    if "max_test_loc_delta" in scope:
+        max_test_loc = int(scope["max_test_loc_delta"])
+    if "test_path_patterns" in scope:
+        test_patterns = list(scope["test_path_patterns"])
+    max_loc = int(workflow.get("loc_limit_override") or max_loc)
+    max_test_loc = int(workflow.get("test_loc_limit_override") or max_test_loc)
     try:
         result = subprocess.run(
             ["git", "diff", "HEAD", "--numstat"],
             cwd=str(_root), capture_output=True, text=True, timeout=5
         )
-        total = 0
+        prod_total = 0
+        test_total = 0
         for line in result.stdout.splitlines():
             parts = line.split("\t")
             if len(parts) < 3:
@@ -259,12 +274,17 @@ def _check_loc_delta(config: dict, workflow: dict) -> str | None:
             if any(re.search(p, file_name) for p in exclude_patterns):
                 continue
             added = int(parts[0]) if parts[0].isdigit() else 0
-            deleted = int(parts[1]) if parts[1].isdigit() else 0
-            total += added + deleted
-        if total > max_loc:
-            return (f"BLOCKED: LoC delta {total} exceeds limit {max_loc}. "
+            if any(re.search(p, file_name) for p in test_patterns):
+                test_total += added
+            else:
+                prod_total += added
+        if prod_total > max_loc or test_total > max_test_loc:
+            return ("BLOCKED: LoC delta exceeds limit — "
+                    f"Produktiv {prod_total}/{max_loc}, "
+                    f"Tests {test_total}/{max_test_loc}. "
                     "Split the change or: workflow.py set-field loc_limit_override <N> "
-                    + gate_diagnostics(workflow, delta=f"+{total}", limit=max_loc))
+                    "(Produktiv) / test_loc_limit_override <N> (Tests) "
+                    + gate_diagnostics(workflow, delta=f"+{prod_total}", limit=max_loc))
         # Store current delta for status display — write directly to the active
         # workflow JSON (no .active symlink; resolution is env/settings only).
         try:
@@ -275,7 +295,8 @@ def _check_loc_delta(config: dict, workflow: dict) -> str | None:
                 if target.exists():
                     import tempfile
                     data = json.loads(target.read_text())
-                    data["loc_delta_current"] = f"+{total}"
+                    data["loc_delta_current"] = f"+{prod_total}"
+                    data["loc_delta_test_current"] = f"+{test_total}"
                     fd, tmp = tempfile.mkstemp(dir=str(target.parent), suffix=".tmp")
                     with os.fdopen(fd, "w") as f:
                         json.dump(data, f, indent=2)
