@@ -21,7 +21,7 @@ Usage:
     python3 workflow.py mark-ui-red <result>
     python3 workflow.py write-log [outcome]
     python3 workflow.py override-ambiguous <reason>
-    python3 workflow.py complete
+    python3 workflow.py finish
     python3 workflow.py abandon --reason "<warum kein Abschluss>"
     python3 workflow.py list
 """
@@ -1183,6 +1183,9 @@ COMMANDS = {
     "write-log": cmd_write_log,
     "override-ambiguous": cmd_override_ambiguous,
     "complete": cmd_complete,
+    # Alias: der Worktree-Waechter des Harness liest "complete" als bash-Builtin
+    # und blockiert die ganze Kommandozeile (gregor_zwanzig#1478).
+    "finish": cmd_complete,
     "abandon": cmd_abandon,
     "list": cmd_list,
     "retro-list": cmd_retro_list,

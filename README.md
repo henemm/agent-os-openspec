@@ -184,7 +184,7 @@ python3 .claude/hooks/workflow.py set-field loc_limit_override 500
 
 # Completion (execution log required)
 python3 .claude/hooks/workflow.py write-log success
-python3 .claude/hooks/workflow.py complete
+python3 .claude/hooks/workflow.py finish
 ```
 
 ---

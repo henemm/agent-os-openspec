@@ -5,6 +5,29 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.11.0] - 2026-08-09
+
+### Fixed
+
+**`workflow.py complete` aus worktree-isolierten Sessions nicht ausführbar (Issue gregor_zwanzig#1478)**
+
+Der letzte Buchungsschritt eines Workflows war aus jeder worktree-isolierten Claude-Code-Sitzung
+heraus blockiert: der Worktree-Wächter des Harness liest das Wort `complete` als bash-Builtin
+(programmierbare Vervollständigung) und weist die gesamte Kommandozeile ab — unabhängig vom
+vorangestellten Pfad. Gemessen: schon `echo complete` wird blockiert, `echo finish` läuft durch.
+Root Cause liegt im Claude-Code-Harness und ist wie schon bei Issue #87 nicht im Framework
+korrigierbar; betroffene Sessions konnten ihren Workflow überhaupt nicht abschließen.
+
+Mitigation innerhalb des Frameworks: `COMMANDS` kennt zusätzlich den gleichwertigen
+Unterbefehlsnamen `finish`, der auf dieselbe `cmd_complete`-Funktion zeigt. Kein Logikcode
+ändert sich. `complete` bleibt unverändert und dauerhaft gültig — Rückwärtskompatibilität für
+laufende Sitzungen und fremde Projekt-Dokus, die den alten Namen noch verwenden. Sämtliche
+Aufrufstellen in Commands, Setup und Doku sind auf `finish` umgestellt. Additiv, daher MINOR;
+kein Verhaltensbruch für bestehende Installationen.
+
+Nicht behoben: die Wächter-Kollision selbst und weitere denkbare Builtin-Namen (`test`, `type`,
+`read`) sind damit nicht pauschal ausgeschlossen, nur der konkret gemeldete Fall.
+
 ## [3.10.2] - 2026-08-05
 
 ### Fixed

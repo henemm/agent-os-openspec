@@ -563,7 +563,7 @@ python3 .claude/hooks/workflow.py list
 | 6 — Implement | `/50-implement` | Code edits blocked until RED artifacts exist + AC present |
 | 6b — Adversary | Auto after `/50-implement` | VERIFIED verdict required to commit |
 | 7 — Validate | `/60-validate` | AMBIGUOUS verdict blocks commit |
-| 8 — Complete | `workflow.py write-log && workflow.py complete` | Execution log required |
+| 8 — Complete | `workflow.py write-log && workflow.py finish` | Execution log required |
 
 **Hooks enforce every gate.** Skipping phases is blocked, not just discouraged.
 
@@ -599,7 +599,7 @@ python3 .claude/hooks/workflow.py list
 
 # Complete a workflow (requires execution log)
 python3 .claude/hooks/workflow.py write-log success
-python3 .claude/hooks/workflow.py complete
+python3 .claude/hooks/workflow.py finish
 ```
 
 ---

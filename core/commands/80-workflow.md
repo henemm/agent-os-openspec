@@ -93,7 +93,7 @@ python3 .claude/hooks/workflow.py set-field loc_limit_override 500
 ### Complete Workflow
 ```bash
 # Requires execution log — will fail without write-log first
-python3 .claude/hooks/workflow.py complete
+python3 .claude/hooks/workflow.py finish
 ```
 
 ### Abandon Workflow (ehrlicher Abbruch ohne Abschluss-Gates)

@@ -152,7 +152,7 @@ Der User sagt `go`. Dann startet der Adversary-Dialog:
 
 ### Phase 7 — Validieren (`/60-validate`)
 
-Manuelle Tests, Integration-Tests, UI-Checks. Claude dokumentiert den Validierungsstand. Am Ende: `workflow.py complete` archiviert den Workflow.
+Manuelle Tests, Integration-Tests, UI-Checks. Claude dokumentiert den Validierungsstand. Am Ende: `workflow.py finish` archiviert den Workflow.
 
 ### Nach dem Abschluss — Deploy (`/70-deploy`) und Reset (`/99-reset`)
 
