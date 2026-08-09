@@ -29,6 +29,7 @@ def _setup():
 
 _setup()
 
+import hook_utils  # noqa: E402
 from hook_utils import get_tool_input, find_project_root, block, allow, get_active_workflow_name  # noqa: E402
 
 # Phasen in denen TDD-Enforcement gilt
@@ -72,6 +73,28 @@ _TAP_SUMMARY_RE = re.compile(
 )
 
 
+def _resolve_artifact_path(path_str: str, project_root: Path) -> Path:
+    """Löst einen Artefakt-Pfad auf (Issue #1478 Teil 1).
+
+    `project_root` (via `find_project_root()`) löst Git-Worktrees bewusst auf
+    den Hauptrepo-Root auf -- richtig für geteilten Workflow-State unter
+    `.claude/workflows/`. `docs/artifacts/` ist aber gitignored und wird
+    zwischen Worktree und Hauptrepo NICHT geteilt: ein frisch geschriebenes
+    RED-Test-Artefakt liegt physisch nur im Worktree. Ein relativer Pfad wird
+    deshalb zuerst gegen den WORKTREE aufgelöst (falls die Session in einem
+    läuft und die Datei dort existiert), sonst gegen `project_root`
+    (Hauptrepo, unverändertes Rückwärtskompat-Verhalten).
+    """
+    if Path(path_str).is_absolute():
+        return Path(path_str)
+    worktree_root = hook_utils._find_worktree_root()
+    if worktree_root is not None:
+        worktree_candidate = worktree_root / path_str
+        if worktree_candidate.exists():
+            return worktree_candidate
+    return project_root / path_str
+
+
 def _validate_artifact(art: dict, project_root: Path) -> "str | None":
     """Prüft ein einzelnes Artefakt. Gibt Fehlermeldung zurück oder None."""
     art_type = art.get("type", "")
@@ -84,9 +107,7 @@ def _validate_artifact(art: dict, project_root: Path) -> "str | None":
     if not path_str:
         return None  # Kein Dateipfad → kann nicht weiter prüfen
 
-    artifact_path = (
-        Path(path_str) if Path(path_str).is_absolute() else project_root / path_str
-    )
+    artifact_path = _resolve_artifact_path(path_str, project_root)
 
     if not artifact_path.exists():
         return f"Artefakt-Datei nicht gefunden: {path_str}"
