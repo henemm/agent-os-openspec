@@ -371,6 +371,53 @@ cat /path/to/project/.claude/framework_version.json
 
 ---
 
+## Releasing (maintainers)
+
+This repository is both the working directory and the delivery source. That coupling is easy to
+miss, so it is spelled out here.
+
+### Register the marketplace with a pinned ref — never as a local directory
+
+```bash
+claude plugin marketplace add henemm/agent-os-openspec@main
+```
+
+A marketplace registered from a **local path** (`claude plugin marketplace add /path/to/this/repo`)
+has no concept of a ref and gets no intermediate copy — `installLocation` points at the working
+directory itself. Whatever branch happens to be checked out there is what
+`claude plugin marketplace update` installs, machine-wide, for every project. What ships this way
+are the *gates* that inspect every commit in every project, so an unfinished version either blocks
+legitimate work or lets broken work through — and because applying it requires a restart, it
+surfaces in the *next* session, with no visible link to the cause. The version number gives nothing
+away either: it is identical on a branch and on `main` once the bump has been made.
+
+Pinning to a ref (`@main`, or a release tag) makes Claude Code keep its own copy and makes the ref
+visible in `claude plugin marketplace list --json`. Pin to a **tag** rather than `main` if updates
+should be a deliberate act rather than a side effect of a merge.
+
+### Cutting a release
+
+```bash
+python3 scripts/release_check.py     # must pass; --no-tests to skip the suite
+```
+
+The check refuses to proceed unless the repository is on `main`, the working tree is clean
+(including untracked files), it is in sync with `origin/main`, `plugin.json` and the topmost
+CHANGELOG entry name the same version, and that version is not tagged yet.
+
+Then tag and publish. The tag follows the `{plugin-name}--v{version}` convention that Claude Code
+understands for plugin dependency constraints:
+
+```bash
+git tag agent-os-openspec--v<version>
+git push origin agent-os-openspec--v<version>
+```
+
+`plugin.json`'s `version` is the update signal — Claude Code serves the cached copy until that
+string changes, so bump it on every release.
+
+---
+
 ## Contributing Improvements
 
 If a pattern emerges in your project that should be generalized:
