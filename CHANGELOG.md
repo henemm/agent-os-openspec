@@ -5,6 +5,37 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.11.4] - 2026-08-10
+
+Erstes veroeffentlichtes Release (Tag `agent-os-openspec--v3.11.4`). Enthaelt die nie separat
+ausgelieferten Staende 3.11.2 (#96) und 3.11.3 (#90).
+
+### Added
+
+**Auslieferungsweg abgesichert (Issue #93)**
+
+Dieses Repo ist gleichzeitig Arbeitsordner und Auslieferungsquelle. Ein Katalog mit
+`source: "directory"` zeigt direkt auf den Entwicklungs-Checkout: `installLocation` ist der Ordner
+selbst, es gibt keine Zwischenkopie, und eine Verzeichnis-Quelle kennt keinen Ref. Damit bestimmt
+der gerade ausgecheckte Branch, was ein `claude plugin update` maschinenweit installiert —
+ausgeliefert werden dabei die Gates, die in jedem Projekt jeden Commit pruefen. Gemessen am
+2026-08-09: ein Arbeitsbranch mit einem ungemergten Commit vor `main` und unversionierten Dateien,
+waehrend eine zweite Sitzung im selben Ordner arbeitete.
+
+- **`scripts/release_check.py`** — bricht ab, bevor ein Tag auf einen ungeeigneten Stand gesetzt
+  wird: nicht auf `main`, Arbeitsbaum unsauber (inkl. unversionierter Dateien), nicht synchron mit
+  `origin/main`, `plugin.json` und oberster CHANGELOG-Eintrag uneinig, Tag bereits vergeben. Ein
+  offener `[Unreleased]`-Block gilt bewusst als nicht releasefaehig. Optionaler Testlauf
+  (`--no-tests` ueberspringt ihn). 15 Tests gegen echte Git-Repos.
+- **README-Abschnitt „Releasing"** — dokumentiert die bisher nirgends festgehaltene Kopplung und
+  schreibt den Ref-Pin vor (`claude plugin marketplace add henemm/agent-os-openspec@main`), samt
+  Tag-Konvention `{plugin-name}--v{version}`.
+
+Der Ref-Pin ersetzt den im Issue vorgeschlagenen zweiten Nur-Lese-Klon: Claude Code legt bei
+Git-Quellen selbst eine Zwischenkopie an, der Ref ist ueber `marketplace list --json` nachpruefbar,
+und es gibt keinen zweiten Arbeitsordner zu pflegen. Die im Issue offene Frage nach privaten Repos
+entfaellt — das Repository ist oeffentlich, lediglich der Katalog heisst `henemm-private`.
+
 ## [3.11.3] - 2026-08-10
 
 ### Fixed
