@@ -376,7 +376,7 @@ cat /path/to/project/.claude/framework_version.json
 This repository is both the working directory and the delivery source. That coupling is easy to
 miss, so it is spelled out here.
 
-### Register the marketplace with a pinned ref — never as a local directory
+### Register the marketplace from GitHub — never as a local directory
 
 ```bash
 claude plugin marketplace add henemm/agent-os-openspec@main
@@ -391,30 +391,38 @@ legitimate work or lets broken work through — and because applying it requires
 surfaces in the *next* session, with no visible link to the cause. The version number gives nothing
 away either: it is identical on a branch and on `main` once the bump has been made.
 
-Pinning to a ref (`@main`, or a release tag) makes Claude Code keep its own copy and makes the ref
-visible in `claude plugin marketplace list --json`. Pin to a **tag** rather than `main` if updates
-should be a deliberate act rather than a side effect of a merge.
+Pinning to a ref makes Claude Code keep its own copy and makes the ref visible in
+`claude plugin marketplace list --json`. `@main` is the recommended pin: `main` only ever advances
+through merged pull requests with green CI, so the failure mode above — an unfinished working
+branch going out — cannot occur. Pin to a **release tag** instead only if you want each update to
+be a deliberate act; that means re-pinning by hand for every release.
 
 ### Cutting a release
 
-```bash
-python3 scripts/release_check.py     # must pass; --no-tests to skip the suite
-```
+**Releases are automatic.** Bump `version` in `.claude-plugin/plugin.json`, add the matching
+CHANGELOG entry, and merge to `main`. [`.github/workflows/release.yml`](.github/workflows/release.yml)
+then tags and publishes on its own — no manual step, which is the point: the tag is exactly the
+step that gets forgotten otherwise.
 
-The check refuses to proceed unless the repository is on `main`, the working tree is clean
+The workflow is idempotent. If the version already has a tag it finishes green and does nothing, so
+the version bump is the only action that triggers a release. It runs `scripts/release_check.py`
+first and refuses to publish unless the repository is on `main`, the working tree is clean
 (including untracked files), it is in sync with `origin/main`, `plugin.json` and the topmost
-CHANGELOG entry name the same version, and that version is not tagged yet.
+CHANGELOG entry name the same version, and that version is not tagged yet. Release notes are taken
+from the CHANGELOG section of that version — one source, so notes and CHANGELOG cannot drift apart.
 
-Then tag and publish. The tag follows the `{plugin-name}--v{version}` convention that Claude Code
-understands for plugin dependency constraints:
+Tags follow the `{plugin-name}--v{version}` convention that Claude Code understands for plugin
+dependency constraints, for example `agent-os-openspec--v3.11.4`.
+
+To check the preconditions locally before merging, or to see what would be published:
 
 ```bash
-git tag agent-os-openspec--v<version>
-git push origin agent-os-openspec--v<version>
+python3 scripts/release_check.py             # all checks; --no-tests skips the suite
+python3 scripts/release_check.py --notes     # the release notes that would be used
 ```
 
 `plugin.json`'s `version` is the update signal — Claude Code serves the cached copy until that
-string changes, so bump it on every release.
+string changes, so it must be bumped for a release to reach anyone.
 
 ---
 

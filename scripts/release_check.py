@@ -16,8 +16,13 @@ main veroeffentlicht ist.
 
     python3 scripts/release_check.py            # pruefen
     python3 scripts/release_check.py --no-tests # ohne Testlauf (schneller)
+    python3 scripts/release_check.py --notes    # CHANGELOG-Abschnitt ausgeben
+    python3 scripts/release_check.py --tag      # Tag-Namen ausgeben
 
 Exit-Code 0 = alle Pruefungen bestanden, 1 = mindestens eine gescheitert.
+
+Wird ueblicherweise nicht von Hand aufgerufen, sondern von
+.github/workflows/release.yml beim Push auf main.
 """
 
 import argparse
@@ -63,6 +68,25 @@ def latest_changelog_version(text: str) -> "str | None":
             return None
         return version
     return None
+
+
+def changelog_section(text: str, version: str) -> str:
+    """Fliesstext des CHANGELOG-Abschnitts zu `version` — ohne dessen eigene
+    Ueberschrift, bis zur naechsten Versions-Ueberschrift.
+
+    Wird als Text des GitHub-Releases verwendet, damit die Release-Notiz und
+    der CHANGELOG nicht auseinanderlaufen koennen: es gibt nur eine Quelle.
+    """
+    headings = list(_CHANGELOG_VERSION_RE.finditer(text))
+    for index, match in enumerate(headings):
+        if match.group(1).strip() != version:
+            continue
+        start = text.find("\n", match.end())
+        if start < 0:
+            return ""
+        end = headings[index + 1].start() if index + 1 < len(headings) else len(text)
+        return text[start:end].strip()
+    return ""
 
 
 def check_branch() -> "tuple[bool, str]":
@@ -137,12 +161,23 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--no-tests", action="store_true",
                         help="Testlauf ueberspringen")
+    parser.add_argument("--notes", action="store_true",
+                        help="CHANGELOG-Abschnitt der aktuellen Version ausgeben und beenden")
+    parser.add_argument("--tag", action="store_true",
+                        help="Tag-Namen der aktuellen Version ausgeben und beenden")
     args = parser.parse_args()
 
     manifest = plugin_manifest()
     version = manifest.get("version", "")
     name = manifest.get("name", "")
     tag = TAG_TEMPLATE.format(name=name, version=version)
+
+    if args.tag:
+        print(tag)
+        return 0
+    if args.notes:
+        print(changelog_section(CHANGELOG.read_text(), version))
+        return 0
 
     checks = [
         ("Branch", check_branch()),

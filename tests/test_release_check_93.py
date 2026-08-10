@@ -64,6 +64,36 @@ class TestChangelogParsing:
         assert release_check.latest_changelog_version("# Changelog\n\nnichts\n") is None
 
 
+class TestChangelogSection:
+    """Der Text des GitHub-Releases kommt aus dem CHANGELOG — es gibt nur eine
+    Quelle, damit Release-Notiz und CHANGELOG nicht auseinanderlaufen."""
+
+    TEXT = (
+        "# Changelog\n\nVorspann\n\n"
+        "## [3.11.4] - 2026-08-10\n\n### Added\n\nNeues Ding.\n\n"
+        "## [3.11.3] - 2026-08-09\n\n### Fixed\n\nAelteres Ding.\n"
+    )
+
+    def test_extracts_only_the_requested_section(self):
+        section = release_check.changelog_section(self.TEXT, "3.11.4")
+        assert "Neues Ding." in section
+        assert "Aelteres Ding." not in section, "Nachbarabschnitt darf nicht mitkommen"
+        assert "Vorspann" not in section
+
+    def test_own_heading_is_not_repeated(self):
+        """Der Release-Titel ist schon der Tag — die Ueberschrift noch einmal im
+        Text waere doppelt."""
+        section = release_check.changelog_section(self.TEXT, "3.11.4")
+        assert not section.startswith("## [3.11.4]")
+
+    def test_last_section_runs_to_end_of_file(self):
+        section = release_check.changelog_section(self.TEXT, "3.11.3")
+        assert "Aelteres Ding." in section
+
+    def test_unknown_version_yields_empty(self):
+        assert release_check.changelog_section(self.TEXT, "9.9.9") == ""
+
+
 class TestVersionMatch:
     def test_match_passes(self):
         ok, _ = release_check.check_version_match("3.11.4", "3.11.4")

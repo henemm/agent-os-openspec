@@ -1,0 +1,78 @@
+name: release
+
+# Veroeffentlicht automatisch, sobald eine neue Version auf main liegt.
+#
+# Warum automatisch: Das Versions-Etikett (Tag) von Hand zu setzen ist genau der
+# Schritt, der in der Praxis liegen bleibt — Gregor lief auf 3.10.2, waehrend
+# main schon 3.11.1 war. Ein Tag, den niemand vergisst, ist mehr wert als eine
+# Anleitung, die jemand befolgen muesste.
+#
+# Der Ablauf ist bewusst idempotent: Ist die Version bereits getaggt, endet der
+# Lauf gruen und tut nichts. Nur eine noch nicht veroeffentlichte Version loest
+# ueberhaupt etwas aus — der Versions-Bump in .claude-plugin/plugin.json ist
+# also die einzige Handlung, die ein Release ausloest.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:        # erlaubt manuelles Nachholen ueber die Weboberflaeche
+
+permissions:
+  contents: write           # Tag und Release anlegen
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # ref: main statt des Push-SHA, damit der Waechter einen echten
+          # Branch sieht und nicht einen losgeloesten HEAD.
+          ref: main
+          fetch-depth: 0    # Historie und Tags, sonst findet der Waechter keine
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install pytest pyyaml
+
+      - name: Versionsstand ermitteln
+        id: version
+        run: |
+          TAG=$(python3 scripts/release_check.py --tag)
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "Version $TAG ist bereits veroeffentlicht — nichts zu tun."
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Release-Vorbedingungen pruefen
+        if: steps.version.outputs.needed == 'true'
+        run: python3 scripts/release_check.py
+
+      - name: Release-Notiz aus CHANGELOG erzeugen
+        if: steps.version.outputs.needed == 'true'
+        run: python3 scripts/release_check.py --notes > /tmp/release-notes.md
+
+      - name: Tag setzen und Release veroeffentlichen
+        if: steps.version.outputs.needed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "$TAG"
+          git push origin "$TAG"
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file /tmp/release-notes.md \
+            --verify-tag
