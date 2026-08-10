@@ -480,6 +480,31 @@ def _check_adr(data: dict) -> "str | None":
 
 # --- Phase Transition Validation ---
 
+def _not_approved_msg() -> str:
+    """Blockade-Meldung mit den TATSAECHLICH konfigurierten Freigabe-Phrasen.
+
+    Die Meldung nannte fest verdrahtet 'approved' (Issue #90). `approval_phrases`
+    ist über openspec.yaml konfigurierbar, und Projekte nutzen das — die Meldung
+    nannte dort also ein Wort, das gar nicht das vereinbarte war, und verschwieg
+    das vereinbarte. Zusammen mit der Phasenbindung, der eigentlichen Falle, ist
+    der Nutzer sonst auf Raten angewiesen und greift zu
+    `set-field spec_approved true` — genau dem Anti-Pattern, das das Gate
+    verhindern soll.
+    """
+    base = "Spec not approved"
+    try:
+        from config_loader import get_approval_phrases
+        phrases = [str(p).strip() for p in get_approval_phrases() if str(p).strip()]
+    except Exception:
+        phrases = []
+    if phrases:
+        base += " — user must say one of: " + ", ".join(phrases)
+    else:
+        base += " — user must say one of the configured approval phrases"
+    return base + " (wirkt nur in phase3_spec)"
+
+
+
 def _validate_transition(data: dict, target: str) -> str | None:
     """Validate phase transition prerequisites. Returns error message or None."""
     # Bug fast-track: no prerequisites enforced
@@ -495,7 +520,7 @@ def _validate_transition(data: dict, target: str) -> str | None:
             if not data.get("spec_file"):
                 return "spec_file not set — run /30-write-spec first"
             if not data.get("spec_approved"):
-                return "Spec not approved — user must say 'approved'"
+                return _not_approved_msg()
             adr_err = _check_adr(data)
             if adr_err:
                 return adr_err
@@ -520,7 +545,7 @@ def _validate_transition(data: dict, target: str) -> str | None:
         if not data.get("spec_file"):
             return "spec_file not set — run /write-spec first"
         if not data.get("spec_approved"):
-            return "Spec not approved — user must say 'approved'"
+            return _not_approved_msg()
         adr_err = _check_adr(data)
         if adr_err:
             return adr_err

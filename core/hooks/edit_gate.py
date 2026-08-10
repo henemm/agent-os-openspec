@@ -20,6 +20,7 @@ Replaces 17 separate hooks with 1. Sequential short-circuit logic:
 Exit Codes: 0 = allowed, 2 = blocked
 """
 
+import hook_utils
 from hook_utils import setup_path, find_project_root, get_tool_input, block, allow, get_active_workflow_name, gate_diagnostics, extract_ac_entries
 setup_path()
 
@@ -83,6 +84,21 @@ def _get_config_list(config: dict, section: str, key: str, default: list) -> lis
 # --- Helpers ---
 
 _root = find_project_root()
+
+
+def _measurement_root() -> Path:
+    """Working tree to run `git diff` against — the tree actually being worked in.
+
+    `_root` resolves worktrees to the main repo, which is correct for STATE
+    (workflow JSONs are shared) but wrong for MEASURING the working tree: from
+    inside a worktree it measures a different, usually clean tree, so the delta
+    is constantly +0 and the limit never triggers (Issue #96).
+
+    Resolved per call, not at import time, because the worktree context depends
+    on CWD.
+    """
+    worktree_root = hook_utils.find_worktree_root()
+    return worktree_root if worktree_root is not None else _root
 
 
 def _read_active_workflow() -> dict | None:
@@ -262,7 +278,7 @@ def _check_loc_delta(config: dict, workflow: dict) -> str | None:
     try:
         result = subprocess.run(
             ["git", "diff", "HEAD", "--numstat"],
-            cwd=str(_root), capture_output=True, text=True, timeout=5
+            cwd=str(_measurement_root()), capture_output=True, text=True, timeout=5
         )
         prod_total = 0
         test_total = 0
@@ -287,6 +303,9 @@ def _check_loc_delta(config: dict, workflow: dict) -> str | None:
                     + gate_diagnostics(workflow, delta=f"+{prod_total}", limit=max_loc))
         # Store current delta for status display — write directly to the active
         # workflow JSON (no .active symlink; resolution is env/settings only).
+        # Deliberately `_root`, not `_measurement_root()`: the value is measured
+        # in the worktree but belongs in the SHARED state in the main repo, where
+        # all workflow JSONs live (Issue #96 — measurement and state are split).
         try:
             name = get_active_workflow_name()
             if name:

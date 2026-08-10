@@ -69,6 +69,9 @@ def _load_phrases() -> dict:
             "stop": config.get("stop_lock", {}).get("stop_keywords", STOP_PHRASES),
             "continue": config.get("stop_lock", {}).get("resume_keywords", CONTINUE_PHRASES),
             "override": config.get("override_token", {}).get("keywords", OVERRIDE_PHRASES),
+            # GREEN war als einziges Set nicht konfigurierbar (Nebenbefund Issue #90):
+            # ein Projekt konnte sein Spec-Freigabewort anpassen, das GREEN-Wort nicht.
+            "green": config.get("workflow", {}).get("green_phrases", GREEN_PHRASES),
         }
     except Exception:
         return {}
@@ -193,6 +196,7 @@ def main():
     stop = phrases.get("stop", STOP_PHRASES)
     cont = phrases.get("continue", CONTINUE_PHRASES)
     override = phrases.get("override", OVERRIDE_PHRASES)
+    green = phrases.get("green", GREEN_PHRASES)
 
     wf_data, wf_path = _read_active_workflow()
 
@@ -212,7 +216,7 @@ def main():
         _set_stop_lock(False)
 
     if not wf_data or not wf_path:
-        if _matches(message, approval, leading_only=True) or _matches(message, GREEN_PHRASES, leading_only=True):
+        if _matches(message, approval, leading_only=True) or _matches(message, green, leading_only=True):
             print(
                 f"WARNUNG: Stichwort erkannt, aber kein auflösbarer Workflow. {gate_diagnostics()}",
                 file=sys.stderr,
@@ -220,6 +224,15 @@ def main():
         sys.exit(0)
 
     changed = False
+    # Eine Freigabe ist eine Nutzer-Willenserklärung: sie darf weder unbemerkt
+    # greifen (Issue #46) noch unbemerkt verfallen (Issue #90). Passt die Phase
+    # nicht, wird deshalb gewarnt statt still verworfen — aber erst am Ende und
+    # nur, wenn dieselbe Nachricht nicht über das jeweils andere Gate regulär
+    # gewirkt hat. Sonst erzeugt ein Wort, das in beiden Sets steht (im Fundprojekt
+    # ist "go" Freigabe- UND GREEN-Phrase), eine laute Falschmeldung.
+    deferred_notices: list[str] = []
+    approval_took_effect = False
+    green_took_effect = False
 
     # Approval
     if _matches(message, approval, leading_only=True):
@@ -242,7 +255,20 @@ def main():
                     pass
                 wf_data["current_phase"] = "phase4_approved"
                 changed = True
+                approval_took_effect = True
                 print(f"Spec approved for '{wf_data['name']}'! You may now run /tdd-red", file=sys.stderr)
+        elif wf_data.get("spec_approved"):
+            deferred_notices.append(
+                f"HINWEIS: Spec für '{wf_data['name']}' ist bereits freigegeben. "
+                "Zustand unverändert."
+            )
+        else:
+            deferred_notices.append(
+                "WARNUNG: Freigabe-Stichwort erkannt, aber Workflow steht in "
+                f"'{phase or 'unbekannt'}'; Freigabe wirkt nur in phase3_spec. "
+                "Zustand unverändert — Phase nachziehen und erneut fragen, "
+                "NICHT spec_approved von Hand setzen."
+            )
 
     # New UI flag
     if "neues ui" in message.lower() or "new ui" in message.lower():
@@ -250,11 +276,12 @@ def main():
         changed = True
 
     # GREEN approval
-    if _matches(message, GREEN_PHRASES, leading_only=True):
+    if _matches(message, green, leading_only=True):
         phase = wf_data.get("current_phase", "")
         if phase in ("phase6_implement", "phase6b_adversary"):
             wf_data["green_approved"] = True
             changed = True
+            green_took_effect = True
             print("GREEN approved.", file=sys.stderr)
             # Post-Implementation-Gate: Approval-Marker setzen damit post_implementation_gate entsperrt
             try:
@@ -264,6 +291,18 @@ def main():
                 print(f"Post-implementation gate entsperrt für '{wf_data['name']}'.", file=sys.stderr)
             except OSError:
                 pass
+        elif not wf_data.get("green_approved"):
+            deferred_notices.append(
+                "WARNUNG: GREEN-Stichwort erkannt, aber Workflow steht in "
+                f"'{phase or 'unbekannt'}'; GREEN wirkt nur in phase6_implement "
+                "und phase6b_adversary. Zustand unverändert."
+            )
+
+    # Verworfene Stichworte melden — aber nur, wenn die Nachricht nicht ohnehin
+    # über das jeweils andere Gate regulär gewirkt hat (überlappende Phrasen-Sets).
+    if not (approval_took_effect or green_took_effect):
+        for notice in deferred_notices:
+            print(notice, file=sys.stderr)
 
     if changed:
         _save_workflow(wf_data, wf_path)

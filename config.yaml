@@ -32,7 +32,9 @@ workflow:
     - phase7_validate
     - phase8_complete
 
-  # Phrases that trigger spec approval (case-insensitive, word-boundary matched)
+  # Phrases that trigger spec approval (case-insensitive, word-boundary matched).
+  # Wirken NUR in phase3_spec — in jeder anderen Phase warnt phase_listener und
+  # laesst den Zustand unveraendert (Issue #90).
   approval_phrases:
     - "approved"
     - "freigabe"
@@ -43,6 +45,14 @@ workflow:
     - "abgenommen"
     - "passt"
     - "sieht gut aus"
+
+  # Phrases that trigger GREEN approval after implementation.
+  # Wirken NUR in phase6_implement und phase6b_adversary.
+  green_phrases:
+    - "go"
+    - "green ok"
+    - "tests ok"
+    - "gruen ok"
 
 # Edit Gate — Controls which code files can be edited and when
 # Used by edit_gate.py (consolidated PreToolUse Edit|Write hook)

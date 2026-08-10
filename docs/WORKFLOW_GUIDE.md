@@ -488,7 +488,8 @@ Das Framework wird über `openspec.yaml` im Projektverzeichnis konfiguriert. Wic
 | `scope_guard.test_path_patterns` | eingebaute Testpfad-Konventionen | Regex-Liste, die Dateien dem Test-Bucket zuordnet |
 | `bug_fix.require_tdd` | false | TDD-Pflicht auch für Bugs |
 | `bug_fix.max_files` | 4 | Maximale geänderte Dateien bei Bugs |
-| `workflow.approval_phrases` | [approved, lgtm, ...] | Freigabe-Keywords |
+| `workflow.approval_phrases` | [approved, lgtm, ...] | Freigabe-Keywords (wirken nur in `phase3_spec`) |
+| `workflow.green_phrases` | [go, green ok, tests ok, gruen ok] | GREEN-Keywords (wirken nur in `phase6_implement`/`phase6b_adversary`) |
 | `stop_lock.stop_keywords` | [stop, stopp, ...] | Stopp-Keywords |
 | `bash_gate.whitelist` | [] | Scripts, die den State-Integritäts-Check überspringen |
 

@@ -5,6 +5,91 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.11.3] - 2026-08-10
+
+### Fixed
+
+**Freigabe-Stichwort wurde still verworfen, wenn die Phase nicht passte (Issue #90)**
+
+`phase_listener.py` erkannte eine gueltige Freigabe-Phrase korrekt, verwarf sie aber ohne jede
+Ausgabe, wenn der Workflow nicht in `phase3_spec` stand — es gab schlicht keinen `else`-Zweig.
+Weder Nutzer noch Modell erfuhren davon. Der spaetere Phasenwechsel meldete dann
+`Spec not approved — user must say 'approved'`: eine falsche Ursache (es *gab* eine Freigabe) und
+ein fest verdrahtetes Stichwort, das im Projekt gar nicht konfiguriert war. Die Kette endete
+verlaesslich im Anti-Pattern `set-field spec_approved true` — ein Gate, dessen einziger sauberer
+Weg unsichtbar scheitert, erzieht zum Umgehen. Gemessen in `gregor_zwanzig` mit Plugin 3.10.2:
+Der PO antwortete `Go` (dort an erster Stelle konfiguriert) waehrend `phase1_context`.
+
+Behoben in drei Teilen:
+
+- **Verworfene Stichworte werden gemeldet.** Passt die Phase nicht, erscheint
+  `WARNUNG: Freigabe-Stichwort erkannt, aber Workflow steht in '<phase>'; Freigabe wirkt nur in
+  phase3_spec.` — mit beiden Phasen im Text und dem ausdruecklichen Hinweis, die Phase nachzuziehen
+  statt `spec_approved` von Hand zu setzen. Ist die Spec bereits freigegeben, erscheint ein
+  entsprechender Hinweis statt Schweigen.
+- **Dieselbe Luecke im GREEN-Zweig** (`phase6_implement`/`phase6b_adversary`) ist mitbehoben; sie
+  war baugleich still. Ueberlappende Phrasen-Sets erzeugen dabei keine Falschmeldung: hat dieselbe
+  Nachricht ueber das jeweils andere Gate regulaer gewirkt, entfaellt die Warnung (im Fundprojekt
+  ist `go` Freigabe- *und* GREEN-Phrase).
+- **Die Blockade-Meldung kommt aus der Konfiguration.** Statt des hartkodierten `'approved'` nennt
+  `_validate_transition()` jetzt die tatsaechlich geltenden `approval_phrases` (via des bereits
+  vorhandenen `config_loader.get_approval_phrases()`) und zusaetzlich die Phasenbindung, die
+  eigentliche Falle. Beide Vorkommen (Normal- und `feature-fast`-Zweig) sind umgestellt.
+
+### Added
+
+**`workflow.green_phrases` konfigurierbar (Nebenbefund aus Issue #90)**
+
+`approval`, `stop`, `continue` und `override` waren ueber `openspec.yaml` konfigurierbar, das
+GREEN-Set als einziges nicht — ein Projekt konnte sein Freigabewort fuer die Spec anpassen, das
+fuer GREEN jedoch nicht. Neu: `workflow.green_phrases`, Default unveraendert
+(`go`, `green ok`, `tests ok`, `gruen ok`). In `config.yaml` und `docs/WORKFLOW_GUIDE.md`
+dokumentiert, jeweils mit der Phase, in der das Set wirkt.
+
+Nicht umgesetzt: der als „erwaegenswert" markierte Vorschlag, eine verfrueht eingetroffene Freigabe
+als `pending_approval` vorzumerken. Das ist eine Produktentscheidung — ob ein `go` aus
+`phase1_context` beim Eintritt in `phase3_spec` noch als Willenserklaerung gelten soll —, keine
+Fehlerbehebung, und der Issue selbst haelt fest, dass sie Teil 1 nicht ersetzt.
+
+## [3.11.2] - 2026-08-10
+
+### Fixed
+
+**LoC-Gate mass in Worktree-Sitzungen das Hauptrepo — Limit griff dort nie (Issue #96)**
+
+`_check_loc_delta()` in `core/hooks/edit_gate.py` fuehrte `git diff HEAD --numstat` mit
+`cwd=find_project_root()` aus. `find_project_root()` loest Git-Worktrees **absichtlich** auf den
+Hauptrepo-Root auf — richtig fuer geteilte Zustandsdateien (`.claude/workflows/*.json`), falsch
+fuer eine Messung am Arbeitsbaum: lief die Sitzung in einem Worktree, wurde ein anderer, in der
+Regel sauberer Baum gemessen. Das Delta war konstant `+0`, das Limit griff nie (fail-open, ohne
+Fehlermeldung — das Gate meldete nicht falsch, es meldete nichts). Gemessen in `gregor_zwanzig`,
+Worktree `intake-1555`: 764 hinzugefuegte Testzeilen bei Grenze 500, gemeldet `+0`, kein einziger
+Schreibvorgang blockiert. In Setups, in denen ein Session-Waechter Worktrees erzwingt, lief das
+Limit damit dauerhaft leer. Dieselbe Wurzelaufloesung erzeugte die Gegenrichtung — Fehlalarme,
+wenn aus dem Worktree fremdes Delta des Hauptrepos der eigenen Arbeit zugeschrieben wurde.
+
+Die beiden Zwecke der Wurzelaufloesung sind jetzt getrennt:
+
+- **Zustandsablage** (Workflow-JSON, Artefakt-Register) → weiterhin `find_project_root()`,
+  also Hauptrepo, unveraendert. Das im Worktree gemessene Delta wird nach wie vor in den
+  geteilten State im Hauptrepo geschrieben (`loc_delta_current`, `loc_delta_test_current`).
+- **Messungen am Arbeitsbaum** (`git diff`) → neu `hook_utils.find_worktree_root()`, mit
+  Rueckfall auf `find_project_root()` in Hauptrepo-Sitzungen.
+
+`find_worktree_root()` ist die dokumentierte, oeffentliche Entsprechung zum bereits vorhandenen
+`_find_worktree_root()` (genutzt seit Issue #58 in `resolve_active_workflow()` und seit
+Issue #1478 in `tdd_enforcement`). Das private Symbol bleibt als Implementierung und
+Test-Injektionspunkt erhalten — bestehende Tests, die es monkeypatchen, laufen unveraendert.
+
+Regressionstest `tests/test_loc_gate_worktree_root_96.py`: echte Repos, echter `git worktree add`,
+echtes `git diff` — kein gemocktes numstat. Deckt beide Richtungen ab (Worktree ueber Limit /
+Hauptrepo ueber Limit), den Produktiv-Test-Split aus #94 im Worktree, das Override-Feld und die
+Trennung Messung/State.
+
+Verhaltensaenderung: In Worktree-Sitzungen greift das LoC-Limit ab dieser Version tatsaechlich.
+Projekte, die dort bisher unbemerkt darueber lagen, sehen nun Blockaden — regulaerer Weg bleibt
+`workflow.py set-field loc_limit_override <N>` bzw. `test_loc_limit_override <N>`.
+
 ## [3.11.1] - 2026-08-09
 
 ### Fixed
