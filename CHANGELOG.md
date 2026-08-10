@@ -5,6 +5,52 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.11.3] - 2026-08-10
+
+### Fixed
+
+**Freigabe-Stichwort wurde still verworfen, wenn die Phase nicht passte (Issue #90)**
+
+`phase_listener.py` erkannte eine gueltige Freigabe-Phrase korrekt, verwarf sie aber ohne jede
+Ausgabe, wenn der Workflow nicht in `phase3_spec` stand — es gab schlicht keinen `else`-Zweig.
+Weder Nutzer noch Modell erfuhren davon. Der spaetere Phasenwechsel meldete dann
+`Spec not approved — user must say 'approved'`: eine falsche Ursache (es *gab* eine Freigabe) und
+ein fest verdrahtetes Stichwort, das im Projekt gar nicht konfiguriert war. Die Kette endete
+verlaesslich im Anti-Pattern `set-field spec_approved true` — ein Gate, dessen einziger sauberer
+Weg unsichtbar scheitert, erzieht zum Umgehen. Gemessen in `gregor_zwanzig` mit Plugin 3.10.2:
+Der PO antwortete `Go` (dort an erster Stelle konfiguriert) waehrend `phase1_context`.
+
+Behoben in drei Teilen:
+
+- **Verworfene Stichworte werden gemeldet.** Passt die Phase nicht, erscheint
+  `WARNUNG: Freigabe-Stichwort erkannt, aber Workflow steht in '<phase>'; Freigabe wirkt nur in
+  phase3_spec.` — mit beiden Phasen im Text und dem ausdruecklichen Hinweis, die Phase nachzuziehen
+  statt `spec_approved` von Hand zu setzen. Ist die Spec bereits freigegeben, erscheint ein
+  entsprechender Hinweis statt Schweigen.
+- **Dieselbe Luecke im GREEN-Zweig** (`phase6_implement`/`phase6b_adversary`) ist mitbehoben; sie
+  war baugleich still. Ueberlappende Phrasen-Sets erzeugen dabei keine Falschmeldung: hat dieselbe
+  Nachricht ueber das jeweils andere Gate regulaer gewirkt, entfaellt die Warnung (im Fundprojekt
+  ist `go` Freigabe- *und* GREEN-Phrase).
+- **Die Blockade-Meldung kommt aus der Konfiguration.** Statt des hartkodierten `'approved'` nennt
+  `_validate_transition()` jetzt die tatsaechlich geltenden `approval_phrases` (via des bereits
+  vorhandenen `config_loader.get_approval_phrases()`) und zusaetzlich die Phasenbindung, die
+  eigentliche Falle. Beide Vorkommen (Normal- und `feature-fast`-Zweig) sind umgestellt.
+
+### Added
+
+**`workflow.green_phrases` konfigurierbar (Nebenbefund aus Issue #90)**
+
+`approval`, `stop`, `continue` und `override` waren ueber `openspec.yaml` konfigurierbar, das
+GREEN-Set als einziges nicht — ein Projekt konnte sein Freigabewort fuer die Spec anpassen, das
+fuer GREEN jedoch nicht. Neu: `workflow.green_phrases`, Default unveraendert
+(`go`, `green ok`, `tests ok`, `gruen ok`). In `config.yaml` und `docs/WORKFLOW_GUIDE.md`
+dokumentiert, jeweils mit der Phase, in der das Set wirkt.
+
+Nicht umgesetzt: der als „erwaegenswert" markierte Vorschlag, eine verfrueht eingetroffene Freigabe
+als `pending_approval` vorzumerken. Das ist eine Produktentscheidung — ob ein `go` aus
+`phase1_context` beim Eintritt in `phase3_spec` noch als Willenserklaerung gelten soll —, keine
+Fehlerbehebung, und der Issue selbst haelt fest, dass sie Teil 1 nicht ersetzt.
+
 ## [3.11.2] - 2026-08-10
 
 ### Fixed
