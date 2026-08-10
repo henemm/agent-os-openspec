@@ -707,11 +707,34 @@ def resolve_active_workflow() -> "tuple[str, str]":
     return "", "none"
 
 
+def find_worktree_root() -> "Path | None":
+    """Root of the working tree the session actually works in, or None.
+
+    Counterpart to find_project_root(): that one resolves worktrees to the MAIN
+    repo (correct for shared state — workflow JSONs, artifact registry, all of
+    which must live in one place regardless of worktree). This one deliberately
+    does NOT resolve, and is the right root for MEASUREMENTS against the working
+    tree (`git diff`, `git status`, LoC, scope).
+
+    Mixing the two is a silent failure mode: measuring the main repo from inside
+    a worktree reports the delta of a different, usually clean tree — the limit
+    then never triggers (Issue #96, fail-open) and, in the other direction,
+    attributes a foreign delta to the session's own work (false alarm).
+
+    Returns None when the session runs in the main repo; callers should fall
+    back to find_project_root() then.
+    """
+    return _find_worktree_root()
+
+
 def _find_worktree_root() -> "Path | None":
     """If CWD is inside a git worktree, return the worktree root (dir with .git FILE).
 
     Returns None if in the main repo (where .git is a directory, not a file).
     Mirrors workflow._worktree_root_if_any() — kept local to avoid circular imports.
+
+    Implementation behind find_worktree_root(); kept as the patch point that
+    existing tests inject (tests/test_workflow_resolution_consolidation.py et al.).
     """
     current = Path.cwd()
     while current != current.parent:

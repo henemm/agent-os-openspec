@@ -5,6 +5,45 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.11.2] - 2026-08-10
+
+### Fixed
+
+**LoC-Gate mass in Worktree-Sitzungen das Hauptrepo — Limit griff dort nie (Issue #96)**
+
+`_check_loc_delta()` in `core/hooks/edit_gate.py` fuehrte `git diff HEAD --numstat` mit
+`cwd=find_project_root()` aus. `find_project_root()` loest Git-Worktrees **absichtlich** auf den
+Hauptrepo-Root auf — richtig fuer geteilte Zustandsdateien (`.claude/workflows/*.json`), falsch
+fuer eine Messung am Arbeitsbaum: lief die Sitzung in einem Worktree, wurde ein anderer, in der
+Regel sauberer Baum gemessen. Das Delta war konstant `+0`, das Limit griff nie (fail-open, ohne
+Fehlermeldung — das Gate meldete nicht falsch, es meldete nichts). Gemessen in `gregor_zwanzig`,
+Worktree `intake-1555`: 764 hinzugefuegte Testzeilen bei Grenze 500, gemeldet `+0`, kein einziger
+Schreibvorgang blockiert. In Setups, in denen ein Session-Waechter Worktrees erzwingt, lief das
+Limit damit dauerhaft leer. Dieselbe Wurzelaufloesung erzeugte die Gegenrichtung — Fehlalarme,
+wenn aus dem Worktree fremdes Delta des Hauptrepos der eigenen Arbeit zugeschrieben wurde.
+
+Die beiden Zwecke der Wurzelaufloesung sind jetzt getrennt:
+
+- **Zustandsablage** (Workflow-JSON, Artefakt-Register) → weiterhin `find_project_root()`,
+  also Hauptrepo, unveraendert. Das im Worktree gemessene Delta wird nach wie vor in den
+  geteilten State im Hauptrepo geschrieben (`loc_delta_current`, `loc_delta_test_current`).
+- **Messungen am Arbeitsbaum** (`git diff`) → neu `hook_utils.find_worktree_root()`, mit
+  Rueckfall auf `find_project_root()` in Hauptrepo-Sitzungen.
+
+`find_worktree_root()` ist die dokumentierte, oeffentliche Entsprechung zum bereits vorhandenen
+`_find_worktree_root()` (genutzt seit Issue #58 in `resolve_active_workflow()` und seit
+Issue #1478 in `tdd_enforcement`). Das private Symbol bleibt als Implementierung und
+Test-Injektionspunkt erhalten — bestehende Tests, die es monkeypatchen, laufen unveraendert.
+
+Regressionstest `tests/test_loc_gate_worktree_root_96.py`: echte Repos, echter `git worktree add`,
+echtes `git diff` — kein gemocktes numstat. Deckt beide Richtungen ab (Worktree ueber Limit /
+Hauptrepo ueber Limit), den Produktiv-Test-Split aus #94 im Worktree, das Override-Feld und die
+Trennung Messung/State.
+
+Verhaltensaenderung: In Worktree-Sitzungen greift das LoC-Limit ab dieser Version tatsaechlich.
+Projekte, die dort bisher unbemerkt darueber lagen, sehen nun Blockaden — regulaerer Weg bleibt
+`workflow.py set-field loc_limit_override <N>` bzw. `test_loc_limit_override <N>`.
+
 ## [3.11.1] - 2026-08-09
 
 ### Fixed
