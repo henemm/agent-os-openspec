@@ -27,9 +27,17 @@ waehrend eine zweite Sitzung im selben Ordner arbeitete.
   `origin/main`, `plugin.json` und oberster CHANGELOG-Eintrag uneinig, Tag bereits vergeben. Ein
   offener `[Unreleased]`-Block gilt bewusst als nicht releasefaehig. Optionaler Testlauf
   (`--no-tests` ueberspringt ihn). 15 Tests gegen echte Git-Repos.
+- **`.github/workflows/release.yml`** — veroeffentlicht automatisch, sobald eine neue Version auf
+  `main` liegt: Vorbedingungen pruefen, Tag `{plugin-name}--v{version}` setzen, GitHub-Release mit
+  dem CHANGELOG-Abschnitt dieser Version als Text. Idempotent — ist die Version bereits getaggt,
+  endet der Lauf gruen und tut nichts. Damit ist der Versions-Bump in `plugin.json` die einzige
+  Handlung, die ein Release ausloest. Begruendung: das Tag von Hand zu setzen ist genau der
+  Schritt, der liegen bleibt — Gregor lief auf 3.10.2, waehrend `main` schon 3.11.1 war.
+  `release_check.py --notes` / `--tag` liefern dem Workflow die Werte, sodass Release-Notiz und
+  CHANGELOG nicht auseinanderlaufen koennen.
 - **README-Abschnitt „Releasing"** — dokumentiert die bisher nirgends festgehaltene Kopplung und
-  schreibt den Ref-Pin vor (`claude plugin marketplace add henemm/agent-os-openspec@main`), samt
-  Tag-Konvention `{plugin-name}--v{version}`.
+  schreibt die GitHub-Quelle mit Ref-Pin vor
+  (`claude plugin marketplace add henemm/agent-os-openspec@main`).
 
 Der Ref-Pin ersetzt den im Issue vorgeschlagenen zweiten Nur-Lese-Klon: Claude Code legt bei
 Git-Quellen selbst eine Zwischenkopie an, der Ref ist ueber `marketplace list --json` nachpruefbar,
