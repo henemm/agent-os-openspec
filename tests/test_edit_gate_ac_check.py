@@ -287,3 +287,35 @@ def test_ac_detection_is_shared_from_hook_utils():
     assert getattr(adversary_dialog, "extract_ac_entries", None) is shared, (
         "adversary_dialog referenziert nicht die geteilte hook_utils.extract_ac_entries."
     )
+
+
+# --- Scheiben-Label-Format (z.B. gregor_zwanzig Epic #1703 "AC-S6-1") --------
+
+def test_ac_bullet_with_slice_label_between_prefix_and_number():
+    """Regression: 'AC-S<Scheibe>-<N>' wird genauso erkannt wie 'AC-<N>'.
+
+    Multi-Slice-Epics nummerieren ACs oft mit einem Scheiben-Praefix zwischen
+    'AC-' und der laufenden Nummer (z.B. 'AC-S6-1' fuer Scheibe 6, AC 1) --
+    der bisherige Regex ('AC-\\d+') verlangte eine Ziffer direkt nach 'AC-'
+    und uebersah dieses Format vollstaendig (edit_gate blockte jeden
+    Produktivcode-Edit mit 'has no AC-N entries', obwohl die Spec sechs
+    gueltige AC-Bullets enthielt). Prueft zugleich, dass das reine 'AC-N'-
+    Format (kein Praefix) unveraendert funktioniert -- der Praefix ist
+    optional, keine Ersetzung.
+    """
+    sys.path.insert(0, str(HOOKS_DIR))
+    import hook_utils
+
+    content = """## Acceptance Criteria
+
+- **AC-S6-1:** Given ein Symbol-Register / When es gegen POSITIONAL geprueft wird / Then hat jedes Symbol eine Position.
+- **AC-S6-6:** Given eine Kollision / When der Fix greift / Then sind beide Marker verschieden.
+- **AC-12:** Given kein Scheiben-Praefix / When die Zahl direkt folgt / Then bleibt das Bestandsformat erkannt.
+"""
+    entries = hook_utils.extract_ac_entries(content)
+    labels = [label for label, _desc, _raw in entries]
+
+    assert labels == ["AC-S6-1", "AC-S6-6", "AC-12"], (
+        f"Erwartet drei erkannte Bullets (zwei mit Scheiben-Praefix, eine "
+        f"ohne), bekommen: {labels!r}"
+    )
