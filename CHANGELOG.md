@@ -5,6 +5,34 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+**Mehr `/clear`-Checkpoints zwischen Workflow-Phasen (Issue #103)**
+
+Bisher gab es die `/clear`-Empfehlung samt Wiedereinstiegs-Logik nur zwischen Phase 5/6 und 6/7.
+Der komplette Workflow-State (Phase, Spec, Artefakte, Verdict) liegt aber ab Phase 1 durchgehend
+auf der Platte — jeder frueheren Phasengrenze fehlte nur die Anleitung dazu.
+
+- `10-context.md`, `20-analyse.md`: `/clear`-Empfehlung am Phasenende ergaenzt.
+- `30-write-spec.md`: `/clear`-Empfehlung nach Spec-Freigabe (vor `/40-tdd-red`) ergaenzt.
+- `20-analyse.md`, `30-write-spec.md`, `40-tdd-red.md`: Wiedereinstiegs-Step-0
+  (Workflow-Name per Issue-Nummer auflösen) neu ergaenzt — vorher nur ab `/50-implement` vorhanden.
+
+### Fixed
+
+**Wiedereinstiegs-Aktivierung nach `/clear` war nicht robust (Issue #103)**
+
+Der bestehende Reentry-Block in `50-implement.md`/`60-validate.md` schlug `export
+OPENSPEC_ACTIVE_WORKFLOW=<name>` vor. Zwei Probleme: Bash-Tool-Aufrufe teilen sich keinen
+Shell-State (ein `export` in einem Call ist im naechsten bereits weg), und in Worktree-Sessions
+ignoriert `resolve_active_workflow()` die Env-Var als Quelle ohnehin bewusst (Issue #58) — nur die
+worktree-lokale `.claude/active_workflow`-Datei zaehlt. Alle Reentry-Bloecke rufen jetzt
+`workflow.py switch <name>` gefolgt von `workflow.py status` als Pflicht-Verifikationsschritt auf
+— `switch` schreibt die worktree-lokale Datei zuverlaessig, `status` bestaetigt Quelle und Stand.
+Keine Aenderung an Hook-Logik, nur an den Command-Markdown-Dateien.
+
 ## [3.11.4] - 2026-08-10
 
 Erstes veroeffentlichtes Release (Tag `agent-os-openspec--v3.11.4`). Enthaelt die nie separat

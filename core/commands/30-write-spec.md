@@ -2,6 +2,42 @@
 
 You are in **Phase 3 - Specification Writing**.
 
+## Step 0: Workflow-State auflösen (ZUERST — vor allem anderen)
+
+**Wurde dieser Befehl mit einer Issue-Nummer aufgerufen** (z. B. `/30-write-spec #42` — typisch nach einem `/clear`)? Dann aktiviere den Workflow explizit. Ein reines `export OPENSPEC_ACTIVE_WORKFLOW=...` reicht NICHT: Shell-State überlebt keinen Bash-Tool-Aufruf, und in Worktree-Sessions ignoriert `resolve_active_workflow()` die Env-Var ohnehin (Issue #58).
+
+```bash
+ISSUE=42   # die übergebene Nummer (ohne #)
+python3 - "$ISSUE" <<'PY'
+import sys, json, glob, re, os
+issue = sys.argv[1].lstrip('#')
+pat = re.compile(rf'(^|[-_]){re.escape(issue)}([-_]|$)')
+hits = []
+for f in glob.glob('.claude/workflows/*.json'):
+    name = os.path.basename(f)[:-5]
+    if pat.search(name):
+        d = json.load(open(f))
+        hits.append((name, d.get('current_phase'), d.get('spec_file') or 'Not created'))
+if not hits:
+    print(f'KEIN laufender Workflow fuer #{issue} (evtl. abgeschlossen -> .claude/workflows/_archive/).')
+else:
+    for name, ph, spec in hits:
+        print(f'GEFUNDEN: {name} | Phase={ph} | Spec={spec}')
+    print('\nNAME=' + hits[0][0])
+PY
+```
+
+**PFLICHT direkt danach** — Workflow wirklich aktivieren (nicht nur die Zeile oben lesen) und den Stand verifizieren:
+
+```bash
+python3 .claude/hooks/workflow.py switch <NAME-aus-obigem-Output>
+python3 .claude/hooks/workflow.py status
+```
+
+Das `status`-Kommando ist der eigentliche Wiedereinstiegs-Check: Es zeigt die Quelle (`[file]`) und bestätigt Phase/Analyse-Stand. Fasse dem User in 2 Sätzen zusammen, wo der Workflow steht — damit sichtbar ist, dass der `/clear` nichts verloren hat.
+
+**Ohne Issue-Argument** (laufende Session, kein `/clear` dazwischen): `workflow.py status` reicht direkt.
+
 ## Fast Track (workflow_type == feature-fast)
 
 Prüfe zuerst den Workflow-Typ:
@@ -122,6 +158,17 @@ When user approves:
 1. `workflow_state_updater` hook detects approval phrase
 2. State advances to `phase4_approved`
 3. Next: `/40-tdd-red` to write failing tests
+
+Nach der Freigabe kannst du dem User zusätzlich anbieten:
+
+---
+Nächster Schritt — Kontext zurücksetzen spart Tokens (der Workflow-State liegt sicher auf der Platte):
+1. `/clear`
+2. `/40-tdd-red #<N>`   (lädt die freigegebene Spec automatisch von der Platte)
+
+_Bei kleinem Kontext optional — dann genügt direkt `/40-tdd-red`._
+
+---
 
 **IMPORTANT:**
 - Do NOT implement until approved

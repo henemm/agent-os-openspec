@@ -2,15 +2,46 @@
 
 You are in **Phase 2 - Analysis** of the workflow.
 
+## Step 0: Workflow-State auflösen (ZUERST — vor allem anderen)
+
+**Wurde dieser Befehl mit einer Issue-Nummer aufgerufen** (z. B. `/20-analyse #42` — typisch nach einem `/clear`)? Dann aktiviere den Workflow explizit. Ein reines `export OPENSPEC_ACTIVE_WORKFLOW=...` reicht NICHT: Shell-State überlebt keinen Bash-Tool-Aufruf, und in Worktree-Sessions ignoriert `resolve_active_workflow()` die Env-Var ohnehin (Issue #58).
+
+```bash
+ISSUE=42   # die übergebene Nummer (ohne #)
+python3 - "$ISSUE" <<'PY'
+import sys, json, glob, re, os
+issue = sys.argv[1].lstrip('#')
+pat = re.compile(rf'(^|[-_]){re.escape(issue)}([-_]|$)')
+hits = []
+for f in glob.glob('.claude/workflows/*.json'):
+    name = os.path.basename(f)[:-5]
+    if pat.search(name):
+        d = json.load(open(f))
+        hits.append((name, d.get('current_phase'), d.get('spec_file') or 'Not created'))
+if not hits:
+    print(f'KEIN laufender Workflow fuer #{issue} (evtl. abgeschlossen -> .claude/workflows/_archive/).')
+else:
+    for name, ph, spec in hits:
+        print(f'GEFUNDEN: {name} | Phase={ph} | Spec={spec}')
+    print('\nNAME=' + hits[0][0])
+PY
+```
+
+**PFLICHT direkt danach** — Workflow wirklich aktivieren (nicht nur die Zeile oben lesen) und den Stand verifizieren:
+
+```bash
+python3 .claude/hooks/workflow.py switch <NAME-aus-obigem-Output>
+python3 .claude/hooks/workflow.py status
+```
+
+Das `status`-Kommando ist der eigentliche Wiedereinstiegs-Check: Es zeigt die Quelle (`[file]`) und bestätigt Phase/Spec. Fasse dem User in 2 Sätzen zusammen, wo der Workflow steht — damit sichtbar ist, dass der `/clear` nichts verloren hat.
+
+**Ohne Issue-Argument** (laufende Session, kein `/clear` dazwischen): `workflow.py status` reicht direkt.
+
 ## Prerequisites
 
 - Context gathered (`/10-context` completed, or combined with analysis)
 - Active workflow exists
-
-Check current workflow:
-```bash
-python3 .claude/hooks/workflow.py status
-```
 
 ## Your Tasks
 
@@ -126,7 +157,11 @@ Wenn die Analyse abgeschlossen ist, gib dem User folgende Zusammenfassung:
 
 **Risiko:** [Niedrig / Mittel / Hoch] — [kurze Begründung ohne Technik, z.B. "betrifft nur einen isolierten Bereich" oder "ändert eine zentrale Funktion"]
 
-Nächster Schritt: `/30-write-spec` — ich schreibe jetzt den detaillierten Plan.
+Nächster Schritt — Kontext zurücksetzen spart Tokens (der Workflow-State liegt sicher auf der Platte):
+1. `/clear`
+2. `/30-write-spec #<N>`   (lädt die Analyse automatisch von der Platte)
+
+_Bei kleinem Kontext optional — dann genügt direkt `/30-write-spec`._
 
 ---
 
