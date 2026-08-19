@@ -43,13 +43,20 @@ else:
     for name, ph, spec, verd, aff in hits:
         print(f'GEFUNDEN: {name} | Phase={ph} | Spec={spec} | Verdict={verd}')
         if aff: print(f'  affected_files: {", ".join(aff)}')
-    print('\nexport OPENSPEC_ACTIVE_WORKFLOW=' + hits[0][0])
+    print('\nNAME=' + hits[0][0])
 PY
 ```
 
-Setze `OPENSPEC_ACTIVE_WORKFLOW=<name>` und **fasse dem User in 2 Sätzen zusammen, wo der Workflow steht** (Phase, Spec, offene Punkte) — damit sichtbar ist, dass der `/clear` nichts verloren hat.
+**PFLICHT direkt danach** — Workflow wirklich aktivieren (nicht nur die Zeile oben lesen). Ein reines `export OPENSPEC_ACTIVE_WORKFLOW=...` reicht NICHT: Shell-State überlebt keinen Bash-Tool-Aufruf, und in Worktree-Sessions ignoriert `resolve_active_workflow()` die Env-Var ohnehin (Issue #58):
 
-**Ohne Issue-Argument** (laufende Session):
+```bash
+python3 .claude/hooks/workflow.py switch <NAME-aus-obigem-Output>
+python3 .claude/hooks/workflow.py status
+```
+
+Das `status`-Kommando ist der eigentliche Wiedereinstiegs-Check: Es zeigt die Quelle (`[file]`) und bestätigt Phase/Spec/Verdict. **Fasse dem User in 2 Sätzen zusammen, wo der Workflow steht** (Phase, Spec, offene Punkte) — damit sichtbar ist, dass der `/clear` nichts verloren hat.
+
+**Ohne Issue-Argument** (laufende Session, kein `/clear` dazwischen):
 ```bash
 python3 .claude/hooks/workflow.py status
 ```

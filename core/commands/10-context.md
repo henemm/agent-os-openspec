@@ -86,7 +86,11 @@ Informiere den User mit folgender Zusammenfassung:
 
 Was ich gefunden habe: [Kurz beschreiben was relevant ist — z.B. welche bestehenden Bereiche betroffen sind, ob ähnliche Lösungen schon existieren, was zu beachten ist — keine Dateinamen oder Technik]
 
-Nächster Schritt: `/20-analyse` — ich erarbeite jetzt die beste Lösung.
+Nächster Schritt — Kontext zurücksetzen spart Tokens (der Workflow-State liegt sicher auf der Platte):
+1. `/clear`
+2. `/20-analyse #<N>`   (lädt den gesammelten Kontext automatisch von der Platte)
+
+_Bei kleinem Kontext optional — dann genügt direkt `/20-analyse`._
 
 ---
 
