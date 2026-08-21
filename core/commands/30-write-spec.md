@@ -159,14 +159,41 @@ When user approves:
 2. State advances to `phase4_approved`
 3. Next: `/40-tdd-red` to write failing tests
 
-Nach der Freigabe kannst du dem User zusätzlich anbieten:
+Nach der Freigabe kannst du dem User zusätzlich den Kontext-Reset anbieten:
+
+### Checkpoint prüfen (Anweisung an dich — nicht ausgeben)
+
+Prüfe der Reihe nach, bevor du unten etwas ausgibst:
+
+- Phase im Workflow-State geschrieben — `python3 .claude/hooks/workflow.py status` bestätigt sie
+- Alle Ergebnisdateien dieser Phase liegen auf der Platte
+- Keine Erkenntnis, die für `/40-tdd-red` nötig und nirgends niedergeschrieben ist
+
+Sind alle Punkte erfüllt: Gib den Positiv-Block aus. Ist mindestens einer verletzt: Gib stattdessen den Negativ-Block aus und ersetze dessen Platzhalter durch den konkreten Sicherungsschritt.
+
+Weder diese Anweisung noch die `###`-Überschriften gehören in die Ausgabe — an den User geht ausschließlich der Text zwischen den `---`-Trennern.
+
+### Ausgabe A: Positiv-Block (alle Vorbedingungen erfüllt)
 
 ---
-Nächster Schritt — Kontext zurücksetzen spart Tokens (der Workflow-State liegt sicher auf der Platte):
-1. `/clear`
-2. `/40-tdd-red #<N>`   (lädt die freigegebene Spec automatisch von der Platte)
+**Gesichert auf der Platte:**
+- `.claude/workflows/<name>.json` — Phase `phase4_approved`, Feld `spec_file`, Verdict, Artefakt-Register
+- `docs/specs/<category>/<entity>.md` — die freigegebene Spec: Acceptance Criteria, Scope, geplante Tests
 
-_Bei kleinem Kontext optional — dann genügt direkt `/40-tdd-red`._
+✅ **`/clear` ist jetzt gefahrlos** — alles oben Gelistete stellt der Folge-Befehl allein aus diesen Dateien wieder her. Im Gesprächsverlauf steht nichts, was verloren ginge.
+
+1. `/clear`
+2. `/40-tdd-red #<N>`
+
+---
+
+### Ausgabe B: Negativ-Block (mindestens eine Vorbedingung verletzt)
+
+---
+⚠️ **`/clear` jetzt NICHT** — Folgendes steht nur im Gesprächsverlauf:
+- <was fehlt> → sichern mit: <konkreter Befehl oder Schritt>
+
+Erst sichern, dann ist `/clear` gefahrlos.
 
 ---
 

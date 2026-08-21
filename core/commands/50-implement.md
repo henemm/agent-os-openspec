@@ -277,7 +277,23 @@ Follow scoping limits:
 
 ## Next Step
 
-Wenn Adversary VERIFIED (oder AMBIGUOUS mit User-OK): Stelle sicher, dass alle geänderten Dateien committed sind und das Adversary-Verdict im State steht — der nächste Schritt setzt den Gesprächskontext zurück. Gib dann exakt folgendes aus — dann **STOPP**:
+Wenn Adversary VERIFIED (oder AMBIGUOUS mit User-OK): Stelle sicher, dass alle geänderten Dateien committed sind und das Adversary-Verdict im State steht — der nächste Schritt setzt den Gesprächskontext zurück. Danach folgt die Ausgabe an den User — dann **STOPP**.
+
+### Checkpoint prüfen (Anweisung an dich — nicht ausgeben)
+
+Prüfe der Reihe nach, bevor du unten etwas ausgibst:
+
+- Phase im Workflow-State geschrieben — `python3 .claude/hooks/workflow.py status` bestätigt sie
+- Alle Ergebnisdateien dieser Phase liegen auf der Platte
+- Alle RED-Artefakte per `add-artifact` registriert
+- Keine uncommitteten Änderungen an Dateien, die `/60-validate` braucht
+- Keine Erkenntnis, die für `/60-validate` nötig und nirgends niedergeschrieben ist
+
+Sind alle Punkte erfüllt: Gib den Positiv-Block aus. Ist mindestens einer verletzt: Gib stattdessen den Negativ-Block aus und ersetze dessen Platzhalter durch den konkreten Sicherungsschritt.
+
+Weder diese Anweisung noch die `###`-Überschriften gehören in die Ausgabe — an den User geht ausschließlich der Text zwischen den `---`-Trennern.
+
+### Ausgabe: Zusammenfassung (immer)
 
 ---
 ✅ Phase 6 (Implementierung) abgeschlossen — Adversary VERIFIED.
@@ -286,11 +302,29 @@ Workflow: `<name>` · Issue: **#<N>** · Verdict: VERIFIED
 
 **Was wurde erreicht:** Der Code ist fertig und hat eine unabhängige interne Qualitätsprüfung bestanden. Als Nächstes folgt die finale Validierung — dabei wird geprüft, ob alle Anforderungen aus der Spezifikation lückenlos erfüllt sind.
 
-Nächster Schritt — Kontext zurücksetzen spart Tokens (der Workflow-State liegt sicher auf der Platte):
-1. `/clear`
-2. `/60-validate #<N>`   (lädt Spec + State + Verdict automatisch von der Platte)
+---
 
-_Bei kleinem Kontext optional — dann genügt direkt `/60-validate`._
+### Ausgabe A: Positiv-Block (alle Vorbedingungen erfüllt)
+
+---
+**Gesichert auf der Platte:**
+- `.claude/workflows/<name>.json` — Phase `phase7_validate`, Feld `spec_file`, Verdict `VERIFIED`, Artefakt-Register
+- Commit der Implementierung — alle geänderten Dateien sind committed, `git status` ist sauber
+
+✅ **`/clear` ist jetzt gefahrlos** — alles oben Gelistete stellt der Folge-Befehl allein aus diesen Dateien wieder her. Im Gesprächsverlauf steht nichts, was verloren ginge.
+
+1. `/clear`
+2. `/60-validate #<N>`
+
+---
+
+### Ausgabe B: Negativ-Block (mindestens eine Vorbedingung verletzt)
+
+---
+⚠️ **`/clear` jetzt NICHT** — Folgendes steht nur im Gesprächsverlauf:
+- <was fehlt> → sichern mit: <konkreter Befehl oder Schritt>
+
+Erst sichern, dann ist `/clear` gefahrlos.
 
 ---
 

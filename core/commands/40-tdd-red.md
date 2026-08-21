@@ -134,7 +134,23 @@ Sobald alle Artefakte registriert sind und Spec + RED-Testdateien committed sind
 python3 .claude/hooks/workflow.py phase phase6_implement
 ```
 
-Dann gib exakt folgendes aus — dann **STOPP**:
+Danach folgt die Ausgabe an den User — dann **STOPP**.
+
+### Checkpoint prüfen (Anweisung an dich — nicht ausgeben)
+
+Prüfe der Reihe nach, bevor du unten etwas ausgibst:
+
+- Phase im Workflow-State geschrieben — `python3 .claude/hooks/workflow.py status` bestätigt sie
+- Alle Ergebnisdateien dieser Phase liegen auf der Platte
+- Alle RED-Artefakte per `add-artifact` registriert
+- Keine uncommitteten Änderungen an Dateien, die `/50-implement` braucht
+- Keine Erkenntnis, die für `/50-implement` nötig und nirgends niedergeschrieben ist
+
+Sind alle Punkte erfüllt: Gib den Positiv-Block aus. Ist mindestens einer verletzt: Gib stattdessen den Negativ-Block aus und ersetze dessen Platzhalter durch den konkreten Sicherungsschritt.
+
+Weder diese Anweisung noch die `###`-Überschriften gehören in die Ausgabe — an den User geht ausschließlich der Text zwischen den `---`-Trennern.
+
+### Ausgabe: Zusammenfassung (immer)
 
 ---
 ✅ Phase 5 (TDD RED) abgeschlossen.
@@ -143,11 +159,30 @@ Workflow: `<name>` · Issue: **#<N>** · Phase: `phase5_tdd_red` ✓
 
 **Was wurde gemacht:** Die Qualitätsprüfungen (Tests) sind aufgesetzt und bestätigt als fehlschlagend — genau wie geplant, denn die eigentliche Funktion ist noch nicht gebaut. Das ist ein gutes Zeichen: Wir messen zuerst, dann bauen wir.
 
-Nächster Schritt — Kontext zurücksetzen spart Tokens (der Workflow-State liegt sicher auf der Platte):
-1. `/clear`
-2. `/50-implement #<N>`   (lädt Spec + RED-Tests + State automatisch von der Platte)
+---
 
-_Bei kleinem Kontext optional — dann genügt direkt `/50-implement`._
+### Ausgabe A: Positiv-Block (alle Vorbedingungen erfüllt)
+
+---
+**Gesichert auf der Platte:**
+- `.claude/workflows/<name>.json` — Phase `phase6_implement`, Feld `spec_file`, Verdict, Artefakt-Register
+- `tests/<test-datei>.py` — die geschriebenen, fehlschlagenden Testdateien (committed)
+- `docs/artifacts/<workflow-name>/test-red-output.txt` — RED-Beleg, per `add-artifact` registriert
+
+✅ **`/clear` ist jetzt gefahrlos** — alles oben Gelistete stellt der Folge-Befehl allein aus diesen Dateien wieder her. Im Gesprächsverlauf steht nichts, was verloren ginge.
+
+1. `/clear`
+2. `/50-implement #<N>`
+
+---
+
+### Ausgabe B: Negativ-Block (mindestens eine Vorbedingung verletzt)
+
+---
+⚠️ **`/clear` jetzt NICHT** — Folgendes steht nur im Gesprächsverlauf:
+- <was fehlt> → sichern mit: <konkreter Befehl oder Schritt>
+
+Erst sichern, dann ist `/clear` gefahrlos.
 
 ---
 

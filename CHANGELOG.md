@@ -5,6 +5,46 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+**`/clear`-Checkpoint belegt die Sicherungslage, statt sie zu behaupten (Issue #107)**
+
+Die mit #103 eingefuehrten Checkpoints behaupteten pauschal, der State liege "sicher auf der
+Platte" — ohne zu zeigen WAS gesichert ist, und ohne den Fall zu kennen, dass gerade nichts
+gesichert ist. Die Abstufung hing zudem an der Kontextgroesse ("_Bei kleinem Kontext optional_")
+statt an der Sicherungslage: Ein `/clear` bei kleinem Kontext verliert eine ungesicherte
+Erkenntnis genauso.
+
+- `10-context.md`, `20-analyse.md`, `30-write-spec.md`, `40-tdd-red.md`, `50-implement.md`:
+  Der `/clear`-Block nennt jetzt jede sichernde Datei mit Pfad und Inhalt und gibt ein
+  ausdrueckliches Verdikt — `/clear` ist jetzt gefahrlos` bzw. `/clear` jetzt NICHT` mit dem
+  konkreten Sicherungsschritt. Struktur und Wortlaut sind ueber alle fuenf Dateien identisch.
+- Vorbedingungs-Pruefung ergaenzt: Das Positiv-Verdikt darf nur erscheinen, wenn die Phase im
+  State geschrieben ist, alle Ergebnisdateien auf der Platte liegen und keine fuer den
+  Folgeschritt noetige Erkenntnis nur im Gespraechsverlauf steht. Ab Phase 5 kommen die
+  registrierten RED-Artefakte und der saubere Commit-Stand dazu.
+- Trennung von Anweisung und Ausgabe: Die Pruefliste steht in einem eigenen Abschnitt
+  `### Checkpoint pruefen (Anweisung an dich — nicht ausgeben)` oberhalb der beiden
+  Ausgabe-Vorlagen (`### Ausgabe A/B`). Die Vorlagen enthalten nur noch Text, der woertlich an
+  den User geht — vorher standen Meta-Zeilen wie "Positiv-Block (alle Vorbedingungen
+  erfuellt):" mitten im auszugebenden Bereich und waeren mit ausgedruckt worden.
+- Keine Commit-Vorbedingung in Phase 1-3: `/clear` loescht den Gespraechsverlauf, nicht das
+  Arbeitsverzeichnis. Diese Phasen committen nichts, ihre Ergebnisdatei ist per Definition
+  uncommitted — als Vorbedingung formuliert waere sie dort immer verletzt und der Warnblock
+  wuerde ausnahmslos feuern. Aus demselben Grund entfaellt dort der Punkt "Ab Phase 5: alle
+  RED-Artefakte registriert", der in Phase 1-3 nie zutrifft. In `40-tdd-red.md` und
+  `50-implement.md` bleiben beide Punkte stehen.
+- Der Zusatz "_Bei kleinem Kontext optional_" entfaellt ersatzlos.
+- `60-validate.md` bekommt bewusst keinen Checkpoint — dort folgt der Commit in derselben
+  Sitzung, ein `/clear` dazwischen waere schaedlich.
+- Neu: `tests/test_clear_checkpoint_blocks.py` (45 Tests) sichert Vorhandensein der Bloecke,
+  die Vorbedingungs-Liste je Phase, die Abwesenheit von Meta-Anweisungen in den
+  Ausgabe-Vorlagen, die Uebereinstimmung von genannter und tatsaechlich gesetzter Phase, das
+  ueber alle fuenf Dateien identische Struktur-Geruest und die Abwesenheit der
+  Alt-Formulierungen ab.
+
 ## [3.13.0] - 2026-08-21
 
 ### Added
