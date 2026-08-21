@@ -165,6 +165,10 @@ python3 .claude/hooks/workflow.py switch "bugfix-crash"
 python3 .claude/hooks/workflow.py status          # phase, LoC delta, log status
 python3 .claude/hooks/workflow.py list
 
+# Diagnostics — active sessions of this project (from .claude/session-locks/)
+python3 .claude/hooks/workflow.py sessions
+python3 .claude/hooks/workflow.py sessions --json
+
 # Phase management
 python3 .claude/hooks/workflow.py phase phase4_approved
 python3 .claude/hooks/workflow.py set-field spec_file "docs/specs/auth/login.md"

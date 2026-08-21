@@ -24,6 +24,7 @@ Usage:
     python3 workflow.py finish
     python3 workflow.py abandon --reason "<warum kein Abschluss>"
     python3 workflow.py list
+    python3 workflow.py sessions [--json]
 """
 
 from hook_utils import setup_path, find_project_root
@@ -34,10 +35,14 @@ import os
 import re as _re
 import sys
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 
 _NAME_RE = _re.compile(r'^[a-zA-Z0-9_-]{1,64}$')
+
+# Platzhalter fuer fehlende optionale Felder in Tabellenausgaben.
+SESSIONS_PLACEHOLDER = "–"
 
 
 def _worktree_root_if_any() -> "Path | None":
@@ -400,6 +405,31 @@ def _log_phase_transition(data: dict, new_phase: str) -> None:
     log.append({"phase": new_phase, "entered_at": now, "exited_at": None, "duration_min": None})
 
 
+def record_transition(data: dict, target: str, trigger: str = "command") -> None:
+    """Einen Phasenwechsel vollstaendig protokollieren: `phase_transitions` UND `phase_log`.
+
+    Die EINZIGE Stelle, die einen Phasen-WECHSEL aufzeichnet — jeder Aufrufer muss sie
+    benutzen (Issue #111). Ausnahme ist `cmd_start`: die Startphase wird nicht betreten,
+    sie ist der Ausgangspunkt und hat kein `from`; dort ist der direkte
+    `_log_phase_transition()`-Aufruf korrekt.
+
+    Vorher haengte nur `cmd_phase` an `phase_transitions` an, waehrend der Freigabe-Pfad im
+    `phase_listener` ausschliesslich `_log_phase_transition()` rief. `phase_transitions` war
+    dadurch je nach Uebergangsart unterschiedlich vollstaendig.
+
+    Aufruf BEVOR `data['current_phase']` gesetzt wird — die Ausgangsphase wird von hier
+    gelesen. Setzt `current_phase` bewusst NICHT selbst, damit Aufrufer mit Zusatzlogik
+    (Fix-Loop-Zaehler, Gate-Pruefungen) die Reihenfolge behalten.
+    """
+    data.setdefault("phase_transitions", []).append({
+        "from": data.get("current_phase", "phase0_idle"),
+        "to": target,
+        "at": datetime.now().isoformat(),
+        "trigger": trigger,
+    })
+    _log_phase_transition(data, target)
+
+
 # --- ADR Reflection Gate ---
 
 def _check_adr(data: dict) -> "str | None":
@@ -719,13 +749,7 @@ def cmd_phase(args: list[str]) -> None:
         print(f"BLOCKED: {error}", file=sys.stderr)
         sys.exit(1)
     current = data.get("current_phase", "phase0_idle")
-    data.setdefault("phase_transitions", []).append({
-        "from": current,
-        "to": target,
-        "at": datetime.now().isoformat(),
-        "trigger": trigger,
-    })
-    _log_phase_transition(data, target)
+    record_transition(data, target, trigger)
     # Fix-loop counter: re-entering phase6_implement from phase6b_adversary
     if target == "phase6_implement" and current == "phase6b_adversary":
         data["fix_loop_iterations"] = data.get("fix_loop_iterations", 0) + 1
@@ -811,8 +835,14 @@ def cmd_write_log(args: list[str]) -> None:
     log_dir.mkdir(parents=True, exist_ok=True)
     date_str = datetime.now().strftime("%Y-%m-%d")
     log_file = log_dir / f"{date_str}_{name}.yaml"
-    transitions = data.get("phase_transitions", [])
-    phases_visited = {t["to"] for t in transitions}
+    # `phase_log` ist die verlaessliche Quelle fuer besuchte Phasen (Issue #111):
+    # Die Startphase eines Workflows taucht in `phase_transitions` nur als `from` auf,
+    # nie als `to` — aus dem `to`-Feld gebaut galt `phase1_context` systematisch als
+    # uebersprungen. `_log_phase_transition()` wird dagegen von jedem Codepfad gerufen.
+    phases_visited = {
+        e.get("phase") for e in data.get("phase_log", []) if isinstance(e, dict)
+    }
+    phases_visited.discard(None)
     phases_visited.add(data.get("current_phase", "phase0_idle"))
     phases_completed = [p for p in PHASES if p in phases_visited and p != "phase0_idle"]
     impl_idx = PHASES.index("phase6_implement")
@@ -1194,6 +1224,71 @@ def cmd_cleanup_stale_locks(args: list[str]) -> None:
         print("Keine verwaisten Lock-Dateien gefunden.")
 
 
+def _sessions_age(last_seen) -> str:
+    """Alter von last_seen als kompakter Text."""
+    if not isinstance(last_seen, (int, float)) or isinstance(last_seen, bool):
+        return SESSIONS_PLACEHOLDER
+    delta = max(0, int(time.time() - last_seen))
+    if delta < 60:
+        return f"{delta}s"
+    if delta < 3600:
+        return f"{delta // 60}m"
+    return f"{delta // 3600}h"
+
+
+def _read_session_entries() -> list:
+    """Registereintraege aus .claude/session-locks/*.json des eigenen Projekts."""
+    locks = find_project_root() / ".claude" / "session-locks"
+    entries: list = []
+    if not locks.is_dir():
+        return entries
+    for f in sorted(locks.glob("*.json")):
+        try:
+            data = json.loads(f.read_text())
+        except Exception:
+            continue
+        if isinstance(data, dict) and data.get("session_id"):
+            entries.append(data)
+    entries.sort(key=lambda e: e.get("started_at") or 0)
+    return entries
+
+
+def cmd_sessions(args: list[str]) -> None:
+    """List registered Claude sessions of this project (session-locks)."""
+    entries = _read_session_entries()
+
+    if "--json" in args:
+        print(json.dumps(entries, indent=2, ensure_ascii=False))
+        return
+
+    if not entries:
+        print("Keine registrierten Sessions in .claude/session-locks/.")
+        return
+
+    def col(entry, key):
+        value = entry.get(key)
+        if value is None or value == "":
+            return SESSIONS_PLACEHOLDER
+        return str(value)
+
+    SEP = "─" * 151
+    print(SEP)
+    print(
+        f"  {'Session':<38} {'Agent':<18} {'Worktree':<16} {'Branch':<22} "
+        f"{'Workflow':<22} {'Phase':<16} {'Issue':<5} {'Alter':>5}"
+    )
+    print(SEP)
+    for entry in entries:
+        print(
+            f"  {col(entry, 'session_id'):<38} {col(entry, 'agent_name'):<18} "
+            f"{col(entry, 'worktree'):<16} {col(entry, 'branch'):<22} "
+            f"{col(entry, 'workflow'):<22} {col(entry, 'phase'):<16} "
+            f"{col(entry, 'issue'):<5} {_sessions_age(entry.get('last_seen')):>5}"
+        )
+    print(SEP)
+    print(f"  {len(entries)} Session(s) registriert.")
+
+
 COMMANDS = {
     "start": cmd_start,
     "switch": cmd_switch,
@@ -1214,6 +1309,7 @@ COMMANDS = {
     "abandon": cmd_abandon,
     "list": cmd_list,
     "retro-list": cmd_retro_list,
+    "sessions": cmd_sessions,
     "retro": cmd_retro,
     "cleanup-stale-locks": cmd_cleanup_stale_locks,
 }

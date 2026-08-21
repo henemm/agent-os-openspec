@@ -29,6 +29,14 @@ from pathlib import Path
 
 _STALE_SECONDS = int(os.environ.get("OPENSPEC_SESSION_STALE", "900"))
 
+# Heartbeat-Throttle: last_seen/cwd/branch/workflow/phase/issue werden hoechstens
+# alle N Sekunden neu geschrieben (PreToolUse-Hot-Path, I/O-Schutz).
+_HEARTBEAT_THROTTLE_SECONDS = int(os.environ.get("OPENSPEC_HEARTBEAT_THROTTLE", "60"))
+
+# Zeitdeckel fuer den lazy agent_name-Lookup: liefert der Harness den Namen in
+# der ersten Session-Minute nicht, kommt er nicht mehr — danach kein Scan mehr.
+_AGENT_NAME_LOOKUP_WINDOW_SECONDS = 60
+
 _SHELL_METACHARS = (";", "&&", "||", "|", "$(", "`", "\n", ">", "<", "&")
 
 # Nur schreibende/ausführende Tools werden blockiert. Lesende Tools (Read,
@@ -170,6 +178,196 @@ def _has_override_token() -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Anreicherung des Registereintrags (alle Quellen einzeln fail-safe, EB-1)
+# ---------------------------------------------------------------------------
+
+def _extract_worktree(cwd: str) -> "str | None":
+    """Worktree-Name aus einem .claude/worktrees/<name>/-Pfad."""
+    try:
+        m = re.search(r"/\.claude/worktrees/([^/]+)", cwd or "")
+        return m.group(1) if m else None
+    except Exception:
+        return None
+
+
+def _read_branch(cwd: str) -> "str | None":
+    """Branchname aus .git/HEAD — reines Dateilesen, kein Subprozess (EB-2)."""
+    try:
+        git = Path(cwd) / ".git"
+        if git.is_file():
+            line = git.read_text().strip()
+            if not line.startswith("gitdir:"):
+                return None
+            gitdir = Path(line.split(":", 1)[1].strip())
+            if not gitdir.is_absolute():
+                gitdir = (Path(cwd) / gitdir).resolve()
+            head = gitdir / "HEAD"
+        elif git.is_dir():
+            head = git / "HEAD"
+        else:
+            return None
+        content = head.read_text().strip()
+        prefix = "ref: refs/heads/"
+        if content.startswith(prefix):
+            return content[len(prefix):].strip() or None
+        return None
+    except Exception:
+        return None
+
+
+def _extract_issue_number(workflow_name: str) -> "str | None":
+    """Erste Ziffernfolge im Workflow-Namen (feat-106-... -> '106')."""
+    try:
+        m = re.search(r"\d+", workflow_name or "")
+        return m.group(0) if m else None
+    except Exception:
+        return None
+
+
+def _read_workflow_phase(workflow_name: str) -> "str | None":
+    """current_phase aus .claude/workflows/<name>.json."""
+    try:
+        from hook_utils import find_project_root
+        path = (find_project_root() / ".claude" / "workflows"
+                / f"{workflow_name}.json")
+        data = json.loads(path.read_text())
+        phase = data.get("current_phase")
+        return phase if isinstance(phase, str) and phase else None
+    except Exception:
+        return None
+
+
+def _harness_agent_name(session_id: str) -> "str | None":
+    """agent_name aus dem Harness-Register ~/.claude/sessions/*.json.
+
+    Undokumentiertes Harness-Internal — nur .get()-Zugriffe, keine
+    Formatpruefung. Jeder Fehler degradiert still auf None (EB-4).
+    """
+    try:
+        sessions = Path.home() / ".claude" / "sessions"
+        if not sessions.is_dir():
+            return None
+        for f in sessions.glob("*.json"):
+            try:
+                data = json.loads(f.read_text())
+            except Exception:
+                continue  # kaputte Einzeldatei bricht den Scan nicht ab
+            if not isinstance(data, dict):
+                continue
+            if data.get("sessionId") != session_id:
+                continue
+            name = data.get("name")
+            if isinstance(name, str) and name.strip():
+                return name
+        return None
+    except Exception:
+        return None
+
+
+_CONTEXT_FIELDS = ("worktree", "branch", "workflow", "issue", "phase")
+
+
+def _context_fields(cwd: str) -> dict:
+    """Alle ableitbaren Kontextfelder; fehlende Quellen fehlen im Ergebnis."""
+    out: dict = {}
+    try:
+        wt = _extract_worktree(cwd)
+        if wt:
+            out["worktree"] = wt
+    except Exception:
+        pass
+    try:
+        branch = _read_branch(cwd)
+        if branch:
+            out["branch"] = branch
+    except Exception:
+        pass
+    try:
+        from hook_utils import resolve_active_workflow
+        resolved = resolve_active_workflow()
+        name = (resolved[0] or "") if resolved else ""
+    except Exception:
+        name = ""
+    if name:
+        out["workflow"] = name
+        issue = _extract_issue_number(name)
+        if issue:
+            out["issue"] = issue
+        phase = _read_workflow_phase(name)
+        if phase:
+            out["phase"] = phase
+    return out
+
+
+def _apply_context_fields(entry: dict, cwd: str) -> None:
+    """Kontextfelder neu ermitteln; nicht mehr aufloesbare Felder entfernen."""
+    fields = _context_fields(cwd)
+    for key in _CONTEXT_FIELDS:
+        if key in fields:
+            entry[key] = fields[key]
+        else:
+            entry.pop(key, None)
+
+
+def _heartbeat(session_id: str, cwd: str) -> None:
+    """Throttled Heartbeat + lazy agent_name-Nachfuehrung.
+
+    Hoechstens EIN Datei-Write pro Aufruf. Legt niemals einen Eintrag an
+    (AC-11) und wirft niemals nach aussen (EB-1).
+    """
+    try:
+        own_file = _locks_dir() / f"{_safe_sid(session_id)}.json"
+        if not own_file.exists():
+            return
+        try:
+            entry = json.loads(own_file.read_text())
+        except Exception:
+            return
+        if not isinstance(entry, dict):
+            return
+
+        now = time.time()
+        changed = False
+
+        # (1) agent_name: unabhaengig vom Throttle, aber nur solange das Feld
+        #     fehlt UND die Session juenger als der Zeitdeckel ist (EB-3/AC-16).
+        if not entry.get("agent_name"):
+            started_at = entry.get("started_at")
+            in_window = (
+                isinstance(started_at, (int, float))
+                and not isinstance(started_at, bool)
+                and (now - started_at) < _AGENT_NAME_LOOKUP_WINDOW_SECONDS
+            )
+            if in_window:
+                try:
+                    name = _harness_agent_name(session_id)
+                except Exception:
+                    name = None
+                if name:
+                    entry["agent_name"] = name
+                    changed = True
+
+        # (2) Restliche Felder: Throttle-Fenster.
+        last_seen = entry.get("last_seen")
+        due = (
+            not isinstance(last_seen, (int, float))
+            or isinstance(last_seen, bool)
+            or (now - last_seen) >= _HEARTBEAT_THROTTLE_SECONDS
+        )
+        if due:
+            entry["last_seen"] = now
+            entry["cwd"] = cwd
+            _apply_context_fields(entry, cwd)
+            changed = True
+
+        # Ein gemeinsamer Schreibvorgang fuer beide Zweige.
+        if changed:
+            own_file.write_text(json.dumps(entry))
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
 # Modi
 # ---------------------------------------------------------------------------
 
@@ -205,6 +403,20 @@ def _do_register(payload: dict) -> None:
         "started_at": started_at,
         "last_seen": now,
     }
+
+    # Additive Anreicherung — jede Quelle einzeln fail-safe (EB-1). Ein Fehler
+    # darf den Bestandseintrag niemals verhindern (AC-8).
+    try:
+        agent_name = _harness_agent_name(session_id)
+        if agent_name:
+            entry["agent_name"] = agent_name
+    except Exception:
+        pass
+    try:
+        entry.update(_context_fields(cwd))
+    except Exception:
+        pass
+
     own_file.write_text(json.dumps(entry))
     sys.exit(0)
 
@@ -217,6 +429,11 @@ def _do_guard(payload: dict) -> None:
 
     if not session_id or not cwd:
         sys.exit(0)
+
+    # Heartbeat VOR allen Ausstiegspfaden — sonst erreichen Worktree-Sessions
+    # und rein lesende Tools den Heartbeat nie und verfallen nach
+    # _STALE_SECONDS (AC-2/AC-4/AC-5).
+    _heartbeat(session_id, cwd)
 
     # Lesende Tools niemals blockieren — sonst ist auch EnterWorktree
     # via ToolSearch nicht mehr ladbar (kompletter Deadlock).
@@ -234,18 +451,6 @@ def _do_guard(payload: dict) -> None:
     # Override-Token: expliziter Notausgang für Ausnahmefälle.
     if _has_override_token():
         sys.exit(0)
-
-    # Heartbeat aktualisieren (für Diagnostik / reap_dead).
-    locks = _locks_dir()
-    own_file = locks / f"{_safe_sid(session_id)}.json"
-    now = time.time()
-    if own_file.exists():
-        try:
-            own = json.loads(own_file.read_text())
-            own["last_seen"] = now
-            own_file.write_text(json.dumps(own))
-        except Exception:
-            pass
 
     print(
         "============================================================\n"

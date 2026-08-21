@@ -29,6 +29,82 @@ Erkenntnis genauso.
   Sitzung, ein `/clear` dazwischen waere schaedlich.
 - Neu: `tests/test_clear_checkpoint_blocks.py` (16 Tests) sichert Vorhandensein, Struktur-
   Gleichheit und die Abwesenheit der Alt-Formulierungen ab.
+## [3.13.0] - 2026-08-21
+
+### Added
+
+**Session-Register angereichert + `workflow.py sessions` (Issue #106)**
+
+- `session_singleton_guard.py`: Der Registereintrag unter `.claude/session-locks/<session_id>.json`
+  fuehrt jetzt zusaetzlich die optionalen Felder `agent_name`, `worktree`, `branch`, `workflow`,
+  `issue` und `phase`. Neue lokale Helfer `_extract_worktree`, `_read_branch`,
+  `_extract_issue_number`, `_read_workflow_phase`, `_harness_agent_name`, `_context_fields`.
+  `agent_name` stammt als einziges Feld aus dem Harness-Register (`~/.claude/sessions/*.json`);
+  alles andere kommt aus dem Guard-Payload bzw. dem Projekt-State. Alle Quellen sind einzeln
+  try/except-gekapselt, die Branch-Ermittlung bleibt subprozessfrei (reines Dateilesen).
+- `workflow.py sessions [--json]`: Neues Lesekommando, listet die Registereintraege des eigenen
+  Projekts als Tabelle (Platzhalter `–` fuer fehlende optionale Felder) oder als JSON-Array.
+
+### Fixed
+
+**Heartbeat erreichte praktisch keine Session mehr (Issue #106)**
+
+Der `last_seen`-Heartbeat in `_do_guard` stand hinter dem Worktree- und dem
+Tool-Filter-Ausstieg. Seit der Worktree-Pflicht (v3.4.10) lief er dadurch faktisch nie:
+
+- `cwd` blieb auf dem Stand des SessionStart eingefroren (Hauptverzeichnis statt Worktree).
+- Dauerlaeufer-Sessions wurden nach `_STALE_SECONDS` (900s) faelschlich weggeraeumt, weil die
+  gespeicherte `pid` die laengst beendete Hook-Shell ist und `last_seen` nie nachgefuehrt wurde.
+
+Der Heartbeat laeuft jetzt direkt nach dem Session/cwd-Check und damit vor jedem Ausstiegspfad —
+auch fuer lesende Tools (Read/Grep/Glob). Er ist auf 60s gethrottelt
+(`_HEARTBEAT_THROTTLE_SECONDS`, ueberschreibbar per `OPENSPEC_HEARTBEAT_THROTTLE`) und schreibt
+hoechstens einmal pro Guard-Aufruf. `agent_name` wird davon unabhaengig nachgezogen, solange das
+Feld fehlt und die Session juenger als 60s ist (Race Condition: der Harness vergibt den Namen ca.
+29 ms nach dem eigenen `register`); der Zeitdeckel verhindert Dauer-Scans im PreToolUse-Hot-Path.
+Der Guard legt weiterhin niemals selbst einen Registereintrag an.
+
+**`write-log` meldete durchlaufene Phasen als uebersprungen (Issue #111)**
+
+Das Ausfuehrungsprotokoll listete `phase1_context` und `phase4_approved` unter `phases_skipped`,
+obwohl beide regulaer durchlaufen wurden. `/90-retro` las diese Liste und empfahl dem User, sich
+um Phasen zu kuemmern, die vollstaendig gelaufen waren. Zwei Ursachen:
+
+- `cmd_write_log` baute die Menge der besuchten Phasen aus dem `to`-Feld von `phase_transitions`.
+  Die Startphase eines Workflows taucht dort aber nur als `from` auf — `phase1_context` galt
+  dadurch systematisch in JEDEM Workflow als uebersprungen. Die Menge kommt jetzt aus `phase_log`,
+  das von jedem Codepfad gepflegt wird.
+- Der Uebergang `phase3_spec -> phase4_approved` fehlte in `phase_transitions` komplett: Die
+  Freigabe laeuft ueber `phase_listener.py`, das nur `_log_phase_transition()` rief, waehrend das
+  Anhaengen an `phase_transitions` separat in `cmd_phase` steckte. Neue gemeinsame Helferfunktion
+  `workflow.record_transition(data, target, trigger)` fuehrt beide Strukturen; `cmd_phase` und der
+  Freigabe-Pfad im Listener nutzen sie. `phase_transitions` ist damit nicht laenger je nach
+  Uebergangsart unterschiedlich vollstaendig — Nebeneffekt: die von `status` angezeigte Zahl der
+  Phasenwechsel stimmt wieder.
+
+Der Import im Listener bleibt bewusst try/except-gekapselt (eine Freigabe darf nicht an der
+Protokollierung scheitern), meldet einen Fehler jetzt aber auf stderr statt ihn still zu
+schlucken. Neue Tests: `tests/test_write_log_phases_111.py` (inkl. Gegenprobe, dass eine
+tatsaechlich uebersprungene Phase weiterhin gemeldet wird).
+
+### Changed
+
+- `docs/specs/session-singleton-guard.md`: Neufassung auf den Ist-Stand. Die Spec beschrieb noch
+  den urspruenglichen Warn-Modus mit `<PID>.lock`-Dateien am UserPromptSubmit-Hook.
+
+**cwd-Kopplung des Session-Registers dokumentiert und getestet (Issue #109)**
+
+Kein Verhaltenswechsel — `session_singleton_guard.py` und `hook_utils.py` bleiben unveraendert.
+`workflow`, `phase` und `issue` leiten sich ueber `resolve_active_workflow()` aus dem Prozess-cwd
+ab, waehrend `worktree` und `branch` aus dem uebergebenen `cwd`-Parameter stammen. Unter dem
+Harness sind beide identisch (OS-cwd == Session-cwd); die Kopplung an dieses Verhalten wird
+bewusst akzeptiert, statt die als alleinige Wahrheitsquelle markierte
+`resolve_active_workflow()` fuer alle Aufrufer umzubauen.
+
+- `docs/specs/session-singleton-guard.md`: Eintrag unter „Known Limitations" ergaenzt.
+- `tests/test_session_register_cwd_coupling_109.py` (neu): nagelt die Annahme mit dem echten,
+  ungemockten `resolve_active_workflow()` fest — uebereinstimmender und divergenter cwd. Diese
+  Naht war bisher von keinem Test gedeckt, weil alle Bestandstests die Funktion wegmonkeypatchen.
 
 ## [3.12.0] - 2026-08-19
 
