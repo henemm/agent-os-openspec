@@ -2,13 +2,14 @@
 entity_id: session_singleton_guard
 type: feature
 created: 2026-06-20
-updated: 2026-06-20
+updated: 2026-08-21
 status: draft
-version: "1.0"
-tags: [enforcement, orchestrator, sessions, worktree]
+version: "2.0"
+tags: [enforcement, orchestrator, sessions, worktree, diagnostics]
 test_targets:
   - core/hooks/session_singleton_guard.py
   - core/hooks/hooks.json
+  - tests/test_session_singleton_guard.py
 ---
 
 # Session Singleton Guard
@@ -19,295 +20,220 @@ test_targets:
 
 ## GitHub Issue
 
-- **Issue:** (noch nicht erstellt)
+- **Issue:** #106 (letzte Erweiterung: Session-Register)
 
 ## Purpose
 
-Erkennt wenn mehrere Claude-Instanzen denselben Working Tree teilen und warnt
-aktiv. Stärkt das Orchestrator-Prinzip: der Hauptkontext arbeitet im Main-Repo,
-Developer Agents arbeiten in isolierten Worktrees.
+Erzwingt die Worktree-Pflicht (seit v3.4.10): **jede** Session muss in einem eigenen
+`.claude/worktrees/<name>/` arbeiten. Schreibende Tools im Haupt-Repo werden blockiert,
+lesende Tools bleiben immer erlaubt (sonst waere der Notausgang `EnterWorktree` nicht mehr
+ladbar).
 
-Ohne diesen Guard läuft eine zweite Claude-Session (z.B. ein Agent, der nicht
-in einen Worktree umgeleitet wurde) still im Main-Repo und kann dort Dateien
-ändern — Konflikt mit dem Hauptkontext, unkontrollierte `git add`-Effekte,
-Workflow-State-Korruption.
+Zusaetzlich fuehrt der Hook das einzige projekteigene **Register aktiver Sessions** unter
+`.claude/session-locks/`. Es dient der Diagnostik und der Abfrage durch andere
+Claude-Sessions (`workflow.py sessions`).
 
-Portiert und generalisiert aus `gregor_zwanzig`. Der Original-Code dort ist
-bewährt (seit 2025 produktiv).
+## Abhaengigkeiten
 
-## Abhängigkeiten
-
-| Komponente | Typ | Abhängigkeit |
+| Komponente | Typ | Abhaengigkeit |
 |-----------|-----|-------------|
-| `session_singleton_guard.py` | neuer Hook | UserPromptSubmit + Stop |
-| `hooks.json` | Konfiguration | Registrierung als UserPromptSubmit + Stop Hook |
-| `hook_utils.find_project_root()` | Utility | Worktree-transparenter Root |
+| `session_singleton_guard.py` | Hook | SessionStart + PreToolUse (alle Tools) + SessionEnd |
+| `hooks.json` | Konfiguration | Registrierung der drei Modi |
+| `hook_utils.find_project_root()` | Utility | Worktree-transparenter Root (Lock-Dir, Workflow-State) |
+| `hook_utils.resolve_active_workflow()` | Utility | Aktiver Workflow-Name (worktree-aware) |
+| `override_token.has_valid_token()` | Utility | Notausgang im Guard |
+| `~/.claude/sessions/*.json` | externes, undokumentiertes Harness-Internal | liefert ausschliesslich `agent_name` |
 
 ## Implementierungsdetails
 
-### 1. Mechanismus (aus gregor_zwanzig übernommen, unverändert bewährt)
+### 1. Drei Modi (argv[1])
 
-Jede Session schreibt beim ersten UserPromptSubmit eine Lock-Datei:
+| Modus | Event | Aufgabe |
+|-------|-------|---------|
+| `register` | SessionStart | Registereintrag anlegen/erneuern (`started_at` bleibt erhalten), tote Eintraege reapen |
+| `guard` | PreToolUse (alle Tools) | Heartbeat schreiben; schreibende Tools im Haupt-Repo blockieren |
+| `cleanup` | SessionEnd | Eigenen Eintrag loeschen |
 
-```
-.claude/session-locks/<PID>.lock
-{
-  "pid": 12345,
-  "started": "2026-06-20T10:00:00"
-}
-```
+### 2. Registerformat
 
-Beim nächsten UserPromptSubmit wird die Lock-Directory gescannt:
-- Veraltete Locks (Prozess nicht mehr aktiv via `os.kill(pid, 0)`) → gelöscht
-- Andere aktive Locks gefunden → **Warning** auf stderr
-
-Bei Session-Ende (Stop Hook): eigene Lock-Datei löschen.
-
-**Fail-open:** Jede Exception → still ignorieren, Exit 0. Der Hook blockiert nie.
-
-### 2. Warning-Text (erweitert gegenüber gregor_zwanzig)
-
-```
-WARNING: Andere Claude-Session (PID 12345) ist bereits in diesem Working Tree aktiv.
-  Risiko: uncommitted-file Konflikte, Workflow-State-Korruption,
-  'git add -A' erfasst fremde Änderungen.
-  → Orchestrator-Prinzip: Agents gehören in Worktrees, nicht ins Main-Repo.
-  Lösung: EnterWorktree nutzen um diese Session zu isolieren.
-```
-
-Der Zusatz "Orchestrator-Prinzip" macht den Kontext explizit — nicht nur
-"technisches Problem", sondern Verletzung des Workflow-Musters.
-
-### 3. `session_singleton_guard.py` — vollständige Implementierung
-
-```python
-#!/usr/bin/env python3
-"""
-Session Singleton Guard — Warnt wenn mehrere Claude-Sessions denselben Working Tree teilen.
-
-Stärkt das Orchestrator-Prinzip: Hauptkontext im Main-Repo,
-Developer Agents in isolierten Worktrees (EnterWorktree).
-
-Hook type: UserPromptSubmit + Stop (cleanup)
-Exit Codes: 0 immer (warnt, blockiert nie)
-"""
-
-from hook_utils import setup_path, find_project_root
-setup_path()
-
-import json
-import os
-import sys
-from datetime import datetime
-from pathlib import Path
-
-_root = find_project_root()
-
-def _lock_dir() -> Path:
-    return _root / ".claude" / "session-locks"
-
-def _session_pid() -> int:
-    return os.getppid()
-
-def _is_running(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-        return True
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        # EPERM: Prozess existiert, gehört aber anderem User (PID-Reuse-Szenario).
-        # Celery-Bug #5409: fälschlicherweise als stale behandelt → Lock gelöscht.
-        # Korrekt: als "läuft" werten (konservativer, kein false-negative).
-        return True
-    except OSError:
-        return False
-
-def _cleanup_stale_locks() -> None:
-    lock_dir = _lock_dir()
-    if not lock_dir.exists():
-        return
-    for lock_file in lock_dir.glob("*.lock"):
-        try:
-            pid = int(lock_file.stem)
-            if not _is_running(pid):
-                lock_file.unlink(missing_ok=True)
-        except (ValueError, OSError):
-            try:
-                lock_file.unlink(missing_ok=True)
-            except OSError:
-                pass
-
-def check_singleton() -> None:
-    lock_dir = _lock_dir()
-    lock_dir.mkdir(parents=True, exist_ok=True)
-    my_pid = _session_pid()
-    my_lock = lock_dir / f"{my_pid}.lock"
-    _cleanup_stale_locks()
-    for lock_file in lock_dir.glob("*.lock"):
-        if lock_file == my_lock:
-            continue
-        try:
-            other_pid = int(lock_file.stem)
-            if _is_running(other_pid):
-                print(
-                    f"WARNING: Andere Claude-Session (PID {other_pid}) ist bereits in "
-                    f"diesem Working Tree aktiv.\n"
-                    f"  Risiko: uncommitted-file Konflikte, Workflow-State-Korruption.\n"
-                    f"  Orchestrator-Prinzip: Agents gehören in Worktrees, nicht ins Main-Repo.\n"
-                    f"  Lösung: EnterWorktree nutzen um diese Session zu isolieren.",
-                    file=sys.stderr,
-                )
-        except (ValueError, OSError):
-            pass
-    try:
-        my_lock.write_text(json.dumps({
-            "pid": my_pid,
-            "started": datetime.now().isoformat(),
-        }))
-    except OSError:
-        pass
-
-def cleanup() -> None:
-    my_pid = _session_pid()
-    my_lock = _lock_dir() / f"{my_pid}.lock"
-    try:
-        my_lock.unlink(missing_ok=True)
-    except OSError:
-        pass
-
-def main():
-    if "--cleanup" in sys.argv:
-        cleanup()
-    else:
-        check_singleton()
-    sys.exit(0)
-
-if __name__ == "__main__":
-    main()
-```
-
-### 4. `hooks.json` — Registrierung
+Eine Datei pro Session: `.claude/session-locks/<session_id>.json` (Dateiname per
+`_safe_sid()` slugified). Das frueher dokumentierte Format `<PID>.lock` existiert nicht mehr.
 
 ```json
 {
-  "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [{
-          "type": "command",
-          "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/session_singleton_guard.py\""
-        }]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [{
-          "type": "command",
-          "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/session_singleton_guard.py\" --cleanup"
-        }]
-      }
-    ]
-  }
+  "session_id": "05cd60a0-7c59-4eff-8764-c4f606a64f05",
+  "cwd": "/repo/.claude/worktrees/intake-106",
+  "pid": 12345,
+  "started_at": 1787287937.880,
+  "last_seen": 1787288512.114,
+
+  "agent_name": "agent-os-openspec-9a",
+  "worktree": "intake-106",
+  "branch": "feat-106-session-register",
+  "workflow": "feat-106-session-register",
+  "issue": "106",
+  "phase": "phase6_implement"
 }
 ```
 
-Stop Hook ist neu — bisher hatte das Framework keine Stop-Hooks. Er muss in
-`setup.py` in die `generate_settings_json`-Funktion eingefügt werden.
+- **Pflichtfelder:** `session_id`, `cwd`, `pid`, `started_at`, `last_seen`.
+- **Optionale Felder:** `agent_name`, `worktree`, `branch`, `workflow`, `issue`, `phase`.
+  Ein fehlendes optionales Feld ist kein Fehlerzustand — die Quelle hat im Moment des
+  Schreibens nichts geliefert (kein aktiver Workflow, kein Harness-Treffer, kein lesbarer
+  Branch).
 
-### 5. `.gitignore` — Lock-Verzeichnis ausschließen
+### 3. Reihenfolge in `_do_guard`
 
-```
-.claude/session-locks/
-```
+1. Session/`cwd`-Check (fehlt eines → fail-safe allow)
+2. **Throttled Heartbeat** (`_heartbeat`) — laeuft fuer JEDES Tool, auch lesende, und
+   **vor** jedem Ausstiegspfad
+3. Tool-Filter-Ausstieg (`tool_name not in _BLOCKING_TOOLS` → allow)
+4. Worktree-Ausstieg (`_is_worktree_cwd(cwd)` → allow)
+5. Rescue-Ausstieg (`EnterWorktree` → allow)
+6. Override-Token-Ausstieg → allow
+7. Block-Text auf stderr + `exit(2)`
 
-Lock-Dateien sind rein lokal, dürfen nie committed werden.
+Der Heartbeat stand frueher an Position 7 und wurde damit von Worktree-Sessions (also
+seit v3.4.10 von praktisch allen) und von rein lesenden Sessions nie erreicht: `cwd` blieb
+auf dem Stand des SessionStart eingefroren, und Dauerlaeufer wurden nach `_STALE_SECONDS`
+faelschlich weggeraeumt, weil die gespeicherte `pid` die laengst beendete Hook-Shell ist.
 
-### 6. Was dieser Guard NICHT tut (bewusste Entscheidung)
+### 4. Throttled Heartbeat (`_heartbeat`)
 
-- **Blockiert nicht** — nur Warning. Der Hauptkontext bleibt in der Lage,
-  in Notfällen direkt zu agieren (Agent-Ausfall, Recovery)
-- **Unterscheidet nicht** zwischen Hauptkontext und Agent — erkennt nur
-  "zwei Sessions, gleicher Tree"
-- **Erzwingt EnterWorktree nicht** — zeigt nur den Weg
+- Existiert keine eigene Lock-Datei → No-op. **Der Guard legt niemals Eintraege an** —
+  das tut ausschliesslich `register`.
+- Gelesen wird der Eintrag immer, danach zwei unabhaengige Entscheidungen:
+  - **`agent_name` fehlt** → `_harness_agent_name(session_id)`, unabhaengig vom Throttle,
+    aber nur solange `now - started_at < _AGENT_NAME_LOOKUP_WINDOW_SECONDS` (60s). Ist
+    `agent_name` gesetzt, wird der Lookup gar nicht erst aufgerufen.
+  - **Restliche Felder** (`last_seen`, `cwd`, `worktree`, `branch`, `workflow`, `phase`,
+    `issue`) nur wenn `now - last_seen >= _HEARTBEAT_THROTTLE_SECONDS` (Default 60,
+    ueberschreibbar per `OPENSPEC_HEARTBEAT_THROTTLE`).
+  - Beide Zweige teilen sich **einen** Schreibvorgang — hoechstens ein Datei-Write pro
+    Guard-Aufruf.
+- Der gesamte Ablauf ist in `try/except Exception: pass` gekapselt.
 
-Die eigentliche Code-Writing-Prävention des Hauptkontexts liegt in CLAUDE.md
-("Orchestrator schreibt keinen Code") + `worktree_write_guard.py` (blockiert
-Agenten die aus Worktrees ins Main-Repo schreiben wollen).
+### 5. Helferfunktionen
+
+| Funktion | Ergebnis |
+|----------|----------|
+| `_extract_worktree(cwd)` | Capture-Group aus `/\.claude/worktrees/([^/]+)` oder `None` |
+| `_read_branch(cwd)` | Branch aus `.git/HEAD` bzw. `gitdir:`-Datei im Worktree; **kein Subprozess**; Detached HEAD → `None` |
+| `_extract_issue_number(name)` | erste Ziffernfolge im Workflow-Namen (`feat-106-…` → `"106"`) oder `None` |
+| `_read_workflow_phase(name)` | `current_phase` aus `.claude/workflows/<name>.json` oder `None` |
+| `_harness_agent_name(sid)` | `name` aus der `~/.claude/sessions/*.json`-Datei mit passender `sessionId`, sonst `None` |
+| `_context_fields(cwd)` | Sammelt `worktree`/`branch`/`workflow`/`issue`/`phase`; nur erfolgreich ermittelte Felder |
+
+Jeder Helfer faengt seine Fehler selbst ab und degradiert auf `None` — der Guard bleibt
+subprozessfrei und fail-safe.
+
+### 6. Liveness / Reaping
+
+`_is_alive` prueft zuerst die PID (`/proc/<pid>`), faellt aber auf `last_seen` zurueck:
+Hooks laufen in einer transienten Shell, deren PID unmittelbar nach dem Hook tot ist.
+Ohne diesen Fallback wuerde jede lebende Session beim ersten PreToolUse weggeraeumt.
+`_STALE_SECONDS` (Default 900, `OPENSPEC_SESSION_STALE`) definiert die Verfallsgrenze.
+
+### 7. Lesepfad: `workflow.py sessions`
+
+`python3 core/hooks/workflow.py sessions [--json]` liest ausschliesslich
+`.claude/session-locks/*.json` des eigenen Projekts. Default ist eine Tabelle (fehlende
+optionale Felder als `–`), `--json` liefert dieselben Eintraege als JSON-Array.
+`workflow.py` bleibt damit frei von Harness-Wissen — es gibt genau einen Schreiber
+(`session_singleton_guard.py`) und ein Register.
+
+### 8. `.gitignore`
+
+`.claude/session-locks/` ist rein lokal und darf nie committed werden.
 
 ## Expected Behavior
 
-- **Session A startet** → Lock `<PID_A>.lock` erstellt, keine Warning (allein)
-- **Session B startet im selben Tree** → Lock von A gefunden, aktiver Prozess → Warning
-- **Session A endet** → Lock von A gelöscht (Stop Hook)
-- **Session A crasht** → Lock von A bleibt, aber `_is_running(PID_A)` → False → wird bei nächstem Check als stale gelöscht
-- **Worktree-Session** → `find_project_root()` gibt Main-Repo zurück; Lock landet dort → Guard greift auch bei Worktree-Sessions korrekt
+- **Session startet** (`register`) → Eintrag mit Pflichtfeldern, dazu alle im Moment
+  ermittelbaren optionalen Felder; `started_at` einer vorhandenen Datei bleibt erhalten.
+- **Beliebiges Tool** (`guard`) → Heartbeat laeuft; `last_seen` und Kontextfelder werden
+  hoechstens alle 60s aktualisiert, `agent_name` wird sofort nachgezogen, sobald der
+  Harness ihn liefert (erste Session-Minute).
+- **Schreibendes Tool im Haupt-Repo** → Block mit Exit 2 und Aufforderung, `EnterWorktree`
+  aufzurufen.
+- **Lesendes Tool / Worktree-Session / EnterWorktree / gueltiger Override-Token** → allow.
+- **Session endet** (`cleanup`) → eigener Eintrag geloescht.
+- **Dauerlaeufer** (tote Shell-PID, `started_at` weit ueber `_STALE_SECONDS`) → bleibt
+  erhalten, solange der Heartbeat laeuft.
 
 ## Error Handling
 
-- Lock-Dir nicht erstellbar → silent fail, Exit 0
-- Lock-Datei nicht schreibbar → silent fail, Exit 0
-- `os.kill` wirft unerwartete Exception → catch-all, nicht als "running" werten
-- Stop Hook schlägt fehl → silent fail (Session ist sowieso beendet)
+- Jede unerwartete Exception in `main()` → `exit(0)` (fail-safe allow, nie faelschlich blocken).
+- Jede neue Datenquelle zusaetzlich einzeln gekapselt: Harness-Lookup, Branch-Lesen,
+  Workflow-/Phasen-Aufloesung, Heartbeat insgesamt.
+- Kaputte Einzeldatei im Harness-Verzeichnis bricht den Scan nicht ab.
+- Aendert sich das Harness-Format oder verschwindet das Verzeichnis, fehlt lediglich
+  `agent_name` — alle anderen Felder und die Guard-Logik arbeiten unveraendert weiter.
 
-## Architektur-Notiz: Warum keine fcntl.flock()
+## Architektur-Notiz: Warum kein `fcntl.flock()`
 
-`fcntl.flock()` wäre für Single-Instance-Detection technisch besser: Kernel
-gibt Lock automatisch frei wenn Prozess stirbt, kein stale-detection Code nötig.
-Es setzt aber voraus, dass ein **dauerhafter Prozess** den File-Descriptor offen
-hält. Hooks sind kurzlebige Subprozesse — der Lock wird beim Exit des Hooks
-sofort freigegeben. `flock()` ist hier also strukturell unbrauchbar.
+`flock()` setzt einen dauerhaften Prozess voraus, der den File-Descriptor offen haelt.
+Hooks sind kurzlebige Subprozesse — der Lock waere beim Hook-Exit sofort wieder frei.
+Deshalb Datei-Register plus `last_seen`-Heartbeat statt Kernel-Lock.
 
-PID-Files mit `os.kill(pid, 0)` sind für hook-basierte Systeme der korrekte
-Ansatz, trotz bekannter Schwächen (PID-Reuse, EPERM). Der EPERM-Bug aus
-Celery #5409 ist im Code oben korrekt behandelt.
+## Architektur-Notiz: Eigenes Register bleibt Wahrheit
 
-Lock-Zeitpunkt: UserPromptSubmit ist das früheste verfügbare Hook-Event in
-Claude Code. Ein echter "Session-Start"-Hook existiert nicht.
+Das Harness-Register (`~/.claude/sessions/*.json`) wird **ausschliesslich** fuer
+`agent_name` gelesen. Alle uebrigen Felder stammen aus dem Guard-Payload bzw. dem
+Projekt-State. Begruendung: nur `agent_name` existiert nirgends sonst; jede weitere
+Abhaengigkeit wuerde ein undokumentiertes Internal in den sicherheitskritischen
+Reaping-Pfad und in den PreToolUse-Hot-Path ziehen. Ausfuehrliche Abwaegung:
+`docs/specs/feat-106-session-register.md`, Abschnitt „Design-Entscheidung".
 
 ## Known Limitations
 
-- PID-Reuse (Linux default `pid_max` = 32.767): bei sehr hoher Prozesslast
-  könnte eine neue Session die PID einer abgelaufenen übernehmen → false
-  negative (kein Warning obwohl neu). Für Claude-Session-Frequenz vernachlässigbar.
-- Warning erscheint erst bei erstem User-Prompt, nicht beim Session-Start —
-  kein Session-Start-Hook in Claude Code verfügbar.
-- Warnt auch wenn zwei Tabs desselben Users gleichzeitig offen sind
-  (harmlos, aber verwirrend). Lösung: `sessions`-Allowlist in config — not in scope.
+- Die gespeicherte `pid` ist `os.getppid()` (transiente Hook-Shell), kompensiert durch den
+  `last_seen`-Fallback in `_is_alive`.
+- `~/.claude/sessions/` ist ein undokumentiertes Harness-Internal (beobachtet: `2.1.238`).
+- `agent_name` kann im Fenster zwischen `register` und dem ersten `guard`-Aufruf fehlen
+  (der Harness schreibt seinen Eintrag ca. 29 ms spaeter). Liefert der Harness den Namen in
+  der ersten Session-Minute nicht, bleibt das Feld dauerhaft leer — bewusster Zeitdeckel
+  gegen Dauer-Scans im Hot-Path.
+- Innerhalb des 60s-Throttle-Fensters koennen `cwd`, `worktree`, `branch`, `workflow`,
+  `phase`, `issue` bis zu 60s hinter dem tatsaechlichen Zustand zurueckliegen.
+- Detached-HEAD-Worktrees liefern kein `branch`-Feld.
+- `workflow.py sessions` zeigt nur Sessions des eigenen Projekts, keine serverweite Uebersicht.
 
 ## Acceptance Criteria
 
-- **AC-1:** Given eine Session aktiv (Lock existiert) / When zweite Session startet und User Prompt schickt / Then Warning auf stderr mit PID der ersten Session
-- **AC-2:** Given Session endet (Stop Hook) / When Stop Hook läuft / Then Lock-Datei der Session gelöscht
-- **AC-3:** Given Lock-Datei mit PID eines nicht mehr laufenden Prozesses / When Session startet / Then stale Lock wird gelöscht, keine false-positive Warning
-- **AC-4:** Given Session in Worktree / When UserPromptSubmit / Then Lock landet im Main-Repo (nicht im Worktree)
-- **AC-5:** Given Lock-Dir nicht beschreibbar / When UserPromptSubmit / Then Exit 0 (fail-open, kein Crash)
+- **AC-1:** Schreibendes Tool (`Edit`/`Write`/`MultiEdit`/`Bash`/`Task`/`Agent`) im
+  Haupt-Repo → Exit 2 mit Hinweis auf `EnterWorktree`.
+- **AC-2:** Lesendes Tool im Haupt-Repo, Tool im Worktree, `EnterWorktree`, gueltiger
+  Override-Token → Exit 0.
+- **AC-3:** `register` legt einen Eintrag mit allen Pflichtfeldern an und erhaelt ein
+  bestehendes `started_at`.
+- **AC-4:** Jeder `guard`-Aufruf (auch lesendes Tool, auch im Worktree) aktualisiert
+  `last_seen` — sofern das Throttle-Fenster abgelaufen ist.
+- **AC-5:** Zwei `guard`-Aufrufe innerhalb des Throttle-Fensters → die Lock-Datei wird
+  kein zweites Mal geschrieben.
+- **AC-6:** `guard` ohne vorhandene Lock-Datei legt keine an und wirft keinen Fehler.
+- **AC-7:** Eintrag mit toter PID und frischem `last_seen` ueberlebt `_reap_dead`; mit
+  toter PID und stale `last_seen` wird er entfernt.
+- **AC-8:** Fehlendes/kaputtes/leeres Harness-Verzeichnis → kein Crash, lediglich
+  `agent_name` fehlt.
+- **AC-9:** `workflow.py sessions` gibt eine Tabelle mit Platzhaltern fuer fehlende Felder
+  aus, `--json` eine vollstaendig `json.loads()`-parsebare Ausgabe.
 
 ## Test Plan
 
+Automatisiert: `python3 -m pytest tests/test_session_singleton_guard.py tests/test_workflow_sessions.py -q`
+
+Manuell:
+
 ```bash
-# AC-1: Zwei Sessions simulieren
-mkdir -p .claude/session-locks
-echo '{"pid": 99999999, "started": "2026-06-20T10:00:00"}' \
-  > .claude/session-locks/99999999.lock
-# PID 99999999 existiert nicht → wird als stale erkannt
-
-# Echten aktiven PID nutzen:
-echo '{"pid": '$$', "started": "2026-06-20T10:00:00"}' \
-  > .claude/session-locks/$$.lock
-echo '{}' | python3 core/hooks/session_singleton_guard.py
-# → Warning auf stderr (eigene PID als "andere" Session)
-
-# AC-2: Stop Hook
-python3 core/hooks/session_singleton_guard.py --cleanup
-ls .claude/session-locks/  # → eigene Lock-Datei weg
-
-# AC-3: Stale Lock
-echo '{"pid": 99999999}' > .claude/session-locks/99999999.lock
-echo '{}' | python3 core/hooks/session_singleton_guard.py
-ls .claude/session-locks/99999999.lock  # → nicht mehr vorhanden
+# Register-Eintrag ansehen
+python3 core/hooks/workflow.py sessions
+python3 core/hooks/workflow.py sessions --json
 ```
 
 ## Changelog
 
 - 2026-06-20: Initial spec erstellt (portiert und generalisiert aus gregor_zwanzig)
+- 2026-08-21: Neufassung auf den Ist-Stand — Worktree-Pflicht statt Warn-Modus,
+  Registerformat `<session_id>.json` statt `<PID>.lock`, throttled Heartbeat vor allen
+  Ausstiegspfaden, neue Felder `agent_name`/`worktree`/`branch`/`workflow`/`issue`/`phase`,
+  Lesepfad `workflow.py sessions` (Issue #106)

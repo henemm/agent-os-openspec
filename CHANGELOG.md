@@ -5,6 +5,46 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+**Session-Register angereichert + `workflow.py sessions` (Issue #106)**
+
+- `session_singleton_guard.py`: Der Registereintrag unter `.claude/session-locks/<session_id>.json`
+  fuehrt jetzt zusaetzlich die optionalen Felder `agent_name`, `worktree`, `branch`, `workflow`,
+  `issue` und `phase`. Neue lokale Helfer `_extract_worktree`, `_read_branch`,
+  `_extract_issue_number`, `_read_workflow_phase`, `_harness_agent_name`, `_context_fields`.
+  `agent_name` stammt als einziges Feld aus dem Harness-Register (`~/.claude/sessions/*.json`);
+  alles andere kommt aus dem Guard-Payload bzw. dem Projekt-State. Alle Quellen sind einzeln
+  try/except-gekapselt, die Branch-Ermittlung bleibt subprozessfrei (reines Dateilesen).
+- `workflow.py sessions [--json]`: Neues Lesekommando, listet die Registereintraege des eigenen
+  Projekts als Tabelle (Platzhalter `–` fuer fehlende optionale Felder) oder als JSON-Array.
+
+### Fixed
+
+**Heartbeat erreichte praktisch keine Session mehr (Issue #106)**
+
+Der `last_seen`-Heartbeat in `_do_guard` stand hinter dem Worktree- und dem
+Tool-Filter-Ausstieg. Seit der Worktree-Pflicht (v3.4.10) lief er dadurch faktisch nie:
+
+- `cwd` blieb auf dem Stand des SessionStart eingefroren (Hauptverzeichnis statt Worktree).
+- Dauerlaeufer-Sessions wurden nach `_STALE_SECONDS` (900s) faelschlich weggeraeumt, weil die
+  gespeicherte `pid` die laengst beendete Hook-Shell ist und `last_seen` nie nachgefuehrt wurde.
+
+Der Heartbeat laeuft jetzt direkt nach dem Session/cwd-Check und damit vor jedem Ausstiegspfad —
+auch fuer lesende Tools (Read/Grep/Glob). Er ist auf 60s gethrottelt
+(`_HEARTBEAT_THROTTLE_SECONDS`, ueberschreibbar per `OPENSPEC_HEARTBEAT_THROTTLE`) und schreibt
+hoechstens einmal pro Guard-Aufruf. `agent_name` wird davon unabhaengig nachgezogen, solange das
+Feld fehlt und die Session juenger als 60s ist (Race Condition: der Harness vergibt den Namen ca.
+29 ms nach dem eigenen `register`); der Zeitdeckel verhindert Dauer-Scans im PreToolUse-Hot-Path.
+Der Guard legt weiterhin niemals selbst einen Registereintrag an.
+
+### Changed
+
+- `docs/specs/session-singleton-guard.md`: Neufassung auf den Ist-Stand. Die Spec beschrieb noch
+  den urspruenglichen Warn-Modus mit `<PID>.lock`-Dateien am UserPromptSubmit-Hook.
+
 ## [3.12.0] - 2026-08-19
 
 ### Added
