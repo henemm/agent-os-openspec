@@ -5,6 +5,40 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+**Fast-Track-Wartung an `core/hooks/` ist wieder ueber Edit/Write moeglich (Issue #115)**
+
+Im Framework-Repo liegen die Hook-Quellen unter `core/hooks/`, in Konsumenten-Projekten
+dieselben Dateien unter `.claude/hooks/`. Nur der zweite Pfad stand in `INFRASTRUCTURE_DIRS`.
+Ein Edit auf `core/hooks/workflow.py` fiel deshalb durch bis zum Block `No active workflow` —
+einer Meldung ohne gangbaren Ausweg, obwohl Framework-Wartung laut Konvention bewusst ohne
+Workflow laeuft. Agenten wichen daraufhin auf Bash (`sed`, Python-Heredoc) aus, wo kein Gate
+greift: kein Schutz gewonnen, aber das Muster "Edit blockt, Bash geht" antrainiert.
+
+- `edit_gate.py`: Neue Liste `FRAMEWORK_SOURCE_DIRS` (`core/hooks/`, `core/agents/`) greift
+  ausschliesslich im Framework-Repo selbst — erkannt am Marker `.claude-plugin/plugin.json`
+  mit `name: agent-os-openspec`. Bewusst getrennt von `INFRASTRUCTURE_DIRS`: `core/hooks/`
+  ist zu generisch fuer eine globale Regel (z.B. React-Hooks unter `src/core/hooks/`), ein
+  fremdes Plugin mit anderem Namen loest sie nicht aus.
+- Damit greift der **bestehende** Override-Token statt eines neuen Bypass-Mechanismus: Der
+  User tippt `override`, der Token gilt 1 h und steht auditierbar in
+  `.claude/user_override_token.json`. Der regulaere Weg ist wieder der einfachste.
+- Block-Meldung des Infrastruktur-Zweigs nennt jetzt den konkreten Ausweg und weist den
+  Bash-Umweg ausdruecklich zurueck, statt nur `user must type 'override'` zu melden.
+- Neu konfigurierbar: `strict_code_gate.infrastructure_dirs` **ergaenzt** die eingebauten
+  Defaults fuer Projekte, die Hooks ausserhalb von `.claude/` ablegen. Die Defaults lassen
+  sich darueber nicht abwaehlen — `.claude/hooks/` bleibt in jedem Fall geschuetzt.
+- `CLAUDE.md`: Die Fast-Track-Konvention nennt die Ausnahme jetzt ausdruecklich.
+- Tests: `tests/test_edit_gate_framework_source_115.py` (8 Faelle, inkl. Regressionsschutz
+  fuer Konsumenten-Projekte und fremde Plugin-Marker).
+
+Nicht Teil dieser Aenderung: `bash_gate.py` erkennt weiterhin keine Schreibzugriffe auf
+geschuetzte Dateien per Shell. Eine solche Pruefung ist prinzipiell unvollstaendig und wuerde
+falsche Sicherheit erzeugen; siehe die Notiz in #115.
+
 ## [3.14.0] - 2026-08-21
 
 ### Changed

@@ -8,7 +8,8 @@ Replaces 17 separate hooks with 1. Sequential short-circuit logic:
 1b. Orchestrator-Only Files (settings.json, settings.local.json, active_workflow) → BLOCK
 2. Always-Allowed (docs, tests, scripts, .md, .json) → ALLOW
 3. Not code file → ALLOW
-4. Infrastructure (.claude/hooks/) → Override token check
+4. Infrastructure (.claude/hooks/, Config-Ergaenzung, im Framework-Repo auch
+   core/hooks/) → Override token check
 5. Stop-Lock → BLOCK
 6. Find workflow for file (affected_files)
 7. No workflow → BLOCK
@@ -60,6 +61,15 @@ ORCHESTRATOR_FILES = [
 ]
 
 INFRASTRUCTURE_DIRS = [".claude/hooks/", ".claude/agents/"]
+
+# Quellverzeichnisse derselben Dateien IM Framework-Repo selbst. In Konsumenten-
+# Projekten liegen sie unter .claude/hooks/, hier unter core/hooks/ — ohne diesen
+# Eintrag fiel Framework-Wartung durch bis zum "No active workflow"-Block, einer
+# Meldung ohne gangbaren Ausweg (#115). Bewusst NICHT in INFRASTRUCTURE_DIRS:
+# "core/hooks/" ist zu generisch, um es global zu erzwingen (z.B. React-Hooks
+# unter src/core/hooks/). Die Regel gilt nur im nachweislichen Framework-Repo.
+FRAMEWORK_SOURCE_DIRS = ["core/hooks/", "core/agents/"]
+FRAMEWORK_PLUGIN_NAME = "agent-os-openspec"
 
 IMPL_PHASES = {
     "phase6_implement", "phase6b_adversary", "phase7_validate", "phase8_complete",
@@ -156,6 +166,36 @@ def _has_override_token(workflow_name: str = None) -> bool:
         return has_valid_token(workflow_name)
     except ImportError:
         return False
+
+
+def _is_framework_repo() -> bool:
+    """True, wenn das Projekt das agent-os-openspec-Repo SELBST ist.
+
+    Erkennung ueber den Plugin-Marker, nicht ueber die blosse Existenz von
+    core/hooks/: ein fremdes Plugin oder ein Projekt mit gleichnamigem
+    Verzeichnis darf die Sonderregel nicht ausloesen (#115).
+    """
+    marker = _root / ".claude-plugin" / "plugin.json"
+    try:
+        return json.loads(marker.read_text()).get("name") == FRAMEWORK_PLUGIN_NAME
+    except (OSError, json.JSONDecodeError, AttributeError):
+        return False
+
+
+def _infrastructure_dirs(config: dict) -> list:
+    """Infrastruktur-Verzeichnisse: Defaults + Config-Ergaenzung + Framework-Quellen.
+
+    Die Projekt-Config ERGAENZT nur — sie kann .claude/hooks/ nicht abwaehlen.
+    Sonst koennte ein Projekt den Kern-Schutz per Config-Zeile aushebeln.
+    """
+    dirs = list(INFRASTRUCTURE_DIRS)
+    extra = _get_config_list(config, "strict_code_gate", "infrastructure_dirs", [])
+    if _is_framework_repo():
+        extra = list(extra) + FRAMEWORK_SOURCE_DIRS
+    for d in extra:
+        if d not in dirs:
+            dirs.append(d)
+    return dirs
 
 
 def _is_stop_locked() -> bool:
@@ -391,11 +431,18 @@ def main():
         allow()
 
     # 4. Infrastructure file
-    for infra in INFRASTRUCTURE_DIRS:
+    for infra in _infrastructure_dirs(config):
         if infra in file_path:
             if _has_override_token("__infra__") or _has_override_token():
                 allow()
-            block("BLOCKED: Infrastructure file — user must type 'override'.")
+            block(
+                f"BLOCKED: Infrastruktur-Datei ({infra}) — Aenderungen an Gates/Agenten "
+                "brauchen eine ausdrueckliche Freigabe.\n"
+                "→ Regulaerer Weg: User tippt 'override' (gilt 1 h, protokolliert in "
+                ".claude/user_override_token.json).\n"
+                "→ Nicht per Bash/sed umgehen: der Umweg ist kein Freibrief, sondern "
+                "ein Fehler."
+            )
 
     # 5. Stop-lock
     if _is_stop_locked():

@@ -269,6 +269,7 @@ Registrierung zentral in `hooks/hooks.json` (Plugin-Modus) bzw. `.claude/setting
 2. **CHANGELOG.md** bei jeder Änderung aktualisieren
 3. **Versionsnummer** in setup.py bei Releases erhöhen
 4. **Tests** für Hooks: Manuell in einem Test-Projekt validieren
+5. **`core/hooks/` und `core/agents/` sind Infrastruktur**: Auch im Fast Track verlangt `edit_gate.py` dafür einen Override-Token — der User tippt **"override"** (gilt 1 h, wird in `.claude/user_override_token.json` protokolliert). Niemals per Bash/`sed` am Gate vorbeischreiben: der Umweg ist kein Freibrief, sondern ein Fehler.
 
 ### Verzeichnis-Konventionen
 
