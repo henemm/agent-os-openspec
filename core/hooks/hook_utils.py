@@ -308,16 +308,25 @@ def is_pure_git_command(command: str) -> bool:
     return all(_git_subcommand_of_segment(s) is not None for s in segments)
 
 
-# AC-Bullet-Start: unindentierte '- ...AC-N...:'-Zeile. Deckt vier
+# AC-Bullet-Start: unindentierte '- ...AC-N...:'-Zeile. Deckt fuenf
 # Label-Varianten ab:
 #   '- **AC-1:** ...'            (Doppelpunkt innerhalb Bold)
 #   '- **AC-1**: ...'            (Doppelpunkt ausserhalb Bold)
 #   '- **AC-8 (praezisiert):** ' (Klammer-Zusatz + Doppelpunkt in Bold)
 #   '- AC-1: ...'                (ganz ohne Bold)
-_AC_BULLET_RE = re.compile(r"^-\s+\*{0,2}AC-\d+[^:*]*\*{0,2}\s*:")
+#   '- **AC-S6-1:** ...'         (Scheiben-Label zwischen 'AC-' und der Zahl,
+#                                 z.B. gregor_zwanzig Epic #1703 Scheiben-
+#                                 Nummerierung AC-S<Scheibe>-<N>)
+# Das optionale '([A-Za-z0-9]+-)?' vor der Zahl deckt den Scheiben-Praefix ab,
+# ohne Bestandsformate ('AC-1', 'AC-8 (...)') zu beruehren -- ein Praefix
+# erfordert einen eigenen Bindestrich vor der Zahl, ein reines 'AC-12' bleibt
+# unveraendert eine einzelne Zahl (Backtracking macht den Praefix optional).
+_AC_BULLET_RE = re.compile(r"^-\s+\*{0,2}AC-(?:[A-Za-z0-9]+-)?\d+[^:*]*\*{0,2}\s*:")
 # Split-Variante: trennt Label (inkl. Klammer-Zusatz) vom Beschreibungstext.
 # Konsumiert Bold-Marker auf beiden Seiten des Doppelpunkts.
-_AC_SPLIT_RE = re.compile(r"^-\s+\*{0,2}(AC-\d+[^:*]*?)\*{0,2}\s*:\s*\*{0,2}\s*(.*)$")
+_AC_SPLIT_RE = re.compile(
+    r"^-\s+\*{0,2}(AC-(?:[A-Za-z0-9]+-)?\d+[^:*]*?)\*{0,2}\s*:\s*\*{0,2}\s*(.*)$"
+)
 
 
 def extract_ac_entries(content: str) -> "list[tuple[str, str, str]]":
