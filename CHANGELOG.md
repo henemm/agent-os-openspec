@@ -45,6 +45,20 @@ Der Guard legt weiterhin niemals selbst einen Registereintrag an.
 - `docs/specs/session-singleton-guard.md`: Neufassung auf den Ist-Stand. Die Spec beschrieb noch
   den urspruenglichen Warn-Modus mit `<PID>.lock`-Dateien am UserPromptSubmit-Hook.
 
+**cwd-Kopplung des Session-Registers dokumentiert und getestet (Issue #109)**
+
+Kein Verhaltenswechsel — `session_singleton_guard.py` und `hook_utils.py` bleiben unveraendert.
+`workflow`, `phase` und `issue` leiten sich ueber `resolve_active_workflow()` aus dem Prozess-cwd
+ab, waehrend `worktree` und `branch` aus dem uebergebenen `cwd`-Parameter stammen. Unter dem
+Harness sind beide identisch (OS-cwd == Session-cwd); die Kopplung an dieses Verhalten wird
+bewusst akzeptiert, statt die als alleinige Wahrheitsquelle markierte
+`resolve_active_workflow()` fuer alle Aufrufer umzubauen.
+
+- `docs/specs/session-singleton-guard.md`: Eintrag unter „Known Limitations" ergaenzt.
+- `tests/test_session_register_cwd_coupling_109.py` (neu): nagelt die Annahme mit dem echten,
+  ungemockten `resolve_active_workflow()` fest — uebereinstimmender und divergenter cwd. Diese
+  Naht war bisher von keinem Test gedeckt, weil alle Bestandstests die Funktion wegmonkeypatchen.
+
 ## [3.12.0] - 2026-08-19
 
 ### Added
