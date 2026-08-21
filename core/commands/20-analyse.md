@@ -146,7 +146,21 @@ python3 .claude/hooks/workflow.py phase phase3_spec
 
 ## Next Step
 
-Wenn die Analyse abgeschlossen ist, gib dem User folgende Zusammenfassung:
+Wenn die Analyse abgeschlossen ist:
+
+### Checkpoint prüfen (Anweisung an dich — nicht ausgeben)
+
+Prüfe der Reihe nach, bevor du unten etwas ausgibst:
+
+- Phase im Workflow-State geschrieben — `python3 .claude/hooks/workflow.py status` bestätigt sie
+- Alle Ergebnisdateien dieser Phase liegen auf der Platte
+- Keine Erkenntnis, die für `/30-write-spec` nötig und nirgends niedergeschrieben ist
+
+Sind alle Punkte erfüllt: Gib den Positiv-Block aus. Ist mindestens einer verletzt: Gib stattdessen den Negativ-Block aus und ersetze dessen Platzhalter durch den konkreten Sicherungsschritt.
+
+Weder diese Anweisung noch die `###`-Überschriften gehören in die Ausgabe — an den User geht ausschließlich der Text zwischen den `---`-Trennern.
+
+### Ausgabe: Zusammenfassung (immer)
 
 ---
 **Analyse abgeschlossen.**
@@ -159,18 +173,7 @@ Wenn die Analyse abgeschlossen ist, gib dem User folgende Zusammenfassung:
 
 ---
 
-**Checkpoint — Vorbedingungen prüfen, bevor du unten etwas ausgibst:**
-
-Gib das `✅`-Verdikt nur aus, wenn ALLE zutreffenden Punkte erfüllt sind:
-- Phase im Workflow-State geschrieben — `python3 .claude/hooks/workflow.py status` bestätigt sie
-- Alle Ergebnisdateien dieser Phase existieren auf der Platte
-- Keine uncommitteten Änderungen an Dateien, die `/30-write-spec` braucht
-- Ab Phase 5: alle RED-Artefakte per `add-artifact` registriert
-- Keine Erkenntnis, die für `/30-write-spec` nötig und nirgends niedergeschrieben ist
-
-Alle zutreffenden Punkte erfüllt → gib den Positiv-Block aus. Mindestens einer verletzt → gib stattdessen den Negativ-Block aus, mit dem konkreten Sicherungsschritt.
-
-**Positiv-Block (alle Vorbedingungen erfüllt):**
+### Ausgabe A: Positiv-Block (alle Vorbedingungen erfüllt)
 
 ---
 **Gesichert auf der Platte:**
@@ -184,7 +187,7 @@ Alle zutreffenden Punkte erfüllt → gib den Positiv-Block aus. Mindestens eine
 
 ---
 
-**Negativ-Block (mindestens eine Vorbedingung verletzt):**
+### Ausgabe B: Negativ-Block (mindestens eine Vorbedingung verletzt)
 
 ---
 ⚠️ **`/clear` jetzt NICHT** — Folgendes steht nur im Gesprächsverlauf:

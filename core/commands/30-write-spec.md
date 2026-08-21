@@ -159,20 +159,21 @@ When user approves:
 2. State advances to `phase4_approved`
 3. Next: `/40-tdd-red` to write failing tests
 
-Nach der Freigabe kannst du dem User zusätzlich anbieten:
+Nach der Freigabe kannst du dem User zusätzlich den Kontext-Reset anbieten:
 
-**Checkpoint — Vorbedingungen prüfen, bevor du unten etwas ausgibst:**
+### Checkpoint prüfen (Anweisung an dich — nicht ausgeben)
 
-Gib das `✅`-Verdikt nur aus, wenn ALLE zutreffenden Punkte erfüllt sind:
+Prüfe der Reihe nach, bevor du unten etwas ausgibst:
+
 - Phase im Workflow-State geschrieben — `python3 .claude/hooks/workflow.py status` bestätigt sie
-- Alle Ergebnisdateien dieser Phase existieren auf der Platte
-- Keine uncommitteten Änderungen an Dateien, die `/40-tdd-red` braucht
-- Ab Phase 5: alle RED-Artefakte per `add-artifact` registriert
+- Alle Ergebnisdateien dieser Phase liegen auf der Platte
 - Keine Erkenntnis, die für `/40-tdd-red` nötig und nirgends niedergeschrieben ist
 
-Alle zutreffenden Punkte erfüllt → gib den Positiv-Block aus. Mindestens einer verletzt → gib stattdessen den Negativ-Block aus, mit dem konkreten Sicherungsschritt.
+Sind alle Punkte erfüllt: Gib den Positiv-Block aus. Ist mindestens einer verletzt: Gib stattdessen den Negativ-Block aus und ersetze dessen Platzhalter durch den konkreten Sicherungsschritt.
 
-**Positiv-Block (alle Vorbedingungen erfüllt):**
+Weder diese Anweisung noch die `###`-Überschriften gehören in die Ausgabe — an den User geht ausschließlich der Text zwischen den `---`-Trennern.
+
+### Ausgabe A: Positiv-Block (alle Vorbedingungen erfüllt)
 
 ---
 **Gesichert auf der Platte:**
@@ -186,7 +187,7 @@ Alle zutreffenden Punkte erfüllt → gib den Positiv-Block aus. Mindestens eine
 
 ---
 
-**Negativ-Block (mindestens eine Vorbedingung verletzt):**
+### Ausgabe B: Negativ-Block (mindestens eine Vorbedingung verletzt)
 
 ---
 ⚠️ **`/clear` jetzt NICHT** — Folgendes steht nur im Gesprächsverlauf:

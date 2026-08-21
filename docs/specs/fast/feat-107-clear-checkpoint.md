@@ -52,16 +52,34 @@ Erst sichern, dann ist `/clear` gefahrlos.
 
 ### 2. Vorbedingungs-Prüfung als Instruktion an Claude
 
-Vor jedem Checkpoint-Block steht künftig eine Prüf-Anweisung. Claude gibt das
-`✅`-Verdikt **nur** aus, wenn alle zutreffenden Punkte erfüllt sind:
+Vor jedem Checkpoint-Block steht künftig eine Prüf-Anweisung in einem eigenen
+`### Checkpoint prüfen (Anweisung an dich — nicht ausgeben)`-Abschnitt. Sie steht
+**oberhalb** der Ausgabe-Vorlagen; die Vorlagen selbst (`### Ausgabe A: Positiv-Block …`,
+`### Ausgabe B: Negativ-Block …`) enthalten ausschließlich Text, der wörtlich an den User
+geht. Claude gibt das `✅`-Verdikt **nur** aus, wenn alle Punkte erfüllt sind:
+
+In **allen** fünf Dateien:
 
 - Phase im Workflow-State geschrieben (`workflow.py status` bestätigt sie)
-- Alle Ergebnisdateien der Phase existieren auf der Platte
-- Keine uncommitteten Änderungen an Dateien, die der Folgeschritt braucht
-- Ab Phase 5: alle RED-Artefakte per `add-artifact` registriert
+- Alle Ergebnisdateien der Phase liegen auf der Platte
 - Keine Erkenntnis, die für den Folgeschritt nötig und nirgends niedergeschrieben ist
 
+Zusätzlich **nur ab Phase 5** (`40-tdd-red.md`, `50-implement.md`):
+
+- Alle RED-Artefakte per `add-artifact` registriert
+- Keine uncommitteten Änderungen an Dateien, die der Folgeschritt braucht
+
 Ist ein Punkt verletzt → Negativ-Block mit dem konkreten Sicherungsschritt.
+
+**Warum die Commit-Bedingung in Phase 1-3 fehlt:** `/clear` löscht den Gesprächsverlauf,
+nicht das Arbeitsverzeichnis — "uncommitted" und "nicht gesichert" sind nicht dasselbe. Die
+Phasen 1-3 committen nichts; ihre Ergebnisdatei (z.B. `docs/context/<name>.md`) ist per
+Definition uncommitted und wird vom Folgeschritt gebraucht. Als Vorbedingung formuliert wäre
+sie dort immer verletzt — der ⚠️-Block erschiene in drei von fünf Phasen ausnahmslos, und eine
+Warnung, die immer feuert, wird ignoriert. Dass die Ergebnisdatei geschrieben ist, deckt der
+Punkt "Alle Ergebnisdateien der Phase liegen auf der Platte" bereits ab. Ab Phase 5 wird
+tatsächlich committed (Spec + RED-Tests bzw. Implementierung), dort bleibt die Bedingung
+fachlich richtig und stehen.
 
 ### 3. Kontextgrößen-Zusatz entfällt
 
@@ -112,12 +130,21 @@ Jede Datei listet ihre eigenen Ergebnisse:
   - keine enthält die Alt-Formulierungen (`liegt sicher auf der Platte`,
     `Bei kleinem Kontext optional`)
   - `60-validate.md` enthält keinen der Marker
+  - die Prüf-Anweisung steht vor den beiden Ausgabe-Vorlagen und enthält die
+    Vorbedingungen der jeweiligen Phase
+  - in den Ausgabe-Vorlagen steht keine Meta-Anweisung (`Positiv-Block`,
+    `Anweisung an dich`, `###` …)
+  - Phase 1-3 nennt weder eine Commit- noch eine RED-Artefakt-Vorbedingung,
+    Phase 5/6 nennen beide
+  - die im Positiv-Block genannte Phase ist die, die dieselbe Datei zuletzt setzt
+  - das Struktur-Gerüst der drei Abschnitte ist über alle fünf Dateien identisch
+    (Vergleich ohne Aufzählungspunkte und ohne Command-Namen)
 
 ## Erfüllung der Akzeptanzkriterien
 
 | AC | Erfüllt durch |
 |----|--------------|
 | AC-1 | Positiv-Block mit Sicherungsliste inkl. Pfaden + explizitem `✅`-Verdikt |
-| AC-2 | Negativ-Block mit benanntem Sicherungsschritt + Vorbedingungs-Prüfung (Punkt 2) |
-| AC-3 | Wortgleiche Struktur in allen fünf Dateien (60-validate ausgenommen, s.o.) |
+| AC-2 | Negativ-Block mit benanntem Sicherungsschritt + Vorbedingungs-Prüfung (Punkt 2), abgesichert durch `test_preconditions_listed_in_instruction_section` |
+| AC-3 | Wortgleiche Struktur in allen fünf Dateien (60-validate ausgenommen, s.o.), abgesichert durch `test_checkpoint_structure_identical_across_files` |
 | AC-4 | Vorbedingungs-Prüfung stellt sicher, dass `✅` nur erscheint, wenn der bestehende Wiedereinstiegs-Pfad tatsächlich trägt |
