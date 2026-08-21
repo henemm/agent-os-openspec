@@ -5,7 +5,7 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.14.0] - 2026-08-21
 
 ### Changed
 
@@ -44,6 +44,20 @@ Erkenntnis genauso.
   Ausgabe-Vorlagen, die Uebereinstimmung von genannter und tatsaechlich gesetzter Phase, das
   ueber alle fuenf Dateien identische Struktur-Geruest und die Abwesenheit der
   Alt-Formulierungen ab.
+
+### Fixed
+
+**AC-Bullet-Erkennung uebersah das Scheiben-Label-Format (PR #102)**
+
+`extract_ac_entries()` in `hook_utils.py` verlangte eine Ziffer direkt nach `AC-` und uebersah
+damit die Nummerierung mehrteiliger Epics (`AC-S6-1` = Scheibe 6, AC 1) vollstaendig. Folge:
+`edit_gate.py` blockte in betroffenen Projekten jeden Produktivcode-Edit mit
+"has no AC-N entries", obwohl die Spec gueltige AC-Bullets enthielt.
+
+Der Praefix ist optional (`AC-(?:[A-Za-z0-9]+-)?\d+`) — alle bisherigen Formate (`AC-1`,
+`**AC-1**:`, `AC-8 (praezisiert):`, ohne Bold) werden unveraendert erkannt, ein Praefix
+erfordert einen eigenen Bindestrich vor der Zahl. Gilt fuer die Bullet- und die
+Split-Variante, also auch fuer `adversary_dialog.py`, das dieselbe Funktion nutzt.
 
 ## [3.13.0] - 2026-08-21
 
