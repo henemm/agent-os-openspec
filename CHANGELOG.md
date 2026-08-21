@@ -40,6 +40,29 @@ Feld fehlt und die Session juenger als 60s ist (Race Condition: der Harness verg
 29 ms nach dem eigenen `register`); der Zeitdeckel verhindert Dauer-Scans im PreToolUse-Hot-Path.
 Der Guard legt weiterhin niemals selbst einen Registereintrag an.
 
+**`write-log` meldete durchlaufene Phasen als uebersprungen (Issue #111)**
+
+Das Ausfuehrungsprotokoll listete `phase1_context` und `phase4_approved` unter `phases_skipped`,
+obwohl beide regulaer durchlaufen wurden. `/90-retro` las diese Liste und empfahl dem User, sich
+um Phasen zu kuemmern, die vollstaendig gelaufen waren. Zwei Ursachen:
+
+- `cmd_write_log` baute die Menge der besuchten Phasen aus dem `to`-Feld von `phase_transitions`.
+  Die Startphase eines Workflows taucht dort aber nur als `from` auf — `phase1_context` galt
+  dadurch systematisch in JEDEM Workflow als uebersprungen. Die Menge kommt jetzt aus `phase_log`,
+  das von jedem Codepfad gepflegt wird.
+- Der Uebergang `phase3_spec -> phase4_approved` fehlte in `phase_transitions` komplett: Die
+  Freigabe laeuft ueber `phase_listener.py`, das nur `_log_phase_transition()` rief, waehrend das
+  Anhaengen an `phase_transitions` separat in `cmd_phase` steckte. Neue gemeinsame Helferfunktion
+  `workflow.record_transition(data, target, trigger)` fuehrt beide Strukturen; `cmd_phase` und der
+  Freigabe-Pfad im Listener nutzen sie. `phase_transitions` ist damit nicht laenger je nach
+  Uebergangsart unterschiedlich vollstaendig — Nebeneffekt: die von `status` angezeigte Zahl der
+  Phasenwechsel stimmt wieder.
+
+Der Import im Listener bleibt bewusst try/except-gekapselt (eine Freigabe darf nicht an der
+Protokollierung scheitern), meldet einen Fehler jetzt aber auf stderr statt ihn still zu
+schlucken. Neue Tests: `tests/test_write_log_phases_111.py` (inkl. Gegenprobe, dass eine
+tatsaechlich uebersprungene Phase weiterhin gemeldet wird).
+
 ### Changed
 
 - `docs/specs/session-singleton-guard.md`: Neufassung auf den Ist-Stand. Die Spec beschrieb noch

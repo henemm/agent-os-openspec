@@ -248,11 +248,22 @@ def main():
                 # spec_approved NICHT setzen, current_phase bleibt phase3_spec
             else:
                 wf_data["spec_approved"] = True
+                # Bewusst tolerant: Eine Freigabe ist eine Nutzer-Willenserklaerung und
+                # darf nicht daran scheitern, dass die Protokollierung stolpert (z.B.
+                # workflow.py nicht importierbar). Der Zustandswechsel unten laeuft
+                # deshalb auch dann, wenn hier etwas schiefgeht. Preis: ein echter Fehler
+                # bliebe unsichtbar — darum die Warnung auf stderr statt `pass`.
                 try:
-                    from workflow import _log_phase_transition
-                    _log_phase_transition(wf_data, "phase4_approved")
-                except Exception:
-                    pass
+                    from workflow import record_transition
+                    # Beides fuehren, nicht nur phase_log — sonst fehlt der Uebergang
+                    # phase3_spec -> phase4_approved in phase_transitions (Issue #111).
+                    record_transition(wf_data, "phase4_approved", "approval")
+                except Exception as exc:
+                    print(
+                        f"WARNUNG: Phasenwechsel konnte nicht protokolliert werden ({exc}). "
+                        "Freigabe gilt trotzdem.",
+                        file=sys.stderr,
+                    )
                 wf_data["current_phase"] = "phase4_approved"
                 changed = True
                 approval_took_effect = True
