@@ -98,6 +98,12 @@ strict_code_gate:
     - "README"
     - "CHANGELOG"
     - "LICENSE"
+  # Zusaetzliche Infrastruktur-Verzeichnisse: Aenderungen daran verlangen einen
+  # Override-Token ("override" tippen, gilt 1 h). ERGAENZT die eingebauten
+  # Defaults (.claude/hooks/, .claude/agents/) — ersetzt sie nicht.
+  # Nur setzen, wenn ein Projekt Hooks/Agenten ausserhalb von .claude/ ablegt.
+  # infrastructure_dirs:
+  #   - "lib/gates/"
 
 # Secrets Guard — Prevents accidental exposure of sensitive files
 # Used by bash_gate.py
