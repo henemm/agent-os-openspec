@@ -9,6 +9,15 @@ Manage multiple parallel workflows with isolated state (v3).
 python3 .claude/hooks/workflow.py list
 ```
 
+### List Active Sessions
+```bash
+python3 .claude/hooks/workflow.py sessions
+python3 .claude/hooks/workflow.py sessions --json
+```
+Liest das Session-Register (`.claude/session-locks/*.json`), das `session_singleton_guard.py`
+fuehrt: Agent-Name, Worktree, Branch, Workflow, Issue und Phase pro aktiver Session dieses
+Projekts. Fehlende optionale Felder erscheinen in der Tabelle als `–`.
+
 ### Retro: Abgeschlossene Workflows analysieren
 ```bash
 # Alle archivierten Workflows auflisten
