@@ -157,11 +157,40 @@ Wenn die Analyse abgeschlossen ist, gib dem User folgende Zusammenfassung:
 
 **Risiko:** [Niedrig / Mittel / Hoch] — [kurze Begründung ohne Technik, z.B. "betrifft nur einen isolierten Bereich" oder "ändert eine zentrale Funktion"]
 
-Nächster Schritt — Kontext zurücksetzen spart Tokens (der Workflow-State liegt sicher auf der Platte):
-1. `/clear`
-2. `/30-write-spec #<N>`   (lädt die Analyse automatisch von der Platte)
+---
 
-_Bei kleinem Kontext optional — dann genügt direkt `/30-write-spec`._
+**Checkpoint — Vorbedingungen prüfen, bevor du unten etwas ausgibst:**
+
+Gib das `✅`-Verdikt nur aus, wenn ALLE zutreffenden Punkte erfüllt sind:
+- Phase im Workflow-State geschrieben — `python3 .claude/hooks/workflow.py status` bestätigt sie
+- Alle Ergebnisdateien dieser Phase existieren auf der Platte
+- Keine uncommitteten Änderungen an Dateien, die `/30-write-spec` braucht
+- Ab Phase 5: alle RED-Artefakte per `add-artifact` registriert
+- Keine Erkenntnis, die für `/30-write-spec` nötig und nirgends niedergeschrieben ist
+
+Alle zutreffenden Punkte erfüllt → gib den Positiv-Block aus. Mindestens einer verletzt → gib stattdessen den Negativ-Block aus, mit dem konkreten Sicherungsschritt.
+
+**Positiv-Block (alle Vorbedingungen erfüllt):**
+
+---
+**Gesichert auf der Platte:**
+- `.claude/workflows/<name>.json` — Phase `phase3_spec`, Verdict, Artefakt-Register
+- `docs/context/<workflow-name>.md`, Abschnitt `## Analysis` — Art der Aufgabe, betroffene Dateien mit Change-Type, Scope/Risiko, technischer Ansatz, offene Fragen
+
+✅ **`/clear` ist jetzt gefahrlos** — alles oben Gelistete stellt der Folge-Befehl allein aus diesen Dateien wieder her. Im Gesprächsverlauf steht nichts, was verloren ginge.
+
+1. `/clear`
+2. `/30-write-spec #<N>`
+
+---
+
+**Negativ-Block (mindestens eine Vorbedingung verletzt):**
+
+---
+⚠️ **`/clear` jetzt NICHT** — Folgendes steht nur im Gesprächsverlauf:
+- <was fehlt> → sichern mit: <konkreter Befehl oder Schritt>
+
+Erst sichern, dann ist `/clear` gefahrlos.
 
 ---
 

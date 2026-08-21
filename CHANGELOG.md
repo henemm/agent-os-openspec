@@ -5,6 +5,31 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+**`/clear`-Checkpoint belegt die Sicherungslage, statt sie zu behaupten (Issue #107)**
+
+Die mit #103 eingefuehrten Checkpoints behaupteten pauschal, der State liege "sicher auf der
+Platte" — ohne zu zeigen WAS gesichert ist, und ohne den Fall zu kennen, dass gerade nichts
+gesichert ist. Die Abstufung hing zudem an der Kontextgroesse ("_Bei kleinem Kontext optional_")
+statt an der Sicherungslage: Ein `/clear` bei kleinem Kontext verliert eine ungesicherte
+Erkenntnis genauso.
+
+- `10-context.md`, `20-analyse.md`, `30-write-spec.md`, `40-tdd-red.md`, `50-implement.md`:
+  Der `/clear`-Block nennt jetzt jede sichernde Datei mit Pfad und Inhalt und gibt ein
+  ausdrueckliches Verdikt — `/clear` ist jetzt gefahrlos` bzw. `/clear` jetzt NICHT` mit dem
+  konkreten Sicherungsschritt. Struktur und Wortlaut sind ueber alle fuenf Dateien identisch.
+- Vorbedingungs-Pruefung ergaenzt: Das Positiv-Verdikt darf nur erscheinen, wenn Phase im State
+  geschrieben, Ergebnisdateien vorhanden, nichts Uncommittetes offen, RED-Artefakte registriert
+  und keine ungeschriebene Erkenntnis noetig ist.
+- Der Zusatz "_Bei kleinem Kontext optional_" entfaellt ersatzlos.
+- `60-validate.md` bekommt bewusst keinen Checkpoint — dort folgt der Commit in derselben
+  Sitzung, ein `/clear` dazwischen waere schaedlich.
+- Neu: `tests/test_clear_checkpoint_blocks.py` (16 Tests) sichert Vorhandensein, Struktur-
+  Gleichheit und die Abwesenheit der Alt-Formulierungen ab.
+
 ## [3.12.0] - 2026-08-19
 
 ### Added
