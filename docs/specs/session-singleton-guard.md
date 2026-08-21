@@ -197,6 +197,11 @@ Reaping-Pfad und in den PreToolUse-Hot-Path ziehen. Ausfuehrliche Abwaegung:
   `phase`, `issue` bis zu 60s hinter dem tatsaechlichen Zustand zurueckliegen.
 - Detached-HEAD-Worktrees liefern kein `branch`-Feld.
 - `workflow.py sessions` zeigt nur Sessions des eigenen Projekts, keine serverweite Uebersicht.
+- `workflow`, `phase` und `issue` leiten sich ueber `resolve_active_workflow()` aus dem
+  Prozess-cwd ab, nicht aus dem an `_context_fields()` uebergebenen `cwd` (der speist nur
+  `worktree` und `branch`). Im Realbetrieb identisch, weil der Harness den Hook-Subprozess mit
+  OS-cwd == Session-cwd startet — bewusst akzeptierte Kopplung an dieses Harness-Verhalten
+  (Issue #109, festgenagelt in `tests/test_session_register_cwd_coupling_109.py`).
 
 ## Acceptance Criteria
 
