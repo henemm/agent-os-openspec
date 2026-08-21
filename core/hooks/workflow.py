@@ -405,6 +405,31 @@ def _log_phase_transition(data: dict, new_phase: str) -> None:
     log.append({"phase": new_phase, "entered_at": now, "exited_at": None, "duration_min": None})
 
 
+def record_transition(data: dict, target: str, trigger: str = "command") -> None:
+    """Einen Phasenwechsel vollstaendig protokollieren: `phase_transitions` UND `phase_log`.
+
+    Die EINZIGE Stelle, die einen Phasen-WECHSEL aufzeichnet — jeder Aufrufer muss sie
+    benutzen (Issue #111). Ausnahme ist `cmd_start`: die Startphase wird nicht betreten,
+    sie ist der Ausgangspunkt und hat kein `from`; dort ist der direkte
+    `_log_phase_transition()`-Aufruf korrekt.
+
+    Vorher haengte nur `cmd_phase` an `phase_transitions` an, waehrend der Freigabe-Pfad im
+    `phase_listener` ausschliesslich `_log_phase_transition()` rief. `phase_transitions` war
+    dadurch je nach Uebergangsart unterschiedlich vollstaendig.
+
+    Aufruf BEVOR `data['current_phase']` gesetzt wird — die Ausgangsphase wird von hier
+    gelesen. Setzt `current_phase` bewusst NICHT selbst, damit Aufrufer mit Zusatzlogik
+    (Fix-Loop-Zaehler, Gate-Pruefungen) die Reihenfolge behalten.
+    """
+    data.setdefault("phase_transitions", []).append({
+        "from": data.get("current_phase", "phase0_idle"),
+        "to": target,
+        "at": datetime.now().isoformat(),
+        "trigger": trigger,
+    })
+    _log_phase_transition(data, target)
+
+
 # --- ADR Reflection Gate ---
 
 def _check_adr(data: dict) -> "str | None":
@@ -724,13 +749,7 @@ def cmd_phase(args: list[str]) -> None:
         print(f"BLOCKED: {error}", file=sys.stderr)
         sys.exit(1)
     current = data.get("current_phase", "phase0_idle")
-    data.setdefault("phase_transitions", []).append({
-        "from": current,
-        "to": target,
-        "at": datetime.now().isoformat(),
-        "trigger": trigger,
-    })
-    _log_phase_transition(data, target)
+    record_transition(data, target, trigger)
     # Fix-loop counter: re-entering phase6_implement from phase6b_adversary
     if target == "phase6_implement" and current == "phase6b_adversary":
         data["fix_loop_iterations"] = data.get("fix_loop_iterations", 0) + 1
@@ -816,8 +835,14 @@ def cmd_write_log(args: list[str]) -> None:
     log_dir.mkdir(parents=True, exist_ok=True)
     date_str = datetime.now().strftime("%Y-%m-%d")
     log_file = log_dir / f"{date_str}_{name}.yaml"
-    transitions = data.get("phase_transitions", [])
-    phases_visited = {t["to"] for t in transitions}
+    # `phase_log` ist die verlaessliche Quelle fuer besuchte Phasen (Issue #111):
+    # Die Startphase eines Workflows taucht in `phase_transitions` nur als `from` auf,
+    # nie als `to` — aus dem `to`-Feld gebaut galt `phase1_context` systematisch als
+    # uebersprungen. `_log_phase_transition()` wird dagegen von jedem Codepfad gerufen.
+    phases_visited = {
+        e.get("phase") for e in data.get("phase_log", []) if isinstance(e, dict)
+    }
+    phases_visited.discard(None)
     phases_visited.add(data.get("current_phase", "phase0_idle"))
     phases_completed = [p for p in PHASES if p in phases_visited and p != "phase0_idle"]
     impl_idx = PHASES.index("phase6_implement")
