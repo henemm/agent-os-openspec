@@ -225,6 +225,14 @@ adversary_gate:
 adr_gate:
   enabled: true
 
+# Session Register — used by session_singleton_guard.py
+# The register (.claude/session-locks/*.json) answers who is working on what.
+session_register:
+  # Rename the surrounding tmux window to "#<issue>" when `claim --issue N` succeeds.
+  # Only takes effect inside a tmux session with the tmux binary on PATH; every
+  # failure (missing binary, timeout, non-zero exit) is silently ignored.
+  tmux_rename: true
+
 # Specs Configuration
 specs:
   base_path: "docs/specs"
