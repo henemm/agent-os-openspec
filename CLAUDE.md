@@ -39,7 +39,7 @@ agent-os-openspec/
 │   │   ├── bash_gate.py                 # PreToolUse Bash (Kern-Gate: Stop-Lock/Secrets/Commit)
 │   │   ├── post_bash.py                 # PostToolUse Bash (Adversary Detection)
 │   │   ├── phase_listener.py            # UserPromptSubmit (Approval/Stop-Lock/Override)
-│   │   ├── session_singleton_guard.py   # SessionStart/PreToolUse(alle)/SessionEnd: erzwingt Worktree-Pflicht
+│   │   ├── session_singleton_guard.py   # SessionStart/PreToolUse(alle)/SessionEnd: Worktree-Pflicht + Session-Register; CLI-Modus `claim`
 │   │   ├── worktree_write_guard.py      # PreToolUse Edit|Write: blockt Schreibzugriff aufs Main-Repo bei Worktree-Split
 │   │   ├── claude_md_protection.py      # PreToolUse Edit|Write: schuetzt CLAUDE.md vor verbotenen Patterns/Aufblaehung
 │   │   ├── tdd_enforcement.py           # PreToolUse Edit|Write: tiefe RED-Artefakt-Validierung (ergaenzt edit_gate.py)
@@ -261,6 +261,26 @@ Registrierung zentral in `hooks/hooks.json` (Plugin-Modus) bzw. `.claude/setting
 
 **SessionEnd:** `session_singleton_guard.py cleanup`
 
+**Kein Hook — direkter CLI-Aufruf:** `session_singleton_guard.py claim --issue N[,M]`
+  Traegt die Issue-Nummer(n) explizit ins Session-Register ein, statt sie aus dem Workflow-Namen
+  zu erraten. Wird aus `/00-intake` aufgerufen, sobald die Nummer bekannt ist — vor dem
+  Workflow-Start. Ein Claim verfaellt automatisch, sobald der aktive Workflow zu einer anderen
+  Issue-Nummer gehoert. Als einziger Modus gibt `claim` Meldungen auf stdout aus; die drei
+  Hook-Modi bleiben still.
+
+## Session-Register
+
+`.claude/session-locks/<session_id>.json` beantwortet, wer gerade woran arbeitet.
+`workflow.py sessions` zeigt die Eintraege als Tabelle, `--json` liefert sie roh.
+
+Liveness: `os.kill(pid, 0)` gegen die gespeicherte `CLAUDE_PID`, ersatzweise `last_seen` gegen
+`_STALE_SECONDS`. Fehlt die eigene Lock-Datei, legt der Heartbeat sie neu an (`reregistered:
+true`) — nur in diesem Ausnahmefall, der 60s-Throttle bleibt sonst unangetastet.
+
+**Bekannte Einschraenkung (Issue #122):** Ein Eintrag, dessen PID inzwischen ein fremder lebender
+Prozess belegt (PID-Recycling im laufenden Boot), wird nie gereapt. `boot_id` schuetzt nur gegen
+Reboot. Bestandsproblem, kein Regressionsschaden.
+
 ## Konventionen für dieses Repository
 
 ### Beim Bearbeiten des Frameworks
@@ -349,7 +369,7 @@ python3 /path/to/agent-os-openspec/setup.py --version
 | `core/hooks/bash_gate.py` | Kern-Gate Bash (Stop-Lock/State-Integrity/Secrets/Commit-Gates) |
 | `core/hooks/post_bash.py` | PostToolUse Bash (Adversary Detection) |
 | `core/hooks/phase_listener.py` | UserPromptSubmit Listener (Approval/Stop-Lock/Override/ADR-Gate) |
-| `core/hooks/session_singleton_guard.py` | SessionStart/PreToolUse/SessionEnd: erzwingt Worktree-Pflicht |
+| `core/hooks/session_singleton_guard.py` | SessionStart/PreToolUse/SessionEnd: Worktree-Pflicht + Session-Register; CLI-Modus `claim --issue` |
 | `core/hooks/worktree_write_guard.py` | PreToolUse Edit/Write: blockt Split-Brain-Schreibzugriff aufs Main-Repo |
 | `core/hooks/claude_md_protection.py` | PreToolUse Edit/Write: schuetzt CLAUDE.md vor verbotenen Patterns/Aufblaehung |
 | `core/hooks/tdd_enforcement.py` | PreToolUse Edit/Write: tiefe RED-Artefakt-Validierung |
