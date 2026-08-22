@@ -2,11 +2,13 @@
 """
 Session Singleton Guard — Erzwingt Worktree-Isolation für alle Sessions.
 
-Drei Modi (argv[1]):
+Vier Modi (argv[1]):
 - register (SessionStart):  Sitzungseintrag anlegen / erneuern (für Diagnostik).
 - guard    (PreToolUse):    Schreibende Tools im Haupt-Repo blockieren.
                             Rescue: EnterWorktree aufrufen.
 - cleanup  (Stop):          Eigenen Eintrag löschen.
+- claim    (CLI):           Issue-Nummer(n) explizit ins Register eintragen
+                            (aus /00-intake, kein stdin-Payload).
 
 Kernregel: Jede Session muss im eigenen Worktree laufen.
 - Lesende Tools (Read, Grep, ToolSearch, …) sind immer erlaubt.
@@ -81,10 +83,65 @@ def _safe_sid(session_id: str) -> str:
 # ---------------------------------------------------------------------------
 
 def _pid_alive(pid: int) -> bool:
+    """True, wenn der Prozess existiert — plattformneutral via os.kill(pid, 0).
+
+    Die PID-Validierung (int, kein bool, > 0) liegt beim Aufrufer (_is_alive):
+    os.kill(0, 0) adressiert die GESAMTE Prozessgruppe des Aufrufers, negative
+    Werte eine fremde Prozessgruppe. Beides darf hier nie ankommen.
+    """
     try:
-        return Path(f"/proc/{int(pid)}").exists()
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False          # Prozess existiert nicht
+    except PermissionError:
+        return True           # Prozess existiert, gehört fremdem User
     except Exception:
-        return False
+        return False          # fail-safe wie im Bestand
+
+
+def _read_boot_id() -> "str | None":
+    """Boot-ID des laufenden Kernels; None auf Plattformen ohne /proc."""
+    try:
+        value = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+        return value or None
+    except Exception:
+        return None
+
+
+def _boot_id_matches(entry: dict) -> bool:
+    """False nur, wenn gespeicherte und aktuelle boot_id sicher abweichen.
+
+    Nach einem Reboot kann die gespeicherte PID von einem fremden Prozess
+    recycelt worden sein — dann beweist eine 'lebende' PID nichts. Fehlt eine
+    der beiden Boot-IDs, gibt es nichts zu misstrauen (Rückwärtskompatibilität
+    für Lock-Dateien ohne das Feld).
+    """
+    stored = entry.get("boot_id")
+    if not isinstance(stored, str) or not stored:
+        return True
+    try:
+        current = _read_boot_id()
+    except Exception:
+        return True
+    if not current:
+        return True
+    return stored == current
+
+
+def _resolve_register_pid() -> int:
+    """Stabile PID-Quelle: CLAUDE_PID, sonst os.getppid() (Bestandsverhalten).
+
+    os.getppid() ist in einem Hook die transiente Shell, die sofort nach dem
+    Hook stirbt — Wurzelursache von #120.
+    """
+    try:
+        value = int(str(os.environ.get("CLAUDE_PID", "")).strip())
+        if value > 0:
+            return value
+    except Exception:
+        pass
+    return os.getppid()
 
 
 # ---------------------------------------------------------------------------
@@ -93,8 +150,8 @@ def _pid_alive(pid: int) -> bool:
 
 def _is_alive(entry: dict, now: float) -> bool:
     pid = entry.get("pid")
-    if isinstance(pid, int) and not isinstance(pid, bool):
-        if _pid_alive(pid):
+    if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0:
+        if _boot_id_matches(entry) and _pid_alive(pid):
             return True
         # PID dead: fall back to last_seen. Hooks are invoked via a transient shell
         # subprocess, so os.getppid() returns the shell's PID (not Claude's). The
@@ -267,6 +324,16 @@ def _harness_agent_name(session_id: str) -> "str | None":
 _CONTEXT_FIELDS = ("worktree", "branch", "workflow", "issue", "phase")
 
 
+def _current_workflow_name() -> str:
+    """Aktiver Workflow-Name; "" wenn keiner aufloesbar (fail-safe)."""
+    try:
+        from hook_utils import resolve_active_workflow
+        resolved = resolve_active_workflow()
+        return (resolved[0] or "") if resolved else ""
+    except Exception:
+        return ""
+
+
 def _context_fields(cwd: str) -> dict:
     """Alle ableitbaren Kontextfelder; fehlende Quellen fehlen im Ergebnis."""
     out: dict = {}
@@ -282,12 +349,7 @@ def _context_fields(cwd: str) -> dict:
             out["branch"] = branch
     except Exception:
         pass
-    try:
-        from hook_utils import resolve_active_workflow
-        resolved = resolve_active_workflow()
-        name = (resolved[0] or "") if resolved else ""
-    except Exception:
-        name = ""
+    name = _current_workflow_name()
     if name:
         out["workflow"] = name
         issue = _extract_issue_number(name)
@@ -299,25 +361,153 @@ def _context_fields(cwd: str) -> dict:
     return out
 
 
+def _claim_holds(entry: dict, fields: dict) -> bool:
+    """Claim-Erhalt/-Verfall (B2). True = 'issue' ist geclaimt und bleibt.
+
+    Faelle laut Spec: 1 (kein Workflow, bleibt), 2a/2b (Adoption durch den
+    erstmals aufloesbaren Workflow), 2c (fremde Nummer -> Verfall), 3 (gleicher
+    Workflow, bleibt), 4 (Abweichung -> Verfall).
+    """
+    if entry.get("issue_source") != "claim":
+        return False                       # kein Claim: Bestandsverhalten
+
+    current = fields.get("workflow") or ""
+    claim_wf = entry.get("issue_claim_workflow")
+    if not isinstance(claim_wf, str):
+        claim_wf = ""
+
+    if claim_wf == current:
+        return True                        # Fall 1 + Fall 3
+
+    if not claim_wf and current:           # Fall 2 — Adoption nur bei Passung
+        number = _extract_issue_number(current)
+        claimed = [p.strip() for p in str(entry.get("issue") or "").split(",")]
+        if number is None or number in claimed:
+            entry["issue_claim_workflow"] = current      # Fall 2a / 2b
+            return True
+
+    # Fall 2c + Fall 4 — Claim verfaellt, Regex-Ableitung uebernimmt.
+    entry.pop("issue", None)
+    entry.pop("issue_source", None)
+    entry.pop("issue_claim_workflow", None)
+    return False
+
+
 def _apply_context_fields(entry: dict, cwd: str) -> None:
     """Kontextfelder neu ermitteln; nicht mehr aufloesbare Felder entfernen."""
     fields = _context_fields(cwd)
+    keep_issue = _claim_holds(entry, fields)
     for key in _CONTEXT_FIELDS:
+        if key == "issue" and keep_issue:
+            continue                       # geclaimter Wert schlaegt Regex
         if key in fields:
             entry[key] = fields[key]
         else:
             entry.pop(key, None)
 
 
+def _build_entry(session_id: str, cwd: str, started_at: float,
+                 *, reregistered: bool = False) -> dict:
+    """Basis-Registereintrag — einziger Entstehungsweg (register/heartbeat/claim)."""
+    entry = {
+        "session_id": session_id,
+        "cwd": cwd,
+        "pid": _resolve_register_pid(),
+        "started_at": started_at,
+        "last_seen": time.time(),
+    }
+    try:
+        boot_id = _read_boot_id()
+    except Exception:
+        boot_id = None
+    if boot_id:
+        entry["boot_id"] = boot_id
+    if reregistered:
+        entry["reregistered"] = True
+    return entry
+
+
+def _enrich_entry(entry: dict, session_id: str, cwd: str) -> None:
+    """agent_name + Kontextfelder — jede Quelle einzeln fail-safe (EB-1)."""
+    try:
+        agent_name = _harness_agent_name(session_id)
+        if agent_name:
+            entry["agent_name"] = agent_name
+    except Exception:
+        pass
+    try:
+        _apply_context_fields(entry, cwd)
+    except Exception:
+        pass
+
+
+def _lock_dir_writable(own_file: Path) -> bool:
+    """HEURISTIK auf Verzeichnisrechte — KEINE Schreibgarantie.
+
+    Geprueft wird ausschliesslich das Schreibrecht am Verzeichnis. Ein `True`
+    bedeutet also nur "einen Versuch wert", nicht "der Write wird gelingen":
+    volle Platte, Quota, schreibgeschuetzte Einzeldatei, NFS-Fehler und TOCTOU
+    (Rechte aendern sich zwischen Pruefung und Write) bleiben unentdeckt. Der
+    Aufrufer muss den Write daher trotzdem einzeln absichern (F006).
+
+    Zweck ist die Kostenersparnis im Hot-Path: ist das Verzeichnis dauerhaft
+    nicht beschreibbar (read-only Mount, Rechtefehler), spart der Vorabtest bei
+    JEDEM Guard-Aufruf den kompletten Bau- und Schreibversuch samt
+    Exception-Pfad — anders als ein prozesslokaler Cooldown wirkt er auch ueber
+    Prozessgrenzen hinweg (jeder Hook-Aufruf ist ein eigener Prozess).
+    """
+    try:
+        own_file.parent.mkdir(parents=True, exist_ok=True)
+        return os.access(own_file.parent, os.W_OK)
+    except Exception:
+        return False
+
+
+def _reregister(own_file: Path, session_id: str, cwd: str) -> None:
+    """A2-Sicherheitsnetz: verlorene Lock-Datei neu anlegen (genau EIN Write).
+
+    started_at ist nach einem Reap nicht rekonstruierbar -> now; reregistered
+    haelt fest, dass es kein echter Sessionstart war.
+
+    Bewusst OHNE _harness_agent_name(): dieser Zweig laeuft, solange die Datei
+    fehlt, bei JEDEM Guard-Aufruf erneut — der Verzeichnis-Scan ueber
+    ~/.claude/sessions/ wuerde sich dabei endlos wiederholen, weil der
+    60s-Zeitdeckel ihn nicht bremst (started_at wird hier jedes Mal auf now
+    zurueckgesetzt, die Session sieht also dauerhaft "juenger als 60s" aus).
+    agent_name holt der regulaere Lazy-Zweig beim naechsten Aufruf nach, sobald
+    die Datei wieder existiert — dort ist der Scan durch den Deckel begrenzt.
+    """
+    if not _lock_dir_writable(own_file):
+        return
+    entry = _build_entry(session_id, cwd, time.time(), reregistered=True)
+    try:
+        _apply_context_fields(entry, cwd)
+    except Exception:
+        pass
+    # Eigener Fangarm um den Write (F006): _lock_dir_writable() ist nur eine
+    # Heuristik auf Verzeichnisrechte. Volle Platte, Quota, schreibgeschuetzte
+    # Datei, NFS- oder TOCTOU-Fehler schlagen erst hier zu. Ohne diese Kapselung
+    # verschwimmt so ein Fehler mit dem Sammel-except in _heartbeat() und die
+    # Session bliebe dauerhaft unregistriert, ohne unterscheidbare Ursache.
+    # Ein Hook darf hier NICHT auf stdout/stderr schreiben (AC-25) — der Fehler
+    # wird daher bewusst und lokal verschluckt, nicht global.
+    try:
+        own_file.write_text(json.dumps(entry))
+    except Exception:
+        return
+
+
 def _heartbeat(session_id: str, cwd: str) -> None:
     """Throttled Heartbeat + lazy agent_name-Nachfuehrung.
 
-    Hoechstens EIN Datei-Write pro Aufruf. Legt niemals einen Eintrag an
-    (AC-11) und wirft niemals nach aussen (EB-1).
+    Hoechstens EIN Datei-Write pro Aufruf. Fehlt die eigene Lock-Datei, legt
+    der Heartbeat sie neu an (A2, ersetzt feat-106 AC-11) und steigt sofort
+    aus. Wirft niemals nach aussen (EB-1).
     """
     try:
         own_file = _locks_dir() / f"{_safe_sid(session_id)}.json"
         if not own_file.exists():
+            _reregister(own_file, session_id, cwd)
             return
         try:
             entry = json.loads(own_file.read_text())
@@ -396,26 +586,10 @@ def _do_register(payload: dict) -> None:
 
     _reap_dead(_read_entries(locks), now)
 
-    entry = {
-        "session_id": session_id,
-        "cwd": cwd,
-        "pid": os.getppid(),
-        "started_at": started_at,
-        "last_seen": now,
-    }
-
-    # Additive Anreicherung — jede Quelle einzeln fail-safe (EB-1). Ein Fehler
-    # darf den Bestandseintrag niemals verhindern (AC-8).
-    try:
-        agent_name = _harness_agent_name(session_id)
-        if agent_name:
-            entry["agent_name"] = agent_name
-    except Exception:
-        pass
-    try:
-        entry.update(_context_fields(cwd))
-    except Exception:
-        pass
+    # Gemeinsamer Helper mit dem Re-Register-Zweig (A2) — keine Feld-Drift.
+    # Additive Anreicherung: ein Fehler darf den Eintrag nie verhindern (AC-8).
+    entry = _build_entry(session_id, cwd, started_at)
+    _enrich_entry(entry, session_id, cwd)
 
     own_file.write_text(json.dumps(entry))
     sys.exit(0)
@@ -467,6 +641,152 @@ def _do_guard(payload: dict) -> None:
     sys.exit(2)
 
 
+_MAX_ISSUE_ARG_LEN = 64
+
+
+def _validate_issue_arg(raw: str) -> "str | None":
+    """Nur kommagetrennte Ziffern, hoechstens _MAX_ISSUE_ARG_LEN Zeichen.
+
+    Der Wert landet in der Lock-JSON und in einem tmux-Kommando — ohne
+    Laengendeckel koennte ein beliebig langer Wert den Registereintrag
+    aufblaehen.
+    """
+    try:
+        value = str(raw)
+    except Exception:
+        return None
+    if len(value) > _MAX_ISSUE_ARG_LEN:
+        return None
+    return value if re.fullmatch(r"[0-9,]+", value) else None
+
+
+def _find_claim_target(locks: Path) -> "tuple | None":
+    """(session_id, path, entry|None) der claimenden Session, sonst None."""
+    try:
+        sid = (os.environ.get("CLAUDE_CODE_SESSION_ID") or "").strip()
+    except Exception:
+        sid = ""
+
+    if sid:
+        path = locks / f"{_safe_sid(sid)}.json"
+        entry = None
+        try:
+            data = json.loads(path.read_text())
+            if isinstance(data, dict):
+                entry = data
+        except Exception:
+            entry = None
+        return (sid, path, entry)
+
+    # Fallback: genau EIN Eintrag mit dem aktuellen Arbeitsverzeichnis.
+    try:
+        cwd = os.getcwd()
+        matches = [
+            (esid, path, data)
+            for esid, (path, data) in _read_entries(locks).items()
+            if data.get("cwd") == cwd
+        ]
+    except Exception:
+        return None
+    return matches[0] if len(matches) == 1 else None
+
+
+def _tmux_rename_enabled() -> bool:
+    """session_register.tmux_rename; Default true bei jedem Ladefehler."""
+    try:
+        import config_loader
+        section = (config_loader.load_config() or {}).get("session_register") or {}
+        return bool(section.get("tmux_rename", True))
+    except Exception:
+        return True
+
+
+def _maybe_rename_tmux_window(issue_value: str) -> None:
+    """Fenstername auf '#<issues>' setzen — strikt optional, strikt fail-safe."""
+    try:
+        if not os.environ.get("TMUX"):
+            return
+        if not _tmux_rename_enabled():
+            return
+        import shutil
+        import subprocess
+        if shutil.which("tmux") is None:
+            return
+        subprocess.run(["tmux", "rename-window", f"#{issue_value}"], timeout=2)
+    except Exception:
+        pass
+
+
+def _do_claim(argv: list) -> None:
+    """CLI-Modus: Issue-Nummer(n) explizit ins Register eintragen (#121).
+
+    Wrapper um _claim_impl(): JEDER Fehler endet in einer verstaendlichen
+    Meldung auf stdout und Exit 0 (F007). Ohne diese Klammer koennte z.B. ein
+    Fehler in find_project_root() dazu fuehren, dass claim gar nichts ausgibt
+    und trotzdem mit 0 endet — genau die stille Fehlschlagsklasse, gegen die
+    schon die Write-Kapselung (F003) gebaut wurde.
+
+    Anders als die Hook-Modi gibt claim Meldungen auf stdout aus — er wird
+    direkt aufgerufen, nicht als Hook.
+    """
+    try:
+        _claim_impl(argv)
+    except SystemExit:
+        raise
+    except Exception as exc:
+        print(f"claim: interner Fehler ({type(exc).__name__}) — nichts geaendert.")
+    sys.exit(0)
+
+
+def _claim_impl(argv: list) -> None:
+    """Eigentliche claim-Logik; steigt per `return` aus, nie per sys.exit()."""
+    issue = None
+    try:
+        idx = argv.index("--issue")
+        if idx + 1 < len(argv):
+            issue = _validate_issue_arg(argv[idx + 1])
+    except Exception:
+        issue = None
+
+    if not issue:
+        print("claim: --issue erwartet kommagetrennte Ziffern "
+              "(z.B. --issue 120,121) — nichts geaendert.")
+        return
+
+    locks = _locks_dir()
+    target = _find_claim_target(locks)
+    if target is None:
+        print("claim: keine eindeutige Session gefunden (CLAUDE_CODE_SESSION_ID "
+              "fehlt und kein eindeutiger cwd-Treffer) — nichts geaendert.")
+        return
+
+    session_id, path, entry = target
+    if entry is None:
+        # Noch kein Eintrag: ueber denselben A2-Helper anlegen (AC-22).
+        try:
+            cwd = os.getcwd()
+        except Exception:
+            cwd = ""
+        entry = _build_entry(session_id, cwd, time.time(), reregistered=True)
+        _enrich_entry(entry, session_id, cwd)
+
+    entry["issue"] = issue
+    entry["issue_source"] = "claim"
+    entry["issue_claim_workflow"] = _current_workflow_name()
+
+    # Schreibfehler (read-only Verzeichnis, volle Platte, Rechtefehler) darf
+    # nicht still bleiben: sonst sieht der Operator Exit 0 und gar nichts.
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(entry))
+    except Exception as exc:
+        print(f"claim: Schreibfehler ({type(exc).__name__}) — nichts geaendert.")
+        return
+    print(f"claim: Issue #{issue} fuer Session {session_id} eingetragen.")
+
+    _maybe_rename_tmux_window(issue)
+
+
 def _do_cleanup(payload: dict) -> None:
     session_id = (payload.get("session_id") or "").strip()
     if not session_id:
@@ -486,6 +806,10 @@ def _do_cleanup(payload: dict) -> None:
 
 def main() -> None:
     mode = sys.argv[1] if len(sys.argv) > 1 else ""
+    if mode == "claim":
+        # Direkter CLI-Aufruf ohne stdin-Payload — nicht auf stdin warten.
+        _do_claim(sys.argv[2:])
+        return
     payload = _read_payload()
     if mode == "register":
         _do_register(payload)

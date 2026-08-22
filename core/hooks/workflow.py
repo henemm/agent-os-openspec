@@ -1266,24 +1266,38 @@ def cmd_sessions(args: list[str]) -> None:
         return
 
     def col(entry, key):
+        """Wert der Spalte, ungekuerzt — die Breiten unten fassen die
+        Namenskonvention `typ-NNN[-MMM]-beschreibung` vollstaendig."""
         value = entry.get(key)
         if value is None or value == "":
             return SESSIONS_PLACEHOLDER
         return str(value)
 
-    SEP = "─" * 151
+    def issue_col(entry):
+        """Einzige gekuerzte Spalte (B5): ein Claim kann mehrere Nummern halten
+        (`120,121`), und ein kaputter oder manipulierter Wert darf die Tabelle
+        nicht sprengen."""
+        value = col(entry, "issue")
+        return value if len(value) <= ISSUE_W else value[:ISSUE_W - 1] + "…"
+
+    # Breiten aus den realen Werten dieses Projekts abgeleitet (laengste:
+    # session_id 36 = UUID, agent_name 20, branch 23, workflow 28, phase 17).
+    # worktree 21, weil branch = "worktree-" (9 Zeichen) + Worktree-Name ist:
+    # was in branch passt, passt damit garantiert auch in worktree.
+    ISSUE_W = 9
+    SEP = "─" * 178
     print(SEP)
     print(
-        f"  {'Session':<38} {'Agent':<18} {'Worktree':<16} {'Branch':<22} "
-        f"{'Workflow':<22} {'Phase':<16} {'Issue':<5} {'Alter':>5}"
+        f"  {'Session':<36} {'Agent':<20} {'Worktree':<21} {'Branch':<30} "
+        f"{'Workflow':<30} {'Phase':<18} {'Issue':<{ISSUE_W}} {'Alter':>5}"
     )
     print(SEP)
     for entry in entries:
         print(
-            f"  {col(entry, 'session_id'):<38} {col(entry, 'agent_name'):<18} "
-            f"{col(entry, 'worktree'):<16} {col(entry, 'branch'):<22} "
-            f"{col(entry, 'workflow'):<22} {col(entry, 'phase'):<16} "
-            f"{col(entry, 'issue'):<5} {_sessions_age(entry.get('last_seen')):>5}"
+            f"  {col(entry, 'session_id'):<36} {col(entry, 'agent_name'):<20} "
+            f"{col(entry, 'worktree'):<21} {col(entry, 'branch'):<30} "
+            f"{col(entry, 'workflow'):<30} {col(entry, 'phase'):<18} "
+            f"{issue_col(entry):<{ISSUE_W}} {_sessions_age(entry.get('last_seen')):>5}"
         )
     print(SEP)
     print(f"  {len(entries)} Session(s) registriert.")

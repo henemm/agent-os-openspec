@@ -5,6 +5,92 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+**Session-Register: lebende Sessions verschwinden dauerhaft (Issue #120)**
+
+Eine einmal gereapte Session kam nie ins Register zurueck. Zwei Ursachen, beide behoben:
+
+- `_pid_alive()` prueft jetzt `os.kill(pid, 0)` statt `Path("/proc/<pid>").exists()`.
+  Nebeneffekt: die Pruefung funktioniert damit auch auf Plattformen ohne `/proc` (macOS),
+  wo sie bislang fuer JEDE PID `False` lieferte — ein stiller Bestandsfehler.
+- `_do_register()` speichert die stabile `CLAUDE_PID` statt `os.getppid()`. Letzteres ist die
+  transiente Hook-Shell, die unmittelbar nach dem Hook endet — die gespeicherte PID war
+  deshalb schon beim naechsten `guard`-Aufruf tot, sodass praktisch nur `last_seen` trug.
+- `_heartbeat()` legt eine fehlende eigene Lock-Datei neu an (`reregistered: true`) statt mit
+  `return` auszusteigen. Der Zweig greift ausschliesslich, wenn die Datei fehlt; der
+  bestehende 60s-Throttle bleibt im Normalbetrieb unangetastet.
+- Neues Feld `boot_id` (`/proc/sys/kernel/random/boot_id`): weicht die gespeicherte von der
+  aktuellen ab, wird die PID-Pruefung verworfen (Schutz gegen PID-Recycling nach Reboot).
+
+Damit wird **AC-11 aus `feat-106-session-register.md` revidiert** ("guard legt niemals einen
+Eintrag an"). Die dortige Kosten-Nutzen-Abwaegung galt dem Normalfall mit vorhandener
+Lock-Datei; der hier behandelte Ausnahmefall war zum Verfassungszeitpunkt nicht als
+Fehlerquelle bekannt. AC-11 ist in feat-106 als ueberholt markiert.
+
+**PreToolUse-Hot-Path: kein Verzeichnis-Scan mehr im Ausnahmepfad**
+
+Der Re-Register-Zweig rief `_harness_agent_name()` auf, das alles unter `~/.claude/sessions/`
+globt und JSON-parst. Der 60s-Zeitdeckel dafuer griff dort nie, weil `started_at` bei jedem
+Re-Register auf `now` springt — bei dauerhaft fehlender Lock-Datei lief der Scan bei JEDEM
+Tool-Aufruf. Entfernt; `agent_name` holt der regulaere Lazy-Zweig nach. Zusaetzlich
+`_lock_dir_writable()`: ein nicht beschreibbares Lock-Verzeichnis fuehrt jetzt zu gar keinem
+Versuch statt zu Bau, Write und Exception-Pfad pro Aufruf.
+
+### Added
+
+**`claim`-Modus: `/00-intake` meldet die Issue-Nummer aktiv ans Register (Issue #121)**
+
+Bisher wurde die Issue-Nummer aus dem Workflow-Namen geraten (erste Ziffernfolge). Bei
+mehreren Issues pro Workflow oder Namen ohne Nummer lieferte das falsche oder gar keine
+Werte — nachgewiesen am eigenen Workflow dieser Aenderung, der `120` zeigte, obwohl an #120
+**und** #121 gearbeitet wurde.
+
+```bash
+python3 .claude/hooks/session_singleton_guard.py claim --issue 120,121
+```
+
+- Vierter Modus neben `register`/`guard`/`cleanup`. Anders als diese ist `claim` ein direkter
+  CLI-Aufruf; Meldungen auf stdout sind gewollt und Teil des beobachtbaren Verhaltens. Jeder
+  Fehlerpfad endet in einer verstaendlichen Meldung, immer Exit-Code 0.
+- Zielfindung ueber `CLAUDE_CODE_SESSION_ID`, ersatzweise ueber einen eindeutigen
+  `cwd`-Treffer. Kein eindeutiges Ziel → keine Aenderung, Meldung, Exit 0.
+- `--issue` akzeptiert ausschliesslich Ziffern und Kommas, maximal 64 Zeichen.
+- **Claim-Invalidierung:** Ein Claim verfaellt, sobald der aktive Workflow zu einer anderen
+  Issue-Nummer gehoert — auch bei der erstmaligen Zuordnung. Ohne diese Regel wuerde ein
+  fremder Workflow den Claim uebernehmen und der falsche Wert waere dauerhaft eingefroren.
+- Optionaler tmux-Fenstername (`session_register.tmux_rename`, Default `true`), strikt
+  fail-safe: fehlendes Binary, Timeout oder Fehlercode werden still ignoriert.
+- Aufruf in `core/commands/00-intake.md` und `skills/00-intake/SKILL.md` ergaenzt, jeweils vor
+  der Track-Bewertung — der Claim braucht keinen laufenden Workflow.
+
+### Changed
+
+**`workflow.py sessions`: Spaltenbreiten an die Namenskonvention angepasst**
+
+Die Issue-Spalte fasst jetzt 9 statt 5 Zeichen (Mehrfach-Claims wie `120,121`). Ausserdem
+waren `worktree`, `branch`, `workflow` und `phase` zu schmal fuer die im Projekt uebliche
+Benennung `typ-NNN[-MMM]-beschreibung` — reale Werte wie `fix-120-121-session-register`
+(28 Zeichen) sprengten die 22 Zeichen breite Spalte und verschoben die Zeile.
+
+Neue Breiten: worktree 16→21, branch 22→30, workflow 22→30, phase 16→18, Trenner 151→178.
+`branch` und `worktree` haengen zusammen (`branch` = `"worktree-"` + Worktree-Name) und sind
+gemeinsam bemessen. Gekuerzt wird ausschliesslich die Issue-Spalte; alle uebrigen Werte
+erscheinen vollstaendig.
+
+### Known Limitations
+
+- Ein Registereintrag, dessen gespeicherte PID inzwischen von einem fremden, lebenden Prozess
+  belegt ist (PID-Recycling im laufenden Boot), wird nie gereapt — `_is_alive()` prueft die
+  PID zuerst und erreicht die `last_seen`-Grenze nicht mehr. Der `boot_id`-Schutz greift nur
+  nach einem Reboot. **Bestandsproblem**: der Vorgaengercode (`/proc`-Pruefung) verhaelt sich
+  identisch, die Umstellung auf `os.kill` verkleinert das Zeitfenster sogar, weil `CLAUDE_PID`
+  bis zum echten Sessionende lebt. Getrennt verfolgt in Issue #122.
+- Die Spaltenkuerzung zaehlt Zeichen, nicht Darstellungsbreite; CJK, Emoji, ANSI-Sequenzen
+  oder Steuerzeichen in Branch- oder Workflow-Namen koennen die Ausrichtung weiterhin brechen.
+
 ## [3.15.0] - 2026-08-21
 
 ### Added

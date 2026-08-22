@@ -432,9 +432,15 @@ Neue Datei `tests/test_workflow_sessions.py`:
   `workflow`, aber kein `issue`-Feld; kein Crash.
 - **AC-10:** Kein aktiver Workflow auflösbar (`resolve_active_workflow()` liefert `("", "none")`)
   → `workflow`, `phase`, `issue` fehlen im Eintrag; kein Crash.
-- **AC-11:** `guard` wird für eine `session_id` aufgerufen, für die keine Lock-Datei existiert →
-  es wird keine Datei angelegt, kein Fehler geworfen, das bisherige Allow/Block-Verhalten
-  (abhängig von `cwd`) bleibt unverändert.
+- **AC-11 (ÜBERHOLT — siehe `docs/specs/fix-120-121-session-register.md`):** `guard` wird für eine
+  `session_id` aufgerufen, für die keine Lock-Datei existiert → es wird keine Datei angelegt, kein
+  Fehler geworfen, das bisherige Allow/Block-Verhalten (abhängig von `cwd`) bleibt unverändert.
+  **Revidiert durch Issue #120 (fix-120-121-session-register):** Eine gereapte, aber weiterhin
+  aktive Session muss zurückkehren können — der Heartbeat legt bei fehlender Lock-Datei jetzt einen
+  neuen Eintrag an (`reregistered: true`), statt untätig zu bleiben. Die ursprüngliche
+  Kosten-Nutzen-Abwägung dieser AC (kein Re-Register im PreToolUse-Hot-Path, siehe oben) gilt
+  weiterhin für den Normalfall (vorhandene Lock-Datei, 60s-Throttle unverändert wirksam) — sie
+  betraf nie den hier behobenen Ausnahmefall einer fehlenden Datei bei sonst lebender Session.
 - **AC-12:** `python3 core/hooks/workflow.py sessions` (ohne Argumente) gibt eine Tabelle aller
   Einträge unter `.claude/session-locks/*.json` des eigenen Projekts aus, inklusive der neuen
   Felder mit einem Platzhalter für fehlende Werte.

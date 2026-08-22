@@ -29,6 +29,18 @@ Bei Unklarheit über Scope: schnelle Suche:
 grep -rn "keyword" --include="*.py" -l | head -10
 ```
 
+### 1b. Issue-Nummer(n) ins Session-Register eintragen
+
+Sobald die Issue-Nummer(n) aus dem Aufgaben-Kontext bekannt sind — noch vor der
+Track-Bewertung, denn im Fast Track entsteht nie ein Workflow:
+
+```bash
+python3 .claude/hooks/session_singleton_guard.py claim --issue <N>[,<M>...]
+```
+
+Damit weiß jede andere Session, wer gerade an Issue #N arbeitet. Ohne Issue-Nummer
+(z.B. reiner Wartungs-Task) entfällt der Schritt.
+
 ### 2. Score präsentieren und Track vorschlagen
 
 Gib dem User exakt dieses Format aus:
