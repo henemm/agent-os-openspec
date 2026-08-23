@@ -1099,6 +1099,7 @@ def test_build_entry_is_the_single_source_for_both_paths(tmp_path, monkeypatch):
 
 import shutil
 import subprocess
+import uuid
 
 import config_loader
 
@@ -1495,12 +1496,21 @@ class _Completed:
 
 
 def _tmux_env(monkeypatch, *, in_tmux=True, which="/usr/bin/tmux",
-              rename_enabled=True):
+              rename_enabled=True, pane="%42"):
+    """tmux-Umgebung fuer die Claim-Tests.
+
+    `pane=None` entfernt $TMUX_PANE — das ist der Fall aus AC-2 (#126), in dem
+    das Ziel des rename unbestimmbar ist und deshalb gar nicht umbenannt wird.
+    """
     monkeypatch.setattr(shutil, "which", lambda name: which)
     if in_tmux:
         monkeypatch.setenv("TMUX", "/tmp/tmux-1000/default,1234,0")
     else:
         monkeypatch.delenv("TMUX", raising=False)
+    if pane is None:
+        monkeypatch.delenv("TMUX_PANE", raising=False)
+    else:
+        monkeypatch.setenv("TMUX_PANE", pane)
     monkeypatch.setattr(
         config_loader, "load_config",
         lambda: {"session_register": {"tmux_rename": rename_enabled}},
@@ -1520,7 +1530,10 @@ def test_tmux_window_renamed_on_successful_claim(tmp_path, monkeypatch):
 
     assert spy.calls, "tmux rename-window nicht aufgerufen"
     cmd, kwargs = spy.calls[0]
-    assert cmd == ["tmux", "rename-window", "#120,121"]
+    assert cmd == ["tmux", "rename-window", "-t", "%42", "#120,121"], (
+        "rename-window ohne -t trifft das gerade AKTIVE Fenster, nicht das "
+        "eigene (#126)"
+    )
     assert kwargs.get("timeout"), "kein Timeout — haengendes tmux blockiert den Hook"
 
 
@@ -1609,6 +1622,9 @@ def test_tmux_failures_never_escape(tmp_path, monkeypatch, scenario):
 def test_maybe_rename_tmux_window_swallows_everything(monkeypatch):
     """AC-32: die Helferfunktion selbst laesst nie eine Exception nach aussen."""
     monkeypatch.setenv("TMUX", "/tmp/tmux-1000/default,1234,0")
+    # Ohne $TMUX_PANE steigt die Funktion seit #126 vorher aus — dann wuerde
+    # der Test die Schluck-Klammer gar nicht mehr erreichen.
+    monkeypatch.setenv("TMUX_PANE", "%42")
 
     def explode(*_a, **_kw):
         raise RuntimeError("alles kaputt")
@@ -1618,6 +1634,150 @@ def test_maybe_rename_tmux_window_swallows_everything(monkeypatch):
     monkeypatch.setattr(config_loader, "load_config", explode)
 
     assert ssg._maybe_rename_tmux_window("42") is None
+
+
+# ---------------------------------------------------------------------------
+# B3 — tmux-Fenstername: das RICHTIGE Fenster  (#126, AC-1 bis AC-3)
+# ---------------------------------------------------------------------------
+
+def _tmux(*args: str) -> str:
+    """tmux-Kommando ausfuehren, stdout zurueckgeben."""
+    return subprocess.run(["tmux", *args], capture_output=True, text=True,
+                          check=True, timeout=10).stdout
+
+
+def _tmux_windows(session: str) -> dict:
+    """{Fenstername: {"index":…, "pane":…, "active":…}} der Testsession."""
+    out = _tmux("list-windows", "-t", session, "-F",
+                "#{window_name}\t#{window_index}\t#{pane_id}\t#{window_active}")
+    windows = {}
+    for line in out.splitlines():
+        if not line.strip():
+            continue
+        name, index, pane, active = line.split("\t")
+        windows[name] = {"index": index, "pane": pane, "active": active == "1"}
+    return windows
+
+
+@pytest.mark.skipif(shutil.which("tmux") is None, reason="tmux nicht installiert")
+def test_tmux_rename_hits_own_window_not_active_one(monkeypatch):
+    """AC-1: umbenannt wird das Fenster des AUFRUFERS, nicht das aktive.
+
+    Wirkungsnachweis gegen echtes tmux — kein Mock. Genau das war der Kern von
+    #126: `rename-window` ohne `-t` loest sein Ziel aus dem aktiven Fenster der
+    Session auf, nicht aus dem Pane des aufrufenden Prozesses. Ein Formtest auf
+    die Kommandozeile kann das nicht zeigen; nur der Blick auf beide Fenster
+    nach dem Aufruf kann es.
+    """
+    session = "t126" + uuid.uuid4().hex[:8]
+    _tmux("new-session", "-d", "-s", session, "-n", "eins", "sleep 30")
+    try:
+        _tmux("new-window", "-d", "-t", f"{session}:", "-n", "zwei", "sleep 30")
+        windows = _tmux_windows(session)
+        assert set(windows) == {"eins", "zwei"}, f"Testsession unerwartet: {windows}"
+
+        # Fenster "eins" ist das aktive; der Aufrufer sitzt in "zwei".
+        _tmux("select-window", "-t", f"{session}:{windows['eins']['index']}")
+        assert _tmux_windows(session)["eins"]["active"], "Fenster eins nicht aktiv"
+
+        tmux_var = _tmux("display-message", "-p", "-t", f"{session}:",
+                         "#{socket_path},#{pid},0").strip()
+        monkeypatch.setenv("TMUX", tmux_var)
+        monkeypatch.setenv("TMUX_PANE", windows["zwei"]["pane"])
+        monkeypatch.setattr(
+            config_loader, "load_config",
+            lambda: {"session_register": {"tmux_rename": True}},
+        )
+        _patch_active_workflow(monkeypatch, "", "none")
+
+        ssg._maybe_rename_tmux_window("126")
+
+        after = _tmux_windows(session)
+        assert "#126" in after, (
+            f"Fenster des Aufrufers nicht umbenannt: {after}"
+        )
+        assert after["#126"]["index"] == windows["zwei"]["index"], (
+            "falsches Fenster umbenannt"
+        )
+        assert "eins" in after, (
+            "das AKTIVE Fremdfenster wurde umbenannt — genau der Bug aus #126: "
+            f"{after}"
+        )
+    finally:
+        subprocess.run(["tmux", "kill-session", "-t", session],
+                       capture_output=True, timeout=10)
+
+
+def test_tmux_not_renamed_without_pane(tmp_path, monkeypatch):
+    """AC-2: $TMUX gesetzt, $TMUX_PANE fehlt → gar kein rename.
+
+    Ohne Pane ist das Ziel unbestimmbar. Lieber kein Name als der falsche am
+    falschen Fenster.
+    """
+    locks, _ = _heartbeat_env(monkeypatch, tmp_path, workflow=("", "none"))
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-abc")
+    lock = _write_lock(locks)
+    _tmux_env(monkeypatch, pane=None)
+    spy = _RunSpy(result=_Completed(0))
+    monkeypatch.setattr(subprocess, "run", spy)
+
+    assert _run_claim(["--issue", "42"]) == 0
+
+    assert spy.calls == [], (
+        "ohne $TMUX_PANE umbenannt — das trifft irgendein fremdes Fenster"
+    )
+    assert json.loads(lock.read_text())["issue"] == "42", "Claim selbst uebersprungen"
+
+
+@pytest.mark.parametrize("workflow_name,expected", [
+    ("feat-2050-s4a-radar-teilausfall", "#2050 s4a"),
+    ("fix-2050-s6", "#2050 s6"),
+    ("S3-fix-2050", "#2050 s3"),
+    ("fix-2050-radar-teilausfall", "#2050"),
+    ("", "#2050"),
+    ("fix-2050-strategie", "#2050"),
+    ("fix-2050-s", "#2050"),
+])
+def test_tmux_window_name_carries_slice_suffix(tmp_path, monkeypatch,
+                                               workflow_name, expected):
+    """AC-3: das Scheiben-Kuerzel aus dem Workflow-Namen macht den Namen eindeutig.
+
+    Ohne Kuerzel bleibt der Name exakt `#<issue>` — `strategie` und ein blankes
+    `s` sind keine Kuerzel.
+    """
+    locks, _ = _heartbeat_env(monkeypatch, tmp_path,
+                              workflow=(workflow_name, "file"))
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-abc")
+    _write_lock(locks)
+    _tmux_env(monkeypatch)
+    spy = _RunSpy(result=_Completed(0))
+    monkeypatch.setattr(subprocess, "run", spy)
+
+    assert _run_claim(["--issue", "2050"]) == 0
+
+    assert spy.calls, "tmux rename-window nicht aufgerufen"
+    assert spy.calls[0][0][-1] == expected
+
+
+def test_tmux_window_names_differ_for_parallel_slices(tmp_path, monkeypatch):
+    """AC-3: zwei Sessions am selben Issue bekommen unterscheidbare Namen."""
+    names = []
+    for workflow_name in ("feat-2050-s4-radar", "feat-2050-s6-radar"):
+        with pytest.MonkeyPatch.context() as mp:
+            locks, _ = _heartbeat_env(mp, tmp_path / workflow_name,
+                                      workflow=(workflow_name, "file"))
+            mp.setenv("CLAUDE_CODE_SESSION_ID", "sess-abc")
+            _write_lock(locks)
+            _tmux_env(mp)
+            spy = _RunSpy(result=_Completed(0))
+            mp.setattr(subprocess, "run", spy)
+
+            assert _run_claim(["--issue", "2050"]) == 0
+            names.append(spy.calls[0][0][-1])
+
+    assert names[0] != names[1], (
+        f"beide Sessions bekaemen denselben Fensternamen: {names}"
+    )
 
 
 # ---------------------------------------------------------------------------
