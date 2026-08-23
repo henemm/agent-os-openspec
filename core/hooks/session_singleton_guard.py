@@ -701,10 +701,43 @@ def _tmux_rename_enabled() -> bool:
         return True
 
 
+_SLICE_RE = re.compile(r"(?:^|-)(s\d+[a-z]*)(?=-|$)", re.IGNORECASE)
+
+
+def _tmux_window_name(issue_value: str) -> str:
+    """'#<issues>', bei erkennbarer Scheibe um deren Kuerzel ergaenzt (#126).
+
+    Mehrere Sessions am selben Issue trugen sonst alle denselben Namen und
+    waren im Fensterwechsler nicht auseinanderzuhalten. Das Kuerzel kommt aus
+    dem Workflow-Namen: ein eigenstaendiges, bindestrich-getrenntes Segment der
+    Form s<Ziffern>[Buchstaben] (`feat-2050-s4a-radar` -> `s4a`). Kein Treffer
+    -> unveraenderter Name; ein Fehler laesst nur das Kuerzel entfallen.
+    """
+    base = f"#{issue_value}"
+    try:
+        match = _SLICE_RE.search(_current_workflow_name())
+        if match:
+            return f"{base} {match.group(1).lower()}"
+    except Exception:
+        pass
+    return base
+
+
 def _maybe_rename_tmux_window(issue_value: str) -> None:
-    """Fenstername auf '#<issues>' setzen — strikt optional, strikt fail-safe."""
+    """Fenstername setzen — strikt optional, strikt fail-safe.
+
+    Das Ziel MUSS explizit angegeben werden: ohne `-t` loest tmux das Fenster
+    aus dem gerade AKTIVEN Fenster der Session auf, nicht aus dem Pane des
+    aufrufenden Prozesses (#126). Dadurch bekam ein fremdes Fenster die
+    Ticketnummer, waehrend das claimende seinen alten Namen behielt.
+    """
     try:
         if not os.environ.get("TMUX"):
+            return
+        pane = (os.environ.get("TMUX_PANE") or "").strip()
+        if not pane:
+            # Ziel unbestimmbar — lieber kein Name als der falsche am
+            # falschen Fenster.
             return
         if not _tmux_rename_enabled():
             return
@@ -712,7 +745,10 @@ def _maybe_rename_tmux_window(issue_value: str) -> None:
         import subprocess
         if shutil.which("tmux") is None:
             return
-        subprocess.run(["tmux", "rename-window", f"#{issue_value}"], timeout=2)
+        subprocess.run(
+            ["tmux", "rename-window", "-t", pane, _tmux_window_name(issue_value)],
+            timeout=2,
+        )
     except Exception:
         pass
 
