@@ -228,9 +228,15 @@ adr_gate:
 # Session Register — used by session_singleton_guard.py
 # The register (.claude/session-locks/*.json) answers who is working on what.
 session_register:
-  # Rename the surrounding tmux window to "#<issue>" when `claim --issue N` succeeds.
-  # Only takes effect inside a tmux session with the tmux binary on PATH; every
-  # failure (missing binary, timeout, non-zero exit) is silently ignored.
+  # Rename the calling session's own tmux window when `claim --issue N` succeeds.
+  # Name is "#<issue>", plus the slice suffix from the workflow name when it has
+  # one (feat-2050-s4a-radar -> "#2050 s4a"), so parallel sessions on the same
+  # issue stay distinguishable.
+  # Only takes effect inside a tmux session with the tmux binary on PATH AND with
+  # $TMUX_PANE set — without the pane the target cannot be determined, and tmux
+  # would rename whichever window is currently active instead (issue #126), so
+  # nothing is renamed at all. Every failure (missing binary, timeout, non-zero
+  # exit) is silently ignored.
   tmux_rename: true
 
 # Specs Configuration

@@ -282,12 +282,23 @@ Neue Helferfunktion `_maybe_rename_tmux_window(issue_value: str) -> None`, aussc
 
 ```
 kein $TMUX gesetzt          → return, keine weitere Aktion
+kein $TMUX_PANE gesetzt     → return (nachgetragen durch Issue #126, s.u.)
 config tmux_rename == False → return (config_loader.load_config() lazy importiert,
                                 try/except, Default True bei jedem Ladefehler)
 tmux nicht in PATH          → return (shutil.which("tmux") is None)
-subprocess.run(["tmux", "rename-window", f"#{issue_value}"], timeout=2) wirft/timeout/exit!=0
+subprocess.run(["tmux", "rename-window", "-t", pane, name], timeout=2) wirft/timeout/exit!=0
                              → ignorieren, kein Re-raise
 ```
+
+**Korrigiert durch Issue #126 (fix-126-tmux-rename-target):** Der hier ursprünglich
+spezifizierte Aufruf `["tmux", "rename-window", f"#{issue_value}"]` war fehlerhaft. Ohne `-t`
+löst tmux das Ziel aus dem gerade **aktiven** Fenster der Session auf, nicht aus dem Pane des
+aufrufenden Prozesses — umbenannt wurde also ein beliebiges fremdes Fenster, während das
+claimende seinen alten Namen behielt. Das Ziel wird jetzt explizit aus `$TMUX_PANE` übergeben;
+fehlt die Variable, wird gar nicht umbenannt (lieber kein Name als der falsche am falschen
+Fenster). Der Name kommt aus der neuen Helferfunktion `_tmux_window_name(issue_value)` und trägt
+zusätzlich das Scheiben-Kürzel aus dem Workflow-Namen, sofern vorhanden — ohne dieses bekämen
+mehrere parallele Sessions am selben Issue alle denselben, nicht unterscheidbaren Namen.
 
 Kein Aufrufpfad darf eine Exception nach `_do_claim` durchlassen — der komplette Funktionskörper
 liegt in `try/except Exception: pass`. Konfigurationsschlüssel: `session_register.tmux_rename`
@@ -445,9 +456,16 @@ Beide Dateien bekommen denselben Claim-Schritt, **nicht automatisch synchronisie
   `issue_source` und `issue_claim_workflow` aus dem Eintrag entfernt, und die Regex-Ableitung
   (`_extract_issue_number()` auf den neuen Workflow-Namen) übernimmt `issue` wieder wie vor dieser
   Spec.
-- **AC-30:** Given `$TMUX` ist gesetzt, `tmux` ist im PATH, `session_register.tmux_rename` ist
-  nicht auf `false` gesetzt, When `claim --issue 42` erfolgreich abschliesst, Then wird
-  `tmux rename-window` mit den geclaimten Nummern aufgerufen.
+- **AC-30 (ÜBERHOLT — siehe Issue #126, PR #127):** Given `$TMUX` ist
+  gesetzt, `tmux` ist im PATH, `session_register.tmux_rename` ist nicht auf `false` gesetzt,
+  When `claim --issue 42` erfolgreich abschliesst, Then wird `tmux rename-window` mit den
+  geclaimten Nummern aufgerufen.
+  **Revidiert durch Issue #126 (fix-126-tmux-rename-target):** Diese AC prüfte nur, DASS
+  umbenannt wird — nicht WELCHES Fenster. Der daraus abgeleitete Test schrieb den Aufruf ohne
+  Zielangabe wörtlich als Sollzustand fest und hätte einen korrekten `-t` sogar rot gemeldet.
+  Es gilt jetzt zusätzlich: umbenannt wird das Fenster des Aufrufers (`-t $TMUX_PANE`), und bei
+  fehlendem `$TMUX_PANE` wird gar nicht umbenannt. Die Fail-Safe-Aussagen von AC-31 bis AC-33
+  bleiben davon unberührt.
 - **AC-31:** Given `$TMUX` ist NICHT gesetzt, When `claim` aufgerufen wird, Then wird `tmux`
   nicht aufgerufen, kein Fehler, kein Output dazu.
 - **AC-32:** Given `tmux` ist nicht im PATH, ODER der Aufruf läuft in einen Timeout, ODER er
