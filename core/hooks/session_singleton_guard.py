@@ -647,9 +647,8 @@ _MAX_ISSUE_ARG_LEN = 64
 def _validate_issue_arg(raw: str) -> "str | None":
     """Nur kommagetrennte Ziffern, hoechstens _MAX_ISSUE_ARG_LEN Zeichen.
 
-    Der Wert landet in der Lock-JSON und in einem tmux-Kommando — ohne
-    Laengendeckel koennte ein beliebig langer Wert den Registereintrag
-    aufblaehen.
+    Der Wert landet in der Lock-JSON — ohne Laengendeckel koennte ein
+    beliebig langer Wert den Registereintrag aufblaehen.
     """
     try:
         value = str(raw)
@@ -689,68 +688,6 @@ def _find_claim_target(locks: Path) -> "tuple | None":
     except Exception:
         return None
     return matches[0] if len(matches) == 1 else None
-
-
-def _tmux_rename_enabled() -> bool:
-    """session_register.tmux_rename; Default true bei jedem Ladefehler."""
-    try:
-        import config_loader
-        section = (config_loader.load_config() or {}).get("session_register") or {}
-        return bool(section.get("tmux_rename", True))
-    except Exception:
-        return True
-
-
-_SLICE_RE = re.compile(r"(?:^|-)(s\d+[a-z]*)(?=-|$)", re.IGNORECASE)
-
-
-def _tmux_window_name(issue_value: str) -> str:
-    """'#<issues>', bei erkennbarer Scheibe um deren Kuerzel ergaenzt (#126).
-
-    Mehrere Sessions am selben Issue trugen sonst alle denselben Namen und
-    waren im Fensterwechsler nicht auseinanderzuhalten. Das Kuerzel kommt aus
-    dem Workflow-Namen: ein eigenstaendiges, bindestrich-getrenntes Segment der
-    Form s<Ziffern>[Buchstaben] (`feat-2050-s4a-radar` -> `s4a`). Kein Treffer
-    -> unveraenderter Name; ein Fehler laesst nur das Kuerzel entfallen.
-    """
-    base = f"#{issue_value}"
-    try:
-        match = _SLICE_RE.search(_current_workflow_name())
-        if match:
-            return f"{base} {match.group(1).lower()}"
-    except Exception:
-        pass
-    return base
-
-
-def _maybe_rename_tmux_window(issue_value: str) -> None:
-    """Fenstername setzen — strikt optional, strikt fail-safe.
-
-    Das Ziel MUSS explizit angegeben werden: ohne `-t` loest tmux das Fenster
-    aus dem gerade AKTIVEN Fenster der Session auf, nicht aus dem Pane des
-    aufrufenden Prozesses (#126). Dadurch bekam ein fremdes Fenster die
-    Ticketnummer, waehrend das claimende seinen alten Namen behielt.
-    """
-    try:
-        if not os.environ.get("TMUX"):
-            return
-        pane = (os.environ.get("TMUX_PANE") or "").strip()
-        if not pane:
-            # Ziel unbestimmbar — lieber kein Name als der falsche am
-            # falschen Fenster.
-            return
-        if not _tmux_rename_enabled():
-            return
-        import shutil
-        import subprocess
-        if shutil.which("tmux") is None:
-            return
-        subprocess.run(
-            ["tmux", "rename-window", "-t", pane, _tmux_window_name(issue_value)],
-            timeout=2,
-        )
-    except Exception:
-        pass
 
 
 def _do_claim(argv: list) -> None:
@@ -819,8 +756,6 @@ def _claim_impl(argv: list) -> None:
         print(f"claim: Schreibfehler ({type(exc).__name__}) — nichts geaendert.")
         return
     print(f"claim: Issue #{issue} fuer Session {session_id} eingetragen.")
-
-    _maybe_rename_tmux_window(issue)
 
 
 def _do_cleanup(payload: dict) -> None:

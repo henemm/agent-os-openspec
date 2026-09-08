@@ -7,31 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
+### Removed
 
-**tmux-Fensterbenennung trifft das falsche Fenster (Issue #126)**
+**tmux-Fensterbenennung bei `claim` entfernt (Issue #126, Nachzug)**
 
-`_maybe_rename_tmux_window()` rief `tmux rename-window` ohne Zielangabe auf. Ohne `-t` loest
-tmux das Ziel aus dem gerade **aktiven** Fenster der Session auf, nicht aus dem Pane des
-aufrufenden Prozesses. Folge: fremde Fenster trugen Ticketnummern, an denen dort nie
-gearbeitet wurde, waehrend die tatsaechlich claimenden Fenster ihren alten Namen behielten.
+Der in 3.16.0 eingefuehrte, mit #126 bereits einmal nachgebesserte Mechanismus, der beim
+Erfolg von `claim --issue N` das aufrufende tmux-Fenster nach der Issue-Nummer benennt, hat
+sich in der Praxis weiterhin als nicht zuverlaessig erwiesen und wird ersatzlos entfernt statt
+erneut repariert.
 
-- Das Ziel wird jetzt explizit aus `$TMUX_PANE` uebergeben: `rename-window -t <pane> <name>`.
-- Fehlt `$TMUX_PANE` oder ist es leer, wird **gar nicht** umbenannt — lieber kein Name als der
-  falsche am falschen Fenster.
-- Der Fenstername traegt zusaetzlich das Scheiben-Kuerzel aus dem Workflow-Namen, sofern
-  vorhanden (`feat-2050-s4a-radar` -> `#2050 s4a`). Mehrere parallele Sessions am selben Issue
-  bekamen bislang alle denselben Namen und waren nicht unterscheidbar. Kein Kuerzel im
-  Workflow-Namen -> unveraendert `#<issue>`.
-
-Alle Fail-Safe-Eigenschaften bleiben: `timeout=2`, vollstaendige try/except-Klammer, jeder
-Fehler still, der Claim selbst wird nie mitgerissen.
-
-Der Bestandstest hatte den Aufruf **ohne** Zielangabe als Sollzustand festgeschrieben und damit
-den Bug zementiert — er prueft nun die Form mit `-t`. Neu hinzu kommt ein Wirkungsnachweis
-gegen echtes tmux (kein Mock, uebersprungen wenn tmux fehlt): In einer isolierten Testsession
-mit zwei Fenstern wird aus dem inaktiven Fenster heraus umbenannt und geprueft, dass das
-aktive Fremdfenster seinen Namen behaelt.
+- `_maybe_rename_tmux_window()`, `_tmux_window_name()`, `_tmux_rename_enabled()` sowie der
+  Aufruf in `_do_claim()` sind aus `core/hooks/session_singleton_guard.py` entfernt.
+- Die Config-Option `session_register.tmux_rename` entfaellt ersatzlos aus `config.yaml`.
+- `claim --issue N` traegt die Issue-Nummer weiterhin ins Session-Register ein — nur die
+  tmux-Nebenwirkung ist weg.
 
 ## [3.16.0] - 2026-08-22
 
