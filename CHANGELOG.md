@@ -5,11 +5,11 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.16.1] - 2026-09-08
 
 ### Removed
 
-**tmux-Fensterbenennung bei `claim` entfernt (Issue #126, Nachzug)**
+**tmux-Fensterbenennung bei `claim` entfernt (Issue #129, Nachzug zu #126)**
 
 Der in 3.16.0 eingefuehrte, mit #126 bereits einmal nachgebesserte Mechanismus, der beim
 Erfolg von `claim --issue N` das aufrufende tmux-Fenster nach der Issue-Nummer benennt, hat
