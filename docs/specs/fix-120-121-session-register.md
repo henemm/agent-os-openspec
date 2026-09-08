@@ -277,6 +277,11 @@ gesetzt/entfernt wie vor dieser Spec).
 
 ### B3 — tmux-Fenstername
 
+**Entfernt (siehe CHANGELOG [Unreleased], Nachzug zu #126):** Der Mechanismus hat sich trotz
+der Korrektur aus #126 in der Praxis weiterhin als nicht zuverlässig erwiesen und wurde
+ersatzlos aus `core/hooks/session_singleton_guard.py` und `config.yaml` entfernt. Der Rest
+dieses Abschnitts beschreibt den historischen, inzwischen entfernten Stand.
+
 Neue Helferfunktion `_maybe_rename_tmux_window(issue_value: str) -> None`, ausschliesslich von
 `_do_claim` aufgerufen, vollständig fail-safe:
 
@@ -456,23 +461,25 @@ Beide Dateien bekommen denselben Claim-Schritt, **nicht automatisch synchronisie
   `issue_source` und `issue_claim_workflow` aus dem Eintrag entfernt, und die Regex-Ableitung
   (`_extract_issue_number()` auf den neuen Workflow-Namen) übernimmt `issue` wieder wie vor dieser
   Spec.
-- **AC-30 (ÜBERHOLT — siehe Issue #126, PR #127):** Given `$TMUX` ist
-  gesetzt, `tmux` ist im PATH, `session_register.tmux_rename` ist nicht auf `false` gesetzt,
-  When `claim --issue 42` erfolgreich abschliesst, Then wird `tmux rename-window` mit den
-  geclaimten Nummern aufgerufen.
-  **Revidiert durch Issue #126 (fix-126-tmux-rename-target):** Diese AC prüfte nur, DASS
-  umbenannt wird — nicht WELCHES Fenster. Der daraus abgeleitete Test schrieb den Aufruf ohne
-  Zielangabe wörtlich als Sollzustand fest und hätte einen korrekten `-t` sogar rot gemeldet.
-  Es gilt jetzt zusätzlich: umbenannt wird das Fenster des Aufrufers (`-t $TMUX_PANE`), und bei
-  fehlendem `$TMUX_PANE` wird gar nicht umbenannt. Die Fail-Safe-Aussagen von AC-31 bis AC-33
-  bleiben davon unberührt.
-- **AC-31:** Given `$TMUX` ist NICHT gesetzt, When `claim` aufgerufen wird, Then wird `tmux`
-  nicht aufgerufen, kein Fehler, kein Output dazu.
-- **AC-32:** Given `tmux` ist nicht im PATH, ODER der Aufruf läuft in einen Timeout, ODER er
-  beendet sich mit Exit-Code ≠ 0, When `claim` aufgerufen wird, Then wird das silent ignoriert —
-  kein Abbruch von `_do_claim`, keine Exception verlässt `_maybe_rename_tmux_window`.
-- **AC-33:** Given `session_register.tmux_rename` ist per Config auf `false` gesetzt, When
-  `claim` mit gesetztem `$TMUX` aufgerufen wird, Then wird `tmux rename-window` NICHT aufgerufen.
+- **AC-30 bis AC-33 (ENTFERNT — siehe CHANGELOG [Unreleased], Nachzug zu #126):** Diese ACs
+  beschrieben den tmux-Fensterbenennungs-Mechanismus (rename bei erfolgreichem Claim,
+  Fail-Safe-Verhalten ohne `$TMUX`/`tmux`-Binary/bei Config-Abschaltung). Der Mechanismus war
+  bereits einmal wegen falscher Zielauflösung korrigiert worden (Issue #126) und erwies sich
+  danach weiterhin als nicht zuverlässig; er wurde ersatzlos entfernt statt erneut repariert.
+  Der historische Wortlaut der ACs bleibt unten aus Nachvollziehbarkeitsgründen erhalten:
+  - *AC-30 (ÜBERHOLT — siehe Issue #126, PR #127):* Given `$TMUX` ist gesetzt, `tmux` ist im
+    PATH, `session_register.tmux_rename` ist nicht auf `false` gesetzt, When `claim --issue 42`
+    erfolgreich abschliesst, Then wird `tmux rename-window` mit den geclaimten Nummern
+    aufgerufen.
+  - *AC-31:* Given `$TMUX` ist NICHT gesetzt, When `claim` aufgerufen wird, Then wird `tmux`
+    nicht aufgerufen, kein Fehler, kein Output dazu.
+  - *AC-32:* Given `tmux` ist nicht im PATH, ODER der Aufruf läuft in einen Timeout, ODER er
+    beendet sich mit Exit-Code ≠ 0, When `claim` aufgerufen wird, Then wird das silent
+    ignoriert — kein Abbruch von `_do_claim`, keine Exception verlässt
+    `_maybe_rename_tmux_window`.
+  - *AC-33:* Given `session_register.tmux_rename` ist per Config auf `false` gesetzt, When
+    `claim` mit gesetztem `$TMUX` aufgerufen wird, Then wird `tmux rename-window` NICHT
+    aufgerufen.
 - **AC-34:** Given `core/commands/00-intake.md`, When die Datei nach dieser Änderung gelesen wird,
   Then enthält sie einen Claim-Aufruf `python3 .claude/hooks/session_singleton_guard.py claim
   --issue ...` VOR dem Abschnitt "Score präsentieren".
