@@ -32,4 +32,11 @@ timebox-ios/
 .claude/stop_lock.json
 .claude/user_override_token.json
 .claude/workflows/
+# Pro Workflow angelegte Marker des post_implementation_gate. Fehlten hier,
+# obwohl dieselbe Kategorie: 18 davon lagen dauerhaft unversioniert im
+# Arbeitsbaum, release_check scheiterte darum bei jedem Lauf — und kuerzt seine
+# Meldung auf fuenf Eintraege, sodass eine wirklich vergessene Quelldatei
+# zwischen Laufzeit-Zustand verschwand (Issue #135).
+.claude/pending_validation_*.json
+.claude/user_approved_validation_*
 docs/artifacts/
