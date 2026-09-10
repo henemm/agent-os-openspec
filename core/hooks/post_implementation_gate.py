@@ -39,7 +39,7 @@ def _setup():
 
 _setup()
 
-from hook_utils import get_tool_input, find_project_root, block, allow, get_active_workflow_name  # noqa: E402
+from hook_utils import get_tool_input, find_project_root, block, allow, get_active_workflow_name, framework_disabled  # noqa: E402
 
 # Batch-Fenster: innerhalb dieser Zeit nach dem ersten Edit kein Gate
 _BATCH_WINDOW_S = 15 * 60  # 15 Minuten
@@ -92,6 +92,11 @@ def _clear_lock(lock_path: Path, approval_path: Path) -> None:
 
 
 def main() -> None:
+    # Ohne Workflow gibt es keine Implementierungsphase, deren Ende ein
+    # Review verlangen koennte (#132).
+    if framework_disabled():
+        allow()
+
     try:
         tool_input = get_tool_input()
     except Exception:

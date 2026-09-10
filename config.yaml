@@ -5,6 +5,23 @@
 #
 # Copy this file to your project root as openspec.yaml and customize.
 
+# Global switch (#132). `enabled: false` turns the workflow ENFORCEMENT off for
+# this project — phases, spec requirement, TDD gate, approval gate, stop-lock.
+# The protective guards keep running: secrets, hardcoded credentials,
+# CLAUDE.md protection, the worktree write guard.
+#
+# Use this instead of Claude Code's `enabledPlugins: false`: that setting is
+# read per directory and is untracked, so a git worktree does not inherit it and
+# every gate fires again. This file is resolved through find_project_root(),
+# which maps a worktree back to the main repo, so it covers the main checkout,
+# every worktree and every fresh clone.
+#
+# Only an explicit `false` disables anything — see README, "Switching the
+# framework off for a project". Also available as OPENSPEC_FRAMEWORK=off for a
+# single session.
+framework:
+  enabled: true
+
 # Project Information
 project:
   name: "My Project"

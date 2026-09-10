@@ -263,6 +263,9 @@ python3 .claude/hooks/workflow.py set-field github_issue 42
 Customize `openspec.yaml` in your project root:
 
 ```yaml
+framework:
+  enabled: false                # Workflow-Zwang ganz aus (Default: an)
+
 strict_code_gate:
   code_extensions: [".swift", ".py", ".ts"]
   always_allowed_dirs: ["Tests/", "docs/"]
@@ -280,6 +283,42 @@ pre_commit:
   required_staged_files: ["docs/ACTIVE-todos.md"]
   test_command: "pytest --tb=short -q"
 ```
+
+### Switching the framework off for a project
+
+Some repositories do not want the 8-phase workflow — a handful of screens
+maintained by one person, where the ceremony costs more than it catches. Three
+lines in the project's config say so:
+
+```yaml
+framework:
+  enabled: false
+```
+
+Put it in `openspec.yaml`, `config.yaml` or `.claude/openspec.yaml`. `OPENSPEC_FRAMEWORK=off`
+does the same for a single session without touching the repository.
+
+**Use this rather than Claude Code's `enabledPlugins: false`.** That setting is
+read per *directory* and is untracked, so a git worktree gets a fresh empty one
+and every gate fires again — which is how a project that had deliberately
+switched the framework off spent a session fighting five different gates
+(#132). The framework's own config is resolved through
+`find_project_root()`, which maps a worktree back to the main repo, so one file
+covers the main checkout, every worktree and every fresh clone.
+
+**It switches off enforcement, not protection.**
+
+| Off | Still on |
+|---|---|
+| `edit_gate` (phase / TDD / AC / LoC / workflow requirement) | `secrets_guard` |
+| `tdd_enforcement`, `post_implementation_gate` | `secret_egress_guard` |
+| `phase_listener` (approval phrases, stop-lock) | `bash_gate` secrets + credential checks |
+| `post_bash` (adversary detection) | `claude_md_protection`, `worktree_write_guard` |
+| `bash_gate` stop-lock, state-integrity, commit gates | `session_singleton_guard`, `edit_verify` |
+
+Only an explicit `enabled: false` disables anything. A missing key, an empty
+section or a misspelling leaves every gate on, and an unreadable config file
+does too — a project must not lose its protection through a line nobody read.
 
 ---
 

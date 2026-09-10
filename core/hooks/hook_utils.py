@@ -809,6 +809,51 @@ def is_module_enabled(module_id: str) -> bool:
     return module_id in [m.strip() for m in enabled.split(",") if m.strip()]
 
 
+# Werte, die "aus" bedeuten. Alles andere laesst das Framework an.
+_FRAMEWORK_OFF_VALUES = {"off", "0", "false", "no", "disabled"}
+
+
+def framework_disabled() -> bool:
+    """True, wenn dieses Projekt den Workflow-Zwang abgeschaltet hat (#132).
+
+    Zwei Wege, beide absichtlich:
+
+        OPENSPEC_FRAMEWORK=off          eine Sitzung, ohne etwas zu committen
+        framework:                      in der Projekt-Konfiguration
+          enabled: false                (openspec.yaml / config.yaml / .claude/)
+
+    Der Konfigurations-Weg ist der eigentliche, weil er das kann, was Claude
+    Codes `enabledPlugins: false` nicht kann: einen git-Worktree ueberleben.
+    Jene Datei wird pro VERZEICHNIS gelesen, ein Worktree bekommt eine leere —
+    also feuerten dort alle Gates wieder, obwohl das Haupt-Checkout sie aus
+    hatte. `find_project_root()` loest einen Worktree auf das Hauptrepo auf,
+    eine Datei dort wird deshalb aus jedem Worktree gefunden; und weil sie im
+    Repo liegt, ueberlebt sie auch einen frischen Klon und ein Plugin-Update.
+
+    Abgeschaltet wird die Ceremony — Phasen, Spec-Pflicht, TDD-Gate,
+    Freigabe-Gate, Stop-Lock. NICHT die Schutz-Guards: Secrets, Credentials,
+    CLAUDE.md-Schutz und der Worktree-Schutz laufen weiter. Ein Schalter, der
+    beides mitnimmt, entfernt still Schutz, den niemand abwaehlen wollte.
+
+    Nur ein ausdrueckliches `enabled: false` schaltet ab. Fehlender Schluessel,
+    leerer Abschnitt, Tippfehler: Gates bleiben an — ein Projekt darf seinen
+    Schutz nicht durch eine Zeile verlieren, die niemand gelesen hat. Dieselbe
+    Regel wie beim ADR-Gate in workflow.py.
+
+    Wirft nie. Laesst sich die Konfiguration nicht lesen, ist die Antwort
+    "nicht abgeschaltet" — eine kaputte YAML-Datei darf das Framework nicht
+    stillschweigend ausknipsen.
+    """
+    if os.environ.get("OPENSPEC_FRAMEWORK", "").strip().lower() in _FRAMEWORK_OFF_VALUES:
+        return True
+    try:
+        from config_loader import load_config
+        section = load_config().get("framework", {})
+    except Exception:
+        return False
+    return isinstance(section, dict) and section.get("enabled") is False
+
+
 def is_test_file(file_path: str) -> bool:
     """Check if a file is a test file."""
     test_patterns = [

@@ -21,6 +21,7 @@ from hook_utils import (
     get_active_workflow_name, gate_diagnostics, strip_heredoc_bodies,
     SECRETS_SENSITIVE_PATTERNS, SECRETS_ALWAYS_BLOCKED, SECRETS_FREETEXT_FLAGS as _SHARED_FREETEXT_FLAGS,
     git_subcommands, git_head_subcommands, is_git_subcommand, is_pure_git_command,
+    framework_disabled,
 )
 setup_path()
 
@@ -409,8 +410,15 @@ def main():
     # weiterhin auffallen.
     scan_cmd = strip_heredoc_bodies(command)
 
+    # Dieses Gate ist das einzige gemischte: Schritte 1, 3a, 3b und 5 sind
+    # Workflow-Zwang, Schritte 2, 4 und 4b sind Schutz. Der Projekt-Schalter
+    # (#132) nimmt deshalb nur die erste Haelfte raus — ein Schalter, der auch
+    # den Secret-Schutz mitnimmt, entfernt still Schutz, den niemand abwaehlen
+    # wollte.
+    workflow_enforced = not framework_disabled()
+
     # 1. Stop-lock
-    if _is_stop_locked():
+    if workflow_enforced and _is_stop_locked():
         block("BLOCKED: Stop-lock active.")
 
     # 2. Git commands fast path
@@ -454,7 +462,7 @@ def main():
         "  -> Lege dem User die Ergebnisse vor und WARTE auf sein 'go' / 'freigabe'\n"
         "     / 'approved'. Der phase_listener-Hook setzt den Marker dann selbst."
     )
-    if not is_git_command and _has_write_indicator(scan_cmd):
+    if workflow_enforced and not is_git_command and _has_write_indicator(scan_cmd):
         # Tier 2 (Dateinamen-Marker): pfad-unabhaengig blocken. Verhindert
         # cd-Obfuskation (`cd .claude && touch user_approved_validation_x`).
         if _references_filename_marker(scan_cmd):
@@ -465,7 +473,7 @@ def main():
             block(_marker_block_msg)
 
     # 3b. State-integrity: protected file + write indicator
-    if _references_protected(scan_cmd):
+    if workflow_enforced and _references_protected(scan_cmd):
         if _is_whitelisted(command):
             allow()
         if _has_write_indicator(scan_cmd):
@@ -489,7 +497,7 @@ def main():
             block(f"BLOCKED: Hardcoded {cred_type} detected. Use env vars or secrets.env instead.")
 
     # 5. Git commit gates (tokenbasiert, Issue #1431 — Erwaehnung ist kein Aufruf)
-    if is_git_subcommand(command, "commit"):
+    if workflow_enforced and is_git_subcommand(command, "commit"):
         import subprocess
 
         # Get staged files (reused across 5a, 5b, 5c)
