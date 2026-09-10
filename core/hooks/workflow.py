@@ -1192,14 +1192,27 @@ def cmd_retro(args: list[str]) -> None:
 
 
 def cmd_cleanup_stale_locks(args: list[str]) -> None:
-    """Remove pending_validation lock files for completed or archived workflows."""
+    """Remove pending_validation locks and approval markers of finished workflows.
+
+    Ueber die Workflow-NAMEN, nicht ueber die Lock-Dateien: vorher iterierte
+    das hier nur ueber `pending_validation_*.json` und loeschte den passenden
+    Freigabe-Marker mit. Ein Freigabe-Marker OHNE gleichnamigen Lock war damit
+    durch keinen Befehl erreichbar — im Framework-Repo selbst betraf das 6 von
+    9 (Issue #135). Und liegenbleiben ist bei genau dieser Familie keine
+    Kosmetik: das post_implementation_gate erkennt eine Freigabe allein an der
+    Existenz einer nach dem Workflow benannten Datei (#134).
+    """
     claude_dir = find_project_root() / ".claude"
     wf_dir = _workflows_dir()
-    archive = _archive_dir()
     removed = []
     skipped = []
-    for lock in sorted(claude_dir.glob("pending_validation_*.json")):
-        wf_name = lock.stem.replace("pending_validation_", "", 1)
+
+    names = {p.stem.replace("pending_validation_", "", 1)
+             for p in claude_dir.glob("pending_validation_*.json")}
+    names |= {p.name.replace("user_approved_validation_", "", 1)
+              for p in claude_dir.glob("user_approved_validation_*")}
+
+    for wf_name in sorted(n for n in names if n):
         # Active workflow still in progress?
         active_file = wf_dir / f"{wf_name}.json"
         if active_file.exists():
@@ -1212,10 +1225,11 @@ def cmd_cleanup_stale_locks(args: list[str]) -> None:
             except Exception:
                 pass
         # Archived or past phase6 → safe to remove
-        lock.unlink(missing_ok=True)
-        approval = claude_dir / f"user_approved_validation_{wf_name}"
-        approval.unlink(missing_ok=True)
-        removed.append(f"  Removed: {lock.name}")
+        for marker in (claude_dir / f"pending_validation_{wf_name}.json",
+                       claude_dir / f"user_approved_validation_{wf_name}"):
+            if marker.exists():
+                marker.unlink(missing_ok=True)
+                removed.append(f"  Removed: {marker.name}")
     if removed:
         print("\n".join(removed))
     if skipped:

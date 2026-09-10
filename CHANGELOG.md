@@ -5,6 +5,48 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+**Laufzeit-Marker im Arbeitsbaum machten `release_check` blind (Issue #135)**
+
+Der `# Runtime state (never commit)`-Block der `.gitignore` vergass zwei
+Marker-Familien, obwohl sie dieselbe Kategorie sind — pro Workflow angelegt von
+`post_implementation_gate.py` und `phase_listener.py`:
+
+- `.claude/pending_validation_*.json`
+- `.claude/user_approved_validation_*`
+
+Im Framework-Repo lagen dadurch 18 solche Dateien dauerhaft unversioniert
+herum, und `scripts/release_check.py` scheiterte bei jedem Lauf an ihnen. Der
+Schaden war nicht der Laerm: der Waechter kuerzt seine Meldung auf fuenf
+Eintraege plus „(+N weitere)", also stand sein echtes Signal — eine wirklich
+vergessene Quelldatei — neben 18 Eintraegen, die nichts bedeuten, und konnte in
+den verborgenen Rest rutschen. Beim Release von 3.17.0 waren die zwei relevanten
+Dateien nur zufaellig sichtbar, weil sie alphabetisch vorne standen.
+
+Bewusst **keine** Ausnahmeliste im Waechter: ein Waechter, der Kategorien zu
+ignorieren lernt, uebersieht spaeter den Fall, fuer den er gebaut wurde. Die
+Ursache war, dass Laufzeit-Zustand ueberhaupt als unversionierte Datei sichtbar
+ist.
+
+**`cleanup-stale-locks` erreicht jetzt beide Marker-Familien**
+
+Der Befehl iterierte ausschliesslich ueber `pending_validation_*.json` und
+loeschte den passenden Freigabe-Marker mit. Ein Freigabe-Marker **ohne**
+gleichnamigen Lock war damit durch keinen Befehl entfernbar — im
+Framework-Repo betraf das 6 von 9. Er geht jetzt ueber die Workflow-Namen aus
+beiden Familien; das SKIPPED-Verhalten fuer einen aktiven `phase6_implement`
+bleibt unveraendert und gilt auch fuer eine Freigabe ohne Lock.
+
+Liegenbleiben ist bei dieser Familie keine Kosmetik: das
+`post_implementation_gate` erkennt eine Freigabe allein an der Existenz einer
+nach dem Workflow benannten Datei — siehe #134.
+
+10 neue Tests in `tests/test_runtime_markers_135.py`; die `.gitignore` wird
+gegen ein echtes git-Repo geprueft, nicht per String-Suche.
+
 ## [3.17.0] - 2026-09-10
 
 ### Added
