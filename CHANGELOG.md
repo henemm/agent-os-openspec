@@ -5,6 +5,52 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+**Globaler Projekt-Schalter `framework.enabled` (Issue #132)**
+
+Ein Projekt kann den Workflow-Zwang jetzt in seiner eigenen, versionierten
+Konfiguration abschalten:
+
+```yaml
+framework:
+  enabled: false
+```
+
+Gelesen aus `openspec.yaml` / `config.yaml` / `.openspec.yaml`, im
+Wurzelverzeichnis oder unter `.claude/`. Zusaetzlich `OPENSPEC_FRAMEWORK=off`
+fuer eine einzelne Sitzung, ohne etwas zu committen.
+
+Warum nicht Claude Codes `enabledPlugins: false`: diese Datei wird pro
+VERZEICHNIS gelesen und ist untracked. Ein git-Worktree bekommt eine leere,
+also feuerten dort alle Gates wieder, obwohl das Haupt-Checkout sie aus hatte.
+Im Fundprojekt `kotoba_line` lief eine Worktree-Sitzung deshalb der Reihe nach
+in `No active workflow`, zwei `bash_gate`-Fehlalarme, das LoC-Limit und
+schliesslich das Freigabe-Gate — und musste sich mit einem Workflow-Eintrag
+behelfen, den das Projekt nicht wollte. `find_project_root()` loest einen
+Worktree auf das Hauptrepo auf, eine Datei dort deckt deshalb Haupt-Checkout,
+jeden Worktree und jeden frischen Klon ab.
+
+Der Schalter nimmt die **Ceremony** raus, nicht den **Schutz**:
+
+- Aus: `edit_gate`, `tdd_enforcement`, `post_implementation_gate`,
+  `phase_listener`, `post_bash` sowie in `bash_gate` die Schritte 1 (Stop-Lock),
+  3a/3b (State-Integrity) und 5 (Commit-Gates).
+- An: `secrets_guard`, `secret_egress_guard`, `bash_gate` Schritt 4/4b,
+  `claude_md_protection`, `worktree_write_guard`, `session_singleton_guard`,
+  `edit_verify`.
+
+`bash_gate` ist das einzige gemischte Gate und wird deshalb nur in seinen
+Workflow-Schritten stillgelegt. Ein Schalter, der auch den Secret-Schutz
+mitnimmt, wuerde still Schutz entfernen, den niemand abwaehlen wollte.
+
+Nur ein ausdrueckliches `enabled: false` schaltet ab; fehlender Schluessel,
+leerer Abschnitt, Tippfehler oder eine unlesbare Konfiguration lassen alle
+Gates an. Neu: `hook_utils.framework_disabled()`, 28 Tests in
+`tests/test_framework_switch_132.py`.
+
 ## [3.16.1] - 2026-09-08
 
 ### Removed

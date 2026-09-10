@@ -13,7 +13,7 @@ Verdict-Erkennung damit funktionslos (gefunden bei der Analyse zu #77/#82).
 Exit Codes: 0 always (never blocks)
 """
 
-from hook_utils import setup_path, find_project_root, get_tool_result, get_active_workflow_name
+from hook_utils import setup_path, find_project_root, get_tool_result, get_active_workflow_name, framework_disabled
 setup_path()
 
 import json
@@ -119,6 +119,11 @@ def _set_adversary_verdict(verdict: str) -> None:
 
 
 def main():
+    # Adversary-Detection gehoert zum Workflow; ohne ihn gibt es keine Phase,
+    # in die ein Test-Ergebnis gemeldet werden koennte (#132).
+    if framework_disabled():
+        sys.exit(0)
+
     payload = get_tool_result()
     tool_input = payload.get("tool_input") or {}
     command = tool_input.get("command", "")

@@ -22,7 +22,7 @@ Exit Codes: 0 = allowed, 2 = blocked
 """
 
 import hook_utils
-from hook_utils import setup_path, find_project_root, get_tool_input, block, allow, get_active_workflow_name, gate_diagnostics, extract_ac_entries
+from hook_utils import setup_path, find_project_root, get_tool_input, block, allow, get_active_workflow_name, gate_diagnostics, extract_ac_entries, framework_disabled
 setup_path()
 
 import json
@@ -370,6 +370,12 @@ def _check_loc_delta(config: dict, workflow: dict) -> str | None:
 # --- Main ---
 
 def main():
+    # 0. Dieses Projekt arbeitet ohne den Workflow (#132). Vor allem anderen,
+    #    denn dieses Gate IST der Workflow-Zwang — auch seine Schritte 1/1b
+    #    schuetzen nur Zustand, den es ohne Workflow nicht gibt.
+    if framework_disabled():
+        allow()
+
     tool_input = get_tool_input()
     file_path = tool_input.get("file_path", "")
     if not file_path:

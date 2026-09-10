@@ -14,7 +14,7 @@ Replaces 6 separate hooks with 1. Listens for keywords in user messages:
 Exit Codes: 0 always (never blocks, only updates state)
 """
 
-from hook_utils import setup_path, find_project_root, get_user_message, get_active_workflow_name, gate_diagnostics, resolve_active_workflow
+from hook_utils import setup_path, find_project_root, get_user_message, get_active_workflow_name, gate_diagnostics, resolve_active_workflow, framework_disabled
 setup_path()
 
 import json
@@ -182,6 +182,12 @@ def _set_stop_lock(enabled: bool) -> None:
 # --- Main ---
 
 def main():
+    # Kein Phasen-Zustand heisst auch: kein Zuhoeren auf Freigabe-Woerter
+    # (#132). Sonst setzt ein beilaeufiges "go" oder "passt" in einem Projekt
+    # ohne Workflow Zustand, den niemand angelegt hat.
+    if framework_disabled():
+        sys.exit(0)
+
     message = get_user_message()
     if not message:
         sys.exit(0)

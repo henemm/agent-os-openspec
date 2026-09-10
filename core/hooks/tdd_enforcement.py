@@ -30,7 +30,7 @@ def _setup():
 _setup()
 
 import hook_utils  # noqa: E402
-from hook_utils import get_tool_input, find_project_root, block, allow, get_active_workflow_name  # noqa: E402
+from hook_utils import get_tool_input, find_project_root, block, allow, get_active_workflow_name, framework_disabled  # noqa: E402
 
 # Phasen in denen TDD-Enforcement gilt
 TEST_REQUIRED_PHASES = {"phase6_implement", "phase6b_adversary"}
@@ -147,6 +147,10 @@ def _validate_artifact(art: dict, project_root: Path) -> "str | None":
 
 
 def main() -> None:
+    # Ohne Workflow gibt es kein RED-Artefakt, das erzwungen werden koennte (#132).
+    if framework_disabled():
+        allow()
+
     try:
         tool_input = get_tool_input()
     except Exception:
