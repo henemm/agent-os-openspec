@@ -471,7 +471,10 @@ def allow():
 # secrets_guard bereits die geschaerften Formen hatte — der Drift blockierte
 # Befehle wegen blosser Dateinamen (tests/test_secret_egress_guard.py).
 SECRETS_SENSITIVE_PATTERNS = [
-    r"\.env",
+    # `\b` nach `env`: trifft `.env`, `.env.local`, `.envrc`, `config/.env`,
+    # aber NICHT SwiftUI-Modifier wie `.environment(...)`/`.environmentObject(...)`,
+    # die in jeder SwiftUI-Datei stehen und grep/sed darauf sonst blockieren.
+    r"\.env(rc)?\b",
     r"credentials\.json",
     r"service[_-]?account.*\.json",
     r"private[_.]key",

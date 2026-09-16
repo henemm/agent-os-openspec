@@ -277,7 +277,7 @@ scope_guard:
   test_path_patterns: []        # Optional: eigene Regex statt eingebauter Testpfad-Konventionen (tests/, *_test.py, ...)
 
 secrets_guard:
-  sensitive_patterns: ["\\.env", "credentials\\.json"]
+  sensitive_patterns: ["\\.env(rc)?\\b", "credentials\\.json"]
 
 pre_commit:
   required_staged_files: ["docs/ACTIVE-todos.md"]
