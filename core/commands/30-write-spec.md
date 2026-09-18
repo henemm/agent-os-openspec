@@ -131,6 +131,30 @@ python3 .claude/hooks/workflow.py phase phase3_spec
 
 ## Next Step
 
+### Block "Wo ich für dich entschieden habe" ermitteln (PFLICHT, vor der Ausgabe)
+
+Ein technischer Reviewer könnte die Spec selbst lesen und Trade-offs beurteilen — der
+User hier kann und soll das nicht (PO ohne Technikhintergrund). Die Freigabe-Frage
+"passt das so?" ist nur beantwortbar, wenn ihr die Stellen genannt werden, an denen
+ein Urteil gefällt wurde, das auch anders hätte ausfallen können — nicht der gesamte
+technische Inhalt.
+
+Prüfe dafür die fertige Spec (und die Analyse aus Phase 2) auf genau diese Fälle:
+- Eine Anforderung aus Ticket/Anfrage wurde bewusst **anders** umgesetzt als wörtlich
+  verlangt (z. B. eigener Abschnitt "Abweichungen vom Ticket-Entwurf", falls die Spec
+  einen hat — dann von dort übernehmen und in Alltagssprache übersetzen)
+- Etwas Nahliegendes wurde bewusst **nicht** mit umgesetzt (Scope-Reduktion,
+  "Nicht-Ziele", verschoben auf eine Folge-Scheibe)
+- Ein Risiko oder Trade-off wurde zugunsten einer Option entschieden, ohne dass die
+  Analyse-Phase das explizit mit dir abgestimmt hat
+
+Formuliere jeden Fall in 1 Satz, ohne Dateinamen/Code, mit der Konsequenz für den
+User. Findest du nach ehrlicher Prüfung **keinen** solchen Fall, schreibe das explizit
+aus — nicht weglassen, sonst ist nicht unterscheidbar zwischen "geprüft, nichts
+gefunden" und "vergessen".
+
+### Zusammenfassung an den User
+
 Präsentiere die Spec und bitte um Freigabe. Gib dem User folgende Zusammenfassung:
 
 ---
@@ -145,6 +169,10 @@ Präsentiere die Spec und bitte um Freigabe. Gib dem User folgende Zusammenfassu
 
 **Was bleibt unverändert?**
 [Was explizit nicht angefasst wird — gibt dem PO Sicherheit über den Scope]
+
+**Wo ich für dich entschieden habe:**
+- [Fall 1 aus obiger Prüfung, in 1 Satz — oder:]
+- Keine Abweichung von deiner Anfrage — so umgesetzt wie besprochen.
 
 **Qualitätsplan:** [N] automatische Tests geplant · Spezifikation geprüft: VALID
 
@@ -200,3 +228,6 @@ Erst sichern, dann ist `/clear` gefahrlos.
 **IMPORTANT:**
 - Do NOT implement until approved
 - Do NOT skip TDD RED phase after approval
+- Der Block "Wo ich für dich entschieden habe" ist PFLICHT — auch wenn er nur den
+  Nichts-Abweichungs-Satz enthält. Ohne ihn ist die Freigabe reines Abnicken statt
+  einer Entscheidung.

@@ -24,6 +24,59 @@ Das Muster ist jetzt `\.env(rc)?\b`: Wortgrenze nach `env`. `.env`, `.env.local`
 zwischen `v` und `i` keine Wortgrenze und faellt heraus. Die README-Vorlage fuer
 `secrets_guard.sensitive_patterns` zeigt das neue Muster.
 
+## [3.19.0] - 2026-09-18
+
+### Added
+
+**Autonomer Weiterlauf zu `/70-deploy` respektiert dokumentierte Projekt-Policy**
+
+`/60-validate` endete immer mit "Soll ich den Code committen?" und, in der Praxis,
+mit einem an den User adressierten "Warte auf /70-deploy" — auch bei Projekten, die
+in ihrer eigenen `CLAUDE.md`/`70-deploy.md` explizit und wiederholt dokumentiert
+haben, dass Deploy **ohne** Freigabe-Halt autonom läuft. Konkret beobachtet bei
+einem Plugin-Konsumenten: trotz expliziter Projekt-Policy ("läuft autonom, kein
+Freigabe-Halt", zusätzlich per Auto-Mode-Whitelist-Eintrag dauerhaft autorisiert)
+hielt eine Session nach Phase 8 an und wartete darauf, dass der PO `/70-deploy`
+selbst eintippt — eine reine Formsache, die keine echte Entscheidung transportierte.
+
+`/60-validate` prüft vor der Freigabe-Ausgabe jetzt explizit, ob das Projekt einen
+autonomen Deploy-Weiterlauf dokumentiert (Formulierungen wie "läuft autonom", "kein
+Freigabe-Halt" in `70-deploy.md`/`CLAUDE.md`) und ruft `/70-deploy` in diesem Fall im
+selben Turn selbst auf, statt auf User-Eingabe zu warten. Ohne eine solche explizite
+Projekt-Policy bleibt das bisherige Verhalten (fragen) der Default — Autonomie ist
+ein Opt-in des Projekts, kein Framework-Default.
+
+## [3.18.0] - 2026-09-18
+
+### Added
+
+**Entscheidungsvorlage für den PO in der Spec-Freigabe (`/30-write-spec`)**
+
+Die Freigabe-Zusammenfassung ("Plan fertig — bitte Freigabe") war rein beschreibend:
+Sie erklärte, was gebaut wird, aber nicht, wo während Analyse/Spec ein Urteil gefällt
+wurde, das auch anders hätte ausfallen können. Ein nicht-technischer PO konnte damit
+nur zustimmen, nie wirklich mitentscheiden — die Freigabe-Phrase wurde zur reinen
+Formsache.
+
+Konkreter Befund, der den Fix ausgelöst hat: in einer Stichprobe der letzten 20
+Production-Specs eines Plugin-Konsumenten hatte nur eine einzige einen Abschnitt, der
+eine Abweichung von der ursprünglichen Anfrage dokumentierte — nicht weil die anderen
+19 nie eine Abwägung nötig hatten, sondern weil kein Teil des Ablaufs das systematisch
+verlangte.
+
+Neuer Pflicht-Block **"Wo ich für dich entschieden habe"** in der Freigabe-Zusammenfassung:
+vor der Ausgabe prüft der Hauptkontext Spec und Analyse gezielt auf (a) Abweichungen von
+der wörtlichen Anfrage, (b) bewusst weggelassene naheliegende Punkte (Scope-Reduktion),
+(c) Risiko-/Trade-off-Entscheidungen ohne vorherige Abstimmung — und benennt sie in
+Alltagssprache, ein Satz pro Fall. Kein Fall gefunden → das wird explizit ausgeschrieben
+("Keine Abweichung von deiner Anfrage"), nie stillschweigend weggelassen, damit "geprüft,
+nichts gefunden" von "vergessen" unterscheidbar bleibt.
+
+Bewusst nur als Prompt-Instruktion im Command (`core/commands/30-write-spec.md`), kein
+neues Hook-Gate: Der Block wird aus dem Inhalt der Spec destilliert, nicht aus einer
+festen Template-Sektion — funktioniert damit auch für Projekte mit lokal abweichenden
+`spec-writer`-Templates, ohne dass `core/agents/` angefasst werden musste.
+
 ## [3.17.1] - 2026-09-10
 
 ### Fixed
