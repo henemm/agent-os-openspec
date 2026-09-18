@@ -201,6 +201,24 @@ Erstelle eine Zusammenfassung:
 
 ## Next Step
 
+### Autonomen Weiterlauf prüfen (PFLICHT, vor der Ausgabe)
+
+Existiert im Projekt ein `/70-deploy` (eigene `.claude/commands/70-deploy.md` oder Skill) UND
+dokumentiert das Projekt selbst — in dessen `CLAUDE.md` oder direkt in `70-deploy.md` —
+explizit, dass Deploy **ohne Freigabe-Halt autonom** läuft (Formulierungen wie "läuft
+autonom", "kein Freigabe-Halt", "ohne manuelle Ausführung")? Dann ist das bindende
+Projekt-Policy — nicht erneut zur Diskussion stellen und nicht darauf warten, dass der
+User `/70-deploy` selbst eintippt. Das gilt auch dann, wenn "eigentlich" an dieser Stelle
+generell auf eine Bestätigung gewartet wird: eine explizite Projekt-Policy sticht die
+Default-Ceremony dieses Commands. Committe wie unten beschrieben und rufe danach
+`/70-deploy` **im selben Turn selbst auf** — melde dem User das Ergebnis der ganzen Kette,
+nicht einen Zwischenstand, der auf seine Eingabe wartet.
+
+Fehlt eine solche explizite Projekt-Policy: Standardverhalten unten (fragen, nicht
+autonom weiterlaufen) — Autonomie ist ein Opt-in des Projekts, kein Default des Frameworks.
+
+### Zusammenfassung an den User
+
 Nach erfolgreicher Validierung, gib dem User folgende Zusammenfassung:
 
 ---
@@ -218,6 +236,11 @@ Nach erfolgreicher Validierung, gib dem User folgende Zusammenfassung:
 Soll ich den Code committen?
 
 ---
+
+**Ausnahme bei dokumentierter Autonomie (siehe Prüfung oben):** Ersetze die letzte Zeile
+durch die kurze Ankündigung, dass jetzt committet und automatisch weiterdeployt wird —
+keine Frage, keine Wartezeile wie "Warte auf /70-deploy". Führe die Kette im selben Turn
+aus und melde danach das Endergebnis.
 
 ## On Failure
 
