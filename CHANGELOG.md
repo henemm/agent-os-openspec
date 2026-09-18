@@ -5,6 +5,28 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.19.0] - 2026-09-18
+
+### Added
+
+**Autonomer Weiterlauf zu `/70-deploy` respektiert dokumentierte Projekt-Policy**
+
+`/60-validate` endete immer mit "Soll ich den Code committen?" und, in der Praxis,
+mit einem an den User adressierten "Warte auf /70-deploy" — auch bei Projekten, die
+in ihrer eigenen `CLAUDE.md`/`70-deploy.md` explizit und wiederholt dokumentiert
+haben, dass Deploy **ohne** Freigabe-Halt autonom läuft. Konkret beobachtet bei
+einem Plugin-Konsumenten: trotz expliziter Projekt-Policy ("läuft autonom, kein
+Freigabe-Halt", zusätzlich per Auto-Mode-Whitelist-Eintrag dauerhaft autorisiert)
+hielt eine Session nach Phase 8 an und wartete darauf, dass der PO `/70-deploy`
+selbst eintippt — eine reine Formsache, die keine echte Entscheidung transportierte.
+
+`/60-validate` prüft vor der Freigabe-Ausgabe jetzt explizit, ob das Projekt einen
+autonomen Deploy-Weiterlauf dokumentiert (Formulierungen wie "läuft autonom", "kein
+Freigabe-Halt" in `70-deploy.md`/`CLAUDE.md`) und ruft `/70-deploy` in diesem Fall im
+selben Turn selbst auf, statt auf User-Eingabe zu warten. Ohne eine solche explizite
+Projekt-Policy bleibt das bisherige Verhalten (fragen) der Default — Autonomie ist
+ein Opt-in des Projekts, kein Framework-Default.
+
 ## [3.18.0] - 2026-09-18
 
 ### Added
