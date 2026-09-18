@@ -5,6 +5,37 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.18.0] - 2026-09-18
+
+### Added
+
+**Entscheidungsvorlage für den PO in der Spec-Freigabe (`/30-write-spec`)**
+
+Die Freigabe-Zusammenfassung ("Plan fertig — bitte Freigabe") war rein beschreibend:
+Sie erklärte, was gebaut wird, aber nicht, wo während Analyse/Spec ein Urteil gefällt
+wurde, das auch anders hätte ausfallen können. Ein nicht-technischer PO konnte damit
+nur zustimmen, nie wirklich mitentscheiden — die Freigabe-Phrase wurde zur reinen
+Formsache.
+
+Konkreter Befund, der den Fix ausgelöst hat: in einer Stichprobe der letzten 20
+Production-Specs eines Plugin-Konsumenten hatte nur eine einzige einen Abschnitt, der
+eine Abweichung von der ursprünglichen Anfrage dokumentierte — nicht weil die anderen
+19 nie eine Abwägung nötig hatten, sondern weil kein Teil des Ablaufs das systematisch
+verlangte.
+
+Neuer Pflicht-Block **"Wo ich für dich entschieden habe"** in der Freigabe-Zusammenfassung:
+vor der Ausgabe prüft der Hauptkontext Spec und Analyse gezielt auf (a) Abweichungen von
+der wörtlichen Anfrage, (b) bewusst weggelassene naheliegende Punkte (Scope-Reduktion),
+(c) Risiko-/Trade-off-Entscheidungen ohne vorherige Abstimmung — und benennt sie in
+Alltagssprache, ein Satz pro Fall. Kein Fall gefunden → das wird explizit ausgeschrieben
+("Keine Abweichung von deiner Anfrage"), nie stillschweigend weggelassen, damit "geprüft,
+nichts gefunden" von "vergessen" unterscheidbar bleibt.
+
+Bewusst nur als Prompt-Instruktion im Command (`core/commands/30-write-spec.md`), kein
+neues Hook-Gate: Der Block wird aus dem Inhalt der Spec destilliert, nicht aus einer
+festen Template-Sektion — funktioniert damit auch für Projekte mit lokal abweichenden
+`spec-writer`-Templates, ohne dass `core/agents/` angefasst werden musste.
+
 ## [3.17.1] - 2026-09-10
 
 ### Fixed
