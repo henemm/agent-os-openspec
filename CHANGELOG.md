@@ -24,6 +24,31 @@ Das Muster ist jetzt `\.env(rc)?\b`: Wortgrenze nach `env`. `.env`, `.env.local`
 zwischen `v` und `i` keine Wortgrenze und faellt heraus. Die README-Vorlage fuer
 `secrets_guard.sensitive_patterns` zeigt das neue Muster.
 
+**Spec-/Briefing-Pfadauflösung in `workflow.py` konsolidiert auf worktree-first (Issue #144)**
+
+`_check_adr`, `_read_spec_content`, `_check_po_briefing` und `cmd_set_briefing`
+lösten Spec- und Briefing-Pfade ausschließlich über `find_project_root()` auf —
+die Quelle für geteilten Workflow-State (Hauptrepo). Existierten Spec und
+Briefing nur im aktuellen Worktree (Standardfall für neue Workflows, die noch
+nicht gemerged sind), schlug `workflow.py set-briefing` mit
+`BLOCKED: PO-Briefing nicht lesbar` fehl bzw. `_check_adr`/`_check_po_briefing`
+gaben fälschlich `None` zurück (Datei nicht gefunden → Grandfathering).
+
+- Neue Helper `_worktree_first_root()` / `_worktree_first_path()`: liefern den
+  Worktree-Root, falls die angefragte Datei dort existiert (Vorbild:
+  `edit_gate.py`-Auflösung), sonst Fallback auf `find_project_root()`.
+- **Verhaltensänderung:** Das ADR-Gate (`_check_adr`) ist für
+  Worktree-Sessions mit worktree-lokaler Spec jetzt wieder scharf — vorher
+  wurde es durch die fehlgeschlagene Leseoperation faktisch umgangen
+  (Grandfathering griff, wo es nicht greifen sollte). Eine Spec ohne
+  ausgefüllte ADR-Sektion blockiert die Freigabe jetzt korrekt, auch wenn sie
+  nur im Worktree liegt.
+- Geteilter State (`.claude/workflows/`, `.claude/active_workflow`,
+  Session-Locks, Logs) bleibt bewusst unverändert bei `find_project_root()` —
+  siehe Known Limitations in `docs/specs/fix-144-briefing-worktree-path.md`.
+- Regressionstests: `tests/test_workflow_resolution_consolidation.py`
+  (AC-1 bis AC-7).
+
 ## [3.22.1] - 2026-09-19
 
 ### Fixed
