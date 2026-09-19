@@ -2,7 +2,7 @@
 
 > **Meta-Projekt**: Dies ist das zentrale Framework-Repository, das abstraktes Projekt- und Workflow-Wissen konsolidiert. Alle Projekte können Improvements hierher zurückführen und von Verbesserungen aus anderen Projekten profitieren.
 
-**Version**: 3.16.0
+**Version**: 3.21.0
 
 ## Projektzweck
 
@@ -220,6 +220,43 @@ phase6_implement → User-Freigabe ("go") → phase6b_adversary → Dialog → V
 ### Fresh Eyes Inspector
 `fresh-eyes-inspector.md` — Unabhaengiger UI-Beobachter der Screenshots OHNE Bug-Kontext bewertet. Ergaenzt den Adversary-Dialog um eine neutrale Perspektive.
 
+## PO-Briefing-Gate (Freigabe Phase 3 → 4)
+
+Die Freigabe (`approved`) verlangt ein **unabhängig erstelltes** Briefing: Der
+`po-briefer`-Agent (Sonnet) liest nur Spec + Ursprungsanfrage — nicht den
+Gesprächsverlauf des Orchestrators — und schreibt `docs/briefings/<workflow>.md`
+mit vier Pflicht-Abschnitten (*Was gebaut wird*, *Definition of Done*,
+*Wie geprüft wird*, *Kritische Anmerkungen*). Grund: Wer die Spec beauftragt hat,
+darf nicht die Entscheidungsgrundlage für ihre Abnahme schreiben.
+
+```bash
+python3 .claude/hooks/workflow.py set-briefing docs/briefings/<workflow>.md
+```
+
+`set-briefing` bindet das Briefing per SHA-256 an die gelesene Spec-Fassung.
+`workflow.py::_check_po_briefing` blockt die Transition nach `phase4_approved`,
+`phase_listener.py` blockt die Freigabe-Phrase, wenn Briefing fehlt, unvollständig
+ist, Platzhalter enthält oder die Spec danach geändert wurde. Kill-Switch:
+`config.yaml` → `po_briefing_gate.enabled: false`; Fast Track ist per Default
+ausgenommen (`skip_fast_track`).
+
+## CI-Spec-Gate (serverseitig)
+
+Lokale Hooks sind abschaltbar, umschreibbar und per Bash umgehbar — und
+`.claude/workflows/` ist gitignored, der Workflow-State erreicht die CI nie.
+`scripts/ci_spec_gate.py` prüft im Pull Request deshalb nur **committete**
+Dateien: Spec zum Code-Change vorhanden und vollständig (Scope/DoD/AC-N/Test
+Plan/ADR, keine Platzhalter), PO-Briefing vorhanden, vollständig und aktuell.
+Die Aktualität hängt am `spec_sha256`-Stempel, den `set-briefing` in den
+Briefing-Frontmatter schreibt.
+
+Das Gate dupliziert keine Regeln: Es ruft `workflow.check_briefing_content`,
+`workflow.check_adr_content` und `hook_utils.extract_ac_entries` auf.
+
+- Einzelner PR raus: Commit-Trailer `Spec-Gate: skip <Grund>` (sichtbar in der Historie)
+- Projekt raus: `config.yaml` → `ci_spec_gate.enabled: false`
+- `setup.py` installiert Script + `.github/workflows/spec-gate.yml` in Konsumenten-Projekte
+
 ## Stop Lock
 
 Sofort-Pause fuer Claude:
@@ -384,6 +421,8 @@ python3 /path/to/agent-os-openspec/setup.py --version
 | `core/hooks/config_loader.py` | Config-Loader (YAML + Local Overrides) |
 | `core/hooks/adversary_dialog.py` | Adversary Dialog System (Spec-Checkliste, Tri-State Verdict) |
 | `core/agents/fresh-eyes-inspector.md` | Unabhaengiger UI-Beobachter ohne Bug-Kontext |
+| `core/agents/po-briefer.md` | Unabhaengiges PO-Freigabe-Briefing (Spec vs. Ursprungsanfrage) |
+| `scripts/ci_spec_gate.py` | CI-Gate: prueft Spec + Briefing serverseitig im Pull Request |
 
 ## Slash-Commands Übersicht
 

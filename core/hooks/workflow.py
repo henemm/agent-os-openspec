@@ -15,6 +15,7 @@ Usage:
     python3 workflow.py phase <phase>
     python3 workflow.py phase-log
     python3 workflow.py set-field <key> <value>
+    python3 workflow.py set-briefing <pfad-zum-po-briefing>
     python3 workflow.py set-affected-files [--replace] <f1> <f2> ...
     python3 workflow.py add-artifact <type> <path> <desc> <phase>
     python3 workflow.py mark-red <result>
@@ -30,6 +31,7 @@ Usage:
 from hook_utils import setup_path, find_project_root
 setup_path()
 
+import hashlib as _hashlib
 import json
 import os
 import re as _re
@@ -462,6 +464,16 @@ def _check_adr(data: dict) -> "str | None":
     except Exception:
         return None
 
+    return check_adr_content(content)
+
+
+def check_adr_content(content: str) -> "str | None":
+    """Prüft den Spec-TEXT auf eine ausgefüllte ADR-Sektion. Meldung oder None.
+
+    Aus `_check_adr` herausgelöst, damit das CI-Gate (scripts/ci_spec_gate.py)
+    exakt dieselbe Regel anwendet wie der lokale Hook — eine Regel, zwei Aufrufer.
+    Grandfathering (keine ADR-Sektion → None) bleibt Teil dieser Funktion.
+    """
     # 4. Extract the ADR section body (case-insensitive heading match).
     #    Accept ## or ### headings; body reaches up to the next heading of ANY
     #    rank 1-3 (#, ## or ###) or end of file. The end-lookahead must stop at
@@ -506,6 +518,178 @@ def _check_adr(data: dict) -> "str | None":
         "Spec ohne ausgefülltes ADR-Feld — Sektion "
         "'## Architektur-Entscheidung (ADR)' braucht ADR-Nr. oder begründetes 'keine'."
     )
+
+
+# --- PO-Briefing-Gate (unabhängiges Freigabe-Briefing vor Phase 4) ---------
+
+# Pflicht-Abschnitte des Briefings. Die Freigabe-Frage "passt das so?" ist nur
+# beantwortbar, wenn alle vier beantwortet sind — was gebaut wird, wann es
+# fertig ist, wie das geprüft wird, und was daran fragwürdig ist.
+# Je Eintrag: (kanonischer Name für Meldungen, Regex für die Überschrift).
+# Umlaute bewusst tolerant ('geprüft'/'geprueft'): ein Gate, das an der
+# Schreibweise eines Umlauts scheitert, blockt den Nutzer aus einem Grund, der
+# mit der Sache nichts zu tun hat.
+PO_BRIEFING_SECTIONS = (
+    ("Was gebaut wird", r"Was\s+gebaut\s+wird"),
+    ("Definition of Done", r"(?:Definition\s+of\s+Done|DoD)"),
+    ("Wie geprüft wird", r"Wie\s+gepr(?:ü|ue)ft\s+wird"),
+    ("Kritische Anmerkungen", r"Kritische\s+Anmerkungen"),
+)
+
+# Mindest-Textlänge je Abschnitt (Zeichen, ohne Rahmen). Ein Abschnitt darunter
+# ist eine Überschrift ohne Aussage.
+_PO_BRIEFING_MIN_BODY = 20
+
+_PO_BRIEFING_PLACEHOLDERS = ("[todo", "[tbd", "todo:", "fixme:", "xxx:", "<platzhalter")
+
+
+def spec_sha256(content: str) -> str:
+    """SHA-256 des Spec-Inhalts — bindet ein Briefing an genau diese Spec-Fassung."""
+    return _hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def _read_spec_content(data: dict) -> "str | None":
+    spec_file = data.get("spec_file")
+    if not spec_file:
+        return None
+    try:
+        return (find_project_root() / spec_file).read_text()
+    except Exception:
+        return None
+
+
+def check_briefing_content(content: str) -> "str | None":
+    """Prüft den Briefing-TEXT auf Vollständigkeit. Fehlermeldung oder None.
+
+    Bewusst rein textuell und ohne Workflow-Bezug, damit `set-briefing` (bei der
+    Registrierung) und das Gate (bei der Freigabe) exakt dasselbe prüfen.
+    """
+    lowered = content.lower()
+    for marker in _PO_BRIEFING_PLACEHOLDERS:
+        if marker in lowered:
+            return f"PO-Briefing enthält noch einen Platzhalter ('{marker}') — nicht fertig."
+
+    for section, pattern in PO_BRIEFING_SECTIONS:
+        # Überschrift ## oder ###, Zusatztext dahinter erlaubt ("## Definition of
+        # Done (DoD)"). Body reicht bis zur nächsten Überschrift Rang 1-3 oder EOF.
+        match = _re.search(
+            r"^#{2,3}\s*" + pattern + r"[^\n]*$(.*?)(?=^#{1,3}\s|\Z)",
+            content,
+            _re.IGNORECASE | _re.MULTILINE | _re.DOTALL,
+        )
+        if not match:
+            return f"PO-Briefing ohne Abschnitt '## {section}'."
+        body = _re.sub(r"[\s\-*>]+", " ", match.group(1)).strip()
+        if len(body) < _PO_BRIEFING_MIN_BODY:
+            return f"PO-Briefing: Abschnitt '## {section}' ist leer bzw. zu dünn."
+
+    return None
+
+
+def parse_briefing_frontmatter(content: str) -> dict:
+    """Liest den YAML-Frontmatter-Block eines Briefings als flaches dict.
+
+    Bewusst ein Mini-Parser statt PyYAML: Das CI-Gate soll ohne zusätzliche
+    Abhängigkeit laufen, und der Block enthält nur `key: value`-Zeilen.
+    """
+    if not content.startswith("---"):
+        return {}
+    end = content.find("\n---", 3)
+    if end < 0:
+        return {}
+    out = {}
+    for line in content[3:end].splitlines():
+        if ":" in line and not line.lstrip().startswith("#"):
+            key, _, value = line.partition(":")
+            out[key.strip()] = value.strip()
+    return out
+
+
+def stamp_briefing_frontmatter(content: str, spec_rel: str, sha: str) -> str:
+    """Schreibe `spec_file`/`spec_sha256` in den Frontmatter des Briefings.
+
+    Vorhandener Frontmatter wird ergänzt bzw. der alte Stempel ersetzt (nie
+    gedoppelt); fehlt er, wird einer vorangestellt. Der übrige Inhalt bleibt
+    unangetastet.
+    """
+    stamp = {"spec_file": spec_rel, "spec_sha256": sha}
+    if content.startswith("---"):
+        end = content.find("\n---", 3)
+        if end >= 0:
+            head = content[3:end]
+            rest = content[end + 4:]
+            kept = [
+                line for line in head.splitlines()
+                if line.partition(":")[0].strip() not in stamp
+            ]
+            lines = [l for l in kept if l.strip()] + [f"{k}: {v}" for k, v in stamp.items()]
+            return "---\n" + "\n".join(lines) + "\n---" + rest
+    front = "\n".join(f"{k}: {v}" for k, v in stamp.items())
+    return f"---\n{front}\n---\n\n{content.lstrip()}"
+
+
+def _check_po_briefing(data: dict) -> "str | None":
+    """Enforce an independent PO briefing at spec approval (Phase 3→4).
+
+    Returns an error message if no current, complete briefing is registered,
+    otherwise None. Lenient in the same spirit as `_check_adr`: missing config,
+    missing/unreadable spec or a disabled gate all return None.
+    """
+    # 1. Kill-switch — only an explicit enabled: False disables the gate.
+    cfg = {}
+    try:
+        from config_loader import load_config
+        config = load_config()
+        if isinstance(config, dict):
+            cfg = config.get("po_briefing_gate", {}) or {}
+        if isinstance(cfg, dict) and cfg.get("enabled") is False:
+            return None
+    except Exception:
+        cfg = {}  # Config load failure → feature stays ON (lenient)
+
+    # 2. Fast-Track: per Default kein Briefing (dort gibt es weder spec-writer
+    #    noch Validator-Agenten). Abschaltbar via skip_fast_track: false.
+    skip_fast = True
+    if isinstance(cfg, dict) and cfg.get("skip_fast_track") is False:
+        skip_fast = False
+    if skip_fast and data.get("workflow_type") in ("feature-fast", "bug"):
+        return None
+
+    # 3. Ohne Spec kein Briefing-Gate (ein anderes Gate greift dann zuerst).
+    spec_content = _read_spec_content(data)
+    if spec_content is None:
+        return None
+
+    hint = (
+        " → po-briefer-Agent laufen lassen (/30-write-spec Step 3b), "
+        "danach: workflow.py set-briefing <pfad>"
+    )
+
+    # 4. Registrierung im State
+    entry = data.get("po_briefing")
+    if not isinstance(entry, dict) or not entry.get("file"):
+        return "Kein unabhängiges PO-Briefing registriert" + hint
+    try:
+        briefing = (find_project_root() / entry["file"]).read_text()
+    except Exception:
+        return f"PO-Briefing '{entry['file']}' nicht lesbar oder nicht vorhanden" + hint
+
+    # 5. Inhalt
+    content_err = check_briefing_content(briefing)
+    if content_err:
+        return content_err + hint
+
+    # 6. Aktualität: das Briefing muss zu DIESER Spec-Fassung gehören. Sonst
+    #    gibt der PO ein Briefing frei, das eine zwischenzeitlich umgeschriebene
+    #    Spec beschreibt — das Gate wäre eine Attrappe.
+    stored = entry.get("spec_sha256")
+    if stored and stored != spec_sha256(spec_content):
+        return (
+            "PO-Briefing ist veraltet — die Spec wurde nach dem Briefing geändert."
+            + hint
+        )
+
+    return None
 
 
 # --- Phase Transition Validation ---
@@ -554,6 +738,9 @@ def _validate_transition(data: dict, target: str) -> str | None:
             adr_err = _check_adr(data)
             if adr_err:
                 return adr_err
+            briefing_err = _check_po_briefing(data)
+            if briefing_err:
+                return briefing_err
         return None
 
     current = data.get("current_phase", "phase0_idle")
@@ -579,6 +766,9 @@ def _validate_transition(data: dict, target: str) -> str | None:
         adr_err = _check_adr(data)
         if adr_err:
             return adr_err
+        briefing_err = _check_po_briefing(data)
+        if briefing_err:
+            return briefing_err
 
     if tgt_idx >= PHASES.index("phase6_implement"):
         red_artifacts = [a for a in data.get("test_artifacts", [])
@@ -771,6 +961,74 @@ def cmd_set_field(args: list[str]) -> None:
     data[key] = value
     _save_active(data)
     print(f"Set {key} = {value} on workflow {name}")
+
+
+def cmd_set_briefing(args: list[str]) -> None:
+    """Registriere das unabhängige PO-Briefing für die anstehende Freigabe.
+
+    Bindet es über den SHA-256 der Spec an genau die Fassung, die der Briefer
+    gelesen hat. Prüft denselben Inhalts-Kontrakt wie das Gate — ein
+    unvollständiges Briefing fällt hier auf, nicht erst beim `approved`.
+    """
+    if not args:
+        print("Usage: workflow.py set-briefing <pfad-zum-po-briefing>", file=sys.stderr)
+        sys.exit(1)
+    rel = args[0]
+    root = find_project_root()
+    path = Path(rel)
+    if path.is_absolute():
+        try:
+            rel = str(path.relative_to(root))
+        except ValueError:
+            print(f"BLOCKED: Briefing liegt ausserhalb des Projekts: {rel}", file=sys.stderr)
+            sys.exit(1)
+    briefing_path = root / rel
+
+    try:
+        briefing = briefing_path.read_text()
+    except Exception:
+        print(f"BLOCKED: PO-Briefing nicht lesbar: {rel}", file=sys.stderr)
+        sys.exit(1)
+
+    content_err = check_briefing_content(briefing)
+    if content_err:
+        print(f"BLOCKED: {content_err}", file=sys.stderr)
+        sys.exit(1)
+
+    data, name = _read_active()
+    spec_content = _read_spec_content(data)
+    if spec_content is None:
+        print(
+            "BLOCKED: Keine lesbare Spec im Workflow (Feld 'spec_file') — "
+            "das Briefing kann an keine Spec-Fassung gebunden werden.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    sha = spec_sha256(spec_content)
+    data["po_briefing"] = {
+        "file": rel,
+        "spec_sha256": sha,
+        "created": datetime.now().isoformat(timespec="seconds"),
+    }
+    _save_active(data)
+
+    # Bindung zusätzlich IN die Briefing-Datei stempeln. Der Workflow-State
+    # liegt unter .claude/workflows/ und ist gitignored — er erreicht die CI
+    # nie. Nur ein Stempel in der committeten Datei macht ein veraltetes
+    # Briefing serverseitig erkennbar (scripts/ci_spec_gate.py).
+    try:
+        briefing_path.write_text(
+            stamp_briefing_frontmatter(briefing, str(data.get("spec_file", "")), sha)
+        )
+    except Exception as exc:
+        print(
+            f"WARNUNG: Briefing registriert, aber Frontmatter-Stempel fehlgeschlagen ({exc}). "
+            "Das CI-Gate kann die Aktualität dann nicht prüfen.",
+            file=sys.stderr,
+        )
+
+    print(f"PO-Briefing registriert für Workflow {name}: {rel}")
 
 
 def cmd_set_affected_files(args: list[str]) -> None:
@@ -1324,6 +1582,7 @@ COMMANDS = {
     "phase": cmd_phase,
     "phase-log": cmd_phase_log,
     "set-field": cmd_set_field,
+    "set-briefing": cmd_set_briefing,
     "set-affected-files": cmd_set_affected_files,
     "add-artifact": cmd_add_artifact,
     "mark-red": cmd_mark_red,

@@ -24,6 +24,146 @@ Das Muster ist jetzt `\.env(rc)?\b`: Wortgrenze nach `env`. `.env`, `.env.local`
 zwischen `v` und `i` keine Wortgrenze und faellt heraus. Die README-Vorlage fuer
 `secrets_guard.sensitive_patterns` zeigt das neue Muster.
 
+## [3.22.0] - 2026-09-19
+
+### Added
+
+**Auto-Chaining nach "approved": kein redundanter Tastendruck mehr vor `/40-tdd-red` (Issue #140)**
+
+Nach der Freigabe ("approved") musste der User zusätzlich `/40-tdd-red` selbst
+abtippen, obwohl dabei keine neue Entscheidung mehr fällt — die Entscheidung war mit
+"approved" bereits getroffen, der Tastendruck war reine Formsache.
+
+- `skills/40-tdd-red/SKILL.md` ist ab sofort model-invocable
+  (`disable-model-invocation: false`). Das ist die notwendige Voraussetzung dafür,
+  dass der Hauptkontext den Skill selbst aufrufen darf; ohne den Flag-Flip blockt
+  das Skill-Tool-Gate hart, egal was im Command steht. Ergänzend enthält
+  `core/commands/30-write-spec.md` im Abschnitt "After Approval" die Anweisung,
+  nach der Freigabe ohne weitere User-Eingabe direkt in die RED-Phase zu gehen.
+  Mit `/clear` dazwischen gilt unverändert der bestehende Checkpoint-Block mit dem
+  expliziten Wiedereinstiegs-Befehl.
+- Bewusste Abgrenzung: Der Übergang `/40-tdd-red → /50-implement` bleibt
+  **manuell**. `skills/50-implement/SKILL.md` behält `disable-model-invocation:
+  true` und die STOPP-Anweisung in `core/commands/40-tdd-red.md` bleibt
+  unverändert — RED schreibt nur reversible Testdateien, `/50-implement` schreibt
+  echten Produktivcode und spawnt Subagenten dafür. Weil der neu freigeschaltete
+  Skill-Tool-Pfad `core/commands/40-tdd-red.md` gar nicht mehr liest, stand diese
+  Absicherung dort zunächst gar nicht mehr im gelesenen Kontext (Adversary-Finding
+  F001, CRITICAL) — behoben, indem dieselbe STOPP-Anweisung jetzt wortgleich auch
+  in `skills/40-tdd-red/SKILL.md` steht, direkt hinter dem Phasenwechsel auf
+  `phase6_implement`. `tests/test_skill_stop_instruction.py` hält beide Dokumente
+  konsistent.
+
+Ein zweites, ursprünglich mitgeplantes Problem (Entwickler-Jargon im
+Freigabe-Text) ist mit dem unabhängigen PO-Briefing aus 3.20.0 bereits
+abgedeckt — der PO liest dort ohnehin den wörtlich zitierten, unabhängig
+geprüften Briefing-Text statt der Orchestrator-Zusammenfassung; eine zusätzliche
+Verbotsliste für Letztere wäre doppelte Prüflogik für zwei verschiedene Autoren
+gewesen und wurde deshalb nicht Teil dieser Änderung.
+
+## [3.21.0] - 2026-09-19
+
+### Added
+
+**CI-seitiges Spec-Gate — die Gates enden nicht mehr am lokalen Rechner**
+
+Alle bisherigen Gates laufen als lokale Hooks. Die sind Leitplanken, keine
+Mauern: Wer sie abschaltet, umschreibt oder per Bash umgeht, kommt an ihnen
+vorbei — und weil `.claude/workflows/` gitignored ist, erreichte der
+Workflow-State die CI ohnehin nie. Ein PR konnte deshalb alles enthalten, was
+lokal blockiert worden wäre.
+
+- **`scripts/ci_spec_gate.py`** prüft im Pull Request ausschliesslich committete
+  Dateien: (1) ändert der PR Code, liegt ihm eine Spec bei; (2) ist die Spec
+  vollständig — Pflicht-Sektionen Scope/DoD/AC/Test Plan, wohlgeformte AC-N
+  (≥ 30 Zeichen), ausgefüllte ADR, keine Platzhalter; (3) gibt es ein
+  PO-Briefing zur Spec, ist es vollständig und **aktuell**.
+- **Die Aktualitätsprüfung reist mit der Datei:** `workflow.py set-briefing`
+  stempelt `spec_file` und `spec_sha256` jetzt zusätzlich in den Frontmatter des
+  Briefings. Damit erkennt die CI ein Briefing, das eine andere Spec-Fassung
+  beschreibt als die im PR — der Fall, den ein abgeschalteter lokaler Hook
+  durchlässt.
+- **Eine Regel, zwei Aufrufer:** Das Gate importiert
+  `workflow.check_briefing_content`, `workflow.check_adr_content` (neu aus
+  `_check_adr` herausgelöst) und `hook_utils.extract_ac_entries` — es dupliziert
+  keine Prüflogik, sondern ruft dieselbe auf wie die lokalen Hooks.
+- **Escape statt Umgehung:** Commit-Trailer `Spec-Gate: skip <Grund>` lässt einen
+  einzelnen PR durch — sichtbar in Historie und PR, im Gegensatz zu einem
+  stillen Config-Flip. Kill-Switch fürs Projekt: `config.yaml` →
+  `ci_spec_gate.enabled: false`. Fast-Track-Specs (`docs/specs/fast/`) verlangen
+  wie lokal kein Briefing.
+- **Verteilung an Konsumenten-Projekte:** `setup.py` installiert das Script nach
+  `.claude/scripts/ci_spec_gate.py` und legt `.github/workflows/spec-gate.yml`
+  aus `templates/ci_spec_gate.yml` an — eine vorhandene Action wird **nie**
+  überschrieben. Beim `--update` wird das Script mitgezogen.
+
+Hintergrund: Die Recherche zum Stand der Praxis (2026) ist an diesem Punkt
+eindeutig — Hooks sind ein deterministisches Gegengewicht zur
+Nicht-Determiniertheit des Modells, aber keine Sicherheitsgrenze; ein Agent kann
+den Hook umschreiben. Was zählt, muss dort geprüft werden, wo der Agent nicht
+hinkommt.
+
+## [3.20.0] - 2026-09-19
+
+### Added
+
+**Unabhängiges PO-Briefing als Freigabe-Gate (Phase 3 → 4)**
+
+Die Freigabe-Zusammenfassung vor `approved` schrieb bisher der Orchestrator selbst —
+also derjenige, der die Spec beauftragt hat. Damit war die einzige Stelle, an der ein
+Mensch entscheidet, eine Selbstauskunft: Wer die Spec verantwortet, beschreibt sie
+auch. Ein nicht-technischer PO, der die Spec nicht selbst liest, hatte keine
+unabhängige Grundlage für sein Ja.
+
+Neu erstellt ein eigener Agent das Briefing, ohne den Gesprächsverlauf des
+Orchestrators zu kennen:
+
+- **`core/agents/po-briefer.md`** (Sonnet, read-only + Write): liest ausschliesslich
+  Spec und Ursprungsanfrage (Issue/Kontext-Dokument), gleicht beide ab (Deckung,
+  Zusatz, Abweichung, DoD-Messbarkeit, AC-ohne-Test, vage „Then") und schreibt
+  `docs/briefings/<workflow>.md` mit vier Pflicht-Abschnitten: *Was gebaut wird*,
+  *Definition of Done*, *Wie geprüft wird*, *Kritische Anmerkungen* — je ein Satz,
+  plus eine Freigabe-Frage.
+- **`workflow.py set-briefing <pfad>`**: registriert das Briefing und bindet es per
+  SHA-256 an genau die Spec-Fassung, die der Briefer gelesen hat.
+- **Gate an zwei Einhängepunkten** (Muster wie das ADR-Gate, Issue #63):
+  `workflow.py::_check_po_briefing` blockt die Transition nach `phase4_approved`,
+  `phase_listener.py` blockt die Freigabe-Phrase (Soft-Block, `spec_approved` bleibt
+  False). Blockiert wird bei: kein Briefing registriert, Datei fehlt, Pflicht-Abschnitt
+  fehlt oder leer, Platzhalter (`[TODO`, `[TBD`, `FIXME:`) — und wenn die Spec **nach**
+  dem Briefing geändert wurde (Hash-Abgleich). Sonst nickt der PO ein Briefing ab, das
+  eine andere Spec beschreibt als die, die umgesetzt wird.
+- **`/30-write-spec` Step 3b** dispatcht den Briefer (mit Timeout-Pflicht wie die
+  übrigen Agenten) und gibt das Briefing **wörtlich** aus — kein Zusammenfassen,
+  kein Glätten der kritischen Anmerkungen.
+
+**`## Definition of Done` im Spec-Template**
+
+Das Template kannte kein Fertig-Kriterium; „fertig" war implizit über Acceptance
+Criteria und Test Plan verteilt. Neu ist `## Definition of Done` eine Pflicht-Sektion
+(`spec-validator`), damit das Briefing sie zitieren kann statt sie zu erfinden.
+
+### Fixed
+
+**Template-Drift: Validator forderte Sektionen, die kein Template lieferte**
+
+`spec-validator` verlangte `## Scope` und `## Architektur-Entscheidung (ADR)` als
+Pflicht-Sektionen, aber weder `templates/spec_template.md` noch das in `setup.py`
+eingebettete Template enthielten sie — jede streng nach Template geschriebene Spec
+war damit formal INVALID. Alle drei Template-Quellen (`templates/spec_template.md`,
+`docs/specs/_template.md`, `setup.py::create_spec_template`) enthalten jetzt
+denselben Satz Pflicht-Sektionen inklusive Scope, Definition of Done, Acceptance
+Criteria, Test Plan und ADR.
+
+### Migration
+
+Laufende Workflows in `phase3_spec` brauchen vor dem nächsten `approved` ein
+Briefing: `/30-write-spec` Step 3b ausführen oder
+`workflow.py set-briefing <pfad>` nachziehen. Wer das Gate nicht will:
+`config.yaml` → `po_briefing_gate.enabled: false`. Fast-Track-Workflows
+(`feature-fast`, `bug`) sind per Default ausgenommen
+(`po_briefing_gate.skip_fast_track`).
+
 ## [3.19.0] - 2026-09-18
 
 ### Added

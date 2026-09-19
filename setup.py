@@ -44,6 +44,8 @@ def _read_plugin_version() -> str:
 FRAMEWORK_VERSION = _read_plugin_version()
 CORE_DIR = FRAMEWORK_ROOT / "core"
 MODULES_DIR = FRAMEWORK_ROOT / "modules"
+TEMPLATES_DIR = FRAMEWORK_ROOT / "templates"
+SCRIPTS_DIR = FRAMEWORK_ROOT / "scripts"
 
 
 def get_file_hash(path: Path) -> str:
@@ -80,6 +82,7 @@ def create_directory_structure(project_path: Path):
         ".claude/agents",
         ".claude/commands",
         ".claude/tools",
+        ".claude/scripts",
         ".claude/workflows",
         ".claude/workflows/_archive",
         ".claude/artifacts/screenshots",
@@ -143,6 +146,33 @@ def copy_core_components(project_path: Path):
                 for std_file in subdir.glob("*.md"):
                     shutil.copy(std_file, dst_subdir / std_file.name)
                     print(f"  Copied standard: {subdir.name}/{std_file.name}")
+
+
+def install_ci_gate(project_path: Path, force: bool = False):
+    """Installiere das serverseitige Spec-Gate (Script + GitHub-Action-Vorlage).
+
+    Die lokalen Hooks sind abschaltbar; dieses Gate prueft dieselben Regeln noch
+    einmal auf dem Server, wo niemand sie umschreiben kann. Die Action-Vorlage
+    wird NIE ueberschrieben — die CI eines Projekts gehoert dem Projekt.
+    """
+    script_src = SCRIPTS_DIR / "ci_spec_gate.py"
+    if not script_src.exists():
+        return
+    scripts_dst = project_path / ".claude" / "scripts"
+    scripts_dst.mkdir(parents=True, exist_ok=True)
+    shutil.copy(script_src, scripts_dst / script_src.name)
+    print(f"  Copied CI gate: .claude/scripts/{script_src.name}")
+
+    workflow_src = TEMPLATES_DIR / "ci_spec_gate.yml"
+    workflow_dst = project_path / ".github" / "workflows" / "spec-gate.yml"
+    if not workflow_src.exists():
+        return
+    if workflow_dst.exists() and not force:
+        print("  Skipped: .github/workflows/spec-gate.yml (existiert bereits)")
+        return
+    workflow_dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(workflow_src, workflow_dst)
+    print("  Created: .github/workflows/spec-gate.yml")
 
 
 def install_module(project_path: Path, module_name: str):
@@ -488,6 +518,11 @@ tags: []
 |--------|------|---------|
 | | | |
 
+## Scope
+
+- **Affected Files:** `path/to/file`
+- **Estimated Changes:** ~N LoC
+
 ## Implementation Details
 
 ```
@@ -503,6 +538,29 @@ tags: []
 ## Known Limitations
 
 - [Any limitations or edge cases]
+
+## Definition of Done
+
+Fertig ist diese Änderung, wenn:
+
+- [ ] Jede Acceptance Criterion unten ist durch einen automatischen Test belegt
+- [ ] [beobachtbares Ergebnis, an dem der PO „fertig“ erkennt — kein „Code gemerged“]
+- [ ] Keine bestehende Funktion ist dabei kaputtgegangen (Regressionslauf grün)
+
+## Acceptance Criteria
+
+- **AC-1:** Given <Vorbedingung> / When <Aktion> / Then <beobachtbares Ergebnis>
+  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+
+## Test Plan
+
+Automatische Tests (jeweils an eine AC oben gebunden):
+- `pytest tests/test_entity.py`
+
+## Architektur-Entscheidung (ADR)
+
+- **ADR-Nr.:** [ADR-NNNN oder "keine"]
+- **Rationale:** [kurz: warum diese Entscheidung bzw. warum keine nötig ist]
 
 ## Changelog
 
@@ -678,6 +736,9 @@ def update_project(project_path: Path, modules: list, force: bool = False):
             else:
                 skipped.append(f"hook: {hook_file.name}")
 
+    # CI-Gate mitziehen (Script immer, Action-Vorlage nur falls fehlend)
+    install_ci_gate(project_path)
+
     # Update core commands
     commands_src = CORE_DIR / "commands"
     commands_dst = project_path / ".claude" / "commands"
@@ -788,7 +849,7 @@ def generate_command_aliases(project_path: Path) -> None:
       - false (model may self-invoke) → thin text redirect
         (`/agent-os-openspec:name $ARGUMENTS`). Claude resolves this via the
         Skill tool, which is allowed for these skills.
-      - true (only direct user `/name` typing allowed, e.g. TDD/Implement/
+      - true (only direct user `/name` typing allowed, e.g. Implement/
         Validate/Deploy phases) → a text redirect would still make Claude
         resolve it via the Skill tool, which the harness then blocks with
         "cannot be used with Skill tool due to disable-model-invocation" —
@@ -905,10 +966,10 @@ Examples:
   python3 setup.py /path/to/project --command-aliases   # recommended default: per-project
   python3 setup.py ~ --command-aliases          # global — see WARNING below if any
                                                  # project has its own custom version of
-                                                 # 40-tdd-red/50-implement/60-validate/
-                                                 # 70-deploy/80-workflow/81-add-artifact/
-                                                 # 99-reset (issue #87: global shadows
-                                                 # project commands due to a Claude Code
+                                                 # 50-implement/60-validate/70-deploy/
+                                                 # 80-workflow/81-add-artifact/99-reset
+                                                 # (issue #87: global shadows project
+                                                 # commands due to a Claude Code
                                                  # scope-precedence bug)
 
 Available modules:
@@ -1015,6 +1076,7 @@ Available modules:
 
     print("\nCopying core components...")
     copy_core_components(project_path)
+    install_ci_gate(project_path)
 
     for module in args.modules:
         print(f"\nInstalling module: {module}...")

@@ -38,6 +38,7 @@ status: required       # Values: draft, active, deprecated
 - [ ] **Source** - Dateipfad und Identifier
 - [ ] **Dependencies** - Tabelle (darf leer sein)
 - [ ] **Scope** - Affected Files + Estimated Changes
+- [ ] **Definition of Done** - Mindestens 1 überprüfbares Kriterium (Checkbox)
 - [ ] **Test Plan** - Mindestens 1 Test
 - [ ] **Acceptance Criteria** - Mindestens 1 Kriterium
 - [ ] **Architektur-Entscheidung (ADR)** - Sektion `## Architektur-Entscheidung (ADR)` mit ADR-Nr. + Rationale

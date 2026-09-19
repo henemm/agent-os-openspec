@@ -249,8 +249,21 @@ def main():
                 adr_err = _check_adr(wf_data)
             except Exception:
                 adr_err = None
-            if adr_err:
-                print(f"Freigabe blockiert: {adr_err}", file=sys.stderr)
+            # PO-Briefing-Gate: Freigabe nur auf Basis eines unabhängig
+            # erstellten, zur aktuellen Spec passenden Briefings. Dieselbe
+            # Toleranz wie beim ADR-Gate — ein Importfehler darf keine Freigabe
+            # verhindern, sonst kippt ein Infrastruktur-Problem in eine
+            # Blockade, die der Nutzer nicht auflösen kann.
+            try:
+                from workflow import _check_po_briefing
+                briefing_err = _check_po_briefing(wf_data)
+            except Exception:
+                briefing_err = None
+            if adr_err or briefing_err:
+                print(
+                    f"Freigabe blockiert: {adr_err or briefing_err}",
+                    file=sys.stderr,
+                )
                 # spec_approved NICHT setzen, current_phase bleibt phase3_spec
             else:
                 wf_data["spec_approved"] = True

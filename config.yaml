@@ -242,6 +242,24 @@ adversary_gate:
 adr_gate:
   enabled: true
 
+# PO-Briefing-Gate (Freigabe Phase 3 -> 4)
+# Die Freigabe verlangt ein unabhaengig erstelltes Briefing (po-briefer Agent),
+# registriert via `workflow.py set-briefing <pfad>`. Das Briefing ist per
+# SHA-256 an die gelesene Spec-Fassung gebunden: aendert sich die Spec danach,
+# blockiert das Gate erneut.
+po_briefing_gate:
+  enabled: true
+  # Fast-Track-Workflows (feature-fast, bug) brauchen per Default kein Briefing.
+  skip_fast_track: true
+
+# CI-Spec-Gate (scripts/ci_spec_gate.py, laeuft im Pull Request)
+# Prueft serverseitig, was die lokalen Hooks nur lokal erzwingen: Spec zum
+# Code-Change vorhanden und vollstaendig, PO-Briefing vorhanden, vollstaendig
+# und aktuell. Aussteigen fuer einen einzelnen PR: Commit-Trailer
+# `Spec-Gate: skip <Grund>` — sichtbar in der Historie.
+ci_spec_gate:
+  enabled: true
+
 # Specs Configuration
 specs:
   base_path: "docs/specs"
