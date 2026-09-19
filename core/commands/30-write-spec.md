@@ -52,6 +52,8 @@ Schreibe direkt eine Mini-Spec im Hauptkontext:
 - Format: laut `/00-intake` → Mini-Spec-Template
 - Dann: `workflow.py set-field spec_file "docs/specs/fast/[name].md"`
 - Dann: Freigabe vom User abwarten ("approved")
+- **Kein PO-Briefing** (Gate überspringt Fast Track). Wer es auch hier will:
+  `config.yaml` → `po_briefing_gate.skip_fast_track: false`, dann gilt Step 3b auch im Fast Track.
 - Nach Freigabe: direkt zu `/50-implement`
 
 **Standard- und Full-Process-Workflows** folgen dem normalen Ablauf unten.
@@ -119,6 +121,47 @@ ScheduleWakeup(180, "Spec-Validator Timeout [30-write-spec Step 3]: TaskList →
 2. Dispatche spec-validator erneut
 3. Wiederhole bis VALID
 
+### Step 3b: PO-Briefing erstellen (po-briefer/Sonnet) — PFLICHT vor der Freigabe
+
+Die Freigabe ist die einzige Stelle, an der ein Mensch entscheidet. Sie darf nicht
+auf deiner eigenen Zusammenfassung beruhen — du hast die Spec beauftragt, du bist
+befangen. Dispatche deshalb einen **unabhängigen** Briefer, der die Spec gegen die
+Ursprungsanfrage prüft, ohne deinen Gesprächsverlauf zu kennen:
+
+```
+Task (general-purpose/sonnet, run_in_background: true): "Du bist der po-briefer Agent.
+
+  ## Spec
+  docs/specs/[category]/[entity].md
+
+  ## Ursprungsanfrage
+  Issue #[N]: [Titel + Text]   (ersatzweise: docs/context/[workflow].md)
+
+  ## Workflow
+  [workflow-name]
+
+  Folge dem po-briefer Protokoll. Schreibe docs/briefings/[workflow-name].md."
+```
+
+**TIMEOUT-PFLICHT — sofort nach dem Spawn:**
+```
+ScheduleWakeup(240, "PO-Briefer Timeout [30-write-spec Step 3b]: TaskList → noch aktiv? JA → TaskStop, dann User: 'PO-Briefer nach 4 Min gestoppt — bitte Step 3b neu starten.' NEIN → ignorieren, fertig.")
+```
+
+Danach registrieren — ohne diesen Schritt blockiert das Gate die Freigabe:
+
+```bash
+python3 .claude/hooks/workflow.py set-briefing docs/briefings/[workflow-name].md
+```
+
+Der Befehl bindet das Briefing per SHA-256 an die gelesene Spec-Fassung. **Änderst
+du die Spec danach noch, wird das Briefing ungültig** — dann Step 3b wiederholen,
+nicht die Registrierung von Hand nachziehen.
+
+Das Briefing wird dem User **wörtlich** ausgegeben (siehe unten). Du fasst es nicht
+zusammen, kürzt es nicht und glättest seine kritischen Anmerkungen nicht — sonst ist
+die Unabhängigkeit wieder weg.
+
 ### Step 4: Workflow State aktualisieren
 
 ```bash
@@ -176,6 +219,16 @@ Präsentiere die Spec und bitte um Freigabe. Gib dem User folgende Zusammenfassu
 
 **Qualitätsplan:** [N] automatische Tests geplant · Spezifikation geprüft: VALID
 
+---
+**Unabhängiges PO-Briefing** (`docs/briefings/<workflow-name>.md`, erstellt vom
+po-briefer — nicht von mir):
+
+[Inhalt der Briefing-Datei ab '## Was gebaut wird' WÖRTLICH einfügen, inklusive
+aller kritischen Anmerkungen und der Freigabe-Frage. Nichts weglassen, nichts
+umformulieren, nichts kommentieren.]
+
+---
+
 Schreibe `approved` wenn der Plan so stimmt — danach geht es in die Umsetzung.
 
 ---
@@ -207,6 +260,7 @@ Weder diese Anweisung noch die `###`-Überschriften gehören in die Ausgabe — 
 **Gesichert auf der Platte:**
 - `.claude/workflows/<name>.json` — Phase `phase4_approved`, Feld `spec_file`, Verdict, Artefakt-Register
 - `docs/specs/<category>/<entity>.md` — die freigegebene Spec: Acceptance Criteria, Scope, geplante Tests
+- `docs/briefings/<workflow-name>.md` — das unabhängige PO-Briefing zur freigegebenen Spec-Fassung
 
 ✅ **`/clear` ist jetzt gefahrlos** — alles oben Gelistete stellt der Folge-Befehl allein aus diesen Dateien wieder her. Im Gesprächsverlauf steht nichts, was verloren ginge.
 

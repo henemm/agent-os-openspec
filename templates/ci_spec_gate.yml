@@ -1,0 +1,30 @@
+name: spec-gate
+
+# Serverseitige Nachprüfung dessen, was die lokalen Hooks nur lokal erzwingen.
+#
+# Warum: Hooks in .claude/hooks/ sind Leitplanken, keine Mauern — wer sie
+# abschaltet oder umschreibt, kommt an ihnen vorbei. Und .claude/workflows/ ist
+# gitignored, der Workflow-State erreicht die CI nie. Dieses Gate prüft deshalb
+# nur committete Dateien: Spec vorhanden und vollständig, PO-Briefing vorhanden,
+# vollständig und aktuell (Hash-Stempel aus `workflow.py set-briefing`).
+#
+# Aussteigen für einen einzelnen PR: Commit-Trailer `Spec-Gate: skip <Grund>`.
+# Abschalten fürs ganze Projekt: config.yaml → ci_spec_gate.enabled: false
+
+on:
+  pull_request:
+
+jobs:
+  spec-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # Das Gate vergleicht gegen den Basis-Branch
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Spec- und Briefing-Gate
+        run: |
+          python3 .claude/scripts/ci_spec_gate.py \
+            --base "origin/${{ github.event.pull_request.base.ref }}"
