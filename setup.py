@@ -488,6 +488,11 @@ tags: []
 |--------|------|---------|
 | | | |
 
+## Scope
+
+- **Affected Files:** `path/to/file`
+- **Estimated Changes:** ~N LoC
+
 ## Implementation Details
 
 ```
@@ -503,6 +508,29 @@ tags: []
 ## Known Limitations
 
 - [Any limitations or edge cases]
+
+## Definition of Done
+
+Fertig ist diese Änderung, wenn:
+
+- [ ] Jede Acceptance Criterion unten ist durch einen automatischen Test belegt
+- [ ] [beobachtbares Ergebnis, an dem der PO „fertig“ erkennt — kein „Code gemerged“]
+- [ ] Keine bestehende Funktion ist dabei kaputtgegangen (Regressionslauf grün)
+
+## Acceptance Criteria
+
+- **AC-1:** Given <Vorbedingung> / When <Aktion> / Then <beobachtbares Ergebnis>
+  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+
+## Test Plan
+
+Automatische Tests (jeweils an eine AC oben gebunden):
+- `pytest tests/test_entity.py`
+
+## Architektur-Entscheidung (ADR)
+
+- **ADR-Nr.:** [ADR-NNNN oder "keine"]
+- **Rationale:** [kurz: warum diese Entscheidung bzw. warum keine nötig ist]
 
 ## Changelog
 

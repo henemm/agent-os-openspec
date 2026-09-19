@@ -242,6 +242,16 @@ adversary_gate:
 adr_gate:
   enabled: true
 
+# PO-Briefing-Gate (Freigabe Phase 3 -> 4)
+# Die Freigabe verlangt ein unabhaengig erstelltes Briefing (po-briefer Agent),
+# registriert via `workflow.py set-briefing <pfad>`. Das Briefing ist per
+# SHA-256 an die gelesene Spec-Fassung gebunden: aendert sich die Spec danach,
+# blockiert das Gate erneut.
+po_briefing_gate:
+  enabled: true
+  # Fast-Track-Workflows (feature-fast, bug) brauchen per Default kein Briefing.
+  skip_fast_track: true
+
 # Specs Configuration
 specs:
   base_path: "docs/specs"

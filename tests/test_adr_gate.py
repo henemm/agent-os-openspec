@@ -108,6 +108,32 @@ def _write_spec(tmp_path: Path, rel_spec: str, adr_section: str | None) -> None:
     spec_path.write_text(body)
 
 
+# --- PO-Briefing-Fixture ----------------------------------------------------
+# Seit dem PO-Briefing-Gate verlangt die Freigabe (Phase 3→4) zusätzlich ein
+# registriertes, vollständiges Briefing. Damit HIER weiterhin ausschliesslich
+# das ADR-Gate über Pass/Block entscheidet, legen die Fixtures unten ein
+# gültiges Briefing an. Ohne `spec_sha256` entfällt die Aktualitätsprüfung —
+# die ADR-Specs variieren je Test, ihr Hash ist hier ohne Belang.
+
+PO_BRIEFING_REL = "docs/briefings/adr-wf.md"
+
+PO_BRIEFING_BODY = (
+    "# PO-Briefing: adr-wf\n\n"
+    "## Was gebaut wird\n\nEine kleine, klar umrissene Änderung am Modul.\n\n"
+    "## Definition of Done\n\nFertig, wenn das beschriebene Verhalten sichtbar eintritt.\n\n"
+    "## Wie geprüft wird\n\nEin automatischer Test prüft genau dieses Verhalten.\n\n"
+    "## Kritische Anmerkungen\n\n- Keine offenen Punkte erkennbar.\n"
+)
+
+
+def _write_po_briefing(tmp_path: Path) -> dict:
+    """Schreibe ein gültiges Briefing und liefere den State-Eintrag dazu."""
+    path = tmp_path / PO_BRIEFING_REL
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(PO_BRIEFING_BODY)
+    return {"file": PO_BRIEFING_REL, "created": "2026-01-01T00:00:00"}
+
+
 # --- Einhängepunkt A: workflow.py phase-Transition -------------------------
 
 def _run_phase(env: dict, target: str, cwd: str) -> subprocess.CompletedProcess:
@@ -139,6 +165,7 @@ def _make_transition_workflow(tmp_path: Path, rel_spec: str) -> None:
         "red_test_done": True,
         "phase_transitions": [],
         "phase_log": [],
+        "po_briefing": _write_po_briefing(tmp_path),
     }
     (wf_dir / "adr-wf.json").write_text(json.dumps(data))
 
@@ -249,6 +276,7 @@ def _make_spec_phase_workflow(tmp_path: Path, rel_spec: str) -> Path:
         "spec_approved": False,
         "phase_transitions": [],
         "phase_log": [],
+        "po_briefing": _write_po_briefing(tmp_path),
     }
     wf_file = wf_dir / "adr-wf.json"
     wf_file.write_text(json.dumps(data))

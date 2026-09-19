@@ -5,6 +5,67 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.20.0] - 2026-09-19
+
+### Added
+
+**Unabhängiges PO-Briefing als Freigabe-Gate (Phase 3 → 4)**
+
+Die Freigabe-Zusammenfassung vor `approved` schrieb bisher der Orchestrator selbst —
+also derjenige, der die Spec beauftragt hat. Damit war die einzige Stelle, an der ein
+Mensch entscheidet, eine Selbstauskunft: Wer die Spec verantwortet, beschreibt sie
+auch. Ein nicht-technischer PO, der die Spec nicht selbst liest, hatte keine
+unabhängige Grundlage für sein Ja.
+
+Neu erstellt ein eigener Agent das Briefing, ohne den Gesprächsverlauf des
+Orchestrators zu kennen:
+
+- **`core/agents/po-briefer.md`** (Sonnet, read-only + Write): liest ausschliesslich
+  Spec und Ursprungsanfrage (Issue/Kontext-Dokument), gleicht beide ab (Deckung,
+  Zusatz, Abweichung, DoD-Messbarkeit, AC-ohne-Test, vage „Then") und schreibt
+  `docs/briefings/<workflow>.md` mit vier Pflicht-Abschnitten: *Was gebaut wird*,
+  *Definition of Done*, *Wie geprüft wird*, *Kritische Anmerkungen* — je ein Satz,
+  plus eine Freigabe-Frage.
+- **`workflow.py set-briefing <pfad>`**: registriert das Briefing und bindet es per
+  SHA-256 an genau die Spec-Fassung, die der Briefer gelesen hat.
+- **Gate an zwei Einhängepunkten** (Muster wie das ADR-Gate, Issue #63):
+  `workflow.py::_check_po_briefing` blockt die Transition nach `phase4_approved`,
+  `phase_listener.py` blockt die Freigabe-Phrase (Soft-Block, `spec_approved` bleibt
+  False). Blockiert wird bei: kein Briefing registriert, Datei fehlt, Pflicht-Abschnitt
+  fehlt oder leer, Platzhalter (`[TODO`, `[TBD`, `FIXME:`) — und wenn die Spec **nach**
+  dem Briefing geändert wurde (Hash-Abgleich). Sonst nickt der PO ein Briefing ab, das
+  eine andere Spec beschreibt als die, die umgesetzt wird.
+- **`/30-write-spec` Step 3b** dispatcht den Briefer (mit Timeout-Pflicht wie die
+  übrigen Agenten) und gibt das Briefing **wörtlich** aus — kein Zusammenfassen,
+  kein Glätten der kritischen Anmerkungen.
+
+**`## Definition of Done` im Spec-Template**
+
+Das Template kannte kein Fertig-Kriterium; „fertig" war implizit über Acceptance
+Criteria und Test Plan verteilt. Neu ist `## Definition of Done` eine Pflicht-Sektion
+(`spec-validator`), damit das Briefing sie zitieren kann statt sie zu erfinden.
+
+### Fixed
+
+**Template-Drift: Validator forderte Sektionen, die kein Template lieferte**
+
+`spec-validator` verlangte `## Scope` und `## Architektur-Entscheidung (ADR)` als
+Pflicht-Sektionen, aber weder `templates/spec_template.md` noch das in `setup.py`
+eingebettete Template enthielten sie — jede streng nach Template geschriebene Spec
+war damit formal INVALID. Alle drei Template-Quellen (`templates/spec_template.md`,
+`docs/specs/_template.md`, `setup.py::create_spec_template`) enthalten jetzt
+denselben Satz Pflicht-Sektionen inklusive Scope, Definition of Done, Acceptance
+Criteria, Test Plan und ADR.
+
+### Migration
+
+Laufende Workflows in `phase3_spec` brauchen vor dem nächsten `approved` ein
+Briefing: `/30-write-spec` Step 3b ausführen oder
+`workflow.py set-briefing <pfad>` nachziehen. Wer das Gate nicht will:
+`config.yaml` → `po_briefing_gate.enabled: false`. Fast-Track-Workflows
+(`feature-fast`, `bug`) sind per Default ausgenommen
+(`po_briefing_gate.skip_fast_track`).
+
 ## [3.19.0] - 2026-09-18
 
 ### Added

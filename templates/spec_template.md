@@ -35,6 +35,11 @@ test_targets: []
 | dependency_1 | module | Used for X |
 | dependency_2 | function | Provides Y |
 
+## Scope
+
+- **Affected Files:** `path/to/file_1`, `path/to/file_2`
+- **Estimated Changes:** ~N LoC
+
 ## Implementation Details
 
 ```python
@@ -60,6 +65,14 @@ def example():
 - Limitation 1
 - Limitation 2
 
+## Definition of Done
+
+Fertig ist diese Änderung, wenn:
+
+- [ ] Jede Acceptance Criterion unten ist durch einen automatischen Test belegt
+- [ ] [beobachtbares Ergebnis, an dem der PO „fertig" erkennt — kein „Code gemerged"]
+- [ ] Keine bestehende Funktion ist dabei kaputtgegangen (Regressionslauf grün)
+
 ## Acceptance Criteria
 
 - **AC-1:** Given <precondition> / When <action> / Then <observable outcome>
@@ -72,6 +85,11 @@ def example():
 
 Automated tests (linked to AC above):
 - `pytest tests/test_entity.py`
+
+## Architektur-Entscheidung (ADR)
+
+- **ADR-Nr.:** [ADR-NNNN oder "keine"]
+- **Rationale:** [kurz: warum diese Entscheidung bzw. warum keine nötig ist]
 
 ## Changelog
 
