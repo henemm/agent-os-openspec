@@ -50,6 +50,12 @@ NOTIFICATION_MARKERS = [
     "<system-reminder>",
     "<bash-input>",
     "<local-command-caveat>",
+    # Issue #141: Subagent-Hand-back-Envelope (Agent-Tool). Beide Marker
+    # stammen laut Rahmentext-Erklärung aus demselben harness-kontrollierten
+    # Block wie die 5 bestehenden Marker und sind vom Subagenten-Inhalt nicht
+    # fälschbar (Einrückung schützt gegen Frame-Fälschung, siehe Kontext-Doku).
+    '<agent-message from="',
+    "[Subagent hand-back]",
 ]
 
 # Position innerhalb derer freigabe-relevante Phrasen (approval/GREEN/override)

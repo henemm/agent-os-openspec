@@ -5,6 +5,29 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.22.1] - 2026-09-19
+
+### Fixed
+
+**Stop-Lock-Fehlalarm durch zitierte Stop-Wörter in Subagent-Hand-backs (Issue #141)**
+
+Zitierte ein per `Agent`-Tool gestarteter Subagent in seinem Abschlussbericht ein
+Stop-Wort ("STOPP", "halt", ...), löste `phase_listener.py` einen echten Stop-Lock
+aus — obwohl nie ein Mensch "stop" gesagt hatte. In derselben Session zweimal mit
+unterschiedlichen Subagent-Typen reproduziert.
+
+- `NOTIFICATION_MARKERS` in `core/hooks/phase_listener.py` erkennt jetzt zusätzlich
+  den Subagent-Hand-back-Envelope: `<agent-message from="` (strukturelles Tag) und
+  `[Subagent hand-back]` (Rahmenphrase). Beide Marker wirken unabhängig
+  voneinander (ODER-Verknüpfung). Turns mit einem dieser Marker überspringen — wie
+  schon bei den fünf bestehenden Markern aus Issue #46 — die komplette
+  Keyword-Erkennung (Stop-Lock, Freigabe, Override, GREEN).
+- Rein additiv: `_is_notification_turn()`, `_matches()` und die
+  `leading_only`-Logik bleiben unverändert. Der echte Not-Aus (unverpacktes
+  "stop"/"STOPP" als tatsächliche User-Eingabe) bleibt unverändert scharf.
+- Regressionstest: `tests/test_phase_listener_agent_handback_141.py` (6 Fälle,
+  je einer pro Acceptance Criterion).
+
 ## [3.22.0] - 2026-09-19
 
 ### Added
