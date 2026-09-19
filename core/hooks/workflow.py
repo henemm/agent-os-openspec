@@ -560,6 +560,15 @@ _PO_BRIEFING_MIN_BODY = 20
 
 _PO_BRIEFING_PLACEHOLDERS = ("[todo", "[tbd", "todo:", "fixme:", "xxx:", "<platzhalter")
 
+# Obergrenze für die Wortzahl (Pflicht-Abschnitte + Freigabe-Frage). Der
+# po-briefer zielt auf ≤ 120 Wörter; 150 lässt Puffer, damit das Gate nicht an
+# einem Wort zu viel scheitert. Konfigurierbar: po_briefing_gate.max_words.
+_PO_BRIEFING_MAX_WORDS = 150
+
+# Optionaler Abschnitt, der mitgezählt wird, wenn vorhanden. Fehlt er, zählt er
+# 0 Wörter — Vollständigkeit prüfen die Pflicht-Abschnitte, nicht dieser.
+_PO_BRIEFING_QUESTION = r"Freigabe-?\s*Frage"
+
 
 def spec_sha256(content: str) -> str:
     """SHA-256 des Spec-Inhalts — bindet ein Briefing an genau diese Spec-Fassung."""
@@ -576,11 +585,44 @@ def _read_spec_content(data: dict) -> "str | None":
         return None
 
 
-def check_briefing_content(content: str) -> "str | None":
-    """Prüft den Briefing-TEXT auf Vollständigkeit. Fehlermeldung oder None.
+def _briefing_section_body(content: str, pattern: str) -> "str | None":
+    """Rohtext eines Briefing-Abschnitts oder None, wenn die Überschrift fehlt.
+
+    Überschrift ## oder ###, Zusatztext dahinter erlaubt ("## Definition of
+    Done (DoD)"). Body reicht bis zur nächsten Überschrift Rang 1-3 oder EOF.
+    """
+    match = _re.search(
+        r"^#{2,3}\s*" + pattern + r"[^\n]*$(.*?)(?=^#{1,3}\s|\Z)",
+        content,
+        _re.IGNORECASE | _re.MULTILINE | _re.DOTALL,
+    )
+    return match.group(1) if match else None
+
+
+def count_briefing_words(content: str) -> int:
+    """Wörter in den Pflicht-Abschnitten + Freigabe-Frage (falls vorhanden).
+
+    Titel, Meta-Zeilen (Spec/Issue/Datum) und Frontmatter zählen nicht — der
+    PO liest sie nicht als Inhalt. Als Wort gilt jedes Leerzeichen-getrennte
+    Token mit mindestens einem Buchstaben oder einer Ziffer; Aufzählungszeichen
+    und Gedankenstriche zählen also nicht.
+    """
+    patterns = [pattern for _, pattern in PO_BRIEFING_SECTIONS] + [_PO_BRIEFING_QUESTION]
+    total = 0
+    for pattern in patterns:
+        body = _briefing_section_body(content, pattern)
+        if body:
+            total += sum(1 for tok in body.split() if _re.search(r"\w", tok))
+    return total
+
+
+def check_briefing_content(content: str, max_words: "int | None" = None) -> "str | None":
+    """Prüft den Briefing-TEXT auf Vollständigkeit und Länge. Fehlermeldung oder None.
 
     Bewusst rein textuell und ohne Workflow-Bezug, damit `set-briefing` (bei der
     Registrierung) und das Gate (bei der Freigabe) exakt dasselbe prüfen.
+    `max_words` kommt von konfigurationskundigen Aufrufern
+    (po_briefing_gate.max_words); ohne Angabe gilt `_PO_BRIEFING_MAX_WORDS`.
     """
     lowered = content.lower()
     for marker in _PO_BRIEFING_PLACEHOLDERS:
@@ -588,20 +630,44 @@ def check_briefing_content(content: str) -> "str | None":
             return f"PO-Briefing enthält noch einen Platzhalter ('{marker}') — nicht fertig."
 
     for section, pattern in PO_BRIEFING_SECTIONS:
-        # Überschrift ## oder ###, Zusatztext dahinter erlaubt ("## Definition of
-        # Done (DoD)"). Body reicht bis zur nächsten Überschrift Rang 1-3 oder EOF.
-        match = _re.search(
-            r"^#{2,3}\s*" + pattern + r"[^\n]*$(.*?)(?=^#{1,3}\s|\Z)",
-            content,
-            _re.IGNORECASE | _re.MULTILINE | _re.DOTALL,
-        )
-        if not match:
+        raw = _briefing_section_body(content, pattern)
+        if raw is None:
             return f"PO-Briefing ohne Abschnitt '## {section}'."
-        body = _re.sub(r"[\s\-*>]+", " ", match.group(1)).strip()
+        body = _re.sub(r"[\s\-*>]+", " ", raw).strip()
         if len(body) < _PO_BRIEFING_MIN_BODY:
             return f"PO-Briefing: Abschnitt '## {section}' ist leer bzw. zu dünn."
 
+    limit = _PO_BRIEFING_MAX_WORDS if max_words is None else max_words
+    words = count_briefing_words(content)
+    if words > limit:
+        return (
+            f"Briefing zu lang ({words} Wörter, max {limit}) — "
+            "po-briefer erneut dispatchen."
+        )
+
     return None
+
+
+def po_briefing_max_words(cfg: "dict | None" = None) -> int:
+    """Konfigurierte Wortgrenze (po_briefing_gate.max_words) oder Default.
+
+    Lenient: fehlende/kaputte Konfiguration oder ein unbrauchbarer Wert → Default.
+    """
+    if cfg is None:
+        try:
+            from config_loader import load_config
+            config = load_config()
+            cfg = config.get("po_briefing_gate", {}) if isinstance(config, dict) else {}
+        except Exception:
+            cfg = {}
+    value = cfg.get("max_words") if isinstance(cfg, dict) else None
+    if isinstance(value, bool):
+        return _PO_BRIEFING_MAX_WORDS
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        return _PO_BRIEFING_MAX_WORDS
+    return value if value > 0 else _PO_BRIEFING_MAX_WORDS
 
 
 def parse_briefing_frontmatter(content: str) -> dict:
@@ -692,8 +758,8 @@ def _check_po_briefing(data: dict) -> "str | None":
     except Exception:
         return f"PO-Briefing '{entry['file']}' nicht lesbar oder nicht vorhanden" + hint
 
-    # 5. Inhalt
-    content_err = check_briefing_content(briefing)
+    # 5. Inhalt + Länge
+    content_err = check_briefing_content(briefing, po_briefing_max_words(cfg))
     if content_err:
         return content_err + hint
 
@@ -1008,7 +1074,7 @@ def cmd_set_briefing(args: list[str]) -> None:
         print(f"BLOCKED: PO-Briefing nicht lesbar: {rel}", file=sys.stderr)
         sys.exit(1)
 
-    content_err = check_briefing_content(briefing)
+    content_err = check_briefing_content(briefing, po_briefing_max_words())
     if content_err:
         print(f"BLOCKED: {content_err}", file=sys.stderr)
         sys.exit(1)

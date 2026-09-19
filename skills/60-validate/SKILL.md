@@ -15,8 +15,69 @@ _H="${CLAUDE_PLUGIN_ROOT:+${CLAUDE_PLUGIN_ROOT}/core/hooks}"
 if [ -z "$_H" ]; then _p="$(python3 -c 'import json,os;d=json.load(open(os.path.expanduser("~/.claude/plugins/installed_plugins.json")));print(next((e["installPath"] for k,v in d.get("plugins",{}).items() if k.startswith("agent-os-openspec@") for e in [next((x for x in v if x.get("scope")=="user"),v[0])]),""))' 2>/dev/null)"; [ -n "$_p" ] && [ -d "$_p/core/hooks" ] && _H="$_p/core/hooks"; fi
 _H="${_H:-.claude/hooks}"
 WF="python3 ${_H}/workflow.py"
-AD="python3 ${_H}/adversary_dialog.py"
 ```
+
+## Wiedereinstieg via Issue-Nummer (nach `/clear`)
+
+**Wurde dieser Befehl als `/60-validate #<N>` aufgerufen** (typisch nach einem `/clear`)? Dann löse zuerst den Workflow von der Platte auf — der komplette State überlebt jeden `/clear` und jeden Worktree:
+
+```bash
+ISSUE=42   # die übergebene Nummer (ohne #)
+python3 - "$ISSUE" <<'PY'
+import sys, json, glob, re, os
+issue = sys.argv[1].lstrip('#')
+pat = re.compile(rf'(^|[-_]){re.escape(issue)}([-_]|$)')
+hits = []
+for f in glob.glob('.claude/workflows/*.json'):
+    name = os.path.basename(f)[:-5]
+    if pat.search(name):
+        d = json.load(open(f))
+        hits.append((name, d.get('current_phase'), d.get('spec_file') or 'Not created', d.get('adversary_verdict'), d.get('affected_files', [])))
+if not hits:
+    print(f'KEIN laufender Workflow fuer #{issue} (evtl. abgeschlossen -> .claude/workflows/_archive/).')
+else:
+    for name, ph, spec, verd, aff in hits:
+        print(f'GEFUNDEN: {name} | Phase={ph} | Spec={spec} | Verdict={verd}')
+        if aff: print(f'  affected_files: {", ".join(aff)}')
+    print('\nNAME=' + hits[0][0])
+PY
+```
+
+**PFLICHT direkt danach** — Workflow wirklich aktivieren (nicht nur die Zeile oben lesen). Ein reines `export OPENSPEC_ACTIVE_WORKFLOW=...` reicht NICHT: Shell-State überlebt keinen Bash-Tool-Aufruf, und in Worktree-Sessions ignoriert `resolve_active_workflow()` die Env-Var ohnehin (Issue #58):
+
+```bash
+$WF switch <NAME-aus-obigem-Output>
+$WF status
+```
+
+Das `status`-Kommando ist der eigentliche Wiedereinstiegs-Check: Es zeigt die Quelle (`[file]`) und bestätigt Phase/Verdict. Fasse dem User in 2 Sätzen den Stand zusammen (Phase, Verdict) und fahre dann mit den Prerequisites fort.
+
+### Kontext laden (nur bei Wiedereinstieg nach `/clear`)
+
+Bevor du mit den Prerequisites fortfährst, lade den vollständigen Validierungs-Kontext — damit die nachfolgenden Agenten konkrete Werte statt Platzhalter erhalten.
+
+Dispatche einen **Explore/Haiku Subagenten**:
+
+```
+Task (Explore/haiku, run_in_background: true): "Lies folgende Ressourcen und extrahiere die konkreten Werte:
+  1. [spec_file aus dem Wiedereinstieg-Block oben] → Acceptance Criteria (AC-1 bis AC-N)
+  2. docs/artifacts/<workflow-name>/adversary-dialog.md → Adversary-Verdict und Findings
+  3. openspec.yaml (Feld test_command) → konkreter Test-Befehl
+
+  Gib zurück:
+  - spec_file_path: [konkreter Pfad, bereits aus Wiedereinstieg bekannt]
+  - affected_files: [bereits aus Wiedereinstieg bekannt]
+  - test_command: [konkreter Befehl]
+  - Acceptance Criteria: [Liste aller AC-N]
+  - adversary_verdict: [VERIFIED / BROKEN / AMBIGUOUS]"
+```
+
+**TIMEOUT-PFLICHT — sofort nach dem Spawn:**
+```
+ScheduleWakeup(180, "Kontext-Agent Timeout [60-validate Wiedereinstieg]: TaskList → noch aktiv? JA → TaskStop, dann User: 'Kontext-Agent nach 3 Min gestoppt — bitte /60-validate neu starten.' NEIN → ignorieren, fertig.")
+```
+
+Ersetze alle `[...]`-Platzhalter in Step 1 und Step 3 mit den geladenen Werten — kein Agent darf mit Platzhaltern gestartet werden.
 
 ## Prerequisites
 
@@ -34,7 +95,7 @@ $WF status
 **Du MUSST pruefen, dass der Adversary Dialog valid ist, bevor du fortfaehrst:**
 
 ```bash
-$AD validate docs/artifacts/<workflow-name>/adversary-dialog.md
+python3 ${_H}/adversary_dialog.py validate docs/artifacts/<workflow-name>/adversary-dialog.md
 ```
 
 Wenn die Validierung fehlschlaegt: Zurueck zu `/50-implement` Step 8 (Adversary Dialog wiederholen).
@@ -155,8 +216,46 @@ Erstelle eine Zusammenfassung:
 
 ## Next Step
 
-After successful validation:
-> "Validation successful. All checks passed. Ready for commit."
+### Autonomen Weiterlauf prüfen (PFLICHT, vor der Ausgabe)
+
+Existiert im Projekt ein `/70-deploy` (eigene `.claude/commands/70-deploy.md` oder Skill) UND
+dokumentiert das Projekt selbst — in dessen `CLAUDE.md` oder direkt in `70-deploy.md` —
+explizit, dass Deploy **ohne Freigabe-Halt autonom** läuft (Formulierungen wie "läuft
+autonom", "kein Freigabe-Halt", "ohne manuelle Ausführung")? Dann ist das bindende
+Projekt-Policy — nicht erneut zur Diskussion stellen und nicht darauf warten, dass der
+User `/70-deploy` selbst eintippt. Das gilt auch dann, wenn "eigentlich" an dieser Stelle
+generell auf eine Bestätigung gewartet wird: eine explizite Projekt-Policy sticht die
+Default-Ceremony dieses Commands. Committe wie unten beschrieben und rufe danach
+`/70-deploy` **im selben Turn selbst auf** — melde dem User das Ergebnis der ganzen Kette,
+nicht einen Zwischenstand, der auf seine Eingabe wartet.
+
+Fehlt eine solche explizite Projekt-Policy: Standardverhalten unten (fragen, nicht
+autonom weiterlaufen) — Autonomie ist ein Opt-in des Projekts, kein Default des Frameworks.
+
+### Zusammenfassung an den User
+
+Nach erfolgreicher Validierung, gib dem User folgende Zusammenfassung:
+
+---
+✅ **Alles fertig und geprüft.**
+
+**Was wurde umgesetzt:** [Feature/Bugfix in 1–2 Sätzen aus Nutzerperspektive]
+
+**Ergebnis:**
+- Alle Qualitätsprüfungen bestanden
+- Alle Anforderungen aus dem Plan erfüllt
+- Keine bestehenden Funktionen beeinträchtigt
+
+**Bereit für:** Commit[, dann Deploy — falls im Projekt vorgesehen]
+
+Soll ich den Code committen?
+
+---
+
+**Ausnahme bei dokumentierter Autonomie (siehe Prüfung oben):** Ersetze die letzte Zeile
+durch die kurze Ankündigung, dass jetzt committet und automatisch weiterdeployt wird —
+keine Frage, keine Wartezeile wie "Warte auf /70-deploy". Führe die Kette im selben Turn
+aus und melde danach das Endergebnis.
 
 ## On Failure
 

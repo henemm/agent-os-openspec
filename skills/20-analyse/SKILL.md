@@ -17,15 +17,46 @@ _H="${_H:-.claude/hooks}"
 WF="python3 ${_H}/workflow.py"
 ```
 
+## Step 0: Workflow-State auflösen (ZUERST — vor allem anderen)
+
+**Wurde dieser Befehl mit einer Issue-Nummer aufgerufen** (z. B. `/20-analyse #42` — typisch nach einem `/clear`)? Dann aktiviere den Workflow explizit. Ein reines `export OPENSPEC_ACTIVE_WORKFLOW=...` reicht NICHT: Shell-State überlebt keinen Bash-Tool-Aufruf, und in Worktree-Sessions ignoriert `resolve_active_workflow()` die Env-Var ohnehin (Issue #58).
+
+```bash
+ISSUE=42   # die übergebene Nummer (ohne #)
+python3 - "$ISSUE" <<'PY'
+import sys, json, glob, re, os
+issue = sys.argv[1].lstrip('#')
+pat = re.compile(rf'(^|[-_]){re.escape(issue)}([-_]|$)')
+hits = []
+for f in glob.glob('.claude/workflows/*.json'):
+    name = os.path.basename(f)[:-5]
+    if pat.search(name):
+        d = json.load(open(f))
+        hits.append((name, d.get('current_phase'), d.get('spec_file') or 'Not created'))
+if not hits:
+    print(f'KEIN laufender Workflow fuer #{issue} (evtl. abgeschlossen -> .claude/workflows/_archive/).')
+else:
+    for name, ph, spec in hits:
+        print(f'GEFUNDEN: {name} | Phase={ph} | Spec={spec}')
+    print('\nNAME=' + hits[0][0])
+PY
+```
+
+**PFLICHT direkt danach** — Workflow wirklich aktivieren (nicht nur die Zeile oben lesen) und den Stand verifizieren:
+
+```bash
+$WF switch <NAME-aus-obigem-Output>
+$WF status
+```
+
+Das `status`-Kommando ist der eigentliche Wiedereinstiegs-Check: Es zeigt die Quelle (`[file]`) und bestätigt Phase/Spec. Fasse dem User in 2 Sätzen zusammen, wo der Workflow steht — damit sichtbar ist, dass der `/clear` nichts verloren hat.
+
+**Ohne Issue-Argument** (laufende Session, kein `/clear` dazwischen): `workflow.py status` reicht direkt.
+
 ## Prerequisites
 
 - Context gathered (`/10-context` completed, or combined with analysis)
 - Active workflow exists
-
-Check current workflow:
-```bash
-$WF status
-```
 
 ## Your Tasks
 
@@ -130,9 +161,57 @@ $WF phase phase3_spec
 
 ## Next Step
 
-When analysis is complete:
-> "Analysis complete. Type: [Bug/Feature]. Scope: [N] files, ~[N] LoC. Next: `/30-write-spec` to create the specification."
+Wenn die Analyse abgeschlossen ist:
 
-If you have open questions, ask the user before proceeding.
+### Checkpoint prüfen (Anweisung an dich — nicht ausgeben)
+
+Prüfe der Reihe nach, bevor du unten etwas ausgibst:
+
+- Phase im Workflow-State geschrieben — `$WF status` bestätigt sie
+- Alle Ergebnisdateien dieser Phase liegen auf der Platte
+- Keine Erkenntnis, die für `/30-write-spec` nötig und nirgends niedergeschrieben ist
+
+Sind alle Punkte erfüllt: Gib den Positiv-Block aus. Ist mindestens einer verletzt: Gib stattdessen den Negativ-Block aus und ersetze dessen Platzhalter durch den konkreten Sicherungsschritt.
+
+Weder diese Anweisung noch die `###`-Überschriften gehören in die Ausgabe — an den User geht ausschließlich der Text zwischen den `---`-Trennern.
+
+### Ausgabe: Zusammenfassung (immer)
+
+---
+**Analyse abgeschlossen.**
+
+**Art der Aufgabe:** [Feature / Bugfix]
+
+**Was steht an?** [1–2 Sätze was konkret geändert oder gebaut wird — aus Nutzerperspektive, ohne Dateinamen oder Code]
+
+**Risiko:** [Niedrig / Mittel / Hoch] — [kurze Begründung ohne Technik, z.B. "betrifft nur einen isolierten Bereich" oder "ändert eine zentrale Funktion"]
+
+---
+
+### Ausgabe A: Positiv-Block (alle Vorbedingungen erfüllt)
+
+---
+**Gesichert auf der Platte:**
+- `.claude/workflows/<name>.json` — Phase `phase3_spec`, Verdict, Artefakt-Register
+- `docs/context/<workflow-name>.md`, Abschnitt `## Analysis` — Art der Aufgabe, betroffene Dateien mit Change-Type, Scope/Risiko, technischer Ansatz, offene Fragen
+
+✅ **`/clear` ist jetzt gefahrlos** — alles oben Gelistete stellt der Folge-Befehl allein aus diesen Dateien wieder her. Im Gesprächsverlauf steht nichts, was verloren ginge.
+
+1. `/clear`
+2. `/30-write-spec #<N>`
+
+---
+
+### Ausgabe B: Negativ-Block (mindestens eine Vorbedingung verletzt)
+
+---
+⚠️ **`/clear` jetzt NICHT** — Folgendes steht nur im Gesprächsverlauf:
+- <was fehlt> → sichern mit: <konkreter Befehl oder Schritt>
+
+Erst sichern, dann ist `/clear` gefahrlos.
+
+---
+
+Wenn noch offene Fragen bestehen: Zuerst den User fragen, bevor es weitergeht.
 
 **IMPORTANT:** Do NOT start implementation. Analysis -> Spec -> Approve -> TDD RED -> Implement.

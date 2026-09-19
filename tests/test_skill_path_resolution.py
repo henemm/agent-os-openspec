@@ -187,9 +187,10 @@ def test_d3_user_scope_preferred_over_project(tmp_path):
 # ---------------------------------------------------------------------------
 def test_e_all_skills_share_identical_snippet():
     snippet_files = skills_with_snippet()
-    # Die 11 hook-nutzenden Skills müssen alle den Snippet tragen.
-    assert len(snippet_files) == 11, (
-        f"Erwartet 11 Skills mit Hook-Setup-Snippet, gefunden {len(snippet_files)}: "
+    # Die 12 hook-nutzenden Skills müssen alle den Snippet tragen (seit 3.23.0
+    # inkl. 00-bug: dessen core/commands-Fassung startet/beendet Workflows).
+    assert len(snippet_files) == 12, (
+        f"Erwartet 12 Skills mit Hook-Setup-Snippet, gefunden {len(snippet_files)}: "
         f"{snippet_files}"
     )
 
@@ -200,12 +201,12 @@ def test_e_all_skills_share_identical_snippet():
 
 
 def test_e2_non_hook_skills_have_no_snippet():
-    """Die 5 Skills ohne Hook-Aufrufe tragen bewusst keinen Snippet-Block."""
+    """Die 4 Skills ohne Hook-Aufrufe tragen bewusst keinen Snippet-Block."""
     all_skills = set(glob.glob(SKILLS_GLOB))
     with_snippet = set(skills_with_snippet())
     without = all_skills - with_snippet
-    # Genau diese 5 Skills invozieren keine workflow.py-Hooks.
-    assert len(without) == 5, f"Erwartet 5 Skills ohne Snippet, gefunden: {sorted(without)}"
+    # Genau diese 4 Skills invozieren keine workflow.py-Hooks.
+    assert len(without) == 4, f"Erwartet 4 Skills ohne Snippet, gefunden: {sorted(without)}"
     for p in without:
         assert "CLAUDE_PLUGIN_ROOT" not in Path(p).read_text(), (
             f"{p} sollte keinen Hook-Setup-Block enthalten"

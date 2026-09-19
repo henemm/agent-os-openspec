@@ -174,62 +174,32 @@ python3 .claude/hooks/workflow.py phase phase3_spec
 
 ## Next Step
 
-### Block "Wo ich für dich entschieden habe" ermitteln (PFLICHT, vor der Ausgabe)
+### Freigabe-Ausgabe an den User
 
-Ein technischer Reviewer könnte die Spec selbst lesen und Trade-offs beurteilen — der
-User hier kann und soll das nicht (PO ohne Technikhintergrund). Die Freigabe-Frage
-"passt das so?" ist nur beantwortbar, wenn ihr die Stellen genannt werden, an denen
-ein Urteil gefällt wurde, das auch anders hätte ausfallen können — nicht der gesamte
-technische Inhalt.
+Du schreibst **keine eigene Zusammenfassung** der Spec. Was gebaut wird, wo vom
+Ticket abgewichen wurde und was fragwürdig ist, steht im unabhängigen Briefing —
+eine zweite Fassung von dir wäre wieder Selbstauskunft und verdoppelt nur den Text.
 
-Prüfe dafür die fertige Spec (und die Analyse aus Phase 2) auf genau diese Fälle:
-- Eine Anforderung aus Ticket/Anfrage wurde bewusst **anders** umgesetzt als wörtlich
-  verlangt (z. B. eigener Abschnitt "Abweichungen vom Ticket-Entwurf", falls die Spec
-  einen hat — dann von dort übernehmen und in Alltagssprache übersetzen)
-- Etwas Nahliegendes wurde bewusst **nicht** mit umgesetzt (Scope-Reduktion,
-  "Nicht-Ziele", verschoben auf eine Folge-Scheibe)
-- Ein Risiko oder Trade-off wurde zugunsten einer Option entschieden, ohne dass die
-  Analyse-Phase das explizit mit dir abgestimmt hat
+Die Ausgabe besteht aus genau diesen Teilen, in dieser Reihenfolge:
 
-Formuliere jeden Fall in 1 Satz, ohne Dateinamen/Code, mit der Konsequenz für den
-User. Findest du nach ehrlicher Prüfung **keinen** solchen Fall, schreibe das explizit
-aus — nicht weglassen, sonst ist nicht unterscheidbar zwischen "geprüft, nichts
-gefunden" und "vergessen".
+1. **Das Briefing wörtlich** — Inhalt von `docs/briefings/<workflow-name>.md` ab
+   `## Was gebaut wird` bis zum Ende. Nichts weglassen, nichts umformulieren.
+2. **Optional: deine Gegenstimme** — nur zu einer *Kritischen Anmerkung*, der du
+   widersprichst, je genau eine Zeile `Meine Einschätzung: …`, höchstens 3 Zeilen
+   insgesamt. Stimmst du allen Anmerkungen zu: nichts schreiben.
+3. **Marker-Zeile** — wörtlich, als letzte Zeile vor der Freigabe-Aufforderung:
+   `⚙ PO-Briefing unabhängig erstellt · agent-os-openspec {{OPENSPEC_VERSION}}`
+4. **Freigabe-Aufforderung** — eine Zeile.
 
-### Zusammenfassung an den User
-
-Präsentiere die Spec und bitte um Freigabe. Gib dem User folgende Zusammenfassung:
+Vorlage:
 
 ---
-**Plan fertig — bitte Freigabe.**
+[Briefing ab '## Was gebaut wird' WÖRTLICH]
 
-**Was wird gebaut?**
-[Feature/Änderung in 1–2 Sätzen aus Nutzerperspektive — keine Dateinamen, kein Code]
+Meine Einschätzung: [nur bei Widerspruch zu einer Anmerkung — sonst weglassen]
 
-**Was ändert sich sichtbar?**
-- [Konkretes sichtbares Verhalten 1]
-- [Konkretes sichtbares Verhalten 2]
-
-**Was bleibt unverändert?**
-[Was explizit nicht angefasst wird — gibt dem PO Sicherheit über den Scope]
-
-**Wo ich für dich entschieden habe:**
-- [Fall 1 aus obiger Prüfung, in 1 Satz — oder:]
-- Keine Abweichung von deiner Anfrage — so umgesetzt wie besprochen.
-
-**Qualitätsplan:** [N] automatische Tests geplant · Spezifikation geprüft: VALID
-
----
-**Unabhängiges PO-Briefing** (`docs/briefings/<workflow-name>.md`, erstellt vom
-po-briefer — nicht von mir):
-
-[Inhalt der Briefing-Datei ab '## Was gebaut wird' WÖRTLICH einfügen, inklusive
-aller kritischen Anmerkungen und der Freigabe-Frage. Nichts weglassen, nichts
-umformulieren, nichts kommentieren.]
-
----
-
-Schreibe `approved` wenn der Plan so stimmt — danach geht es in die Umsetzung.
+⚙ PO-Briefing unabhängig erstellt · agent-os-openspec {{OPENSPEC_VERSION}}
+Schreibe `approved`, wenn der Plan so stimmt — danach geht es in die Umsetzung.
 
 ---
 
@@ -289,6 +259,7 @@ Erst sichern, dann ist `/clear` gefahrlos.
 **IMPORTANT:**
 - Do NOT implement until approved
 - Do NOT skip TDD RED phase after approval
-- Der Block "Wo ich für dich entschieden habe" ist PFLICHT — auch wenn er nur den
-  Nichts-Abweichungs-Satz enthält. Ohne ihn ist die Freigabe reines Abnicken statt
-  einer Entscheidung.
+- Die Freigabe-Ausgabe ist das Briefing wörtlich plus Marker-Zeile — keine eigene
+  Zusammenfassung davor oder danach. Abweichungen vom Ticket benennt der po-briefer
+  unter *Kritische Anmerkungen*. Widersprichst du einer Anmerkung: eine
+  "Meine Einschätzung"-Zeile je Anmerkung, max. 3 — kein eigener Block.

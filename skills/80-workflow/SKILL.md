@@ -15,8 +15,6 @@ _H="${CLAUDE_PLUGIN_ROOT:+${CLAUDE_PLUGIN_ROOT}/core/hooks}"
 if [ -z "$_H" ]; then _p="$(python3 -c 'import json,os;d=json.load(open(os.path.expanduser("~/.claude/plugins/installed_plugins.json")));print(next((e["installPath"] for k,v in d.get("plugins",{}).items() if k.startswith("agent-os-openspec@") for e in [next((x for x in v if x.get("scope")=="user"),v[0])]),""))' 2>/dev/null)"; [ -n "$_p" ] && [ -d "$_p/core/hooks" ] && _H="$_p/core/hooks"; fi
 _H="${_H:-.claude/hooks}"
 WF="python3 ${_H}/workflow.py"
-QA="python3 ${_H}/qa_gate.py"
-MS="python3 ${_H}/migrate_state.py"
 ```
 
 ## Commands
@@ -25,6 +23,29 @@ MS="python3 ${_H}/migrate_state.py"
 ```bash
 $WF list
 ```
+
+### List Active Sessions
+```bash
+$WF sessions
+$WF sessions --json
+```
+Liest das Session-Register (`.claude/session-locks/*.json`), das `session_singleton_guard.py`
+fuehrt: Agent-Name, Worktree, Branch, Workflow, Issue und Phase pro aktiver Session dieses
+Projekts. Fehlende optionale Felder erscheinen in der Tabelle als `–`.
+
+### Retro: Abgeschlossene Workflows analysieren
+```bash
+# Alle archivierten Workflows auflisten
+$WF retro-list
+
+# Zuletzt abgeschlossenen Workflow analysieren
+$WF retro
+
+# Bestimmten Workflow analysieren
+$WF retro <name>
+```
+Zeigt: Phasen-Timeline mit Zeiten, Qualitätssignale (TDD, Adversary-Verdict, Fix-Loops), Optimierungshinweise.
+Slash-Command: `/90-retro`
 
 ### Check Current Status
 ```bash
@@ -90,14 +111,26 @@ $WF set-field github_issue 42
 
 ### Override LoC Limit
 ```bash
-$WF set-field loc_limit_override 500
+$WF set-field loc_limit_override 500          # Produktivcode
+$WF set-field test_loc_limit_override 800     # Testcode (eigenes Limit)
 ```
 
 ### Complete Workflow
 ```bash
 # Requires execution log — will fail without write-log first
-$WF complete
+$WF finish
 ```
+
+### Abandon Workflow (ehrlicher Abbruch ohne Abschluss-Gates)
+```bash
+# Fuer Workflows OHNE Pruefgegenstand (reine Analyse-/Kontext-Arbeit,
+# nie in phase6_implement): complete verlangt ein Adversary-Verdict,
+# das es hier nie geben kann. NICHT den workflow_type umklassifizieren,
+# um das Gate loszuwerden — stattdessen:
+$WF abandon --reason "Analyse-Vorlauf, Umsetzung in FEAT_002 abgeschlossen"
+```
+Archiviert mit Status `abandoned` (nicht `complete`) — in `retro-list`
+als "abgebrochen" sichtbar. Die Begruendung ist Pflicht.
 
 ## Workflow Phases
 
@@ -137,11 +170,13 @@ Code files can only be modified in:
 And only if:
 - TDD RED phase artifacts exist
 - Spec has `## Acceptance Criteria` with at least one `AC-N` entry
-- LoC delta does not exceed project limit (default 250)
+- LoC delta does not exceed project limit — separately for Produktivcode
+  (`max_loc_delta`, default 250) and Testcode (`max_test_loc_delta`, default 500);
+  only added lines count, not `added + deleted` (Issue #94)
 
 ## Phase Transition Audit Trail
 
-Every `$WF phase <target>` call is logged:
+Every `workflow.py phase <target>` call is logged:
 ```json
 {"from": "phase3_spec", "to": "phase4_approved", "at": "...", "trigger": "user_keyword"}
 ```
@@ -177,14 +212,14 @@ Some phase transitions happen automatically:
 
 ```bash
 # Validate test output and set adversary verdict
-$QA docs/artifacts/feature/test-output.txt
-$QA docs/artifacts/feature/test-output.txt --screenshot screenshot.png
-$QA docs/artifacts/feature/test-output.txt --infra --no-visual "pure infrastructure"
+python3 ${_H}/qa_gate.py docs/artifacts/feature/test-output.txt
+python3 ${_H}/qa_gate.py docs/artifacts/feature/test-output.txt --screenshot screenshot.png
+python3 ${_H}/qa_gate.py docs/artifacts/feature/test-output.txt --infra --no-visual "pure infrastructure"
 ```
 
 ## Migration from v2
 
 ```bash
-$MS          # Dry run
-$MS --apply   # Actually migrate
+python3 ${_H}/migrate_state.py          # Dry run
+python3 ${_H}/migrate_state.py --apply   # Actually migrate
 ```
