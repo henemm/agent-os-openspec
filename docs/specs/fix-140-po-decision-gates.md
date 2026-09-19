@@ -155,7 +155,11 @@ Neuer Eintrag unter `[3.22.0]`, Abschnitt `### Added`.
 
 Fertig ist diese Änderung, wenn:
 
-- [x] Jede Acceptance Criterion unten ist durch einen automatischen Test belegt
+- [x] AC-2, AC-3 und AC-4 sind je durch einen automatischen Test belegt; AC-1
+  (Laufzeitverhalten des Skill-Tool-Selbstaufrufs) sowie AC-5/AC-6
+  (Freitext-Changelog, Versionsstring) sind manuelle Sichtprüfungen — kein
+  Hook-Typ kann Assistant-Verhalten bzw. Freitext automatisiert prüfen (siehe
+  Acceptance Criteria unten)
 - [x] Nach "approved" ruft Claude `/40-tdd-red` erkennbar ohne weiteren Tastendruck
   selbst auf — beobachtbar daran, dass kein Slash-Command mehr vom User verlangt wird
 - [x] Keine bestehende Funktion ist dabei kaputtgegangen (Regressionslauf grün,
