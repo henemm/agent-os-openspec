@@ -64,6 +64,24 @@ def _worktree_root_if_any() -> "Path | None":
     return None
 
 
+def _worktree_first_root(rel: str) -> Path:
+    """Root für versionierte Repo-Inhalte (Spec/Briefing): Worktree vor Hauptrepo.
+
+    Anders als find_project_root() (Quelle für geteilten Workflow-State) muss
+    hier der tatsächliche Arbeitsbaum gewinnen, wenn die Datei dort existiert
+    (Vorbild: edit_gate.py:254). Existiert `rel` in keinem Worktree, bleibt
+    find_project_root() der Fallback (Hauptrepo-Sessions, Regressionsfreiheit).
+    """
+    wt = _worktree_root_if_any()
+    if wt is not None and (wt / rel).exists():
+        return wt
+    return find_project_root()
+
+
+def _worktree_first_path(rel: str) -> Path:
+    return _worktree_first_root(rel) / rel
+
+
 def _validate_name(name: str) -> None:
     """Reject names that would escape the workflows dir or corrupt glob patterns."""
     if not _NAME_RE.fullmatch(name):
@@ -456,7 +474,7 @@ def _check_adr(data: dict) -> "str | None":
     spec_file = data.get("spec_file")
     if not spec_file:
         return None
-    spec_path = find_project_root() / spec_file
+    spec_path = _worktree_first_path(spec_file)
 
     # 3. Read
     try:
@@ -553,7 +571,7 @@ def _read_spec_content(data: dict) -> "str | None":
     if not spec_file:
         return None
     try:
-        return (find_project_root() / spec_file).read_text()
+        return _worktree_first_path(spec_file).read_text()
     except Exception:
         return None
 
@@ -670,7 +688,7 @@ def _check_po_briefing(data: dict) -> "str | None":
     if not isinstance(entry, dict) or not entry.get("file"):
         return "Kein unabhängiges PO-Briefing registriert" + hint
     try:
-        briefing = (find_project_root() / entry["file"]).read_text()
+        briefing = _worktree_first_path(entry["file"]).read_text()
     except Exception:
         return f"PO-Briefing '{entry['file']}' nicht lesbar oder nicht vorhanden" + hint
 
@@ -974,7 +992,7 @@ def cmd_set_briefing(args: list[str]) -> None:
         print("Usage: workflow.py set-briefing <pfad-zum-po-briefing>", file=sys.stderr)
         sys.exit(1)
     rel = args[0]
-    root = find_project_root()
+    root = _worktree_first_root(rel)
     path = Path(rel)
     if path.is_absolute():
         try:
