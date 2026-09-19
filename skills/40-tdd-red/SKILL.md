@@ -1,6 +1,6 @@
 ---
 description: "Write failing tests (RED phase)"
-disable-model-invocation: true
+disable-model-invocation: false
 ---
 
 # Phase 5: TDD RED - Write Failing Tests
@@ -118,6 +118,8 @@ After RED phase is complete:
 ```bash
 $WF phase phase6_implement
 ```
+
+**NICHT** selbst mit der Implementierung beginnen. Warte bis der User `/50-implement` tippt.
 
 ## Common Mistakes
 

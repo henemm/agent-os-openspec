@@ -849,7 +849,7 @@ def generate_command_aliases(project_path: Path) -> None:
       - false (model may self-invoke) → thin text redirect
         (`/agent-os-openspec:name $ARGUMENTS`). Claude resolves this via the
         Skill tool, which is allowed for these skills.
-      - true (only direct user `/name` typing allowed, e.g. TDD/Implement/
+      - true (only direct user `/name` typing allowed, e.g. Implement/
         Validate/Deploy phases) → a text redirect would still make Claude
         resolve it via the Skill tool, which the harness then blocks with
         "cannot be used with Skill tool due to disable-model-invocation" —
@@ -966,10 +966,10 @@ Examples:
   python3 setup.py /path/to/project --command-aliases   # recommended default: per-project
   python3 setup.py ~ --command-aliases          # global — see WARNING below if any
                                                  # project has its own custom version of
-                                                 # 40-tdd-red/50-implement/60-validate/
-                                                 # 70-deploy/80-workflow/81-add-artifact/
-                                                 # 99-reset (issue #87: global shadows
-                                                 # project commands due to a Claude Code
+                                                 # 50-implement/60-validate/70-deploy/
+                                                 # 80-workflow/81-add-artifact/99-reset
+                                                 # (issue #87: global shadows project
+                                                 # commands due to a Claude Code
                                                  # scope-precedence bug)
 
 Available modules:
