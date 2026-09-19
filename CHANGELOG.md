@@ -5,6 +5,43 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.22.0] - 2026-09-19
+
+### Added
+
+**Auto-Chaining nach "approved": kein redundanter Tastendruck mehr vor `/40-tdd-red` (Issue #140)**
+
+Nach der Freigabe ("approved") musste der User zusätzlich `/40-tdd-red` selbst
+abtippen, obwohl dabei keine neue Entscheidung mehr fällt — die Entscheidung war mit
+"approved" bereits getroffen, der Tastendruck war reine Formsache.
+
+- `skills/40-tdd-red/SKILL.md` ist ab sofort model-invocable
+  (`disable-model-invocation: false`). Das ist die notwendige Voraussetzung dafür,
+  dass der Hauptkontext den Skill selbst aufrufen darf; ohne den Flag-Flip blockt
+  das Skill-Tool-Gate hart, egal was im Command steht. Ergänzend enthält
+  `core/commands/30-write-spec.md` im Abschnitt "After Approval" die Anweisung,
+  nach der Freigabe ohne weitere User-Eingabe direkt in die RED-Phase zu gehen.
+  Mit `/clear` dazwischen gilt unverändert der bestehende Checkpoint-Block mit dem
+  expliziten Wiedereinstiegs-Befehl.
+- Bewusste Abgrenzung: Der Übergang `/40-tdd-red → /50-implement` bleibt
+  **manuell**. `skills/50-implement/SKILL.md` behält `disable-model-invocation:
+  true` und die STOPP-Anweisung in `core/commands/40-tdd-red.md` bleibt
+  unverändert — RED schreibt nur reversible Testdateien, `/50-implement` schreibt
+  echten Produktivcode und spawnt Subagenten dafür. Weil der neu freigeschaltete
+  Skill-Tool-Pfad `core/commands/40-tdd-red.md` gar nicht mehr liest, stand diese
+  Absicherung dort zunächst gar nicht mehr im gelesenen Kontext (Adversary-Finding
+  F001, CRITICAL) — behoben, indem dieselbe STOPP-Anweisung jetzt wortgleich auch
+  in `skills/40-tdd-red/SKILL.md` steht, direkt hinter dem Phasenwechsel auf
+  `phase6_implement`. `tests/test_skill_stop_instruction.py` hält beide Dokumente
+  konsistent.
+
+Ein zweites, ursprünglich mitgeplantes Problem (Entwickler-Jargon im
+Freigabe-Text) ist mit dem unabhängigen PO-Briefing aus 3.20.0 bereits
+abgedeckt — der PO liest dort ohnehin den wörtlich zitierten, unabhängig
+geprüften Briefing-Text statt der Orchestrator-Zusammenfassung; eine zusätzliche
+Verbotsliste für Letztere wäre doppelte Prüflogik für zwei verschiedene Autoren
+gewesen und wurde deshalb nicht Teil dieser Änderung.
+
 ## [3.21.0] - 2026-09-19
 
 ### Added

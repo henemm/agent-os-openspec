@@ -240,6 +240,13 @@ When user approves:
 2. State advances to `phase4_approved`
 3. Next: `/40-tdd-red` to write failing tests
 
+Ohne `/clear` in derselben Session: Rufe den Skill `40-tdd-red` jetzt sofort selbst
+auf — warte nicht auf eine weitere User-Eingabe, die Freigabe ("approved") ist
+bereits die Entscheidung.
+
+Mit `/clear` dazwischen: Der Checkpoint-Block unten zeigt den regulären
+Wiedereinstieg über den expliziten Befehl `/40-tdd-red #<N>`.
+
 Nach der Freigabe kannst du dem User zusätzlich den Kontext-Reset anbieten:
 
 ### Checkpoint prüfen (Anweisung an dich — nicht ausgeben)
