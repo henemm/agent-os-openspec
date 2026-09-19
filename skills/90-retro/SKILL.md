@@ -3,7 +3,7 @@ description: "/90-retro — Workflow-Retro"
 disable-model-invocation: false
 ---
 
-# Workflow-Retro
+# /90-retro — Workflow-Retro
 
 Analysiere einen abgeschlossenen Workflow aus dem Archiv: Zeiten pro Phase, Qualitätssignale, Optimierungshinweise.
 

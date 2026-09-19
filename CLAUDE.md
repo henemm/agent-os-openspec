@@ -2,7 +2,7 @@
 
 > **Meta-Projekt**: Dies ist das zentrale Framework-Repository, das abstraktes Projekt- und Workflow-Wissen konsolidiert. Alle Projekte können Improvements hierher zurückführen und von Verbesserungen aus anderen Projekten profitieren.
 
-**Version**: 3.21.0
+**Version**: 3.23.0
 
 ## Projektzweck
 
@@ -276,7 +276,7 @@ Einmal-Bypass fuer Gates:
 
 Registrierung zentral in `hooks/hooks.json` (Plugin-Modus) bzw. `.claude/settings.json` (Copy-Modus). Reihenfolge innerhalb eines Events entspricht der Listen-Reihenfolge in `hooks.json`.
 
-**SessionStart:** `session_singleton_guard.py register` — legt Sitzungseintrag an
+**SessionStart:** `session_singleton_guard.py register` — legt Sitzungseintrag an → `session_banner.py` — zeigt geladene Version, warnt vor veralteten Befehls-Kopien
 
 **PreToolUse, alle Tools:** `session_singleton_guard.py guard` — erzwingt Worktree-Pflicht (blockt Schreib-Tools im Haupt-Repo)
 
@@ -334,7 +334,8 @@ Reboot. Bestandsproblem, kein Regressionsschaden.
 |------|-------|
 | `core/hooks/*.py` | 4 konsolidierte Kern-Gates + ergänzende Guards + Utilities |
 | `core/agents/*.md` | Agent-Definitionen mit YAML-Frontmatter |
-| `core/commands/*.md` | Slash-Command-Definitionen |
+| `core/commands/*.md` | Slash-Command-Definitionen — **Quelle** für `skills/` |
+| `skills/*/SKILL.md` | Generiert (`python3 scripts/sync_skills.py`), nie direkt editieren; Drift blockt Release |
 | `modules/<name>/` | Domain-Module mit eigener config.yaml |
 | `templates/` | Wiederverwendbare Spec-Templates |
 

@@ -252,3 +252,13 @@ def test_13_fast_track_spec_needs_no_briefing(tmp_path):
     _write(tmp_path, fast_rel, "# Quickfix\n\n## Purpose\n\nKleine Korrektur.\n")
     r = _run(tmp_path, [CODE_REL, fast_rel])
     assert r.returncode == 0, f"stdout={r.stdout!r} stderr={r.stderr!r}"
+
+
+def test_14_briefing_word_limit_from_config_blocks(tmp_path):
+    """Test 14 — CI prüft dieselbe Wortgrenze wie das lokale Gate
+    (po_briefing_gate.max_words aus config.yaml)."""
+    root = _project(tmp_path, briefing=_briefing(_sha(SPEC_COMPLETE)))
+    _write(root, "config.yaml", "po_briefing_gate:\n  max_words: 10\n")
+    r = _run(root, [CODE_REL, SPEC_REL, BRIEFING_REL])
+    assert r.returncode != 0, f"stdout={r.stdout!r} stderr={r.stderr!r}"
+    assert "Briefing zu lang" in (r.stdout + r.stderr)

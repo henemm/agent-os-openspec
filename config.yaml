@@ -251,6 +251,9 @@ po_briefing_gate:
   enabled: true
   # Fast-Track-Workflows (feature-fast, bug) brauchen per Default kein Briefing.
   skip_fast_track: true
+  # Wortgrenze für die Pflicht-Abschnitte + Freigabe-Frage. Der po-briefer zielt
+  # auf ≤ 120 Wörter; darüber blockt das Gate ("Briefing zu lang").
+  max_words: 150
 
 # CI-Spec-Gate (scripts/ci_spec_gate.py, laeuft im Pull Request)
 # Prueft serverseitig, was die lokalen Hooks nur lokal erzwingen: Spec zum

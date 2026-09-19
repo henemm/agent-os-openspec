@@ -7,6 +7,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/session_singleton_guard.py register",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/session_banner.py",
+            "timeout": 5
           }
         ]
       }

@@ -15,8 +15,6 @@ _H="${CLAUDE_PLUGIN_ROOT:+${CLAUDE_PLUGIN_ROOT}/core/hooks}"
 if [ -z "$_H" ]; then _p="$(python3 -c 'import json,os;d=json.load(open(os.path.expanduser("~/.claude/plugins/installed_plugins.json")));print(next((e["installPath"] for k,v in d.get("plugins",{}).items() if k.startswith("agent-os-openspec@") for e in [next((x for x in v if x.get("scope")=="user"),v[0])]),""))' 2>/dev/null)"; [ -n "$_p" ] && [ -d "$_p/core/hooks" ] && _H="$_p/core/hooks"; fi
 _H="${_H:-.claude/hooks}"
 WF="python3 ${_H}/workflow.py"
-QA="python3 ${_H}/qa_gate.py"
-AD="python3 ${_H}/adversary_dialog.py"
 ```
 
 ## Purpose
@@ -37,6 +35,46 @@ $WF status
 **If TDD RED artifacts are missing, the `tdd_enforcement` hook will BLOCK your edits!**
 
 ## Your Tasks
+
+### Step 0: Workflow-State auflösen (ZUERST — vor allem anderen)
+
+**Wurde dieser Befehl mit einer Issue-Nummer aufgerufen** (z. B. `/50-implement #42` — typisch nach einem `/clear`)? Dann löse den Workflow-Namen von der Platte auf — der komplette State (Phase, Spec, RED-Tests, Verdict) überlebt jeden `/clear` und jeden Worktree:
+
+```bash
+ISSUE=42   # die übergebene Nummer (ohne #)
+python3 - "$ISSUE" <<'PY'
+import sys, json, glob, re, os
+issue = sys.argv[1].lstrip('#')
+pat = re.compile(rf'(^|[-_]){re.escape(issue)}([-_]|$)')
+hits = []
+for f in glob.glob('.claude/workflows/*.json'):
+    name = os.path.basename(f)[:-5]
+    if pat.search(name):
+        d = json.load(open(f))
+        hits.append((name, d.get('current_phase'), d.get('spec_file') or 'Not created', d.get('adversary_verdict'), d.get('affected_files', [])))
+if not hits:
+    print(f'KEIN laufender Workflow fuer #{issue} (evtl. abgeschlossen -> .claude/workflows/_archive/).')
+else:
+    for name, ph, spec, verd, aff in hits:
+        print(f'GEFUNDEN: {name} | Phase={ph} | Spec={spec} | Verdict={verd}')
+        if aff: print(f'  affected_files: {", ".join(aff)}')
+    print('\nNAME=' + hits[0][0])
+PY
+```
+
+**PFLICHT direkt danach** — Workflow wirklich aktivieren (nicht nur die Zeile oben lesen). Ein reines `export OPENSPEC_ACTIVE_WORKFLOW=...` reicht NICHT: Shell-State überlebt keinen Bash-Tool-Aufruf, und in Worktree-Sessions ignoriert `resolve_active_workflow()` die Env-Var ohnehin (Issue #58):
+
+```bash
+$WF switch <NAME-aus-obigem-Output>
+$WF status
+```
+
+Das `status`-Kommando ist der eigentliche Wiedereinstiegs-Check: Es zeigt die Quelle (`[file]`) und bestätigt Phase/Spec/Verdict. **Fasse dem User in 2 Sätzen zusammen, wo der Workflow steht** (Phase, Spec, offene Punkte) — damit sichtbar ist, dass der `/clear` nichts verloren hat.
+
+**Ohne Issue-Argument** (laufende Session, kein `/clear` dazwischen):
+```bash
+$WF status
+```
 
 ### Step 1: Verify RED Phase Complete
 
@@ -61,7 +99,7 @@ Task (Explore/haiku, run_in_background: true): "Lies folgende Dateien und fasse 
 
 **TIMEOUT-PFLICHT — sofort nach dem Spawn:**
 ```
-ScheduleWakeup(180, "Explore-Agent Timeout [50-implement Step 2]: TaskList → noch aktiv? JA → TaskStop, dann User: 'Kontext-Agent nach 3 Min gestoppt — bitte Step 2 neu starten.' NEIN → ignorieren, fertig.")
+ScheduleWakeup(180, "Explore-Agent Timeout [50-implement Step 2]: TaskList → Agent noch aktiv? JA → TaskStop, dann User: 'Kontext-Agent hängt, Step 2 bitte neu starten.' NEIN → ignorieren, fertig.")
 ```
 
 ### Step 3: Developer Agent spawnen (ORCHESTRATOR-PRINZIP)
@@ -99,7 +137,7 @@ Task (developer-agent/opus, run_in_background: true):
 
 **TIMEOUT-PFLICHT — sofort nach dem Spawn:**
 ```
-ScheduleWakeup(600, "Developer Agent Timeout [50-implement Step 3]: TaskList → noch aktiv? JA → TaskStop, dann User: 'Developer Agent nach 10 Min gestoppt — bitte /50-implement neu starten.' NEIN → ignorieren, fertig.")
+ScheduleWakeup(600, "Developer Agent Timeout [50-implement Step 3]: TaskList → Agent noch aktiv? JA → TaskStop, dann User: 'Developer Agent nach 10 Min gestoppt — bitte /50-implement neu starten.' NEIN → ignorieren, Agent hat fertig gemeldet.")
 ```
 
 **Nach Rueckmeldung des Developer Agent:**
@@ -128,26 +166,26 @@ $WF add-artifact test_output \
 
 **STOP! Du darfst NICHT weitermachen ohne User-Freigabe!**
 
-Praesentiere dem User eine verstaendliche Zusammenfassung:
+Praesentiere dem User folgende Zusammenfassung:
 
-```markdown
-## TDD GREEN Ergebnisse
+---
+**Implementierung fertig — deine Freigabe bitte.**
 
-### Was wurde getestet?
-- [Feature/Bug in User-Sprache beschreiben]
+**Was wurde umgesetzt?**
+[Feature/Bugfix in 1–2 Sätzen aus Nutzerperspektive — kein Code, keine Dateinamen]
 
-### Test-Ergebnisse
-- Unit Tests: [N] bestanden, [N] fehlgeschlagen
-- UI Tests: [N] bestanden, [N] fehlgeschlagen
+**Was funktioniert jetzt?**
+- [Konkretes Verhalten 1 aus Nutzersicht]
+- [Konkretes Verhalten 2 aus Nutzersicht]
 
-### Was die Tests pruefen
-- [Beschreibung in User-Sprache]
+**Qualitätsprüfungen:** [N] Tests ✅ bestanden[, N fehlgeschlagen ❌ — falls vorhanden mit Erklärung in einfacher Sprache]
 
-### Auffaelligkeiten / Warnungen
-- [Alles was aufgefallen ist]
+**Auffälligkeiten:**
+[Alles was aufgefallen ist — oder: Keine]
 
-Sage "go" wenn du mit den Ergebnissen zufrieden bist.
-```
+Wenn das Ergebnis so stimmt, schreibe `go`.
+
+---
 
 **WICHTIG:**
 - Du darfst NICHT selbst entscheiden ob Auffaelligkeiten relevant sind
@@ -167,10 +205,10 @@ $WF phase phase6b_adversary
 #### 8a. Spec parsen — Checkliste erstellen
 
 ```bash
-$AD parse <spec-pfad>
+python3 ${_H}/adversary_dialog.py parse <spec-pfad>
 ```
 
-Das zeigt dir die Expected-Behavior-Punkte die bewiesen werden muessen.
+Das zeigt dir die zu beweisenden Punkte — geparst aus `## Expected Behavior` und/oder `## Acceptance Criteria` (`- **AC-N:** ...`) der Spec, je nachdem welche Section(s) vorhanden sind.
 
 #### 8b. Adversary-Dialog fuehren
 
@@ -187,12 +225,12 @@ Task (implementation-validator, run_in_background: true): "Pruefe den aktuellen 
   - Akzeptiere NICHT die erste Antwort — bohre nach, frage nach Edge Cases
   - Mindestens 2 Runden Dialog
   - Fuehre Tests aus und speichere Output
-  - Nutze das Structured Findings Schema ($AD schema)"
+  - Nutze das Structured Findings Schema (python3 ${_H}/adversary_dialog.py schema)"
 ```
 
 **TIMEOUT-PFLICHT — sofort nach dem Spawn:**
 ```
-ScheduleWakeup(300, "Adversary Validator Timeout [50-implement Step 8b]: TaskList → noch aktiv? JA → TaskStop, dann User: 'Adversary-Agent nach 5 Min gestoppt — bitte Step 8b neu starten.' NEIN → ignorieren, fertig.")
+ScheduleWakeup(300, "Adversary Validator Timeout [50-implement Step 8b]: TaskList → Agent noch aktiv? JA → TaskStop, dann User: 'Adversary-Agent nach 5 Min gestoppt — bitte Step 8b neu starten.' NEIN → ignorieren, fertig.")
 ```
 
 Der Dialog laeuft als Hin-und-Her. **Du als Orchestrator koordinierst:**
@@ -221,12 +259,12 @@ $WF add-artifact adversary_dialog \
 #### 8d. QA-Gate mit Checklist-Validierung
 
 ```bash
-$QA /tmp/adversary_test_output.txt \
+python3 ${_H}/qa_gate.py /tmp/adversary_test_output.txt \
     --checklist docs/artifacts/<workflow-name>/adversary-dialog.md \
     --screenshot /tmp/adversary_screenshot.png
 
 # Fuer Infra-Tickets (ohne UI):
-$QA /tmp/adversary_test_output.txt \
+python3 ${_H}/qa_gate.py /tmp/adversary_test_output.txt \
     --checklist docs/artifacts/<workflow-name>/adversary-dialog.md \
     --infra --no-visual "Infra-Ticket ohne UI"
 ```
@@ -254,8 +292,58 @@ Follow scoping limits:
 
 ## Next Step
 
-After adversary verification:
-> "Implementation complete. Adversary verified. Ready for `/60-validate`."
+Wenn Adversary VERIFIED (oder AMBIGUOUS mit User-OK): Stelle sicher, dass alle geänderten Dateien committed sind und das Adversary-Verdict im State steht — der nächste Schritt setzt den Gesprächskontext zurück. Danach folgt die Ausgabe an den User — dann **STOPP**.
+
+### Checkpoint prüfen (Anweisung an dich — nicht ausgeben)
+
+Prüfe der Reihe nach, bevor du unten etwas ausgibst:
+
+- Phase im Workflow-State geschrieben — `$WF status` bestätigt sie
+- Alle Ergebnisdateien dieser Phase liegen auf der Platte
+- Alle RED-Artefakte per `add-artifact` registriert
+- Keine uncommitteten Änderungen an Dateien, die `/60-validate` braucht
+- Keine Erkenntnis, die für `/60-validate` nötig und nirgends niedergeschrieben ist
+
+Sind alle Punkte erfüllt: Gib den Positiv-Block aus. Ist mindestens einer verletzt: Gib stattdessen den Negativ-Block aus und ersetze dessen Platzhalter durch den konkreten Sicherungsschritt.
+
+Weder diese Anweisung noch die `###`-Überschriften gehören in die Ausgabe — an den User geht ausschließlich der Text zwischen den `---`-Trennern.
+
+### Ausgabe: Zusammenfassung (immer)
+
+---
+✅ Phase 6 (Implementierung) abgeschlossen — Adversary VERIFIED.
+
+Workflow: `<name>` · Issue: **#<N>** · Verdict: VERIFIED
+
+**Was wurde erreicht:** Der Code ist fertig und hat eine unabhängige interne Qualitätsprüfung bestanden. Als Nächstes folgt die finale Validierung — dabei wird geprüft, ob alle Anforderungen aus der Spezifikation lückenlos erfüllt sind.
+
+---
+
+### Ausgabe A: Positiv-Block (alle Vorbedingungen erfüllt)
+
+---
+**Gesichert auf der Platte:**
+- `.claude/workflows/<name>.json` — Phase `phase7_validate`, Feld `spec_file`, Verdict `VERIFIED`, Artefakt-Register
+- Commit der Implementierung — alle geänderten Dateien sind committed, `git status` ist sauber
+
+✅ **`/clear` ist jetzt gefahrlos** — alles oben Gelistete stellt der Folge-Befehl allein aus diesen Dateien wieder her. Im Gesprächsverlauf steht nichts, was verloren ginge.
+
+1. `/clear`
+2. `/60-validate #<N>`
+
+---
+
+### Ausgabe B: Negativ-Block (mindestens eine Vorbedingung verletzt)
+
+---
+⚠️ **`/clear` jetzt NICHT** — Folgendes steht nur im Gesprächsverlauf:
+- <was fehlt> → sichern mit: <konkreter Befehl oder Schritt>
+
+Erst sichern, dann ist `/clear` gefahrlos.
+
+---
+
+**NICHT** selbst mit der Validierung beginnen. Warte bis der User `/60-validate` tippt.
 
 ## Common Mistakes
 
