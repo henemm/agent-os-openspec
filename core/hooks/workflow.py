@@ -464,6 +464,16 @@ def _check_adr(data: dict) -> "str | None":
     except Exception:
         return None
 
+    return check_adr_content(content)
+
+
+def check_adr_content(content: str) -> "str | None":
+    """Prüft den Spec-TEXT auf eine ausgefüllte ADR-Sektion. Meldung oder None.
+
+    Aus `_check_adr` herausgelöst, damit das CI-Gate (scripts/ci_spec_gate.py)
+    exakt dieselbe Regel anwendet wie der lokale Hook — eine Regel, zwei Aufrufer.
+    Grandfathering (keine ADR-Sektion → None) bleibt Teil dieser Funktion.
+    """
     # 4. Extract the ADR section body (case-insensitive heading match).
     #    Accept ## or ### headings; body reaches up to the next heading of ANY
     #    rank 1-3 (#, ## or ###) or end of file. The end-lookahead must stop at
@@ -574,6 +584,48 @@ def check_briefing_content(content: str) -> "str | None":
             return f"PO-Briefing: Abschnitt '## {section}' ist leer bzw. zu dünn."
 
     return None
+
+
+def parse_briefing_frontmatter(content: str) -> dict:
+    """Liest den YAML-Frontmatter-Block eines Briefings als flaches dict.
+
+    Bewusst ein Mini-Parser statt PyYAML: Das CI-Gate soll ohne zusätzliche
+    Abhängigkeit laufen, und der Block enthält nur `key: value`-Zeilen.
+    """
+    if not content.startswith("---"):
+        return {}
+    end = content.find("\n---", 3)
+    if end < 0:
+        return {}
+    out = {}
+    for line in content[3:end].splitlines():
+        if ":" in line and not line.lstrip().startswith("#"):
+            key, _, value = line.partition(":")
+            out[key.strip()] = value.strip()
+    return out
+
+
+def stamp_briefing_frontmatter(content: str, spec_rel: str, sha: str) -> str:
+    """Schreibe `spec_file`/`spec_sha256` in den Frontmatter des Briefings.
+
+    Vorhandener Frontmatter wird ergänzt bzw. der alte Stempel ersetzt (nie
+    gedoppelt); fehlt er, wird einer vorangestellt. Der übrige Inhalt bleibt
+    unangetastet.
+    """
+    stamp = {"spec_file": spec_rel, "spec_sha256": sha}
+    if content.startswith("---"):
+        end = content.find("\n---", 3)
+        if end >= 0:
+            head = content[3:end]
+            rest = content[end + 4:]
+            kept = [
+                line for line in head.splitlines()
+                if line.partition(":")[0].strip() not in stamp
+            ]
+            lines = [l for l in kept if l.strip()] + [f"{k}: {v}" for k, v in stamp.items()]
+            return "---\n" + "\n".join(lines) + "\n---" + rest
+    front = "\n".join(f"{k}: {v}" for k, v in stamp.items())
+    return f"---\n{front}\n---\n\n{content.lstrip()}"
 
 
 def _check_po_briefing(data: dict) -> "str | None":
@@ -953,12 +1005,29 @@ def cmd_set_briefing(args: list[str]) -> None:
         )
         sys.exit(1)
 
+    sha = spec_sha256(spec_content)
     data["po_briefing"] = {
         "file": rel,
-        "spec_sha256": spec_sha256(spec_content),
+        "spec_sha256": sha,
         "created": datetime.now().isoformat(timespec="seconds"),
     }
     _save_active(data)
+
+    # Bindung zusätzlich IN die Briefing-Datei stempeln. Der Workflow-State
+    # liegt unter .claude/workflows/ und ist gitignored — er erreicht die CI
+    # nie. Nur ein Stempel in der committeten Datei macht ein veraltetes
+    # Briefing serverseitig erkennbar (scripts/ci_spec_gate.py).
+    try:
+        briefing_path.write_text(
+            stamp_briefing_frontmatter(briefing, str(data.get("spec_file", "")), sha)
+        )
+    except Exception as exc:
+        print(
+            f"WARNUNG: Briefing registriert, aber Frontmatter-Stempel fehlgeschlagen ({exc}). "
+            "Das CI-Gate kann die Aktualität dann nicht prüfen.",
+            file=sys.stderr,
+        )
+
     print(f"PO-Briefing registriert für Workflow {name}: {rel}")
 
 

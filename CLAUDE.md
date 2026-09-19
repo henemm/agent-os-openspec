@@ -2,7 +2,7 @@
 
 > **Meta-Projekt**: Dies ist das zentrale Framework-Repository, das abstraktes Projekt- und Workflow-Wissen konsolidiert. Alle Projekte können Improvements hierher zurückführen und von Verbesserungen aus anderen Projekten profitieren.
 
-**Version**: 3.20.0
+**Version**: 3.21.0
 
 ## Projektzweck
 
@@ -240,6 +240,23 @@ ist, Platzhalter enthält oder die Spec danach geändert wurde. Kill-Switch:
 `config.yaml` → `po_briefing_gate.enabled: false`; Fast Track ist per Default
 ausgenommen (`skip_fast_track`).
 
+## CI-Spec-Gate (serverseitig)
+
+Lokale Hooks sind abschaltbar, umschreibbar und per Bash umgehbar — und
+`.claude/workflows/` ist gitignored, der Workflow-State erreicht die CI nie.
+`scripts/ci_spec_gate.py` prüft im Pull Request deshalb nur **committete**
+Dateien: Spec zum Code-Change vorhanden und vollständig (Scope/DoD/AC-N/Test
+Plan/ADR, keine Platzhalter), PO-Briefing vorhanden, vollständig und aktuell.
+Die Aktualität hängt am `spec_sha256`-Stempel, den `set-briefing` in den
+Briefing-Frontmatter schreibt.
+
+Das Gate dupliziert keine Regeln: Es ruft `workflow.check_briefing_content`,
+`workflow.check_adr_content` und `hook_utils.extract_ac_entries` auf.
+
+- Einzelner PR raus: Commit-Trailer `Spec-Gate: skip <Grund>` (sichtbar in der Historie)
+- Projekt raus: `config.yaml` → `ci_spec_gate.enabled: false`
+- `setup.py` installiert Script + `.github/workflows/spec-gate.yml` in Konsumenten-Projekte
+
 ## Stop Lock
 
 Sofort-Pause fuer Claude:
@@ -405,6 +422,7 @@ python3 /path/to/agent-os-openspec/setup.py --version
 | `core/hooks/adversary_dialog.py` | Adversary Dialog System (Spec-Checkliste, Tri-State Verdict) |
 | `core/agents/fresh-eyes-inspector.md` | Unabhaengiger UI-Beobachter ohne Bug-Kontext |
 | `core/agents/po-briefer.md` | Unabhaengiges PO-Freigabe-Briefing (Spec vs. Ursprungsanfrage) |
+| `scripts/ci_spec_gate.py` | CI-Gate: prueft Spec + Briefing serverseitig im Pull Request |
 
 ## Slash-Commands Übersicht
 

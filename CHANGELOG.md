@@ -5,6 +5,48 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.21.0] - 2026-09-19
+
+### Added
+
+**CI-seitiges Spec-Gate — die Gates enden nicht mehr am lokalen Rechner**
+
+Alle bisherigen Gates laufen als lokale Hooks. Die sind Leitplanken, keine
+Mauern: Wer sie abschaltet, umschreibt oder per Bash umgeht, kommt an ihnen
+vorbei — und weil `.claude/workflows/` gitignored ist, erreichte der
+Workflow-State die CI ohnehin nie. Ein PR konnte deshalb alles enthalten, was
+lokal blockiert worden wäre.
+
+- **`scripts/ci_spec_gate.py`** prüft im Pull Request ausschliesslich committete
+  Dateien: (1) ändert der PR Code, liegt ihm eine Spec bei; (2) ist die Spec
+  vollständig — Pflicht-Sektionen Scope/DoD/AC/Test Plan, wohlgeformte AC-N
+  (≥ 30 Zeichen), ausgefüllte ADR, keine Platzhalter; (3) gibt es ein
+  PO-Briefing zur Spec, ist es vollständig und **aktuell**.
+- **Die Aktualitätsprüfung reist mit der Datei:** `workflow.py set-briefing`
+  stempelt `spec_file` und `spec_sha256` jetzt zusätzlich in den Frontmatter des
+  Briefings. Damit erkennt die CI ein Briefing, das eine andere Spec-Fassung
+  beschreibt als die im PR — der Fall, den ein abgeschalteter lokaler Hook
+  durchlässt.
+- **Eine Regel, zwei Aufrufer:** Das Gate importiert
+  `workflow.check_briefing_content`, `workflow.check_adr_content` (neu aus
+  `_check_adr` herausgelöst) und `hook_utils.extract_ac_entries` — es dupliziert
+  keine Prüflogik, sondern ruft dieselbe auf wie die lokalen Hooks.
+- **Escape statt Umgehung:** Commit-Trailer `Spec-Gate: skip <Grund>` lässt einen
+  einzelnen PR durch — sichtbar in Historie und PR, im Gegensatz zu einem
+  stillen Config-Flip. Kill-Switch fürs Projekt: `config.yaml` →
+  `ci_spec_gate.enabled: false`. Fast-Track-Specs (`docs/specs/fast/`) verlangen
+  wie lokal kein Briefing.
+- **Verteilung an Konsumenten-Projekte:** `setup.py` installiert das Script nach
+  `.claude/scripts/ci_spec_gate.py` und legt `.github/workflows/spec-gate.yml`
+  aus `templates/ci_spec_gate.yml` an — eine vorhandene Action wird **nie**
+  überschrieben. Beim `--update` wird das Script mitgezogen.
+
+Hintergrund: Die Recherche zum Stand der Praxis (2026) ist an diesem Punkt
+eindeutig — Hooks sind ein deterministisches Gegengewicht zur
+Nicht-Determiniertheit des Modells, aber keine Sicherheitsgrenze; ein Agent kann
+den Hook umschreiben. Was zählt, muss dort geprüft werden, wo der Agent nicht
+hinkommt.
+
 ## [3.20.0] - 2026-09-19
 
 ### Added

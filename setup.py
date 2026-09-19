@@ -44,6 +44,8 @@ def _read_plugin_version() -> str:
 FRAMEWORK_VERSION = _read_plugin_version()
 CORE_DIR = FRAMEWORK_ROOT / "core"
 MODULES_DIR = FRAMEWORK_ROOT / "modules"
+TEMPLATES_DIR = FRAMEWORK_ROOT / "templates"
+SCRIPTS_DIR = FRAMEWORK_ROOT / "scripts"
 
 
 def get_file_hash(path: Path) -> str:
@@ -80,6 +82,7 @@ def create_directory_structure(project_path: Path):
         ".claude/agents",
         ".claude/commands",
         ".claude/tools",
+        ".claude/scripts",
         ".claude/workflows",
         ".claude/workflows/_archive",
         ".claude/artifacts/screenshots",
@@ -143,6 +146,33 @@ def copy_core_components(project_path: Path):
                 for std_file in subdir.glob("*.md"):
                     shutil.copy(std_file, dst_subdir / std_file.name)
                     print(f"  Copied standard: {subdir.name}/{std_file.name}")
+
+
+def install_ci_gate(project_path: Path, force: bool = False):
+    """Installiere das serverseitige Spec-Gate (Script + GitHub-Action-Vorlage).
+
+    Die lokalen Hooks sind abschaltbar; dieses Gate prueft dieselben Regeln noch
+    einmal auf dem Server, wo niemand sie umschreiben kann. Die Action-Vorlage
+    wird NIE ueberschrieben — die CI eines Projekts gehoert dem Projekt.
+    """
+    script_src = SCRIPTS_DIR / "ci_spec_gate.py"
+    if not script_src.exists():
+        return
+    scripts_dst = project_path / ".claude" / "scripts"
+    scripts_dst.mkdir(parents=True, exist_ok=True)
+    shutil.copy(script_src, scripts_dst / script_src.name)
+    print(f"  Copied CI gate: .claude/scripts/{script_src.name}")
+
+    workflow_src = TEMPLATES_DIR / "ci_spec_gate.yml"
+    workflow_dst = project_path / ".github" / "workflows" / "spec-gate.yml"
+    if not workflow_src.exists():
+        return
+    if workflow_dst.exists() and not force:
+        print("  Skipped: .github/workflows/spec-gate.yml (existiert bereits)")
+        return
+    workflow_dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(workflow_src, workflow_dst)
+    print("  Created: .github/workflows/spec-gate.yml")
 
 
 def install_module(project_path: Path, module_name: str):
@@ -706,6 +736,9 @@ def update_project(project_path: Path, modules: list, force: bool = False):
             else:
                 skipped.append(f"hook: {hook_file.name}")
 
+    # CI-Gate mitziehen (Script immer, Action-Vorlage nur falls fehlend)
+    install_ci_gate(project_path)
+
     # Update core commands
     commands_src = CORE_DIR / "commands"
     commands_dst = project_path / ".claude" / "commands"
@@ -1043,6 +1076,7 @@ Available modules:
 
     print("\nCopying core components...")
     copy_core_components(project_path)
+    install_ci_gate(project_path)
 
     for module in args.modules:
         print(f"\nInstalling module: {module}...")

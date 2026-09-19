@@ -399,3 +399,37 @@ def test_18_umlaut_spelling_tolerated(tmp_path):
     _make_workflow(tmp_path, po_briefing=_briefing_entry())
     result = _run_phase(_env(tmp_path), "phase5_tdd_red", cwd=str(tmp_path))
     assert result.returncode == 0, result.stderr
+
+
+def test_19_set_briefing_stamps_frontmatter(tmp_path):
+    """Test 19 — set-briefing schreibt Spec-Pfad und -Hash auch ins Briefing.
+
+    Der Workflow-State (.claude/workflows/) ist gitignored und erreicht die CI
+    nie. Nur wenn die Bindung in der committeten Briefing-Datei steht, kann
+    scripts/ci_spec_gate.py ein veraltetes Briefing serverseitig erkennen."""
+    _write(tmp_path, REL_SPEC, SPEC_BODY)
+    _make_workflow(tmp_path, phase="phase3_spec", spec_approved=False)
+    _write(tmp_path, REL_BRIEFING, BRIEFING_COMPLETE)
+    result = _run_workflow(_env(tmp_path), ["set-briefing", REL_BRIEFING], cwd=str(tmp_path))
+    assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    written = (tmp_path / REL_BRIEFING).read_text()
+    assert f"spec_sha256: {_spec_sha(SPEC_BODY)}" in written, written[:400]
+    assert f"spec_file: {REL_SPEC}" in written, written[:400]
+    # Der Inhalt darf dabei nicht verloren gehen.
+    assert "## Kritische Anmerkungen" in written
+
+
+def test_20_set_briefing_restamps_existing_frontmatter(tmp_path):
+    """Test 20 — Zweiter Lauf ersetzt den alten Stempel, statt ihn zu doppeln."""
+    _write(tmp_path, REL_SPEC, SPEC_BODY)
+    _make_workflow(tmp_path, phase="phase3_spec", spec_approved=False)
+    _write(tmp_path, REL_BRIEFING, BRIEFING_COMPLETE)
+    _run_workflow(_env(tmp_path), ["set-briefing", REL_BRIEFING], cwd=str(tmp_path))
+    # Spec ändern, Briefing neu registrieren
+    new_spec = SPEC_BODY + "\n## Nachtrag\n\nErgänzt.\n"
+    _write(tmp_path, REL_SPEC, new_spec)
+    result = _run_workflow(_env(tmp_path), ["set-briefing", REL_BRIEFING], cwd=str(tmp_path))
+    assert result.returncode == 0, result.stderr
+    written = (tmp_path / REL_BRIEFING).read_text()
+    assert written.count("spec_sha256:") == 1, written[:400]
+    assert f"spec_sha256: {_spec_sha(new_spec)}" in written
