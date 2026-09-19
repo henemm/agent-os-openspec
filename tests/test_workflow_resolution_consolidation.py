@@ -264,3 +264,261 @@ def test_8_mainrepo_env_still_resolves(monkeypatch, tmp_path):
     name, source = hook_utils.resolve_active_workflow()
 
     assert (name, source) == ("workflow-env", "env")
+
+
+# --------------------------------------------------------------------------
+# Fix #144: workflow.py löst Spec-/Briefing-Pfade in Worktree-Sessions falsch
+# auf (docs/specs/fix-144-briefing-worktree-path.md)
+#
+# Kernaussage: `_check_adr`, `_read_spec_content`, `_check_po_briefing` und
+# `cmd_set_briefing` lösen die Pfade versionierter Repo-Dateien (Spec,
+# Briefing) bisher IMMER über `find_project_root()` auf — richtig für
+# geteilten Workflow-State, aber falsch für Dateien, die nur im Arbeitsbaum
+# der Worktree-Session committet sind. Anders als beim bestehenden
+# `_bind_context`-Helper oben (der beide Rollen auf denselben tmp_path legt)
+# braucht dieser Fix zwei UNTERSCHIEDLICHE Verzeichnisse, um "Datei existiert
+# nur im Worktree, nicht im Hauptrepo" hermetisch zu simulieren.
+# --------------------------------------------------------------------------
+
+_SPEC_ADR_FILLED_KEINE = (
+    "# Spec Test\n\n"
+    "## Architektur-Entscheidung (ADR)\n\n"
+    "- **ADR-Nr.:** keine\n"
+    "- **Rationale:** Kein neues Architekturmuster, siehe Spec-Text.\n"
+)
+
+_SPEC_ADR_UNFILLED = (
+    "# Spec Test\n\n"
+    "## Architektur-Entscheidung (ADR)\n\n"
+    "- **ADR-Nr.:**\n"
+    "- **Rationale:**\n"
+)
+
+_BRIEFING_COMPLETE = (
+    "# PO-Briefing Test\n\n"
+    "## Was gebaut wird\n\n"
+    "Eine kleine Testaenderung die ausreichend Text fuer den Gate-Check enthaelt.\n\n"
+    "## Definition of Done\n\n"
+    "Alle Acceptance Criteria sind durch automatisierte Tests belegt und gruen.\n\n"
+    "## Wie geprüft wird\n\n"
+    "Automatisierte Tests decken das Verhalten vollstaendig ab und laufen lokal.\n\n"
+    "## Kritische Anmerkungen\n\n"
+    "Es sind keine bekannten Risiken oder offenen Fragen zu dieser Aenderung vorhanden.\n"
+)
+
+
+def _write_file(root: Path, rel: str, content: str) -> Path:
+    p = root / rel
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(content)
+    return p
+
+
+def _bind_split_context(monkeypatch, worktree: "Path | None", main_root: Path) -> None:
+    """Wie `_bind_context`, aber Worktree- und Hauptrepo-Root sind zwei
+    UNTERSCHIEDLICHE Verzeichnisse (statt beide auf demselben `tmp_path`) —
+    einzige Möglichkeit, "Datei existiert nur im Worktree, nicht im
+    Hauptrepo" hermetisch zu simulieren (Spec fix-144, Test Plan)."""
+    monkeypatch.setattr(wf_module, "find_project_root", lambda: main_root)
+    monkeypatch.setattr(hook_utils, "find_project_root", lambda: main_root)
+    monkeypatch.setattr(hook_utils, "_find_worktree_root", lambda: worktree)
+    monkeypatch.setattr(wf_module, "_worktree_root_if_any", lambda: worktree)
+
+
+def _setup_worktree_briefing_scenario(monkeypatch, tmp_path: Path, wf_name: str) -> dict:
+    """Gemeinsames Setup für AC-1/AC-5/AC-6: Spec+Briefing existieren NUR im
+    simulierten Worktree; der geteilte Workflow-State liegt im simulierten
+    Hauptrepo (unverändert über find_project_root()). Gibt die für die
+    jeweiligen Assertions nötigen Pfade zurück."""
+    worktree_root = tmp_path / "worktree"
+    main_root = tmp_path / "main"
+    worktree_root.mkdir()
+    main_root.mkdir()
+    _bind_split_context(monkeypatch, worktree_root, main_root)
+
+    _write_workflow(main_root, wf_name)
+    (worktree_root / ".claude").mkdir(parents=True, exist_ok=True)
+    (worktree_root / ".claude" / "active_workflow").write_text(wf_name)
+
+    wf_file = main_root / ".claude" / "workflows" / f"{wf_name}.json"
+    data = json.loads(wf_file.read_text())
+    data["spec_file"] = "docs/specs/x.md"
+    wf_file.write_text(json.dumps(data))
+
+    _write_file(worktree_root, "docs/specs/x.md", _SPEC_ADR_FILLED_KEINE)
+    _write_file(worktree_root, "docs/briefings/x.md", _BRIEFING_COMPLETE)
+
+    # Hermetischer Beweis: NICHT im simulierten Hauptrepo vorhanden.
+    assert not (main_root / "docs" / "specs" / "x.md").exists()
+    assert not (main_root / "docs" / "briefings" / "x.md").exists()
+
+    return {
+        "worktree_root": worktree_root,
+        "main_root": main_root,
+        "wf_file": wf_file,
+        "briefing_rel": "docs/briefings/x.md",
+        "spec_rel": "docs/specs/x.md",
+    }
+
+
+def test_ac1_set_briefing_succeeds_with_worktree_only_files(monkeypatch, tmp_path):
+    """AC-1: set-briefing gelingt, wenn Spec+Briefing nur im Worktree existieren.
+
+    Vor dem Fix: `cmd_set_briefing` löst den Root ausschließlich über
+    `find_project_root()` (= simuliertes Hauptrepo) auf, findet die Briefing-
+    Datei dort nicht und bricht mit `sys.exit(1)` ab ("nicht lesbar").
+    """
+    ctx = _setup_worktree_briefing_scenario(monkeypatch, tmp_path, "wf-ac1")
+
+    wf_module.cmd_set_briefing([ctx["briefing_rel"]])
+
+    saved = json.loads(ctx["wf_file"].read_text())
+    entry = saved.get("po_briefing")
+    assert isinstance(entry, dict), saved
+    assert entry.get("file") == ctx["briefing_rel"], entry
+    assert entry.get("spec_sha256"), entry
+
+
+def test_ac2_check_po_briefing_reads_worktree_only_file(monkeypatch, tmp_path):
+    """AC-2: `_check_po_briefing()` liest die Briefing-Datei erfolgreich, wenn
+    sie nur im Worktree existiert (Spec liegt zur Isolation identisch in
+    beiden Roots — der Test soll ausschließlich das Lesen von
+    `po_briefing.file` prüfen, nicht das der Spec)."""
+    worktree_root = tmp_path / "worktree"
+    main_root = tmp_path / "main"
+    worktree_root.mkdir()
+    main_root.mkdir()
+    _bind_split_context(monkeypatch, worktree_root, main_root)
+
+    _write_file(main_root, "docs/specs/x.md", _SPEC_ADR_FILLED_KEINE)
+    _write_file(worktree_root, "docs/specs/x.md", _SPEC_ADR_FILLED_KEINE)
+    _write_file(worktree_root, "docs/briefings/x.md", _BRIEFING_COMPLETE)
+    assert not (main_root / "docs" / "briefings" / "x.md").exists()
+
+    data = {
+        "spec_file": "docs/specs/x.md",
+        "workflow_type": "feature",
+        "po_briefing": {"file": "docs/briefings/x.md"},
+    }
+
+    result = wf_module._check_po_briefing(data)
+
+    assert result is None, f"Erwartet: kein Block, aber: {result!r}"
+
+
+def test_ac3_check_adr_reads_and_blocks_worktree_only_spec(monkeypatch, tmp_path):
+    """AC-3: `_check_adr()` liest die Spec erfolgreich, wenn sie nur im
+    Worktree existiert, UND blockiert korrekt bei fehlender/nicht
+    ausgefüllter ADR-Sektion — Beweis der Reaktivierung, nicht nur eines
+    gelungenen Lesezugriffs."""
+    worktree_root = tmp_path / "worktree"
+    main_root = tmp_path / "main"
+    worktree_root.mkdir()
+    main_root.mkdir()
+    _bind_split_context(monkeypatch, worktree_root, main_root)
+
+    _write_file(worktree_root, "docs/specs/x.md", _SPEC_ADR_UNFILLED)
+    assert not (main_root / "docs" / "specs" / "x.md").exists()
+
+    result = wf_module._check_adr({"spec_file": "docs/specs/x.md"})
+
+    assert result is not None, (
+        "Erwartet: Block wegen unausgefülltem ADR-Feld — None bedeutet, die "
+        "Spec wurde gar nicht gelesen (lenientes Grandfathering greift "
+        "fälschlich)."
+    )
+    assert "ADR-Feld" in result, result
+
+
+def test_ac4_no_worktree_regression_uses_project_root_only(monkeypatch, tmp_path):
+    """AC-4: Ohne Worktree bleibt die Auflösung für alle vier betroffenen
+    Stellen unverändert ausschließlich über `find_project_root()`
+    (Regressionsfreiheit für Nicht-Worktree-Sessions)."""
+    main_root = tmp_path
+    _bind_split_context(monkeypatch, worktree=None, main_root=main_root)
+
+    _write_workflow(main_root, "wf-ac4")
+    (main_root / ".claude" / "active_workflow").write_text("wf-ac4")
+
+    wf_file = main_root / ".claude" / "workflows" / "wf-ac4.json"
+    data = json.loads(wf_file.read_text())
+    data["spec_file"] = "docs/specs/x.md"
+    wf_file.write_text(json.dumps(data))
+
+    _write_file(main_root, "docs/specs/x.md", _SPEC_ADR_FILLED_KEINE)
+    _write_file(main_root, "docs/briefings/x.md", _BRIEFING_COMPLETE)
+
+    assert wf_module._read_spec_content({"spec_file": "docs/specs/x.md"}) == _SPEC_ADR_FILLED_KEINE
+    assert wf_module._check_adr({"spec_file": "docs/specs/x.md"}) is None
+
+    po_data = {
+        "spec_file": "docs/specs/x.md",
+        "workflow_type": "feature",
+        "po_briefing": {"file": "docs/briefings/x.md"},
+    }
+    assert wf_module._check_po_briefing(po_data) is None
+
+    wf_module.cmd_set_briefing(["docs/briefings/x.md"])
+    saved = json.loads(wf_file.read_text())
+    assert saved["po_briefing"]["file"] == "docs/briefings/x.md"
+
+
+def test_ac4b_worktree_but_file_only_in_main_repo_falls_back(monkeypatch, tmp_path):
+    """Implementation Details (Spec fix-144): `_worktree_first_root` fällt auf
+    `find_project_root()` zurück, wenn `rel` im Worktree NICHT existiert — die
+    `(wt / rel).exists()`-Bedingung (Vorbild `edit_gate.py:254`). Kein eigenes
+    AC, sondern eine Pin-Ergänzung zu AC-4: ohne diesen Test würde auch eine
+    Implementierung OHNE Existenzprüfung (die den Worktree-Root immer
+    bevorzugt, sobald überhaupt ein Worktree vorliegt) die restliche Suite
+    grün machen, obwohl sie die falsche Datei läse, sobald sie existierte."""
+    worktree_root = tmp_path / "worktree"
+    main_root = tmp_path / "main"
+    worktree_root.mkdir()
+    main_root.mkdir()
+    _bind_split_context(monkeypatch, worktree_root, main_root)
+
+    _write_file(main_root, "docs/specs/x.md", _SPEC_ADR_UNFILLED)
+    _write_file(main_root, "docs/briefings/x.md", _BRIEFING_COMPLETE)
+    assert not (worktree_root / "docs" / "specs" / "x.md").exists()
+
+    assert wf_module._read_spec_content({"spec_file": "docs/specs/x.md"}) == _SPEC_ADR_UNFILLED
+
+    # Positives Signal (Block wegen unausgefülltem ADR-Feld), nicht das
+    # mehrdeutige None, das auch ein gescheiterter Lesezugriff liefern würde.
+    adr = wf_module._check_adr({"spec_file": "docs/specs/x.md"})
+    assert adr is not None and "ADR-Feld" in adr, adr
+
+    assert wf_module._check_po_briefing({
+        "spec_file": "docs/specs/x.md",
+        "workflow_type": "feature",
+        "po_briefing": {"file": "docs/briefings/x.md"},
+    }) is None
+
+
+def test_ac5_set_briefing_stores_worktree_relative_path(monkeypatch, tmp_path):
+    """AC-5: Der gespeicherte `po_briefing.file`-Pfad ist worktree-relativ,
+    NICHT mit Worktree-Präfix (z.B. NICHT `.claude/worktrees/<name>/...`)."""
+    ctx = _setup_worktree_briefing_scenario(monkeypatch, tmp_path, "wf-ac5")
+
+    wf_module.cmd_set_briefing([ctx["briefing_rel"]])
+
+    saved = json.loads(ctx["wf_file"].read_text())
+    stored_path = saved["po_briefing"]["file"]
+    assert stored_path == "docs/briefings/x.md", stored_path
+    assert not stored_path.startswith(str(ctx["worktree_root"])), stored_path
+    assert ".claude/worktrees" not in stored_path, stored_path
+
+
+def test_ac6_parse_briefing_frontmatter_matches_worktree_relative_spec(monkeypatch, tmp_path):
+    """AC-6: Die im Worktree gestempelte Briefing-Datei ergibt beim Parsen mit
+    `parse_briefing_frontmatter()` (derselben Funktion, die
+    `scripts/ci_spec_gate.py::_find_briefing` serverseitig nutzt) exakt den
+    erwarteten worktree-relativen `spec_file`-Pfad."""
+    ctx = _setup_worktree_briefing_scenario(monkeypatch, tmp_path, "wf-ac6")
+
+    wf_module.cmd_set_briefing([ctx["briefing_rel"]])
+
+    stamped = (ctx["worktree_root"] / ctx["briefing_rel"]).read_text()
+    front = wf_module.parse_briefing_frontmatter(stamped)
+
+    assert front.get("spec_file") == ctx["spec_rel"], front
