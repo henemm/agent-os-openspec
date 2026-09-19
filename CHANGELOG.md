@@ -5,9 +5,32 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.23.0] - 2026-09-19
 
 ### Fixed
+
+**Skills waren seit Juli nicht mehr synchron — Änderungen aus 3.18–3.22 kamen nie beim Nutzer an**
+
+Das Plugin liefert zur Laufzeit ausschließlich `skills/<name>/SKILL.md` aus.
+Entwickelt wurde aber in `core/commands/<name>.md`; die Skill-Fassungen wurden
+zuletzt am 2026-07-03 abgeglichen (einzige Ausnahmen: `00-intake` und das
+Frontmatter von `40-tdd-red`). Alles danach — PO-Briefing (Step 3b), der Block
+„Wo ich für dich entschieden habe", /clear-Wiedereinstieg (Step 0),
+Checkpoint-Blöcke, die Autonomie von `/60-validate` — erreichte keinen
+Plugin-Nutzer. Live belegt in gregor_zwanzig: Freigabetext ohne Briefing.
+
+- Neu: `scripts/sync_skills.py` erzeugt alle 16 Skills aus `core/commands/`
+  (Frontmatter der Skill-Datei bleibt erhalten, Setup-Block für die
+  Hook-Pfad-Auflösung, `.claude/hooks/`-Pfade → `$WF`/`${_H}`,
+  `{{OPENSPEC_VERSION}}` → Plugin-Version). `--check` meldet Abweichungen.
+- `core/commands/` ist ab jetzt die einzige Quelle; `skills/` wird generiert.
+  Abweichung ist ein Release-Blocker (`scripts/release_check.py`, Prüfung
+  „Skills") und ein roter Test (`tests/test_skills_sync.py`).
+- Beim Abgleich gefundene Skill-eigene Inhalte: nur die Kurzvariablen
+  `QA=`/`MS=` (80-workflow) und `AD=` (60-validate) im Setup-Block. Entfallen —
+  die generierten Aufrufe `python3 ${_H}/qa_gate.py` usw. sind gleichwertig.
+  Alle übrigen Unterschiede waren ältere Fassungen, die in `core/commands`
+  bereits bewusst ersetzt worden waren.
 
 **Spec-/Briefing-Pfadauflösung in `workflow.py` konsolidiert auf worktree-first (Issue #144)**
 
@@ -33,6 +56,54 @@ gaben fälschlich `None` zurück (Datei nicht gefunden → Grandfathering).
   siehe Known Limitations in `docs/specs/fix-144-briefing-worktree-path.md`.
 - Regressionstests: `tests/test_workflow_resolution_consolidation.py`
   (AC-1 bis AC-7).
+
+### Changed
+
+**PO-Briefing knapp — und die Freigabe zeigt nur noch das Briefing**
+
+- `po-briefer`: harte Wortgrenzen je Abschnitt (Was gebaut wird ≤ 20, Definition
+  of Done ≤ 25, Wie geprüft wird ≤ 25, Kritische Anmerkungen max. 3 Punkte à
+  ≤ 20, Freigabe-Frage ≤ 25), gesamt ≤ 120 Wörter. Abweichungen und Zusätze
+  gegenüber dem Ticket gehören unter *Kritische Anmerkungen*.
+- Gate: `check_briefing_content` zählt die Wörter der Pflicht-Abschnitte plus
+  Freigabe-Frage. Über der Grenze: „Briefing zu lang (N Wörter, max M) —
+  po-briefer erneut dispatchen". Default 150 (Puffer), konfigurierbar über
+  `po_briefing_gate.max_words`. Gilt gleichermaßen für `set-briefing`, die
+  Freigabe und das CI-Spec-Gate.
+- `/30-write-spec`: Die selbst geschriebene Zusammenfassung des Orchestrators
+  (Was wird gebaut / Was ändert sich sichtbar / Was bleibt / Wo ich für dich
+  entschieden habe / Qualitätsplan) entfällt. Ausgabe = Briefing wörtlich,
+  optional bis zu 3 Zeilen „Meine Einschätzung: …" bei Widerspruch, dann die
+  Marker-Zeile `⚙ PO-Briefing unabhängig erstellt · agent-os-openspec <Version>`
+  und die Freigabe-Aufforderung. An der Marker-Zeile erkennt der User, dass
+  die aktuelle Anleitung wirklich geladen ist.
+
+### Added
+
+**Versions-Banner beim Session-Start (`core/hooks/session_banner.py`)**
+
+- Zeigt bei jedem Session-Start `agent-os-openspec <Version> aktiv` an.
+- Warnt vor veralteten Befehls-Kopien: `setup.py --command-aliases` bettet für
+  Skills mit `disable-model-invocation: true` den kompletten Skill-Text in
+  `<scope>/.claude/commands/<name>.md` ein — diese Kopien ändern sich bei einem
+  Plugin-Update nicht mit. Der Banner nennt die betroffenen Befehle und den
+  Befehl zum Neu-Erzeugen. Soll-Inhalt aus `core/hooks/alias_sync.py`.
+- Blockiert nie (jede Exception → still beendet) und bleibt stumm bei
+  `framework: {enabled: false}` bzw. `OPENSPEC_FRAMEWORK=off`.
+
+### Migration
+
+Nach dem Plugin-Update die Kurz-Aliase neu erzeugen, sonst läuft `/name` weiter
+mit der alten Anleitung (der Banner weist darauf hin):
+
+```bash
+python3 <plugin>/setup.py ~ --command-aliases          # falls global erzeugt
+python3 <plugin>/setup.py <projekt> --command-aliases  # bzw. pro Projekt
+```
+
+Laufende Workflows in Phase 3: Ein bereits registriertes, nach alten Regeln
+geschriebenes Briefing kann die neue Wortgrenze (150) überschreiten und blockt
+dann das `approved` mit „Briefing zu lang" — po-briefer erneut dispatchen.
 
 ## [3.22.1] - 2026-09-19
 

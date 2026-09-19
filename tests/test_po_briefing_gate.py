@@ -419,6 +419,117 @@ def test_19_set_briefing_stamps_frontmatter(tmp_path):
     assert "## Kritische Anmerkungen" in written
 
 
+# --- Wortgrenze (knappes Briefing, 3.23.0) ---------------------------------
+
+import workflow as _wf  # noqa: E402  (HOOKS_DIR steht oben in sys.path)
+
+
+def _long_briefing(extra_words: int) -> str:
+    """BRIEFING_COMPLETE plus Freigabe-Frage mit genau `extra_words` Wörtern."""
+    return (
+        BRIEFING_COMPLETE
+        + "\n## Freigabe-Frage\n\n"
+        + " ".join(["Wort"] * extra_words)
+        + "?\n"
+    )
+
+
+def test_20_word_count_ignores_title_meta_and_bullets():
+    """Titel, Meta-Zeilen und Aufzählungszeichen zählen nicht als Wörter."""
+    base = _wf.count_briefing_words(BRIEFING_COMPLETE)
+    with_meta = BRIEFING_COMPLETE.replace(
+        "- **Spec:** docs/specs/m/spec.md\n",
+        "- **Spec:** docs/specs/m/spec.md\n- **Issue:** #42 mit vielen Worten hier\n",
+    )
+    assert _wf.count_briefing_words(with_meta) == base
+    expected = sum(
+        len([t for t in body.split() if t != "-"])
+        for body in (
+            "Nutzer können künftig mit einem Klick etwas auslösen, das heute fehlt.",
+            "Fertig ist es, wenn der Klick sichtbar etwas auslöst und das automatisch geprüft wird.",
+            "Ein automatischer Test klickt stellvertretend und prüft das sichtbare Ergebnis.",
+            "- Die Spec lässt offen, was bei zweimaligem Klicken passiert.",
+        )
+    )
+    assert base == expected
+
+
+def test_21_freigabe_frage_counts_when_present():
+    """Die Freigabe-Frage zählt mit; fehlt sie, zählt sie 0 (kein Block)."""
+    base = _wf.count_briefing_words(BRIEFING_COMPLETE)
+    assert _wf.count_briefing_words(_long_briefing(5)) == base + 5
+    assert _wf.check_briefing_content(BRIEFING_COMPLETE) is None
+
+
+def test_22_default_limit_blocks_too_long_briefing():
+    """Default 150: genau an der Grenze ok, ein Wort darüber → klare Blockmeldung."""
+    limit = _wf._PO_BRIEFING_MAX_WORDS
+    assert limit == 150
+    base = _wf.count_briefing_words(BRIEFING_COMPLETE)
+    at_limit = _long_briefing(limit - base)
+    assert _wf.count_briefing_words(at_limit) == limit
+    assert _wf.check_briefing_content(at_limit) is None
+
+    err = _wf.check_briefing_content(_long_briefing(limit - base + 1))
+    assert err is not None
+    assert "Briefing zu lang (151 Wörter, max 150)" in err
+    assert "po-briefer erneut dispatchen" in err
+
+
+def test_23_explicit_limit_parameter():
+    """check_briefing_content(max_words=N) überstimmt den Default."""
+    base = _wf.count_briefing_words(BRIEFING_COMPLETE)
+    assert _wf.check_briefing_content(BRIEFING_COMPLETE, max_words=base) is None
+    assert "zu lang" in _wf.check_briefing_content(BRIEFING_COMPLETE, max_words=base - 1)
+
+
+def test_24_max_words_config_parsing():
+    """po_briefing_max_words: gültige Zahl übernehmen, Unbrauchbares → Default."""
+    assert _wf.po_briefing_max_words({"max_words": 80}) == 80
+    assert _wf.po_briefing_max_words({"max_words": "90"}) == 90
+    for bad in ({}, {"max_words": 0}, {"max_words": -5}, {"max_words": "viel"},
+                {"max_words": True}, {"max_words": None}, "kaputt"):
+        assert _wf.po_briefing_max_words(bad) == _wf._PO_BRIEFING_MAX_WORDS, bad
+
+
+def test_25_configured_limit_blocks_transition(tmp_path):
+    """Gate liest po_briefing_gate.max_words: niedrige Grenze → Transition blockiert."""
+    _write(tmp_path, REL_SPEC, SPEC_BODY)
+    _write(tmp_path, REL_BRIEFING, BRIEFING_COMPLETE)
+    _make_workflow(tmp_path, po_briefing=_briefing_entry())
+    (tmp_path / "config.yaml").write_text("po_briefing_gate:\n  max_words: 20\n")
+    result = _run_phase(_env(tmp_path), "phase5_tdd_red", cwd=str(tmp_path))
+    assert result.returncode != 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    assert "Briefing zu lang" in result.stderr, result.stderr
+    assert "max 20" in result.stderr, result.stderr
+
+
+def test_26_configured_limit_blocks_approval(tmp_path):
+    """Auch der Freigabe-Pfad (phase_listener) respektiert die Wortgrenze."""
+    _write(tmp_path, REL_SPEC, SPEC_BODY)
+    _write(tmp_path, REL_BRIEFING, BRIEFING_COMPLETE)
+    wf_file = _make_workflow(
+        tmp_path, phase="phase3_spec", spec_approved=False,
+        po_briefing=_briefing_entry(),
+    )
+    (tmp_path / "config.yaml").write_text("po_briefing_gate:\n  max_words: 20\n")
+    result = _run_phase_listener(_env(tmp_path), "approved", cwd=str(tmp_path))
+    data = json.loads(wf_file.read_text())
+    assert data.get("spec_approved") is not True, data
+    assert "Briefing zu lang" in result.stderr, result.stderr
+
+
+def test_27_set_briefing_rejects_too_long(tmp_path):
+    """set-briefing prüft dieselbe Wortgrenze wie das Gate."""
+    _write(tmp_path, REL_SPEC, SPEC_BODY)
+    wf_file = _make_workflow(tmp_path, phase="phase3_spec", spec_approved=False)
+    _write(tmp_path, REL_BRIEFING, _long_briefing(200))
+    result = _run_workflow(_env(tmp_path), ["set-briefing", REL_BRIEFING], cwd=str(tmp_path))
+    assert result.returncode != 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    assert "Briefing zu lang" in result.stderr, result.stderr
+    assert "po_briefing" not in json.loads(wf_file.read_text())
+
+
 def test_20_set_briefing_restamps_existing_frontmatter(tmp_path):
     """Test 20 — Zweiter Lauf ersetzt den alten Stempel, statt ihn zu doppeln."""
     _write(tmp_path, REL_SPEC, SPEC_BODY)

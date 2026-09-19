@@ -90,10 +90,11 @@ def _load_hook_module(root: Path, name: str):
     return None
 
 
-def _config(root: Path) -> dict:
-    """Lies `ci_spec_gate:` aus config.yaml — ohne PyYAML-Zwang.
+def _config(root: Path, section_name: str = "ci_spec_gate") -> dict:
+    """Lies einen flachen Abschnitt (Default `ci_spec_gate:`) aus config.yaml —
+    ohne PyYAML-Zwang.
 
-    Reicht für die zwei flachen Schalter; fehlt PyYAML, greift der Mini-Parser.
+    Reicht für flache Schalter; fehlt PyYAML, greift der Mini-Parser.
     """
     path = root / "config.yaml"
     if not path.exists():
@@ -102,11 +103,12 @@ def _config(root: Path) -> dict:
     try:
         import yaml  # type: ignore
         data = yaml.safe_load(text) or {}
-        section = data.get("ci_spec_gate", {})
+        section = data.get(section_name, {})
         return section if isinstance(section, dict) else {}
     except Exception:
         pass
-    match = re.search(r"^ci_spec_gate:\s*$(.*?)(?=^\S|\Z)", text, re.MULTILINE | re.DOTALL)
+    match = re.search(r"^" + re.escape(section_name) + r":\s*$(.*?)(?=^\S|\Z)",
+                      text, re.MULTILINE | re.DOTALL)
     if not match:
         return {}
     out = {}
@@ -239,7 +241,14 @@ def _check_briefing(root: Path, spec_rel: str, problems: list[str]) -> None:
     path, front = found
     rel = path.relative_to(root).as_posix()
 
-    content_err = workflow.check_briefing_content(path.read_text())
+    # Wortgrenze aus po_briefing_gate.max_words — nur, wenn das geladene
+    # workflow.py sie schon kennt (ältere Projekt-Kopien: nur Vollständigkeit).
+    max_words_fn = getattr(workflow, "po_briefing_max_words", None)
+    if max_words_fn is not None:
+        limit = max_words_fn(_config(root, "po_briefing_gate"))
+        content_err = workflow.check_briefing_content(path.read_text(), limit)
+    else:
+        content_err = workflow.check_briefing_content(path.read_text())
     if content_err:
         problems.append(f"{rel}: {content_err}")
 

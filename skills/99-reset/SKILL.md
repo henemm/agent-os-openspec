@@ -33,7 +33,7 @@ Completes and archives the current workflow, or removes it if in early phases.
 
 ```bash
 # Complete and archive the current workflow
-$WF complete
+$WF finish
 
 # Or start fresh with a new workflow
 $WF start "new-feature"

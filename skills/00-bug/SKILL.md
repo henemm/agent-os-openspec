@@ -9,6 +9,16 @@ Analyze a bug following the **Analysis-First** principle.
 
 **NEVER fix directly!** First understand completely, then document, then (after approval) fix.
 
+## Setup
+
+```bash
+# Hook-Pfad: (1) CLAUDE_PLUGIN_ROOT (2) installed_plugins.json (3) .claude/hooks
+_H="${CLAUDE_PLUGIN_ROOT:+${CLAUDE_PLUGIN_ROOT}/core/hooks}"
+if [ -z "$_H" ]; then _p="$(python3 -c 'import json,os;d=json.load(open(os.path.expanduser("~/.claude/plugins/installed_plugins.json")));print(next((e["installPath"] for k,v in d.get("plugins",{}).items() if k.startswith("agent-os-openspec@") for e in [next((x for x in v if x.get("scope")=="user"),v[0])]),""))' 2>/dev/null)"; [ -n "$_p" ] && [ -d "$_p/core/hooks" ] && _H="$_p/core/hooks"; fi
+_H="${_H:-.claude/hooks}"
+WF="python3 ${_H}/workflow.py"
+```
+
 ## Step 0: GitHub Issues durchsuchen (IMMER ZUERST)
 
 ```bash
@@ -87,3 +97,41 @@ Summarize (NO code, understandable language):
 2. **Where is the cause?** (File + short explanation)
 3. **How do we test the fix?** (Concrete steps)
 4. **Estimated effort** (Small/Medium/Large)
+
+---
+
+## Fast Track (triviale Bugs — ≤3 Dateien, bekannte Ursache)
+
+Wenn Ursache klar und Fix klein → direkt implementieren ohne vollständigen 8-Phasen-Workflow.
+
+**Voraussetzungen:**
+- Ursache mit Sicherheit bekannt (konkrete Datei + Zeile)
+- Fix berührt ≤3 Dateien
+- Kein neues API-Design oder Breaking Changes
+
+**Ablauf:**
+```bash
+# 1. Bug-Workflow starten (startet direkt bei phase6_implement)
+$WF start BUG-<N> --type bug
+export OPENSPEC_ACTIVE_WORKFLOW=BUG-<N>
+
+# 2. Fix implementieren (kein Spec, kein TDD-Red erforderlich)
+# ...edit files...
+
+# 3. Manuell testen
+# Reproduktionsschritte durchgehen, Fix verifizieren
+
+# 4. Abschließen
+$WF write-log success
+$WF finish
+```
+
+**Was wegfällt beim Fast Track:**
+- Phasen 1–5 (Kontext, Analyse, Spec, Approval, TDD-Red)
+- Adversary-Validierung vor `git commit`
+- TDD-Artefakt-Pflicht
+
+**Was bleibt aktiv:**
+- Rebase-Gate (Branch muss auf `origin/main` stehen)
+- Stop-Lock / Override-Token
+- Secrets Guard

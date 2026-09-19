@@ -147,6 +147,22 @@ def check_tag_free(tag: str) -> "tuple[bool, str]":
     return True, f"Tag '{tag}' noch frei"
 
 
+def check_skills_sync() -> "tuple[bool, str]":
+    """skills/ muss exakt dem Generat aus core/commands entsprechen.
+
+    Das Plugin liefert nur skills/ aus; eine Aenderung, die nur in
+    core/commands steht, erreicht keinen Nutzer (3.18–3.22 so passiert).
+    """
+    sys.path.insert(0, str(REPO_ROOT / "scripts"))
+    import sync_skills
+
+    drift = sync_skills.check()
+    if drift:
+        return False, (f"Skills weichen von core/commands ab ({', '.join(drift)}) — "
+                       "python3 scripts/sync_skills.py ausführen")
+    return True, "skills/ synchron mit core/commands"
+
+
 def check_tests() -> "tuple[bool, str]":
     result = subprocess.run([sys.executable, "-m", "pytest", "tests/", "-q"],
                             cwd=str(REPO_ROOT), capture_output=True, text=True)
@@ -185,6 +201,7 @@ def main() -> int:
         ("Abgleich", check_in_sync()),
         ("Version", check_version_match(version, latest_changelog_version(CHANGELOG.read_text()))),
         ("Tag", check_tag_free(tag)),
+        ("Skills", check_skills_sync()),
     ]
     if not args.no_tests:
         checks.append(("Tests", check_tests()))
