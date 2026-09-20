@@ -139,6 +139,27 @@ def _load_config_values() -> dict:
 _root = find_project_root()
 
 
+def _measurement_root() -> Path:
+    """Arbeitsbaum, in dem der Commit wirklich passiert — Ziel jedes `git diff`.
+
+    `_root` loest einen Worktree bewusst auf das HAUPTREPO auf. Richtig fuer
+    geteilten ZUSTAND (`.claude/workflows/*.json` liegen dort fuer alle
+    Sitzungen), falsch fuer eine MESSUNG am Arbeitsbaum: der Commit passiert im
+    Worktree, im Hauptrepo ist nichts vorgemerkt. Die Liste kommt leer zurueck,
+    `_detect_e2e_scope` meldet dann immer `docs-only` (und `/70-deploy`
+    ueberspringt die Staging-Validierung), `required_staged_files` kann nie
+    greifen — Issue #155, gleiche Fehlerklasse wie #96 und #144.
+
+    Pro Aufruf aufgeloest, nicht beim Import: der Worktree-Kontext haengt am CWD.
+    """
+    try:
+        from hook_utils import find_worktree_root
+        worktree_root = find_worktree_root()
+    except Exception:
+        worktree_root = None
+    return worktree_root if worktree_root is not None else _root
+
+
 def _is_stop_locked() -> bool:
     try:
         from hook_utils import _find_worktree_root
@@ -352,6 +373,31 @@ def _contains_hardcoded_credentials(command: str, config: dict) -> str | None:
     return None
 
 
+def _commit_content_files(staged_list: list, measure_root: Path) -> list:
+    """Dateien, die dieser Commit voraussichtlich enthaelt.
+
+    Normalfall ist der Index. Bei `git commit -a` / `-am` merkt git die
+    Aenderungen aber erst beim Commit selbst vor: zum Hook-Zeitpunkt ist der
+    Index leer, obwohl der Commit Produktivcode traegt. Dann zaehlt der
+    Arbeitsbaum gegen HEAD.
+
+    Nur fuer die Scope-Erkennung (informativ, blockt nie). `required_staged_files`
+    behaelt bewusst die strenge Index-Semantik: dort ist "nicht vorgemerkt"
+    genau die Bedingung, auf die das Gate hinweisen soll.
+    """
+    if staged_list:
+        return staged_list
+    import subprocess
+    try:
+        tracked = subprocess.run(
+            ["git", "diff", "--name-only", "HEAD"],
+            cwd=measure_root, capture_output=True, text=True, timeout=5
+        )
+    except (subprocess.SubprocessError, OSError):
+        return []
+    return tracked.stdout.strip().splitlines()
+
+
 def _detect_e2e_scope(staged_files: list, config: dict) -> str:
     """Determine E2E test scope from staged file paths."""
     docs = config.get("e2e_scope", {}).get("docs_patterns", E2E_DOCS_PATTERNS)
@@ -500,10 +546,13 @@ def main():
     if workflow_enforced and is_git_subcommand(command, "commit"):
         import subprocess
 
+        # Gemessen wird im Arbeitsbaum, nicht im Hauptrepo (Issue #155).
+        measure_root = _measurement_root()
+
         # Get staged files (reused across 5a, 5b, 5c)
         staged = subprocess.run(
             ["git", "diff", "--cached", "--name-only"],
-            cwd=_root, capture_output=True, text=True
+            cwd=measure_root, capture_output=True, text=True
         )
         staged_list = staged.stdout.strip().splitlines()
 
@@ -513,7 +562,7 @@ def main():
             if req_file not in staged_list:
                 diff = subprocess.run(
                     ["git", "diff", "--name-only", "--", req_file],
-                    cwd=_root, capture_output=True, text=True
+                    cwd=measure_root, capture_output=True, text=True
                 )
                 if diff.stdout.strip():
                     block(f"BLOCKED: {req_file} has unstaged changes. Stage it first.")
@@ -569,7 +618,7 @@ def main():
                                   + gate_diagnostics(wf, verdict=(verdict or "keins")))
 
             # 5d. E2E scope detection (informational — never blocks)
-            scope = _detect_e2e_scope(staged_list, config)
+            scope = _detect_e2e_scope(_commit_content_files(staged_list, measure_root), config)
             _write_e2e_scope(wf, scope)
             print(f"E2E scope: {scope}", file=sys.stderr)
 
