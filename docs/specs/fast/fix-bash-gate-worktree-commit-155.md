@@ -23,17 +23,24 @@ Briefing-Pfade); der dokumentierte Gegenpart `find_worktree_root()` existierte b
 
 - `core/hooks/bash_gate.py`: neues `_measurement_root()` (Worktree-first, Fallback `_root`,
   pro Aufruf aufgelöst) als `cwd` für beide git-Aufrufe in Abschnitt 5
-- `core/hooks/bash_gate.py`: neues `_commit_content_files()` — Rückfall auf
-  `git diff --name-only HEAD`, wenn der Index leer ist (`git commit -a`/`-am`). Nur für die
+- `core/hooks/bash_gate.py`: neues `_commit_content_files()` — ermittelt den Inhalt des
+  *entstehenden* Commits statt nur den Index: Rückfall auf `git diff --name-only HEAD` bei
+  leerem Index (`git commit -a`/`-am`), Messung gegen `HEAD~1` bei `--amend`. Nur für die
   Scope-Erkennung; `required_staged_files` behält die strenge Index-Semantik
 - Nicht enthalten: `_write_e2e_scope` schreibt weiterhin in den geteilten State im Hauptrepo —
   das ist die richtige Wurzel für Zustand und bleibt bewusst unverändert
+- Nicht enthalten: die Fail-open-Grundhaltung der Scope-Erkennung. Lässt sich der Inhalt nicht
+  ermitteln (kaputtes Repo, `--amend` des Wurzel-Commits ohne `HEAD~1`), bleibt die Liste leer
+  und `_detect_e2e_scope` meldet `docs-only` statt „unbekannt". Bewusst so: die Erkennung ist
+  informativ und darf keinen Commit verhindern. Ein eigener `unknown`-Zustand würde in
+  `/70-deploy` durchschlagen und gehört in ein eigenes Issue
 
 ## Definition of Done
 
-Ein Commit aus einem Worktree wird nach seinem eigenen Inhalt eingestuft, nicht nach dem
-(leeren oder fremden) Index des Hauptrepos; der ermittelte Wert landet weiterhin im geteilten
-Workflow-State im Hauptrepo.
+Ein Commit aus einem Worktree wird nach dem Inhalt des entstehenden Commits eingestuft —
+Index, `-a`-Arbeitsbaum oder `--amend`-Ergebnis — und nicht nach dem leeren oder fremden Index
+des Hauptrepos. Der ermittelte Wert landet weiterhin im geteilten Workflow-State im Hauptrepo.
+Nicht abgedeckt bleibt der oben genannte Fail-open-Fall.
 
 ## Acceptance Criteria
 
@@ -52,15 +59,27 @@ Workflow-State im Hauptrepo.
   vorgemerkt, blockt es nicht.
 - **AC-7:** Given der Fix greift, When das Gate schreibt, Then entsteht keine zweite,
   worktree-lokale Workflow-Ablage — der State bleibt im Hauptrepo.
+- **AC-8:** Given `git commit --amend --no-edit` bei sauberem Baum auf einen Commit mit
+  Produktivcode, When das Gate läuft, Then steht `e2e_scope` auf `backend` — ein zuvor
+  korrekter Wert darf nicht durch `docs-only` überschrieben werden.
+- **AC-9:** Given `--amend` auf einen reinen Doku-Commit, When das Gate läuft, Then bleibt
+  `e2e_scope` auf `docs-only`.
+- **AC-10:** Given `--amend` mit zusätzlich vorgemerkter Doku-Datei auf einen Commit mit
+  Produktivcode, When das Gate läuft, Then zählt der Produktivcode des Ergebnis-Commits
+  (`backend`), nicht nur die Nachbesserung.
 
 ## Test Plan
 
-- `tests/test_bash_gate_worktree_commit_155.py`: 8 Tests (AC-1 bis AC-7), echtes
+- `tests/test_bash_gate_worktree_commit_155.py`: 11 Tests (AC-1 bis AC-10), echtes
   `git worktree add`, Hook als Subprozess mit `cwd=worktree` und echter stdin-Payload.
   Ein Direktaufruf von `_detect_e2e_scope()` würde vor und nach dem Fix identisch bestehen —
   der Defekt liegt nicht im Klassifikator, sondern in dem, was in ihn hineingereicht wird.
-- RED vor dem Fix: 5 von 8 rot (genau die Worktree-Fälle), 3 Gegenproben grün.
-- Volle Suite: 842 passed.
+- RED vor dem Fix: 5 von 8 rot (die Worktree-Fälle), 3 Gegenproben grün; die Amend-Fälle
+  danach separat rot (2 von 11), bevor `--amend` behandelt wurde.
+- Volle Suite: 845 passed.
+- Live-Gegenprobe im echten Worktree: die Testfixture entfernt `CLAUDE_PROJECT_DIR`, die
+  Produktion setzt sie. Mit gesetzter Variable bleibt `_root` = `/home/hem/agent-os-openspec`
+  und `_measurement_root()` = der Worktree-Pfad — die Trennung hängt nicht an der Fixture.
 
 ## ADR
 

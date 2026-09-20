@@ -195,6 +195,58 @@ class TestE2eScopeMeasuresWorktree:
         )
 
 
+    def test_amend_of_production_commit_is_not_docs_only(self, repo_and_worktree):
+        """`git commit --amend` bei sauberem Baum: der Index ist leer UND
+        `git diff HEAD` ist leer — der Rueckfall auf den Arbeitsbaum greift
+        nicht. Ohne eigene Behandlung meldet das Gate `docs-only` und
+        ueberschreibt damit einen zuvor korrekten `backend`-Wert."""
+        main, worktree = repo_and_worktree
+        (worktree / "src" / "app.py").write_text("BASE = 6\n")
+        _git(["add", "src/app.py"], worktree)
+        _git(["commit", "-m", "prod"], worktree)
+
+        rc, stderr = _run_gate(worktree, command="git commit --amend --no-edit")
+
+        assert rc == 0, f"stderr: {stderr!r}"
+        assert _scope(main) == "backend", (
+            "Der nachgebesserte Commit traegt Produktivcode — gemeldet wurde "
+            f"{_scope(main)!r}"
+        )
+
+    def test_amend_of_docs_commit_stays_docs_only(self, repo_and_worktree):
+        """Gegenprobe zum Amend-Pfad: ein nachgebesserter Doku-Commit bleibt
+        `docs-only`."""
+        main, worktree = repo_and_worktree
+        (worktree / "docs" / "readme.md").write_text("# nur doku\n")
+        _git(["add", "docs/readme.md"], worktree)
+        _git(["commit", "-m", "docs"], worktree)
+
+        rc, stderr = _run_gate(worktree, command="git commit --amend --no-edit")
+
+        assert rc == 0, f"stderr: {stderr!r}"
+        assert _scope(main) == "docs-only", (
+            f"Nachgebesserter Doku-Commit muss `docs-only` bleiben, war {_scope(main)!r}"
+        )
+
+    def test_amend_includes_newly_staged_file(self, repo_and_worktree):
+        """Beim Amend zaehlt der Inhalt des ERGEBNIS-Commits: vorgemerkte
+        Nachbesserung UND der urspruengliche Commit."""
+        main, worktree = repo_and_worktree
+        (worktree / "src" / "app.py").write_text("BASE = 7\n")
+        _git(["add", "src/app.py"], worktree)
+        _git(["commit", "-m", "prod"], worktree)
+        (worktree / "docs" / "readme.md").write_text("# nachtrag\n")
+        _git(["add", "docs/readme.md"], worktree)
+
+        rc, stderr = _run_gate(worktree, command="git commit --amend --no-edit")
+
+        assert rc == 0, f"stderr: {stderr!r}"
+        assert _scope(main) == "backend", (
+            "Der Produktivcode aus dem urspruenglichen Commit gehoert zum "
+            f"Ergebnis-Commit — gemeldet wurde {_scope(main)!r}"
+        )
+
+
 class TestRequiredStagedFilesInWorktree:
     """Zweite Haelfte von #155: dieselbe Wurzel macht `required_staged_files`
     wirkungslos."""

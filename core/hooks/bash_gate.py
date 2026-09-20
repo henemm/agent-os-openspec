@@ -373,29 +373,55 @@ def _contains_hardcoded_credentials(command: str, config: dict) -> str | None:
     return None
 
 
-def _commit_content_files(staged_list: list, measure_root: Path) -> list:
-    """Dateien, die dieser Commit voraussichtlich enthaelt.
+def _is_amend(command: str) -> bool:
+    return re.search(r"(?<!\S)--amend(?!\S)", command) is not None
 
-    Normalfall ist der Index. Bei `git commit -a` / `-am` merkt git die
-    Aenderungen aber erst beim Commit selbst vor: zum Hook-Zeitpunkt ist der
-    Index leer, obwohl der Commit Produktivcode traegt. Dann zaehlt der
-    Arbeitsbaum gegen HEAD.
+
+def _commit_content_files(staged_list: list, measure_root: Path, command: str) -> list:
+    """Dateien, die der ENTSTEHENDE Commit enthaelt.
+
+    Drei Aufrufformen, drei Antworten:
+
+    - Normalfall: der Index.
+    - `git commit -a` / `-am`: git merkt erst beim Commit selbst vor, zum
+      Hook-Zeitpunkt ist der Index leer, obwohl der Commit Produktivcode
+      traegt. Dann zaehlt der Arbeitsbaum gegen HEAD.
+    - `git commit --amend`: das Ergebnis enthaelt den bisherigen Commit PLUS
+      die Nachbesserung. Gemessen wird deshalb immer gegen `HEAD~1`, nicht
+      gegen den Index — sonst meldete ein Amend mit sauberem Baum `docs-only`
+      und ueberschriebe einen zuvor korrekten Wert.
 
     Nur fuer die Scope-Erkennung (informativ, blockt nie). `required_staged_files`
     behaelt bewusst die strenge Index-Semantik: dort ist "nicht vorgemerkt"
     genau die Bedingung, auf die das Gate hinweisen soll.
+
+    Bekannte Untergrenze: laesst sich der Inhalt nicht ermitteln (kaputtes Repo,
+    Amend des Wurzel-Commits ohne `HEAD~1`), faellt die Liste leer aus und
+    `_detect_e2e_scope` meldet `docs-only`. Fail-open — die Scope-Erkennung ist
+    informativ und darf keinen Commit verhindern.
     """
+    import subprocess
+
+    def _diff(*args: str) -> "list | None":
+        try:
+            proc = subprocess.run(
+                ["git", "diff", "--name-only", *args],
+                cwd=measure_root, capture_output=True, text=True, timeout=5
+            )
+        except (subprocess.SubprocessError, OSError):
+            return None
+        if proc.returncode != 0:
+            return None
+        return proc.stdout.strip().splitlines()
+
+    if _is_amend(command):
+        amended = _diff("HEAD~1")
+        if amended:
+            return amended
+        return staged_list  # Wurzel-Commit: kein HEAD~1 vorhanden
     if staged_list:
         return staged_list
-    import subprocess
-    try:
-        tracked = subprocess.run(
-            ["git", "diff", "--name-only", "HEAD"],
-            cwd=measure_root, capture_output=True, text=True, timeout=5
-        )
-    except (subprocess.SubprocessError, OSError):
-        return []
-    return tracked.stdout.strip().splitlines()
+    return _diff("HEAD") or []
 
 
 def _detect_e2e_scope(staged_files: list, config: dict) -> str:
@@ -618,7 +644,9 @@ def main():
                                   + gate_diagnostics(wf, verdict=(verdict or "keins")))
 
             # 5d. E2E scope detection (informational — never blocks)
-            scope = _detect_e2e_scope(_commit_content_files(staged_list, measure_root), config)
+            scope = _detect_e2e_scope(
+                _commit_content_files(staged_list, measure_root, command), config
+            )
             _write_e2e_scope(wf, scope)
             print(f"E2E scope: {scope}", file=sys.stderr)
 

@@ -23,10 +23,16 @@ zurück. Seit der Worktree-Pflicht (3.4.10) traf das den Normalfall.
   Spec-/Briefing-Pfaden (#144).
 - Damit greift auch `required_staged_files` wieder: der Fallback-`git diff` lief bisher im
   falschen Baum und sah eine ungestagte Pflichtdatei nie — das Gate blockte nie.
-- `core/hooks/bash_gate.py`: neues `_commit_content_files()` — bei `git commit -a`/`-am` merkt
-  git erst beim Commit vor, der Index ist zum Hook-Zeitpunkt leer. Für die Scope-Erkennung
-  zählt dann der Arbeitsbaum gegen HEAD. Nur dort: `required_staged_files` behält die strenge
-  Index-Semantik, weil „nicht vorgemerkt" genau die Bedingung ist, auf die es hinweist.
+- `core/hooks/bash_gate.py`: neues `_commit_content_files()` — misst den Inhalt des
+  *entstehenden* Commits statt nur den Index. Bei `git commit -a`/`-am` merkt git erst beim
+  Commit vor, der Index ist zum Hook-Zeitpunkt leer; dann zählt der Arbeitsbaum gegen HEAD.
+  Bei `git commit --amend` enthält das Ergebnis den bisherigen Commit plus die Nachbesserung,
+  gemessen wird deshalb gegen `HEAD~1` — sonst meldete ein Amend mit sauberem Baum `docs-only`
+  und überschriebe einen zuvor korrekten Wert. Nur dort: `required_staged_files` behält die
+  strenge Index-Semantik, weil „nicht vorgemerkt" genau die Bedingung ist, auf die es hinweist.
+- Unverändert fail-open: lässt sich der Commit-Inhalt nicht ermitteln (kaputtes Repo, `--amend`
+  des Wurzel-Commits), meldet die Erkennung `docs-only` statt „unbekannt". Die Scope-Erkennung
+  ist informativ und darf keinen Commit verhindern.
 - Unverändert: `_write_e2e_scope` schreibt weiterhin in den geteilten Workflow-State im
   Hauptrepo. Gemessen wird im Worktree, abgelegt wird zentral.
 - `tests/test_bash_gate_worktree_commit_155.py`: 8 Regressionstests mit echtem
