@@ -4,6 +4,43 @@ Deploy the current main branch to production.
 
 **CUSTOMIZE THIS FILE for your project's deployment setup!**
 
+## Wiedereinstieg via Issue-Nummer (nach `/clear`)
+
+**Wurde dieser Befehl als `/70-deploy #<N>` aufgerufen** (typisch nach einem `/clear`)? Dann löse zuerst den Workflow von der Platte auf — der komplette State überlebt jeden `/clear` und jeden Worktree:
+
+```bash
+ISSUE=42   # die übergebene Nummer (ohne #)
+python3 - "$ISSUE" <<'PY'
+import sys, json, glob, re, os
+issue = sys.argv[1].lstrip('#')
+pat = re.compile(rf'(^|[-_]){re.escape(issue)}([-_]|$)')
+hits = []
+for f in glob.glob('.claude/workflows/*.json'):
+    name = os.path.basename(f)[:-5]
+    if pat.search(name):
+        d = json.load(open(f))
+        hits.append((name, d.get('current_phase'), d.get('spec_file') or 'Not created', d.get('adversary_verdict'), d.get('affected_files', [])))
+if not hits:
+    print(f'KEIN laufender Workflow fuer #{issue} (evtl. abgeschlossen -> .claude/workflows/_archive/).')
+else:
+    for name, ph, spec, verd, aff in hits:
+        print(f'GEFUNDEN: {name} | Phase={ph} | Spec={spec} | Verdict={verd}')
+        if aff: print(f'  affected_files: {", ".join(aff)}')
+    print('\nNAME=' + hits[0][0])
+PY
+```
+
+**PFLICHT direkt danach** — Workflow wirklich aktivieren (nicht nur die Zeile oben lesen). Ein reines `export OPENSPEC_ACTIVE_WORKFLOW=...` reicht NICHT: Shell-State überlebt keinen Bash-Tool-Aufruf, und in Worktree-Sessions ignoriert `resolve_active_workflow()` die Env-Var ohnehin (Issue #58):
+
+```bash
+python3 .claude/hooks/workflow.py switch <NAME-aus-obigem-Output>
+python3 .claude/hooks/workflow.py status
+```
+
+Das `status`-Kommando ist der eigentliche Wiedereinstiegs-Check: Es zeigt die Quelle (`[file]`) und bestätigt Phase/Verdict. **Fasse dem User in 2 Sätzen zusammen, wo der Workflow steht** — steht er vor `phase8_complete`, nenne den offenen Pflicht-Schritt, bevor du deployst.
+
+**Ohne Argument** geht es direkt mit den Pre-Flight-Checks weiter.
+
 ## Pre-Flight Checks
 
 Before deploying, verify:

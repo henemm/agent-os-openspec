@@ -25,6 +25,33 @@ WF="python3 ${_H}/workflow.py"
 /90-retro list       → alle archivierten Workflows auflisten
 ```
 
+## Wiedereinstieg via Issue-Nummer (nach `/clear`)
+
+**Wurde dieser Befehl als `/90-retro #<N>` aufgerufen?** Dann ist der Workflow zu dieser Nummer gemeint. Er ist per Definition **abgeschlossen und archiviert** — deshalb hier kein `workflow.py switch` (das gilt nur für laufende Workflows), sondern die Suche im Archiv und danach `retro <name>`:
+
+```bash
+ISSUE=42   # die übergebene Nummer (ohne #)
+python3 - "$ISSUE" <<'PY'
+import sys, json, glob, re, os
+issue = sys.argv[1].lstrip('#')
+pat = re.compile(rf'(^|[-_]){re.escape(issue)}([-_]|$)')
+hits = []
+for f in glob.glob('.claude/workflows/_archive/*.json') + glob.glob('.claude/workflows/*.json'):
+    name = os.path.basename(f)[:-5]
+    if pat.search(name):
+        d = json.load(open(f))
+        hits.append((name, d.get('current_phase'), '_archive' in f))
+if not hits:
+    print(f'KEIN Workflow fuer #{issue} — weder im Archiv noch laufend.')
+else:
+    for name, ph, arch in hits:
+        print(f'GEFUNDEN: {name} | Phase={ph} | {"archiviert" if arch else "LAEUFT NOCH"}')
+    print('\nNAME=' + hits[0][0])
+PY
+```
+
+Mit dem gefundenen Namen weiter bei Schritt 2 (`retro <name>`). **Fasse dem User in 2 Sätzen zusammen**, welchen Workflow du analysierst und ob er wirklich abgeschlossen ist. Steht dort `LAEUFT NOCH`, sag das zuerst und nenne den offenen Pflicht-Schritt — eine Retro über laufende Arbeit ist verfrüht.
+
 ## Ablauf
 
 ### Schritt 1 — Argument prüfen
@@ -73,8 +100,13 @@ Kein Fachjargon, keine Dateinamen.
 
 ## Versions-Marker (Pflicht)
 
-Beende deine letzte Nachricht in diesem Befehl mit genau dieser Zeile:
+Beende deine letzte Nachricht in diesem Befehl mit diesen zwei Zeilen, in dieser Reihenfolge:
 
-⚙ /90-retro · agent-os-openspec 3.24.0
+Workflow `<name>` · Phase `<x>` von 8 · Nächster Pflicht-Schritt: `/<befehl> #<N>`
+⚙ /90-retro · agent-os-openspec 3.25.0
 
-Wörtlich, unverändert, genau einmal. Sie steht **nach** dem Übergabe-Block — auch nach dessen abschließendem `---` — als allerletzte Zeile der Nachricht.
+Die Statuszeile übernimmst du aus dem Hinweis `[agent-os-openspec] AKTIVER WORKFLOW …`, den der Hook bei jeder Nachricht mitliefert — Phase und Schritt wörtlich von dort. Fehlt der Hinweis (kein Workflow oder `phase8_complete`), entfällt die Statuszeile.
+
+Solange die Phase kleiner als 8 ist, ist dieser Schritt **Pflicht**: nie „bei Bedarf“, „optional“ oder „wenn du magst“ — und nie „fertig“, „abgeschlossen“ oder „erledigt“ für den Workflow als Ganzes (das gilt erst ab `phase8_complete`; eine einzelne Phase darfst du abgeschlossen nennen). In frei formulierten Arbeitsstandsmeldungen steht der Pflicht-Schritt vor jeder `/clear`- oder Kosten-Empfehlung, und die Nachricht endet nie mit einer solchen Empfehlung. (Die wörtlich vorgegebenen Übergabe-Blöcke oben bleiben unverändert — dort gehören `/clear` und Folgebefehl zusammen.)
+
+In der Statuszeile ersetzt du `<name>`, `<x>` und `/<befehl> #<N>` durch die Werte aus dem Hook-Hinweis — Platzhalter bleiben nie stehen. Die ⚙-Zeile übernimmst du wörtlich und unverändert. Beide Zeilen stehen je genau einmal in der Nachricht, **nach** dem Übergabe-Block — auch nach dessen abschließendem `---` —, und die ⚙-Zeile ist immer die allerletzte Zeile der Nachricht, auch wenn die Statuszeile entfällt.
