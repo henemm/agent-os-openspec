@@ -223,3 +223,11 @@ python3 ${_H}/qa_gate.py docs/artifacts/feature/test-output.txt --infra --no-vis
 python3 ${_H}/migrate_state.py          # Dry run
 python3 ${_H}/migrate_state.py --apply   # Actually migrate
 ```
+
+## Versions-Marker (Pflicht)
+
+Beende deine letzte Nachricht in diesem Befehl mit genau dieser Zeile:
+
+⚙ /80-workflow · agent-os-openspec 3.24.0
+
+Wörtlich, unverändert, genau einmal. Sie steht **nach** dem Übergabe-Block — auch nach dessen abschließendem `---` — als allerletzte Zeile der Nachricht.

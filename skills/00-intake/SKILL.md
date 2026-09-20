@@ -159,3 +159,11 @@ Nach User-Freigabe ("approved") direkt zu `/50-implement`.
 - **Rebase-Gate** — Branch muss auf `origin/main` stehen
 - **Secrets Guard** — nie Credentials im Code
 - **Stop-Lock** — "stopp" pausiert sofort
+
+## Versions-Marker (Pflicht)
+
+Beende deine letzte Nachricht in diesem Befehl mit genau dieser Zeile:
+
+⚙ /00-intake · agent-os-openspec 3.24.0
+
+Wörtlich, unverändert, genau einmal. Sie steht **nach** dem Übergabe-Block — auch nach dessen abschließendem `---` — als allerletzte Zeile der Nachricht.

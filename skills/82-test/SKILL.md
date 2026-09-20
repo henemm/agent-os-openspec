@@ -43,3 +43,11 @@ Betroffene Dateien:
 - ALLE Tests muessen gruen sein vor Commit
 - Bei Failures: Nicht committen, erst fixen
 - Keine Ausnahmen
+
+## Versions-Marker (Pflicht)
+
+Beende deine letzte Nachricht in diesem Befehl mit genau dieser Zeile:
+
+⚙ /82-test · agent-os-openspec 3.24.0
+
+Wörtlich, unverändert, genau einmal. Sie steht **nach** dem Übergabe-Block — auch nach dessen abschließendem `---` — als allerletzte Zeile der Nachricht.

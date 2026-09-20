@@ -16,6 +16,10 @@ Transformationen (Befehl → Skill):
      `python3 .claude/hooks/<x>.py` → `python3 ${_H}/<x>.py`,
      sonstige `.claude/hooks/` → `${_H}/`.
   4. `{{OPENSPEC_VERSION}}` → Version aus .claude-plugin/plugin.json.
+  5. Versions-Marker anhaengen: jede Phase endet mit `⚙ /<befehl> ·
+     agent-os-openspec <version>`. Ohne ihn sieht der PO am Ergebnis nicht,
+     ob ueberhaupt die neue Fassung geladen war (bis 3.23 nur bei
+     /30-write-spec sichtbar).
 
     python3 scripts/sync_skills.py          # alle Skills neu schreiben
     python3 scripts/sync_skills.py --check  # nur pruefen, Exit 1 bei Drift
@@ -60,6 +64,26 @@ DEFAULT_FRONTMATTER = {"description": "", "disable-model-invocation": "false"}
 
 _HOOK_PATH = ".claude/hooks/"
 
+# 30-write-spec gibt die Freigabe woertlich als Briefing plus eigene
+# Marker-Zeile aus ("keine eigene Zusammenfassung davor oder danach"). Ein
+# generischer Zusatz-Marker kollidiert mit dieser strikten Vorlage — und die
+# Version steht dort ohnehin schon in der Ausgabe.
+MARKER_EXEMPT = {"30-write-spec"}
+
+
+def marker_block(name: str, version: str) -> str:
+    """Pflicht-Abschnitt: letzte Zeile jeder Phasen-Ausgabe nennt Befehl + Version."""
+    return (
+        "## Versions-Marker (Pflicht)\n"
+        "\n"
+        "Beende deine letzte Nachricht in diesem Befehl mit genau dieser Zeile:\n"
+        "\n"
+        f"⚙ /{name} · agent-os-openspec {version}\n"
+        "\n"
+        "Wörtlich, unverändert, genau einmal. Sie steht **nach** dem Übergabe-Block "
+        "— auch nach dessen abschließendem `---` — als allerletzte Zeile der Nachricht.\n"
+    )
+
 
 def plugin_version() -> str:
     return json.loads(PLUGIN_JSON.read_text()).get("version", "")
@@ -84,12 +108,20 @@ def insert_setup_block(body: str) -> str:
     return body[:match.start()] + SETUP_BLOCK + body[match.start():]
 
 
-def render_skill(command_text: str, frontmatter: str, version: str) -> str:
-    """Skill-Inhalt aus Befehlstext + Frontmatter (ohne `---`) + Version."""
+def render_skill(command_text: str, frontmatter: str, version: str,
+                 name: "str | None" = None) -> str:
+    """Skill-Inhalt aus Befehlstext + Frontmatter (ohne `---`) + Version.
+
+    `name` = Befehlsname; nur damit wird der Versions-Marker angehaengt
+    (nicht fuer MARKER_EXEMPT). Der Marker kommt ganz zuletzt, nach
+    Setup-Block und Platzhalter-Ersetzung.
+    """
     body = command_text
     if _HOOK_PATH in body:
         body = insert_setup_block(rewrite_hook_paths(body))
     body = body.replace(VERSION_PLACEHOLDER, version)
+    if name is not None and name not in MARKER_EXEMPT:
+        body = body.rstrip("\n") + "\n\n" + marker_block(name, version)
     return f"---\n{frontmatter}---\n\n{body}"
 
 
@@ -115,7 +147,7 @@ def expected_skills(commands_dir: Path = COMMANDS_DIR, skills_dir: Path = SKILLS
         current = target.read_text() if target.exists() else ""
         frontmatter = extract_frontmatter(current) or _default_frontmatter()
         command_text = (commands_dir / f"{name}.md").read_text()
-        result[target] = render_skill(command_text, frontmatter, version)
+        result[target] = render_skill(command_text, frontmatter, version, name)
     return result
 
 

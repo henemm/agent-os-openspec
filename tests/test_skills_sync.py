@@ -59,6 +59,112 @@ def test_no_placeholder_left_in_generated_skills():
     assert f"⚙ PO-Briefing unabhängig erstellt · agent-os-openspec {version}" in text
 
 
+# --- Versions-Marker (3.24.0) ---------------------------------------------------
+#
+# Der PO konnte bis 3.23 nur an der Freigabe-Ausgabe erkennen, ob die neue
+# Framework-Fassung geladen war. Jede Phase endet deshalb mit Befehl + Version.
+
+def _repo_version() -> str:
+    return json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text())["version"]
+
+
+def test_every_skill_carries_its_own_marker_line_exactly_once():
+    version = _repo_version()
+    names = sync_skills.synced_names()
+    for name in names:
+        text = (REPO_ROOT / "skills" / name / "SKILL.md").read_text()
+        own = f"⚙ /{name} · agent-os-openspec {version}"
+        if name in sync_skills.MARKER_EXEMPT:
+            assert own not in text, name
+            continue
+        assert text.count(own) == 1, name
+        # Kein fremder Marker: faengt eine Verdrahtung, die ueberall denselben
+        # Namen einsetzt.
+        for other in names:
+            if other != name:
+                assert f"⚙ /{other} · agent-os-openspec" not in text, (name, other)
+
+
+def test_marker_uses_real_version_not_placeholder():
+    version = _repo_version()
+    assert version != sync_skills.VERSION_PLACEHOLDER
+    text = (REPO_ROOT / "skills" / "40-tdd-red" / "SKILL.md").read_text()
+    assert f"⚙ /40-tdd-red · agent-os-openspec {version}" in text
+    assert "{{" not in text.split("## Versions-Marker", 1)[1]
+
+
+def test_marker_never_lands_inside_code_fence():
+    """Im Code-Block waere die Anweisung wirkungslos — und --check bliebe gruen."""
+    for name in sync_skills.synced_names():
+        if name in sync_skills.MARKER_EXEMPT:
+            continue
+        text = (REPO_ROOT / "skills" / name / "SKILL.md").read_text()
+        idx = text.index("## Versions-Marker")
+        assert text[:idx].count("```") % 2 == 0, name
+
+
+def test_marker_is_last_block_of_the_skill():
+    text = (REPO_ROOT / "skills" / "10-context" / "SKILL.md").read_text()
+    assert text.count("## Versions-Marker") == 1
+    tail = text.split("## Versions-Marker", 1)[1]
+    assert "\n## " not in tail
+    assert "⚙ /10-context · agent-os-openspec" in tail
+
+
+def test_write_spec_is_the_only_exemption_and_keeps_its_briefing_marker():
+    assert sync_skills.MARKER_EXEMPT == {"30-write-spec"}
+    text = (REPO_ROOT / "skills" / "30-write-spec" / "SKILL.md").read_text()
+    assert "## Versions-Marker" not in text
+    assert f"⚙ PO-Briefing unabhängig erstellt · agent-os-openspec {_repo_version()}" in text
+
+
+def test_render_skill_marker_opt_in_and_exempt():
+    cmd = "# T\n\n## S\n\nText.\n"
+    assert "## Versions-Marker" not in sync_skills.render_skill(cmd, FRONTMATTER, "1.2.3")
+    with_name = sync_skills.render_skill(cmd, FRONTMATTER, "1.2.3", "40-tdd-red")
+    assert with_name.rstrip("\n").endswith(
+        "als allerletzte Zeile der Nachricht.")
+    assert "⚙ /40-tdd-red · agent-os-openspec 1.2.3" in with_name
+    exempt = sync_skills.render_skill(cmd, FRONTMATTER, "1.2.3", "30-write-spec")
+    assert "## Versions-Marker" not in exempt
+
+
+def test_marker_appended_after_setup_block_even_without_h2():
+    """Ohne `## `-Ueberschrift faellt der Setup-Block ans Ende — Marker danach."""
+    cmd = "# T\n\npython3 .claude/hooks/workflow.py status\n"
+    out = sync_skills.render_skill(cmd, FRONTMATTER, "1.2.3", "99-reset")
+    assert out.index("## Setup") < out.index("## Versions-Marker")
+
+
+def test_marker_version_follows_plugin_version_on_temp_tree(tmp_path):
+    commands = tmp_path / "commands"
+    skills = tmp_path / "skills"
+    commands.mkdir()
+    (skills / "40-tdd-red").mkdir(parents=True)
+    (commands / "40-tdd-red.md").write_text("# X\n\n## A\n\nText.\n")
+    (skills / "40-tdd-red" / "SKILL.md").write_text(f"---\n{FRONTMATTER}---\n\nalt\n")
+
+    sync_skills.write(commands, skills, "9.9.9")
+    text = (skills / "40-tdd-red" / "SKILL.md").read_text()
+    assert "⚙ /40-tdd-red · agent-os-openspec 9.9.9" in text
+    # Idempotent trotz Marker.
+    assert sync_skills.write(commands, skills, "9.9.9") == []
+    # Versionswechsel schlaegt im Marker durch.
+    assert sync_skills.check(commands, skills, "9.9.10") == ["40-tdd-red"]
+
+
+# --- Checkpoint-Block genau einmal (3.24.0) -------------------------------------
+
+def test_checkpoint_instruction_demands_single_emission():
+    for name in ("10-context", "20-analyse", "30-write-spec", "40-tdd-red", "50-implement"):
+        for path in (REPO_ROOT / "core" / "commands" / f"{name}.md",
+                     REPO_ROOT / "skills" / name / "SKILL.md"):
+            text = path.read_text()
+            assert "Gesichert auf der Platte" in text, path
+            assert "und zwar genau einmal, als letzter inhaltlicher Teil der Nachricht" in text, path
+            assert "keine Wiederholung danach" in text, path
+
+
 # --- Transformationen -----------------------------------------------------------
 
 def test_frontmatter_is_preserved():

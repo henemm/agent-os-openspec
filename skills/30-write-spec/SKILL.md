@@ -203,7 +203,7 @@ Die Ausgabe besteht aus genau diesen Teilen, in dieser Reihenfolge:
    widersprichst, je genau eine Zeile `Meine Einschätzung: …`, höchstens 3 Zeilen
    insgesamt. Stimmst du allen Anmerkungen zu: nichts schreiben.
 3. **Marker-Zeile** — wörtlich, als letzte Zeile vor der Freigabe-Aufforderung:
-   `⚙ PO-Briefing unabhängig erstellt · agent-os-openspec 3.23.0`
+   `⚙ PO-Briefing unabhängig erstellt · agent-os-openspec 3.24.0`
 4. **Freigabe-Aufforderung** — eine Zeile.
 
 Vorlage:
@@ -213,7 +213,7 @@ Vorlage:
 
 Meine Einschätzung: [nur bei Widerspruch zu einer Anmerkung — sonst weglassen]
 
-⚙ PO-Briefing unabhängig erstellt · agent-os-openspec 3.23.0
+⚙ PO-Briefing unabhängig erstellt · agent-os-openspec 3.24.0
 Schreibe `approved`, wenn der Plan so stimmt — danach geht es in die Umsetzung.
 
 ---
@@ -244,7 +244,7 @@ Prüfe der Reihe nach, bevor du unten etwas ausgibst:
 
 Sind alle Punkte erfüllt: Gib den Positiv-Block aus. Ist mindestens einer verletzt: Gib stattdessen den Negativ-Block aus und ersetze dessen Platzhalter durch den konkreten Sicherungsschritt.
 
-Weder diese Anweisung noch die `###`-Überschriften gehören in die Ausgabe — an den User geht ausschließlich der Text zwischen den `---`-Trennern.
+Weder diese Anweisung noch die `###`-Überschriften gehören in die Ausgabe — an den User geht ausschließlich der Text zwischen den `---`-Trennern, und zwar genau einmal, als letzter inhaltlicher Teil der Nachricht: keine Vorab- oder Kurzfassung davor, keine Wiederholung danach.
 
 ### Ausgabe A: Positiv-Block (alle Vorbedingungen erfüllt)
 
