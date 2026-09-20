@@ -24,6 +24,90 @@ Das Muster ist jetzt `\.env(rc)?\b`: Wortgrenze nach `env`. `.env`, `.env.local`
 zwischen `v` und `i` keine Wortgrenze und faellt heraus. Die README-Vorlage fuer
 `secrets_guard.sensitive_patterns` zeigt das neue Muster.
 
+## [3.25.0] - 2026-09-20
+
+### Fixed
+
+**Ein offener Pflicht-Schritt darf nicht wie erledigt klingen**
+
+Live beobachtet (gregor_zwanzig #1761): Der Workflow stand in Phase 7 von 8, die
+Abschlussnachricht las sich wie „Arbeit erledigt" und nannte den offenen
+Pflicht-Schritt als Option („bei Bedarf `/60-validate #1761`"). Die
+Phasen-Anleitung selbst ist eindeutig — der Satz stand in einer frei
+formulierten Nachricht **nach** dem Ende der Phase (Loop-Aufwachen), wo keine
+Anleitung mehr greift. Der PO konnte den liegengebliebenen Workflow so nicht
+erkennen.
+
+- `core/hooks/phase_listener.py` hängt bei jeder Nutzer-Nachricht einen kurzen
+  Statusvermerk an den Kontext, solange ein Workflow vor Phase 8 aktiv ist:
+  Workflow-Name, „Phase x von 8", nächster Pflicht-Schritt (mit Issue-Nummer,
+  wenn der Name eine trägt) plus die Sprachregel. Ausgabe auf stdout — bei
+  `UserPromptSubmit` ist das der Kanal, den Claude sieht; alle bestehenden
+  Meldungen bleiben unverändert auf stderr.
+- Der Vermerk erscheint auch bei harness-injizierten Turns (Loop-Aufwacher,
+  System-Reminder) — genau dort entstand der Fundfall. Die Keyword-Erkennung
+  bleibt dabei wie bisher abgeschaltet (Issue #46).
+- Still bleibt er bei `phase8_complete`, ohne aktiven Workflow, bei einer
+  Stop-Nachricht und bei fehlendem/defektem State. Blockieren kann er nie. Die
+  Stop-Nachricht meint nur den auslösenden Turn — Folgenachrichten bei weiterhin
+  aktivem Lock bekommen den Vermerk normal.
+- In `phase5_tdd_red` zählen beide RED-Marker gleichwertig: `mark-red`
+  (`red_test_done`) und `mark-ui-red` (`ui_test_red_done`). Sonst hätte ein
+  reiner UI-Workflow weiter `/40-tdd-red` genannt statt `/50-implement`.
+- Phasen-Tabelle zentral in `core/hooks/workflow.py` (`PHASE_NUMBERS`,
+  `NEXT_STEP`, `next_step()`, `status_note()`) statt einer zweiten Wahrheit im
+  Hook. Eigene Nummerierung statt `PHASES.index()`: die Liste enthält
+  `phase0_idle` und `phase6b_adversary`, der Index hätte `phase7_validate` als
+  „Phase 8 von 8" ausgewiesen.
+- `scripts/sync_skills.py`: Der Pflicht-Block am Ende jeder Phase verlangt jetzt
+  zusätzlich eine Statuszeile über dem Versions-Marker („Workflow · Phase x von
+  8 · Nächster Schritt") und verbietet vor Phase 8 „fertig/abgeschlossen/
+  erledigt" für den Workflow sowie „bei Bedarf/optional/wenn du magst" für den
+  offenen Schritt. In **frei formulierten** Meldungen steht der Pflicht-Schritt
+  vor jeder `/clear`- oder Kosten-Empfehlung; die wörtlich vorgegebenen
+  Übergabe-Blöcke (`Ausgabe A`) bleiben unverändert, dort gehören `/clear` und
+  Folgebefehl zusammen. Der Block sagt ausdrücklich, dass die Platzhalter der
+  Statuszeile zu füllen sind und nur die ⚙-Zeile wörtlich übernommen wird — sie
+  bleibt die allerletzte Zeile, auch wenn die Statuszeile entfällt.
+
+**Phasenwechsel ab Phase 6 gelang mit reinem UI-RED-Marker nicht**
+
+Bestandsfehler, kein 3.25.0-Regressionsschaden — beim Prüfen des Statusvermerks
+mitgefunden und auf Entscheidung des POs gleich mitbehoben.
+
+- Der RED-Check in `_validate_transition` (`core/hooks/workflow.py`) fragte als
+  einzige der sechs RED-Abfragen im Framework nur `red_test_done` ab.
+  `workflow.py mark-ui-red` setzt aber ausschließlich `ui_test_red_done` und
+  legt kein Test-Artefakt an. Ein Workflow, der diesen dokumentierten Kurzweg
+  nutzte — ein reiner UI-Workflow —, kam nie aus `phase5_tdd_red` heraus: jeder
+  Wechsel nach `phase6_implement` oder weiter wurde mit „No RED test artifacts"
+  abgelehnt. Die Abfrage prüft jetzt wie `edit_gate.py` und
+  `tdd_enforcement.py` beide Marker. Ohne jeden RED-Nachweis blockiert das Gate
+  unverändert.
+
+### Added
+
+**Wiedereinstieg mit `#<Nummer>` in acht weiteren Befehlen**
+
+Claude Code verwirft getippte Argumente nie, es hängt sie als `ARGUMENTS: …` an.
+Ohne Anweisung improvisierte Claude den Wiedereinstieg. `10-context`,
+`70-deploy`, `80-workflow`, `81-add-artifact`, `82-test`, `83-user-story`,
+`90-retro` und `99-reset` bekommen denselben Abschnitt wie `50-implement`:
+Workflow von der Platte auflösen, `workflow.py switch`, `status`, Stand in zwei
+Sätzen bestätigen.
+
+- `/83-user-story` behandelt nur ein rein numerisches Argument als Issue —
+  sonst bleibt es ein Thema.
+- `/90-retro` weicht bewusst ab: Es analysiert einen **archivierten** Workflow,
+  sucht deshalb in `.claude/workflows/_archive/` und arbeitet mit
+  `retro <name>` statt `switch`.
+- `/00-intake`, `/00-bug` und `/01-feature` bleiben ohne Wiedereinstieg — dort
+  existiert noch kein State, den eine Nummer auflösen könnte.
+- `/60-validate` hatte den Abschnitt bereits.
+
+Alle 16 Skills neu generiert. Tests: `tests/test_status_note_325.py` (AC-1,
+AC-2, AC-5, Phasen-Tabelle), `tests/test_skills_sync.py` (AC-3, AC-4).
+
 ## [3.24.0] - 2026-09-20
 
 ### Added

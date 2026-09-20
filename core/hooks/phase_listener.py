@@ -179,6 +179,30 @@ def _stop_lock_path() -> Path:
     return _root / ".claude" / "stop_lock.json"
 
 
+def _emit_status_note() -> None:
+    """Statusvermerk zum aktiven Workflow auf stdout (3.25.0).
+
+    Bei UserPromptSubmit wird stdout dem Kontext hinzugefuegt — stderr sieht
+    Claude nicht. Der Vermerk geht deshalb als einziger Text dieses Hooks auf
+    stdout; alle bestehenden Meldungen bleiben unveraendert auf stderr, sonst
+    vermischen sich Kontext und Diagnose.
+
+    Still bei: kein Workflow, phase8_complete, defektem/unlesbarem State.
+    Fehler werden hier bewusst geschluckt — ein Statusvermerk darf niemals
+    eine Eingabe blockieren (AC-5).
+    """
+    try:
+        wf_data, _ = _read_active_workflow()
+        if not wf_data:
+            return
+        from workflow import status_note
+        note = status_note(wf_data)
+        if note:
+            print(note)
+    except Exception:
+        pass
+
+
 def _set_stop_lock(enabled: bool) -> None:
     lock_file = _stop_lock_path()
     lock_file.parent.mkdir(parents=True, exist_ok=True)
@@ -201,6 +225,12 @@ def main():
     # Verteidigung 1 (Issue #46): harness-injizierte Notification-Turns komplett
     # überspringen — bevor irgendeine Keyword-Verarbeitung stattfindet.
     if _is_notification_turn(message):
+        # Keine Keyword-Verarbeitung (Issue #46) — der Statusvermerk liest die
+        # Nachricht aber gar nicht und traegt das Risiko nicht. Er MUSS hier
+        # raus: der Fundfall (gregor #1761) war genau so ein injizierter Turn
+        # (Loop-Aufwachen), und dort fehlte die Erinnerung an den offenen
+        # Pflicht-Schritt.
+        _emit_status_note()
         sys.exit(0)
 
     phrases = _load_phrases()
@@ -343,6 +373,9 @@ def main():
     if changed:
         _save_workflow(wf_data, wf_path)
 
+    # Zuletzt, damit der Vermerk den Zustand NACH einer Freigabe zeigt
+    # (phase3_spec -> phase4_approved nennt bereits /40-tdd-red).
+    _emit_status_note()
     sys.exit(0)
 
 
