@@ -29,6 +29,13 @@ from pathlib import Path
 
 PLUGIN_ROOT = Path(__file__).parent
 
+# Eine Quelle fuer Format und Wortlaut — setup.py schreibt dieselbe Datei.
+sys.path.insert(0, str(PLUGIN_ROOT))
+from setup import (  # noqa: E402
+    PLUGIN_MODE_VERSION_SOURCE,
+    PLUGIN_MODE_VERSION_NOTE,
+)
+
 # Core hooks — live in ${CLAUDE_PLUGIN_ROOT}/core/hooks/
 # These are deleted from a project's .claude/hooks/ on --apply (the plugin
 # provides them globally). NOTE: hook_utils.py and config_loader.py are NOT
@@ -345,14 +352,33 @@ def migrate(project_path: Path, dry_run: bool = True) -> None:
         print(f"\nWritten: .claude/settings.json")
 
     # --- 4. Mark framework_version.json as plugin_mode ---
+    # Die alte Copy-Mode-Zahl muss dabei WEG. Ab hier laufen Aktualisierungen
+    # ueber `claude plugin update`, das diese Datei nie anfasst — die Zahl waere
+    # ab sofort eine Falschauskunft (gemessen: gregor_zwanzig stand auf 3.4.13,
+    # ausgeliefert war 3.25.1). Geprueft wird deshalb nicht nur `plugin_mode`,
+    # sondern auch die Zahl selbst: ein bereits gesetztes `plugin_mode` darf die
+    # Falschauskunft nicht konservieren, sonst braucht jedes Bestandsprojekt
+    # Handarbeit.
     version_file = project_path / ".claude" / "framework_version.json"
     if version_file.exists():
         try:
             version_data = json.loads(version_file.read_text())
-            if not version_data.get("plugin_mode"):
+            stale_version = version_data.get("framework_version")
+            needs_update = (
+                not version_data.get("plugin_mode")
+                or stale_version is not None
+                or version_data.get("version_source") != PLUGIN_MODE_VERSION_SOURCE
+            )
+            if needs_update:
                 print("\nWill mark framework_version.json as plugin_mode=true")
+                if stale_version is not None:
+                    print(f"  Copy-Mode-Version {stale_version!r} wird entfernt — im "
+                          "Plugin-Modus kennt diese Datei die geladene Version nicht.")
                 if not dry_run:
                     version_data["plugin_mode"] = True
+                    version_data["framework_version"] = None
+                    version_data["version_source"] = PLUGIN_MODE_VERSION_SOURCE
+                    version_data["note"] = PLUGIN_MODE_VERSION_NOTE
                     version_file.write_text(json.dumps(version_data, indent=2))
                     print("  Written: .claude/framework_version.json")
         except Exception:
