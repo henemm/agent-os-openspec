@@ -71,6 +71,61 @@ def find_project_root() -> Path:
     return Path.cwd()
 
 
+def _find_config_file(root: Path) -> "Path | None":
+    """Erste Config-Datei unter `root` gemaess CONFIG_NAMES, oder None.
+
+    Bewusst NICHT gecacht: `config_source_note()` fragt damit einen zweiten
+    Baum ab, waehrend `load_config()` seinen eigenen behaelt.
+    """
+    for config_name in CONFIG_NAMES:
+        candidate = root / config_name
+        if candidate.exists():
+            return candidate
+        candidate = root / ".claude" / config_name
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def config_source_note() -> str:
+    """Woher die Gate-Grenzen stammen — und ob der Arbeitsbaum etwas anderes sagt.
+
+    Die Config wird bewusst aus dem HAUPTREPO gelesen, auch in Worktree-Sitzungen
+    (`find_project_root()` loest dorthin auf). Gemessen wird dagegen im Worktree
+    (`edit_gate._measurement_root()`, Issue #96). Diese Trennung ist gewollt: waere
+    die Config worktree-first, koennte eine Sitzung ihr eigenes `max_loc_delta` im
+    eigenen Branch anheben und weiterarbeiten — ohne Merge, ohne Review. Genau das
+    Muster, das die Sperrmeldung des Gates verbietet.
+
+    Der Preis ist Verwirrung: ein Eintrag, den man im Worktree vornimmt, wirkt
+    nicht, und die Sperre sah bisher aus wie ein eigener Tippfehler (Issue #153).
+    Diese Notiz macht die Quelle sichtbar. Wirft nie — eine Diagnose darf kein
+    Gate zum Absturz bringen.
+    """
+    try:
+        main_root = find_project_root()
+        effective = _find_config_file(main_root)
+        parts = [f"Grenzen aus: {effective or '<eingebaute Voreinstellung>'}"]
+
+        from hook_utils import find_worktree_root
+        worktree = find_worktree_root()
+        if worktree is not None and worktree != main_root:
+            local = _find_config_file(worktree)
+            if local is not None:
+                local_text = local.read_text()
+                effective_text = effective.read_text() if effective else None
+                if local_text != effective_text:
+                    parts.append(
+                        f"{local} weicht davon ab und ist NICHT wirksam — die Config "
+                        "wird absichtlich aus dem Hauptrepo gelesen, damit eine Sitzung "
+                        "ihre eigene Grenze nicht ohne Merge anhebt. Wirksam nach dem "
+                        "Merge, vorher: 'override' oder loc_limit_override"
+                    )
+        return " | ".join(parts)
+    except Exception:
+        return ""
+
+
 @lru_cache(maxsize=1)
 def load_config() -> dict:
     """
@@ -82,18 +137,7 @@ def load_config() -> dict:
     3. settings.local.json (local overrides, NOT in git)
     """
     root = find_project_root()
-
-    # Search for main config file
-    config_path = None
-    for config_name in CONFIG_NAMES:
-        candidate = root / config_name
-        if candidate.exists():
-            config_path = candidate
-            break
-        candidate = root / ".claude" / config_name
-        if candidate.exists():
-            config_path = candidate
-            break
+    config_path = _find_config_file(root)
 
     # Start with defaults
     config = get_default_config()

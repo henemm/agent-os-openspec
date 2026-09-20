@@ -335,11 +335,17 @@ def _check_loc_delta(config: dict, workflow: dict) -> str | None:
             else:
                 prod_total += added
         if prod_total > max_loc or test_total > max_test_loc:
+            # Gemessen wird im Worktree, die Grenzen kommen aus dem Hauptrepo.
+            # Ohne diesen Zusatz sah ein wirkungsloser Config-Eintrag im Worktree
+            # aus wie ein eigener Tippfehler (Issue #153).
+            from config_loader import config_source_note
+            source = config_source_note()
             return ("BLOCKED: LoC delta exceeds limit — "
                     f"Produktiv {prod_total}/{max_loc}, "
                     f"Tests {test_total}/{max_test_loc}. "
                     "Split the change or: workflow.py set-field loc_limit_override <N> "
                     "(Produktiv) / test_loc_limit_override <N> (Tests) "
+                    + (f"[{source}] " if source else "")
                     + gate_diagnostics(workflow, delta=f"+{prod_total}", limit=max_loc))
         # Store current delta for status display — write directly to the active
         # workflow JSON (no .active symlink; resolution is env/settings only).
