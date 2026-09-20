@@ -24,6 +24,39 @@ Das Muster ist jetzt `\.env(rc)?\b`: Wortgrenze nach `env`. `.env`, `.env.local`
 zwischen `v` und `i` keine Wortgrenze und faellt heraus. Die README-Vorlage fuer
 `secrets_guard.sensitive_patterns` zeigt das neue Muster.
 
+## [3.24.0] - 2026-09-20
+
+### Added
+
+**Versions-Marker am Ende jeder Phase**
+
+Bis 3.23 trug nur die Freigabe-Ausgabe von `/30-write-spec` eine Marker-Zeile mit
+der Framework-Version. Am Ergebnis von `/40-tdd-red` & Co. war für den PO nicht
+erkennbar, ob überhaupt die neue Fassung geladen war — live festgestellt, nachdem
+3.23 die Skills-Drift behoben hatte.
+
+- `scripts/sync_skills.py` hängt an jede generierte `skills/<name>/SKILL.md`
+  einen kurzen Pflicht-Abschnitt an: die letzte Nachricht des Befehls endet mit
+  `⚙ /<befehl> · agent-os-openspec <version>` — echter Befehlsname, Version aus
+  `.claude-plugin/plugin.json`, genau einmal, nach dem Übergabe-Block.
+- Ausnahme `30-write-spec` (`MARKER_EXEMPT`): Die Freigabe-Ausgabe ist dort
+  streng vorgegeben ("Briefing wörtlich plus Marker-Zeile, keine eigene
+  Zusammenfassung davor oder danach") und trägt bereits einen Versions-Marker.
+- Alle 16 Skills neu generiert; `--check`, `scripts/release_check.py` und
+  `tests/test_skills_sync.py` (Marker vorhanden, echte Version, richtiger
+  Befehlsname, Ausnahme, Idempotenz) decken das ab.
+
+### Fixed
+
+**Checkpoint-Block „Gesichert auf der Platte" genau einmal**
+
+In gregor_zwanzig erschien der Block bei `/40-tdd-red` zweimal — einmal
+abgeschnitten vorab, einmal vollständig am Ende. Die Anleitung enthält ihn nur
+einmal, es war reines Ausgabe-Verhalten. Die bestehende Anweisungszeile in
+`10-context`, `20-analyse`, `30-write-spec`, `40-tdd-red` und `50-implement`
+sagt jetzt zusätzlich: genau einmal, als letzter inhaltlicher Teil der Nachricht,
+keine Vorab-Fassung und keine Wiederholung (der Versions-Marker steht danach).
+
 ## [3.23.0] - 2026-09-19
 
 ### Fixed

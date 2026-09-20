@@ -88,3 +88,11 @@ $WF add-artifact test_output \
 $WF mark-red "3 tests failed as expected"
 $WF mark-ui-red "UI test assertion error"
 ```
+
+## Versions-Marker (Pflicht)
+
+Beende deine letzte Nachricht in diesem Befehl mit genau dieser Zeile:
+
+⚙ /81-add-artifact · agent-os-openspec 3.24.0
+
+Wörtlich, unverändert, genau einmal. Sie steht **nach** dem Übergabe-Block — auch nach dessen abschließendem `---` — als allerletzte Zeile der Nachricht.

@@ -70,3 +70,11 @@ Nach der technischen Ausgabe: kurze Zusammenfassung in einfacher Sprache (2–4 
 - Was lief besonders gut?
 
 Kein Fachjargon, keine Dateinamen.
+
+## Versions-Marker (Pflicht)
+
+Beende deine letzte Nachricht in diesem Befehl mit genau dieser Zeile:
+
+⚙ /90-retro · agent-os-openspec 3.24.0
+
+Wörtlich, unverändert, genau einmal. Sie steht **nach** dem Übergabe-Block — auch nach dessen abschließendem `---` — als allerletzte Zeile der Nachricht.

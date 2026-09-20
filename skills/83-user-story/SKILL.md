@@ -147,3 +147,11 @@ Verwende das Template unten.
 - **Nutze die Sprache des Users** - keine technischen Begriffe erzwingen
 - **Emotional > Funktional** - Das "Warum" ist wichtiger als das "Was"
 - **Validiere am Ende** - Lass die Zusammenfassung bestätigen bevor du speicherst
+
+## Versions-Marker (Pflicht)
+
+Beende deine letzte Nachricht in diesem Befehl mit genau dieser Zeile:
+
+⚙ /83-user-story · agent-os-openspec 3.24.0
+
+Wörtlich, unverändert, genau einmal. Sie steht **nach** dem Übergabe-Block — auch nach dessen abschließendem `---` — als allerletzte Zeile der Nachricht.
