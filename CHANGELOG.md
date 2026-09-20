@@ -24,6 +24,38 @@ Das Muster ist jetzt `\.env(rc)?\b`: Wortgrenze nach `env`. `.env`, `.env.local`
 zwischen `v` und `i` keine Wortgrenze und faellt heraus. Die README-Vorlage fuer
 `secrets_guard.sensitive_patterns` zeigt das neue Muster.
 
+## [3.26.1] - 2026-09-20
+
+### Fixed
+
+**LoC-Gate nennt jetzt die Quelle seiner Grenzen (#153)**
+
+Das Gate misst im Worktree (#96), liest `scope_guard` aber über
+`config_loader.find_project_root()` aus dem Hauptrepo. Neue `loc_exclude_patterns`, die man im
+Worktree einträgt, greifen deshalb erst nach dem Merge. Gemeldet aus einer Sitzung: Das Gate
+blockte mit `Produktiv 1015/250`, obwohl 890 Zeilen abgeholte Messdaten waren und die passenden
+Patterns im Worktree bereits standen. Die Meldung nannte die Quelle nicht — der wirkungslose
+Eintrag sah aus wie ein Tippfehler in der eigenen Config.
+
+- `core/hooks/config_loader.py`: neues `config_source_note()` nennt die tatsächlich benutzte
+  Config-Datei und warnt ausdrücklich, wenn die Fassung im Arbeitsbaum davon abweicht und deshalb
+  nicht wirkt. Byte-gleiche Fassungen erzeugen keinen Hinweis. Wirft nie.
+- `core/hooks/config_loader.py`: neues ungecachtes `_find_config_file(root)`; `load_config()` nutzt
+  es statt der eigenen Suchschleife (Verhalten unverändert). Nötig, weil `load_config()` mit
+  `lru_cache(maxsize=1)` keinen zweiten Baum beantworten kann.
+- `core/hooks/edit_gate.py`: `_check_loc_delta` hängt die Notiz an die Sperrmeldung.
+- `tests/test_loc_gate_config_source_153.py`: 6 Tests, echtes `git worktree add`, `edit_gate.py`
+  als Subprozess.
+
+**Bewusst NICHT geändert — die Config bleibt am Hauptrepo.** Die naheliegende Lesart von #153 wäre,
+die Config worktree-first zu lesen. `edit_gate` erlaubt in phase6 aber das Editieren von
+`openspec.yaml`: eine Sitzung könnte dann ihr eigenes `max_loc_delta` im eigenen Branch anheben und
+weiterarbeiten — ohne Merge, ohne Review. Das ist genau das Muster, das die Sperrmeldung des Gates
+selbst verbietet. Auch die scheinbar saubere Trennung „Messparameter aus dem Worktree, Grenzen aus
+dem Hauptrepo" hält nicht: `loc_exclude_patterns` schwächt das Gate ebenso, denn was ausgeschlossen
+wird, zählt nicht. Ein Regressionstest (AC-6) hält die Eigenschaft fest, damit sie nicht später
+versehentlich aufgegeben wird. Begründung als ADR in der Spec.
+
 ## [3.26.0] - 2026-09-20
 
 ### Fixed
