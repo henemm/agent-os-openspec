@@ -263,3 +263,11 @@ If validation fails after auto-fix attempt:
 1. Do NOT update state to complete
 2. Report the remaining issues to the user
 3. User decides: fix manually or re-implement
+
+## Versions-Marker (Pflicht)
+
+Beende deine letzte Nachricht in diesem Befehl mit genau dieser Zeile:
+
+⚙ /60-validate · agent-os-openspec 3.24.0
+
+Wörtlich, unverändert, genau einmal. Sie steht **nach** dem Übergabe-Block — auch nach dessen abschließendem `---` — als allerletzte Zeile der Nachricht.

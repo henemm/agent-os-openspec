@@ -65,3 +65,11 @@ Stoppe und frage nach wenn:
 - Bestehendes System gefunden (erweitern oder neu?)
 
 **KEINE direkte Implementierung ohne Spec-Freigabe!**
+
+## Versions-Marker (Pflicht)
+
+Beende deine letzte Nachricht in diesem Befehl mit genau dieser Zeile:
+
+⚙ /01-feature · agent-os-openspec 3.24.0
+
+Wörtlich, unverändert, genau einmal. Sie steht **nach** dem Übergabe-Block — auch nach dessen abschließendem `---` — als allerletzte Zeile der Nachricht.

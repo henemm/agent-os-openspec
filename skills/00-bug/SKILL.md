@@ -135,3 +135,11 @@ $WF finish
 - Rebase-Gate (Branch muss auf `origin/main` stehen)
 - Stop-Lock / Override-Token
 - Secrets Guard
+
+## Versions-Marker (Pflicht)
+
+Beende deine letzte Nachricht in diesem Befehl mit genau dieser Zeile:
+
+⚙ /00-bug · agent-os-openspec 3.24.0
+
+Wörtlich, unverändert, genau einmal. Sie steht **nach** dem Übergabe-Block — auch nach dessen abschließendem `---` — als allerletzte Zeile der Nachricht.
