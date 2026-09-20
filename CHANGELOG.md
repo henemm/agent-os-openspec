@@ -5,6 +5,43 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.25.1] - 2026-09-20
+
+### Fixed
+
+**bash_gate maß den Commit-Inhalt im Hauptrepo statt im Worktree (#155)**
+
+Live gemeldet aus gregor_zwanzig: `e2e_scope` stand nach dem Commit auf `docs-only`, obwohl
+Produktivdateien berührt wurden. Ursache: die vorgemerkten Dateien wurden mit `cwd=_root`
+ermittelt, und `find_project_root()` löst einen Worktree bewusst auf das Hauptrepo auf. Der
+Commit passiert aber im Worktree — im Hauptrepo ist nichts vorgemerkt, die Liste kam leer
+zurück. Seit der Worktree-Pflicht (3.4.10) traf das den Normalfall.
+
+- `core/hooks/bash_gate.py`: neues `_measurement_root()` — Worktree-first mit Fallback auf
+  `_root`, pro Aufruf aufgelöst. Beide git-Aufrufe in Abschnitt 5 messen jetzt den Baum, in dem
+  der Commit wirklich passiert. Gleiche Korrektur wie beim LoC-Gate (#96) und bei den
+  Spec-/Briefing-Pfaden (#144).
+- Damit greift auch `required_staged_files` wieder: der Fallback-`git diff` lief bisher im
+  falschen Baum und sah eine ungestagte Pflichtdatei nie — das Gate blockte nie.
+- `core/hooks/bash_gate.py`: neues `_commit_content_files()` — misst den Inhalt des
+  *entstehenden* Commits statt nur den Index. Bei `git commit -a`/`-am` merkt git erst beim
+  Commit vor, der Index ist zum Hook-Zeitpunkt leer; dann zählt der Arbeitsbaum gegen HEAD.
+  Bei `git commit --amend` enthält das Ergebnis den bisherigen Commit plus die Nachbesserung,
+  gemessen wird deshalb gegen `HEAD~1` — sonst meldete ein Amend mit sauberem Baum `docs-only`
+  und überschriebe einen zuvor korrekten Wert. Nur dort: `required_staged_files` behält die
+  strenge Index-Semantik, weil „nicht vorgemerkt" genau die Bedingung ist, auf die es hinweist.
+- Unverändert fail-open: lässt sich der Commit-Inhalt nicht ermitteln (kaputtes Repo, `--amend`
+  des Wurzel-Commits), meldet die Erkennung `docs-only` statt „unbekannt". Die Scope-Erkennung
+  ist informativ und darf keinen Commit verhindern.
+- Unverändert: `_write_e2e_scope` schreibt weiterhin in den geteilten Workflow-State im
+  Hauptrepo. Gemessen wird im Worktree, abgelegt wird zentral.
+- `tests/test_bash_gate_worktree_commit_155.py`: 8 Regressionstests mit echtem
+  `git worktree add`; der Hook läuft als Subprozess mit `cwd=worktree`, weil ein Direktaufruf
+  von `_detect_e2e_scope()` vor und nach dem Fix identisch bestanden hätte.
+
+Auswirkung auf Konsumenten: `/70-deploy` übersprang bei Worktree-Sitzungen die
+Staging-Validierung, weil der Scope fälschlich `docs-only` war.
+
 ## [3.25.0] - 2026-09-20
 
 ### Fixed
