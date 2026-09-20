@@ -408,9 +408,19 @@ python3 setup.py /path/to/project --update
 # Apply updates (preserves project-specific files)
 python3 setup.py /path/to/project --update --force
 
-# Check installed version
+# Check installed version — copy mode only
 cat /path/to/project/.claude/framework_version.json
 ```
+
+In **plugin mode** that file deliberately pins no version (`"framework_version": null`): updates
+run through `claude plugin update`, which never touches it, so any number in there would be wrong
+from the first update onward. Read the loaded version instead from:
+
+```bash
+claude plugin list
+```
+
+or from the marker at the end of every phase (`⚙ /<command> · agent-os-openspec <version>`).
 
 ---
 

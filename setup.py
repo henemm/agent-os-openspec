@@ -47,6 +47,21 @@ MODULES_DIR = FRAMEWORK_ROOT / "modules"
 TEMPLATES_DIR = FRAMEWORK_ROOT / "templates"
 SCRIPTS_DIR = FRAMEWORK_ROOT / "scripts"
 
+# Im Plugin-Modus darf `framework_version.json` KEINE Versionsnummer nennen.
+# Sie waere die Version des setup.py, das zufaellig gerade lief: danach laufen
+# alle Aktualisierungen ueber `claude plugin update`, und das ruehrt die Datei
+# nie an. Die Zahl ist damit ab der ersten Aktualisierung falsch — gemessen in
+# henemm/gregor_zwanzig (Datei: 3.4.13, ausgeliefertes Plugin: 3.25.1).
+# Im Copy-Modus bleibt sie richtig und wird weiter geschrieben: dort hat
+# setup.py die Dateien selbst kopiert, die Datei IST dort die Auskunftsquelle.
+PLUGIN_MODE_VERSION_SOURCE = "plugin"
+PLUGIN_MODE_VERSION_NOTE = (
+    "Im Plugin-Modus pinnt diese Datei keine Version — Updates laufen ueber "
+    "`claude plugin update` und aendern sie nicht. Massgeblich ist das geladene "
+    "Plugin: `claude plugin list`, oder der Marker am Ende jeder Phase "
+    "(⚙ /<befehl> · agent-os-openspec <version>)."
+)
+
 
 def get_file_hash(path: Path) -> str:
     """Get MD5 hash of a file for comparison."""
@@ -422,7 +437,10 @@ def install_plugin_mode(project_path: Path, modules: list):
 
     version_file = project_path / ".claude" / "framework_version.json"
     version_info = {
-        "framework_version": FRAMEWORK_VERSION,
+        # Bewusst None — siehe PLUGIN_MODE_VERSION_NOTE.
+        "framework_version": None,
+        "version_source": PLUGIN_MODE_VERSION_SOURCE,
+        "note": PLUGIN_MODE_VERSION_NOTE,
         "installed": datetime.now().isoformat(),
         "installed_modules": modules,
         "plugin_mode": True,

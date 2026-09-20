@@ -5,6 +5,43 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.26.0] - 2026-09-20
+
+### Fixed
+
+**`framework_version.json` behauptete im Plugin-Modus eine Version, die sie nicht kennen kann**
+
+In gregor_zwanzig stand die Datei auf `3.4.13`, während das Plugin 3.25.1 auslieferte — 21
+Minor-Versionen Abstand. Kein Übertragungsfehler, sondern Bauart: `setup.py::install_plugin_mode`
+stempelt die Version des `setup.py`, das zufällig gerade lief; danach laufen alle Aktualisierungen
+über `claude plugin update`, und das rührt die Datei nie an. Die Zahl ist ab der ersten
+Aktualisierung falsch, in **jedem** Plugin-Modus-Projekt. Die README empfahl ausdrücklich, sie zu
+lesen. Gleiche Fehlerklasse wie #155: eine Auskunft, die wie eine Messung aussieht und keine ist.
+
+- `setup.py`: `install_plugin_mode` schreibt `"framework_version": null` plus
+  `"version_source": "plugin"` und einen `note`-Hinweis auf die wirkliche Quelle
+  (`claude plugin list` bzw. den Phasen-Marker aus 3.24.0). Neue Konstanten
+  `PLUGIN_MODE_VERSION_SOURCE` / `PLUGIN_MODE_VERSION_NOTE` als einzige Quelle für Format und
+  Wortlaut.
+- `migrate_to_plugin.py`: entfernt beim Umstellen eine vorhandene Copy-Mode-Zahl — auch dann, wenn
+  `plugin_mode` bereits gesetzt ist. Genau dieser Zustand lag in gregor_zwanzig vor; ohne die
+  Erweiterung bräuchte jedes betroffene Bestandsprojekt Handarbeit.
+- `README.md`: „Check installed version" gilt jetzt ausdrücklich nur für den Copy-Modus, mit
+  Anleitung für den Plugin-Modus.
+- `tests/test_framework_version_plugin_mode.py`: 7 Tests, echte Projektordner, echte Aufrufe von
+  `install_plugin_mode`, `update_project` und `migrate`.
+
+**Copy-Modus unverändert:** dort hat `setup.py` die Dateien selbst kopiert, die Datei **ist** die
+Auskunftsquelle und behält ihre Zahl.
+
+**Warum MINOR und nicht PATCH:** kein Hook und kein Script liest das Feld, ein Migrationspfad ist
+nicht nötig — aber das Format einer Datei ändert sich, die Konsumenten-Projekte bereits besitzen.
+Das soll im CHANGELOG sichtbar sein und nicht als stiller Patch durchlaufen.
+
+**Nicht enthalten:** `setup.py::update_project` verliert beim `--update` das Feld `plugin_mode`
+komplett und stuft ein Plugin-Projekt damit still auf Copy-Modus zurück. Eigener Gegenstand,
+eigenes Fehlerbild, eigener Testbedarf — als Issue erfasst.
+
 ## [3.25.1] - 2026-09-20
 
 ### Fixed
