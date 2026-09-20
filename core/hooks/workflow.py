@@ -119,6 +119,114 @@ PHASE_NAMES = {
     "phase8_complete": "Complete",
 }
 
+# Phasennummer fuer die PO-Anzeige ("Phase 7 von 8"). Bewusst eine eigene
+# Tabelle statt PHASES.index(): die Liste enthaelt phase0_idle UND
+# phase6b_adversary — index() wuerde phase7_validate als "Phase 8 von 8"
+# ausweisen, also ausgerechnet den Zustand, der 3.25.0 ausgeloest hat, als
+# fertig darstellen.
+PHASE_NUMBERS = {
+    "phase0_idle": 0,
+    "phase1_context": 1,
+    "phase2_analyse": 2,
+    "phase3_spec": 3,
+    "phase4_approved": 4,
+    "phase5_tdd_red": 5,
+    "phase6_implement": 6,
+    "phase6b_adversary": 6,
+    "phase7_validate": 7,
+    "phase8_complete": 8,
+}
+
+TOTAL_PHASES = 8
+
+# Der Befehl, der die jeweilige Phase weitertreibt. Quelle ist nicht das
+# Diagramm, sondern wer die Folgephase schreibt
+# (`grep "workflow.py phase phase" core/commands/*.md`): 40-tdd-red setzt am
+# Ende phase6_implement, 50-implement am Ende phase7_validate, 60-validate am
+# Ende phase8_complete. Wer in Phase X steht, hat also den Befehl offen, der
+# X verlaesst.
+NEXT_STEP = {
+    "phase0_idle": "/00-intake",
+    "phase1_context": "/10-context",
+    "phase2_analyse": "/20-analyse",
+    "phase3_spec": "/30-write-spec",
+    "phase4_approved": "/40-tdd-red",
+    "phase5_tdd_red": "/40-tdd-red",
+    "phase6_implement": "/50-implement",
+    "phase6b_adversary": "/50-implement",
+    "phase7_validate": "/60-validate",
+    "phase8_complete": None,
+}
+
+STATUS_NOTE_PREFIX = "[agent-os-openspec]"
+
+
+def next_step(data: dict) -> "str | None":
+    """Naechster Pflicht-Schritt fuer den Zustand, oder None (Phase 8 / unklar).
+
+    Zwei Phasen sind nicht allein aus `current_phase` bestimmt:
+    - phase3_spec deckt Spec schreiben UND auf Freigabe warten ab; liegt eine
+      Spec-Datei vor, ist der offene Schritt das Freigabewort, kein Befehl.
+    - phase5_tdd_red bleibt stehen, bis /40-tdd-red am Ende phase6_implement
+      setzt; sind die RED-Tests laut State fertig, ist /50-implement faellig.
+    """
+    if not isinstance(data, dict):
+        return None
+    phase = data.get("current_phase")
+    if not isinstance(phase, str) or phase not in NEXT_STEP:
+        return None
+    if phase == "phase3_spec" and data.get("spec_file"):
+        return "Freigabe der Spec (Stichwort: approved)"
+    if phase == "phase5_tdd_red" and (
+        data.get("red_test_done") or data.get("ui_test_red_done")
+    ):
+        return "/50-implement"
+    return NEXT_STEP[phase]
+
+
+def issue_number(workflow_name: str) -> "str | None":
+    """Erste Ziffernfolge im Workflow-Namen (fix-1761-xyz -> '1761')."""
+    match = _re.search(r"\d+", workflow_name or "")
+    return match.group(0) if match else None
+
+
+def status_note(data: dict) -> "str | None":
+    """Statusvermerk fuer den UserPromptSubmit-Hook, oder None.
+
+    None heisst: nichts anhaengen — kein Workflow, Phase 8, oder State
+    unbrauchbar. Der Vermerk ist die einzige Stelle, die Claude auch in frei
+    formulierten Nachrichten NACH dem Ende einer Phase (Loop-Aufwachen,
+    Zwischenfragen) daran erinnert, dass ein Pflicht-Schritt offen ist.
+    """
+    if not isinstance(data, dict):
+        return None
+    name = data.get("name")
+    if not isinstance(name, str) or not name:
+        return None
+    phase = data.get("current_phase")
+    if not isinstance(phase, str) or phase not in PHASE_NUMBERS:
+        return None
+    if phase == "phase8_complete":
+        return None
+    step = next_step(data)
+    if not step:
+        return None
+    if step.startswith("/"):
+        issue = issue_number(name)
+        if issue:
+            step = f"{step} #{issue}"
+    return (
+        f"{STATUS_NOTE_PREFIX} AKTIVER WORKFLOW {name} · "
+        f"Phase {PHASE_NUMBERS[phase]} von {TOTAL_PHASES} ({phase}) · "
+        f"Nächster Pflicht-Schritt: {step}\n"
+        "Nenne diesen Schritt in jeder Arbeitsstandsmeldung als Pflicht — nie als "
+        "„bei Bedarf“ oder „optional“; Empfehlungen zu /clear oder Token-Kosten "
+        "stehen nie darüber.\n"
+        "„fertig“/„abgeschlossen“/„erledigt“ gilt für den Workflow erst ab "
+        "phase8_complete."
+    )
+
+
 # Phases where user keywords ("approved", "go", "deployed") are expected.
 # Switching away from these without updating OPENSPEC_ACTIVE_WORKFLOW causes
 # the next keyword to land on the wrong workflow.
@@ -857,7 +965,8 @@ def _validate_transition(data: dict, target: str) -> str | None:
     if tgt_idx >= PHASES.index("phase6_implement"):
         red_artifacts = [a for a in data.get("test_artifacts", [])
                         if a.get("phase") == "phase5_tdd_red"]
-        if not red_artifacts and not data.get("red_test_done"):
+        if (not red_artifacts and not data.get("red_test_done")
+                and not data.get("ui_test_red_done")):
             return "No RED test artifacts — run /tdd-red first"
 
     if tgt_idx >= PHASES.index("phase8_complete"):

@@ -123,7 +123,7 @@ def test_render_skill_marker_opt_in_and_exempt():
     assert "## Versions-Marker" not in sync_skills.render_skill(cmd, FRONTMATTER, "1.2.3")
     with_name = sync_skills.render_skill(cmd, FRONTMATTER, "1.2.3", "40-tdd-red")
     assert with_name.rstrip("\n").endswith(
-        "als allerletzte Zeile der Nachricht.")
+        "auch wenn die Statuszeile entfällt.")
     assert "⚙ /40-tdd-red · agent-os-openspec 1.2.3" in with_name
     exempt = sync_skills.render_skill(cmd, FRONTMATTER, "1.2.3", "30-write-spec")
     assert "## Versions-Marker" not in exempt
@@ -243,3 +243,109 @@ def test_release_check_blocks_on_skill_drift(monkeypatch):
     monkeypatch.setattr(sync_skills, "check", lambda *a, **k: [])
     ok, _ = release_check.check_skills_sync()
     assert ok is True
+
+
+# --- Wiedereinstieg mit #<N> (3.25.0, AC-4) -----------------------------------
+#
+# Claude Code verwirft getippte Argumente nie, es haengt sie als `ARGUMENTS: …`
+# an. Ohne Anweisung improvisiert Claude den Wiedereinstieg — neun Befehle
+# hatten keine. `/60-validate` hatte sie bereits.
+
+COMMANDS_DIR = REPO_ROOT / "core" / "commands"
+
+# Befehle, die sich auf einen LAUFENDEN Workflow beziehen: Aufloesen + switch.
+REENTRY_WITH_SWITCH = [
+    "10-context", "20-analyse", "30-write-spec", "40-tdd-red", "50-implement",
+    "60-validate", "70-deploy", "80-workflow", "81-add-artifact", "82-test",
+    "83-user-story", "99-reset",
+]
+
+# Bewusste Abweichung: /90-retro analysiert einen ARCHIVIERTEN Workflow.
+# `switch` gilt nur fuer laufende Workflows; hier wird im Archiv gesucht und
+# mit `retro <name>` weitergearbeitet.
+REENTRY_ARCHIVE_ONLY = ["90-retro"]
+
+# Kein Wiedereinstieg: diese drei legen einen Workflow erst an bzw. klassifizieren
+# eine Aufgabe — es gibt noch keinen State, den eine Nummer aufloesen koennte.
+REENTRY_EXEMPT = ["00-intake", "00-bug", "01-feature"]
+
+
+def _command(name: str) -> str:
+    return (COMMANDS_DIR / f"{name}.md").read_text()
+
+
+def test_every_command_is_classified_for_reentry():
+    covered = set(REENTRY_WITH_SWITCH + REENTRY_ARCHIVE_ONLY + REENTRY_EXEMPT)
+    assert covered == set(sync_skills.synced_names())
+
+
+def test_reentry_commands_resolve_the_workflow_from_disk():
+    for name in REENTRY_WITH_SWITCH:
+        text = _command(name)
+        # Aufruf-Beispiel, je nach Datei `#<N>` oder `#42`.
+        assert f"/{name} #" in text, name
+        assert ".claude/workflows/*.json" in text, name
+        assert "workflow.py switch" in text, name
+        assert "workflow.py status" in text, name
+        assert "in 2 Sätzen" in text, name
+
+
+def test_retro_searches_the_archive_instead_of_switching():
+    text = _command("90-retro")
+    assert "/90-retro #<N>" in text
+    assert ".claude/workflows/_archive/*.json" in text
+    assert "kein `workflow.py switch`" in text
+
+
+def test_reentry_section_reaches_the_generated_skills():
+    """Der Plugin-Nutzer sieht nur skills/ — dort muss es ankommen."""
+    for name in REENTRY_WITH_SWITCH + REENTRY_ARCHIVE_ONLY:
+        text = (REPO_ROOT / "skills" / name / "SKILL.md").read_text()
+        assert f"/{name} #" in text, name
+
+
+# --- Statuszeile im Marker-Block (3.25.0, AC-3) -------------------------------
+
+def test_marker_block_demands_a_status_line_above_the_version_marker():
+    block = sync_skills.marker_block("60-validate", "9.9.9")
+    status_idx = block.index("Nächster Pflicht-Schritt:")
+    marker_idx = block.index("⚙ /60-validate · agent-os-openspec 9.9.9")
+    assert status_idx < marker_idx, block
+    assert "Phase `<x>` von 8" in block
+
+
+def test_marker_block_forbids_optional_wording_before_phase_8():
+    block = sync_skills.marker_block("60-validate", "9.9.9")
+    for forbidden in ("bei Bedarf", "optional", "fertig", "abgeschlossen", "erledigt"):
+        assert forbidden in block, forbidden
+    assert "/clear" in block and "Kosten-Empfehlung" in block
+
+
+def test_status_line_rule_is_in_every_non_exempt_skill():
+    for name in sync_skills.synced_names():
+        if name in sync_skills.MARKER_EXEMPT:
+            continue
+        text = (REPO_ROOT / "skills" / name / "SKILL.md").read_text()
+        # Dieselbe Formulierung wie im Hook-Vermerk — "wörtlich übernehmen"
+        # ist sonst nicht wörtlich.
+        assert "Nächster Pflicht-Schritt:" in text, name
+
+
+def test_status_line_wording_matches_the_hook_note():
+    sys.path.insert(0, str(REPO_ROOT / "core" / "hooks"))
+    import workflow
+
+    note = workflow.status_note({"name": "fix-1761-x",
+                                 "current_phase": "phase7_validate"})
+    label = "Nächster Pflicht-Schritt:"
+    assert label in note
+    assert label in sync_skills.marker_block("60-validate", "9.9.9")
+
+
+def test_marker_block_does_not_contradict_the_verbatim_handover_blocks():
+    """Der Übergabe-Block von `/50-implement` nennt `/clear` bewusst VOR dem
+    Folgebefehl. Die Sprachregel gilt deshalb ausdrücklich nur für frei
+    formulierte Meldungen — sonst stünden zwei Anweisungen gegeneinander."""
+    block = sync_skills.marker_block("50-implement", "9.9.9")
+    assert "frei formulierten Arbeitsstandsmeldungen" in block
+    assert "Übergabe-Blöcke oben bleiben unverändert" in block
