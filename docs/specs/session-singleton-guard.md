@@ -146,18 +146,6 @@ optionale Felder als `–`), `--json` liefert dieselben Eintraege als JSON-Array
 
 `.claude/session-locks/` ist rein lokal und darf nie committed werden.
 
-### Haupt-Ordner nachziehen (`sync-main`, #169)
-
-Vierter CLI-Modus (kein Hook): `python3 .claude/hooks/session_singleton_guard.py sync-main`.
-Preflight (kein Worktree, Repo-Wurzel, Upstream vorhanden, keine Aenderungen an versionierten
-Dateien), dann `git fetch <remote>` und `git merge --ff-only <upstream>`. Jeder Abbruch: Exit 1,
-Meldung, Ordner unveraendert. `_do_guard` laesst im Haupt-Ordner genau diesen Bash-Aufruf durch
-(`_is_sync_main_command`: keine Shell-Metazeichen, exakt drei Tokens, Skriptpfad loest auf den
-laufenden Guard oder `<cwd>/.claude/hooks/session_singleton_guard.py` auf). Andere Tools und andere
-Bash-Befehle bleiben gesperrt. Grenze: aus einer Worktree-Session verweigert Claude Code selbst
-Git-Aufrufe auf den Haupt-Ordner — der Weg ist eine Session im Haupt-Ordner. Spec:
-`docs/specs/fast/feat-169-main-sync.md`.
-
 ## Expected Behavior
 
 - **Session startet** (`register`) → Eintrag mit Pflichtfeldern, dazu alle im Moment
@@ -254,4 +242,3 @@ python3 core/hooks/workflow.py sessions --json
   Registerformat `<session_id>.json` statt `<PID>.lock`, throttled Heartbeat vor allen
   Ausstiegspfaden, neue Felder `agent_name`/`worktree`/`branch`/`workflow`/`issue`/`phase`,
   Lesepfad `workflow.py sessions` (Issue #106)
-- 2026-09-21: `sync-main`-Modus und enge Bash-Ausnahme im Haupt-Ordner (Issue #169)
