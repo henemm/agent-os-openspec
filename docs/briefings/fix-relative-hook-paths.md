@@ -1,6 +1,6 @@
 ---
 spec_file: docs/specs/hook-paths-project-dir.md
-spec_sha256: a7b3f85e19777773e3ba63b55b7e79e15a832df4f6d8b13d08a672f35e6684c0
+spec_sha256: d15aef98dcc946151809435abb357f462eeef562b08c350c5e9c1d968f0e922b
 ---
 
 # PO-Briefing: fix-relative-hook-paths
@@ -11,22 +11,21 @@ spec_sha256: a7b3f85e19777773e3ba63b55b7e79e15a832df4f6d8b13d08a672f35e6684c0
 
 ## Was gebaut wird
 
-Hook-Startpfade werden fest an den Projektordner gebunden, damit Nachrichten nicht mehr abbrechen.
+Hook-Befehle werden projektfest statt ordnerabhängig, damit Nachrichten in Unterordnern nicht mehr abbrechen.
 
 ## Definition of Done
 
-Neu eingerichtete und reparierte Projekte starten Nachrichten und Aktionen zuverlässig, unabhängig davon, wo der Projektordner liegt oder wie er heißt.
+Neu erzeugte und reparierte Hook-Befehle enthalten keinen ordnerabhängigen Pfad mehr; der gemeldete Absturz bleibt nachweislich aus.
 
 ## Wie geprüft wird
 
-Automatisierte Tests prüfen die Pfad-Erzeugung und -Reparatur in verschiedenen Fällen; ob dein blockiertes Projekt tatsächlich wieder läuft, prüfen sie nicht.
+Automatisierte Tests prüfen alle vier Anforderungen plus Nachstellung des ursprünglichen Fehlers; die drei betroffenen Bestandsprojekte werden nicht automatisiert getestet.
 
 ## Kritische Anmerkungen
 
-- Dein aktuell blockiertes Projekt wird durch diese Änderung nicht automatisch repariert, dafür ist ein separater Schritt nötig.
-- Die Spezifikation listet keinen Test pro Prüfpunkt auf; ob jede Regel wirklich geprüft wird, zeigt erst der Test-Code.
-- Zusätzlich wird eine bislang nicht erwähnte zweite Einstellungsdatei mitrepariert, sinnvoll, aber über die Anfrage hinausgehend.
+- PO hat Umsetzung per "override" ohne formale Spec-Freigabe angeordnet — dieses Briefing dokumentiert nachträglich, nicht vorab.
+- Die drei betroffenen Bestandsprojekte werden laut Spec explizit NICHT hier repariert, sondern erst danach — PO hat das bestätigt.
 
 ## Freigabe-Frage
 
-Soll das Framework so gehärtet werden, auch wenn dein aktuell blockiertes Projekt danach noch einen zusätzlichen Reparatur-Schritt braucht?
+Genügt dir automatisierter Testnachweis plus Nachstellung, und bleibt die Reparatur der drei Bestandsprojekte wie vereinbart ein späterer Schritt?
