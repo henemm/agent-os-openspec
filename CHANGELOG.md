@@ -5,6 +5,33 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.26.4] - 2026-09-21
+
+### Fixed
+
+**Plugin-Shim ueberlebte keinen Geschwister-Import (#165, Folgefund)**
+
+Beim Nachziehen der Bestandsprojekte gemessen: Nach `migrate_to_plugin.py --apply`
+starben in `gregor-zwanzig` drei projekteigene Hooks mit
+`ModuleNotFoundError: No module named 'hook_utils'` — vor der Migration liefen
+sie mit Exit 0.
+
+Der Shim ersetzt die lokale `config_loader.py` und laedt die Fassung des Plugins
+per `spec_from_file_location`. Die des Plugins beginnt mit
+`from hook_utils import find_main_repo_from_worktree`, einem Geschwister-Modul im
+selben Ordner. Bei diesem Ladeweg steht dieser Ordner nicht im Suchpfad — der
+Import scheitert, der Hook stirbt beim Start. Betroffen war jedes Projekt, dessen
+eigene Hooks `config_loader` importieren.
+
+- `SHIM_TEMPLATE` legt den Hook-Ordner des Plugins in `sys.path`, bevor das Modul
+  ausgefuehrt wird.
+- `_find_shim_candidates()` erneuert jetzt auch **veraltete** Shims: Bisher galt
+  allein der Marker in Zeile 1 als „schon migriert", und der ist in alter wie
+  neuer Fassung derselbe — eine fehlerhafte Fassung waere in jedem bereits
+  migrierten Projekt liegengeblieben. Verglichen wird nun der Inhalt.
+- Regressionstests: `tests/test_plugin_shim_sibling_import_165.py` (5 Tests,
+  hermetisch gegen eine Fake-Plugin-Installation).
+
 ## [3.26.3] - 2026-09-21
 
 ### Fixed
