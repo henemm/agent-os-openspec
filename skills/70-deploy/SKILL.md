@@ -135,6 +135,22 @@ git push heroku main
    # heroku logs --tail
    ```
 
+## Haupt-Ordner nachziehen (nach gemergtem PR)
+
+Ein Workflow endet im Worktree; der Haupt-Ordner des Projekts auf der Platte bleibt auf altem
+Stand — relevant z. B. für Xcode, das den Haupt-Ordner öffnet. Aus einer Worktree-Session heraus
+lässt er sich nicht aktualisieren (Claude Code verweigert dort Git-Aufrufe auf den Haupt-Ordner).
+
+**Weg:** eine neue Claude-Session **im Haupt-Ordner** öffnen und ausführen:
+
+```bash
+python3 ${_H}/session_singleton_guard.py sync-main
+```
+
+Der Guard lässt in dieser Session genau diesen Befehl durch. Er zieht per `git fetch` +
+`git merge --ff-only` nach und bricht mit klarer Meldung ab (nichts geändert), wenn der Ordner
+Änderungen an versionierten Dateien hat, die Historie abweicht oder kein Upstream existiert.
+
 ## Rollback (if needed)
 
 ```bash
@@ -162,7 +178,7 @@ Customize this template by updating:
 Beende deine letzte Nachricht in diesem Befehl mit diesen zwei Zeilen, in dieser Reihenfolge:
 
 Workflow `<name>` · Phase `<x>` von 8 · Nächster Pflicht-Schritt: `/<befehl> #<N>`
-⚙ /70-deploy · agent-os-openspec 3.26.7
+⚙ /70-deploy · agent-os-openspec 3.27.0
 
 Die Statuszeile übernimmst du aus dem Hinweis `[agent-os-openspec] AKTIVER WORKFLOW …`, den der Hook bei jeder Nachricht mitliefert — Phase und Schritt wörtlich von dort. Fehlt der Hinweis (kein Workflow oder `phase8_complete`), entfällt die Statuszeile.
 
