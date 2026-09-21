@@ -10,14 +10,29 @@ import migrate_to_plugin as mig
 
 MARKER = "<!-- openspec-alias: do-not-treat-as-legacy-duplicate -->"
 
+SKILLS_DIR = REPO_ROOT / "skills"
+
+
+def _shipped(name: str) -> str:
+    """Inhalt des ausgelieferten Skills.
+
+    Seit #160 reicht Namensgleichheit nicht mehr, um eine Datei als Duplikat zu
+    entfernen — sie muss inhaltsgleich zum Skill sein. Grund: `70-deploy` ist
+    ausdruecklich ein projektspezifisches Template; in gregor_zwanzig stand dort
+    die Produktions-Deploy-Prozedur und wurde zum Loeschen vorgeschlagen. Die
+    Fixtures unten benutzen deshalb echten Skill-Inhalt statt eines Platzhalters;
+    die Aussage der Tests ist unveraendert.
+    """
+    return (SKILLS_DIR / name / "SKILL.md").read_text()
+
 
 def test_removes_only_files_matching_a_plugin_skill(tmp_path):
     commands_dir = tmp_path / ".claude" / "commands"
     commands_dir.mkdir(parents=True)
 
     # Duplicates a real plugin skill (see skills/00-intake, skills/90-retro)
-    (commands_dir / "00-intake.md").write_text("legacy")
-    (commands_dir / "90-retro.md").write_text("legacy")
+    (commands_dir / "00-intake.md").write_text(_shipped("00-intake"))
+    (commands_dir / "90-retro.md").write_text(_shipped("90-retro"))
 
     # Project-specific, no matching skill — must survive
     (commands_dir / "e2e-verify.md").write_text("custom")
@@ -55,7 +70,8 @@ def test_legacy_file_without_marker_still_removable(tmp_path):
     commands_dir.mkdir(parents=True)
 
     # Legacy full-text copy, no marker → still a removable duplicate.
-    (commands_dir / "90-retro.md").write_text("legacy full-text command copy")
+    # Seit #160: inhaltsgleich zum Skill, sonst gilt sie als eigene Fassung.
+    (commands_dir / "90-retro.md").write_text(_shipped("90-retro"))
 
     removable = mig._find_removable_command_files(tmp_path)
     removable_names = {f.name for f in removable}
