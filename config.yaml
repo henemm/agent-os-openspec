@@ -52,6 +52,15 @@ workflow:
   # Phrases that trigger spec approval (case-insensitive, word-boundary matched).
   # Wirken NUR in phase3_spec — in jeder anderen Phase warnt phase_listener und
   # laesst den Zustand unveraendert (Issue #90).
+  #
+  # Satzbau-Regel (Issue #170) fuer approval_phrases, green_phrases UND die
+  # override_token-Keywords: Die Phrase muss die erste Zeile eroeffnen (hoechstens
+  # EIN Fuellwort davor: ja/ok/okay/yes/klar/danke/super/top), danach duerfen bis
+  # zum ersten Satz-/Klauselzeichen hoechstens 2 Zusatzwoerter folgen (override: 0).
+  # Fragezeichen, Negation/Einschraenkung (nicht, kein, aber, warte …) und eine
+  # fuehrende Ziffer ("1. …") verwerfen die Freigabe; Klammer-Einschuebe werden
+  # ignoriert. Eine blosse Erwaehnung mitten im Satz ist damit keine Freigabe mehr.
+  # Faustregel fuer eigene Listen: kurze, eindeutige Kommandowoerter waehlen.
   approval_phrases:
     - "approved"
     - "freigabe"

@@ -203,7 +203,7 @@ Die Ausgabe besteht aus genau diesen Teilen, in dieser Reihenfolge:
    widersprichst, je genau eine Zeile `Meine Einschätzung: …`, höchstens 3 Zeilen
    insgesamt. Stimmst du allen Anmerkungen zu: nichts schreiben.
 3. **Marker-Zeile** — wörtlich, als letzte Zeile vor der Freigabe-Aufforderung:
-   `⚙ PO-Briefing unabhängig erstellt · agent-os-openspec 3.27.0`
+   `⚙ PO-Briefing unabhängig erstellt · agent-os-openspec 3.27.1`
 4. **Freigabe-Aufforderung** — eine Zeile.
 
 Vorlage:
@@ -213,7 +213,7 @@ Vorlage:
 
 Meine Einschätzung: [nur bei Widerspruch zu einer Anmerkung — sonst weglassen]
 
-⚙ PO-Briefing unabhängig erstellt · agent-os-openspec 3.27.0
+⚙ PO-Briefing unabhängig erstellt · agent-os-openspec 3.27.1
 Schreibe `approved`, wenn der Plan so stimmt — danach geht es in die Umsetzung.
 
 ---
