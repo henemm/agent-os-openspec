@@ -5,6 +5,30 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+**Beilaeufiges Freigabe-Wort setzt keine Freigabe mehr (#170)**
+
+Die Nachricht „1. die mischung aus go, approved und der eingabe von slash-commands ist
+unglücklich." setzte `green_approved` und entsperrte das Post-Implementation-Gate — der PO
+wollte nichts freigeben. `_matches(..., leading_only=True)` prüfte nur die *Position* des
+Stichworts, nicht den *Satzbau*.
+
+- `phase_listener.py`: Für approval/GREEN/override muss die Nachricht selbst eine Freigabe
+  SEIN — Klammer-Einschübe zählen nicht, kein Fragezeichen, keine Negation/Einschränkung
+  (nicht, kein, aber, warte …), höchstens ein Füllwort (ja, ok, danke …) vor der Phrase,
+  Phrase führt die erste Zeile (längste Phrase gewinnt), Kopfsatz danach höchstens 2
+  Zusatzwörter — bei **override 0**, weil ein Token eine Stunde lang alle Gates entsperrt.
+- **Sichtbarkeit:** Wirkende Freigaben und neu angelegte Override-Token nennen den Auslöser
+  (`GREEN approved (durch: '…')`). Ein erkanntes, aber verworfenes Stichwort erzeugt einen
+  Hinweis statt stillem Verwerfen (#90) — nur in der Phase, in der die Freigabe gewirkt hätte,
+  und nicht, wenn dieselbe Nachricht über das andere Gate regulär gewirkt hat.
+- **Unverändert:** Stop-/Continue-Phrasen (Not-Aus greift weiterhin mitten im Satz) und
+  `NOTIFICATION_MARKERS` (#46/#141).
+- **Verteilung:** wirkt in Konsumenten-Projekten erst nach dem Plugin-Update.
+
 ## [3.27.0] - 2026-09-21
 
 ### Added

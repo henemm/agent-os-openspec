@@ -62,6 +62,33 @@ NOTIFICATION_MARKERS = [
 # stehen müssen: erste Zeile UND erste 120 Zeichen.
 LEADING_CHARS = 120
 
+# Satzbau-Regel für freigabe-relevante Phrasen (Issue #170). Die reine Positions-
+# Prüfung ("Wort steht irgendwo in den ersten 120 Zeichen") wertete eine Diskussion
+# ÜBER das Wort ("die mischung aus go, approved ... ist unglücklich") als Freigabe.
+# Eine Freigabe ist eine Willenserklärung: die Nachricht muss selbst eine sein.
+FILLER_PREFIXES = ["ja", "ok", "okay", "yes", "klar", "danke", "super", "top"]
+NEGATION_WORDS = [
+    "nicht", "kein", "keine", "keinen", "not", "no", "aber", "but", "warte", "wait",
+]
+# Zusatzwörter im Kopfsatz nach der Phrase: 2 für approval/GREEN ("Go bitte
+# umsetzen", "Passt für mich"), 0 für override — ein Override-Token entsperrt eine
+# Stunde lang alle Gates, dafür muss die Phrase allein stehen.
+MAX_EXTRA_WORDS = 2
+OVERRIDE_EXTRA_WORDS = 0
+
+# Wortgrenze: die Phrase darf weder von Buchstabe, Ziffer, Unterstrich noch
+# Bindestrich umgeben sein. Plain \b würde "stop" in "stop-lock" treffen.
+_BOUNDARY_BEFORE = r"(?<![a-zA-Z0-9_\-])"
+_BOUNDARY_AFTER = r"(?![a-zA-Z0-9_\-])"
+_FILLER_RE = re.compile(
+    r"^(?:" + "|".join(FILLER_PREFIXES) + r")" + _BOUNDARY_AFTER + r"[\s,;:.!\-—]*"
+)
+_NEGATION_RE = re.compile(
+    _BOUNDARY_BEFORE + r"(?:" + "|".join(NEGATION_WORDS) + r")" + _BOUNDARY_AFTER
+)
+# Ende des Kopfsatzes: Satz-/Klauselzeichen oder Zeilenende.
+_CLAUSE_RE = re.compile(r"[,.;:!?…]|\s-\s|\s—\s")
+
 
 # --- Config loading ---
 
@@ -97,25 +124,117 @@ def _is_notification_turn(message: str) -> bool:
     return any(marker.lower() in lower for marker in NOTIFICATION_MARKERS)
 
 
-def _matches(message: str, phrases: list[str], leading_only: bool = False) -> bool:
+def _phrase_pattern(phrase: str) -> str:
+    return _BOUNDARY_BEFORE + re.escape(phrase.lower()) + _BOUNDARY_AFTER
+
+
+def _extra_word_budget(phrases: list[str], max_extra_words: "int | None") -> int:
+    """Erlaubte Zusatzwörter — override ist strenger als approval/GREEN."""
+    if max_extra_words is not None:
+        return max_extra_words
+    lowered = {p.lower() for p in phrases}
+    if lowered & {p.lower() for p in OVERRIDE_PHRASES}:
+        return OVERRIDE_EXTRA_WORDS
+    return MAX_EXTRA_WORDS
+
+
+def _leading_line(message: str) -> str:
+    """Erste Zeile (max. 120 Zeichen) ohne Klammer-Einschübe.
+
+    Text in runden Klammern ist eine Nebenbemerkung und zählt für keine der
+    Satzbau-Prüfungen — dort steht der Nachsatz des Realfalls aus #46
+    ("approved (oder kann ich nicht einfach selbst weitermachen?)").
+    Auch eine nicht geschlossene Klammer bis Zeilenende gilt als Einschub.
+    """
+    line = message.lower().strip().split("\n", 1)[0][:LEADING_CHARS]
+    line = re.sub(r"\([^)]*\)", " ", line)
+    return re.sub(r"\([^)]*$", " ", line).strip()
+
+
+def _phrase_at_start(text: str, phrases: list[str]) -> "str | None":
+    """Längste Phrase, die den Text eröffnet ("ich genehmige" vor "genehmige")."""
+    best = None
+    for phrase in phrases:
+        candidate = phrase.lower()
+        if not text.startswith(candidate):
+            continue
+        if re.match(r"[a-zA-Z0-9_\-]", text[len(candidate):len(candidate) + 1] or ""):
+            continue
+        if best is None or len(candidate) > len(best):
+            best = candidate
+    return best
+
+
+def _leading_approval_phrase(message: str, phrases: list[str],
+                             max_extra_words: "int | None" = None) -> "str | None":
+    """Die Phrase, wenn die Nachricht selbst eine Freigabe IST — sonst None (#170)."""
+    budget = _extra_word_budget(phrases, max_extra_words)
+    line = _leading_line(message)
+    if "?" in line or _NEGATION_RE.search(line):
+        return None
+    # Vorspann: führende Nicht-Alphanumerik (Anführungszeichen, "*", ">", Emoji)
+    # zählt nicht; eine führende Ziffer schon (Listenpunkte sind keine Freigabe).
+    text = re.sub(r"^[^\w]+", "", line)
+    phrase = _phrase_at_start(text, phrases)
+    if phrase is None:
+        filler = _FILLER_RE.match(text)
+        if not filler:
+            return None
+        text = text[filler.end():]
+        phrase = _phrase_at_start(text, phrases)
+        if phrase is None:
+            return None
+    tail = text[len(phrase):]
+    # Override braucht die Phrase allein, sonst zählt nur der Kopfsatz.
+    rest = tail if budget < 1 else _CLAUSE_RE.split(tail, maxsplit=1)[0]
+    return phrase if len(re.findall(r"\w+", rest)) <= budget else None
+
+
+def _mentioned_phrase(message: str, phrases: list[str]) -> "str | None":
+    """Phrase irgendwo in der ersten Zeile — die reine Positions-Regel vor #170."""
+    line = message.lower().strip().split("\n", 1)[0][:LEADING_CHARS]
+    for phrase in phrases:
+        if re.search(_phrase_pattern(phrase), line):
+            return phrase.lower()
+    return None
+
+
+def _discard_notice(message: str, phrases: list[str],
+                    max_extra_words: "int | None" = None) -> "str | None":
+    """Hinweis, wenn die alte Regel getroffen hätte, die Satzbau-Regel aber nicht.
+
+    Kein stilles Verwerfen (#90): der Nutzer erfährt, warum nichts passiert ist.
+    """
+    phrase = _mentioned_phrase(message, phrases)
+    if not phrase or _leading_approval_phrase(message, phrases, max_extra_words):
+        return None
+    return (
+        f"HINWEIS: Stichwort '{phrase}' erkannt, aber nicht als Freigabe gewertet — "
+        "eine Freigabe ist eine kurze Nachricht, die mit dem Stichwort beginnt "
+        '(z. B. "go" oder "approved").'
+    )
+
+
+def _trigger(message: str) -> str:
+    """Auslösender Nachrichtentext (erste 60 Zeichen) für wirkende Freigaben."""
+    return "(durch: '" + " ".join(message.strip().splitlines())[:60] + "')"
+
+
+def _matches(message: str, phrases: list[str], leading_only: bool = False,
+             max_extra_words: "int | None" = None) -> bool:
     """Prüft, ob eine der Phrasen im Prompt vorkommt (mit Wortgrenzen).
 
     leading_only=True (für freigabe-relevante Sets approval/GREEN/override):
-    Die Phrase muss innerhalb der ersten Zeile UND der ersten 120 Zeichen stehen.
-    Echte User-Freigaben führen mit dem Stichwort; zitierte Erwähnungen in Agenten-/
-    Meta-Texten stehen typischerweise tief im Text. Stop-Lock-Phrasen bleiben bewusst
-    ohne diese Einschränkung (Not-Aus darf großzügig greifen).
+    Die Nachricht muss selbst eine Freigabe SEIN (Issue #170) — Phrase führt die
+    erste Zeile (höchstens ein Füllwort davor), kurzer Kopfsatz, kein Fragezeichen,
+    keine Negation/Einschränkung. Stop-Lock-Phrasen bleiben bewusst ohne diese
+    Einschränkung (Not-Aus darf großzügig greifen).
     """
-    msg = message.lower().strip()
     if leading_only:
-        msg = msg.split("\n", 1)[0][:LEADING_CHARS]
+        return _leading_approval_phrase(message, phrases, max_extra_words) is not None
+    msg = message.lower().strip()
     for phrase in phrases:
-        # Require phrase not preceded or followed by a letter, digit, underscore, or
-        # hyphen. Plain \b would match "stop" inside "stop-lock" because "-" is a
-        # non-word character — that causes false positives when discussing the stop-lock
-        # mechanism itself.
-        pat = r"(?<![a-zA-Z0-9_\-])" + re.escape(phrase.lower()) + r"(?![a-zA-Z0-9_\-])"
-        if re.search(pat, msg):
+        if re.search(_phrase_pattern(phrase), msg):
             return True
     return False
 
@@ -243,10 +362,16 @@ def main():
     wf_data, wf_path = _read_active_workflow()
 
     # Override token (works even without workflow)
-    if _matches(message, override, leading_only=True):
+    override_discarded = None
+    if _matches(message, override, leading_only=True, max_extra_words=OVERRIDE_EXTRA_WORDS):
         wf_name = wf_data["name"] if wf_data else "__global__"
         _create_override_token(wf_name)
-        print(f"Override token created for workflow: {wf_name}", file=sys.stderr)
+        print(
+            f"Override token created for workflow: {wf_name} {_trigger(message)}",
+            file=sys.stderr,
+        )
+    else:
+        override_discarded = _discard_notice(message, override, OVERRIDE_EXTRA_WORDS)
 
     # Stop-lock
     if _matches(message, stop) and not _matches(message, cont):
@@ -258,6 +383,8 @@ def main():
         _set_stop_lock(False)
 
     if not wf_data or not wf_path:
+        if override_discarded:
+            print(override_discarded, file=sys.stderr)
         if _matches(message, approval, leading_only=True) or _matches(message, green, leading_only=True):
             print(
                 f"WARNUNG: Stichwort erkannt, aber kein auflösbarer Workflow. {gate_diagnostics()}",
@@ -273,6 +400,8 @@ def main():
     # gewirkt hat. Sonst erzeugt ein Wort, das in beiden Sets steht (im Fundprojekt
     # ist "go" Freigabe- UND GREEN-Phrase), eine laute Falschmeldung.
     deferred_notices: list[str] = []
+    if override_discarded:
+        deferred_notices.append(override_discarded)
     approval_took_effect = False
     green_took_effect = False
 
@@ -322,7 +451,11 @@ def main():
                 wf_data["current_phase"] = "phase4_approved"
                 changed = True
                 approval_took_effect = True
-                print(f"Spec approved for '{wf_data['name']}'! You may now run /tdd-red", file=sys.stderr)
+                print(
+                    f"Spec approved for '{wf_data['name']}' {_trigger(message)}! "
+                    "You may now run /tdd-red",
+                    file=sys.stderr,
+                )
         elif wf_data.get("spec_approved"):
             deferred_notices.append(
                 f"HINWEIS: Spec für '{wf_data['name']}' ist bereits freigegeben. "
@@ -335,6 +468,13 @@ def main():
                 "Zustand unverändert — Phase nachziehen und erneut fragen, "
                 "NICHT spec_approved von Hand setzen."
             )
+    # Erkannt, aber als Erwähnung verworfen (#170) — nur melden, wo die Freigabe
+    # in dieser Phase überhaupt etwas bewirkt hätte.
+    elif (wf_data.get("current_phase") == "phase3_spec"
+          and not wf_data.get("spec_approved")):
+        discarded = _discard_notice(message, approval)
+        if discarded:
+            deferred_notices.append(discarded)
 
     # New UI flag
     if "neues ui" in message.lower() or "new ui" in message.lower():
@@ -348,7 +488,7 @@ def main():
             wf_data["green_approved"] = True
             changed = True
             green_took_effect = True
-            print("GREEN approved.", file=sys.stderr)
+            print(f"GREEN approved {_trigger(message)}.", file=sys.stderr)
             # Post-Implementation-Gate: Approval-Marker setzen damit post_implementation_gate entsperrt
             try:
                 approval_path = _root / ".claude" / f"user_approved_validation_{wf_data['name']}"
@@ -363,6 +503,11 @@ def main():
                 f"'{phase or 'unbekannt'}'; GREEN wirkt nur in phase6_implement "
                 "und phase6b_adversary. Zustand unverändert."
             )
+    elif (wf_data.get("current_phase") in ("phase6_implement", "phase6b_adversary")
+          and not wf_data.get("green_approved")):
+        discarded = _discard_notice(message, green)
+        if discarded:
+            deferred_notices.append(discarded)
 
     # Verworfene Stichworte melden — aber nur, wenn die Nachricht nicht ohnehin
     # über das jeweils andere Gate regulär gewirkt hat (überlappende Phrasen-Sets).
