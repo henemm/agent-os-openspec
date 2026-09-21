@@ -253,30 +253,60 @@ def _find_removable_hook_files(project_path: Path) -> list[Path]:
     return [f for f in hooks_dir.glob("*.py") if f.name in removable]
 
 
-def _find_removable_command_files(project_path: Path) -> list[Path]:
+def _normalize_command_text(text: str) -> str:
+    """Vergleichsform: ohne Alias-Kommentar, ohne Versions-Marker, ohne Leerraum-Rauschen.
+
+    Der Marker `⚙ /<befehl> · agent-os-openspec <version>` (seit 3.24.0) steht am
+    Ende jeder generierten Fassung. Er unterscheidet zwei ansonsten identische
+    Dateien nur durch die Versionsnummer und darf eine echte Kopie nicht vor dem
+    Aufraeumen schuetzen.
     """
-    Return .claude/commands/*.md files that duplicate a plugin-provided skill.
+    lines = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("<!-- openspec-alias:"):
+            continue
+        if stripped.startswith("⚙ /"):
+            continue
+        lines.append(line.rstrip())
+    return "\n".join(lines).strip()
 
-    Legacy (pre-plugin) installs copied core/commands/*.md straight into the
-    project. Once the plugin is active, these show up a SECOND time next to
-    the plugin's own skill of the same name (duplicate slash command in the
-    palette). Only remove files that have a matching skills/<name>/SKILL.md
-    in the plugin — never touch project-specific custom commands.
 
-    Framework-generated short aliases (see setup.generate_command_aliases) carry
-    an `openspec-alias:` marker and must NOT be removed even though their name
-    matches a skill. Files whose content cannot be read are conservatively
-    kept (fail-safe: when in doubt, do not delete).
+def _classify_command_files(project_path: Path) -> "tuple[list[Path], list[Path]]":
+    """(nachweisliche Kopien, abweichende Dateien) unter .claude/commands/.
+
+    Legacy-Installationen kopierten `core/commands/*.md` direkt ins Projekt. Mit
+    aktivem Plugin erscheint derselbe Befehl ein ZWEITES Mal in der Palette —
+    diese Doppelungen soll das Werkzeug entfernen.
+
+    Frueher galt dafuer allein die Namensgleichheit mit einem Plugin-Skill. Das
+    ist kein Duplikat-Beweis: `70-deploy` ist laut CLAUDE.md ausdruecklich ein
+    projektspezifisches Template, das angepasst werden MUSS. In gregor_zwanzig
+    stand dort die vollstaendige Produktions-Deploy-Prozedur — sie wurde zum
+    Loeschen vorgeschlagen (Issue #160).
+
+    Entfernt wird deshalb nur noch, was nachweislich eine Kopie ist:
+    inhaltsgleich zum ausgelieferten Skill nach `_normalize_command_text`.
+    Alles andere landet in der zweiten Liste, bleibt stehen und wird berichtet.
+
+    Bewusst KEIN Aehnlichkeitsmass: an echten Daten gemessen streuen Alt-Kopien
+    zwischen 0.22 und 0.64 Aehnlichkeit, eine echte Anpassung lag bei 0.03. Eine
+    Schwelle dazwischen waere geraten, und die Fehlerkosten sind asymmetrisch —
+    eine uebersehene Doppelung kostet einen Eintrag in der Befehlsliste, eine
+    faelschlich geloeschte Datei eine Produktionsprozedur.
+
+    Alias-Marker, fehlender Skill und unlesbarer Inhalt schuetzen wie bisher.
     """
     commands_dir = project_path / ".claude" / "commands"
     if not commands_dir.exists():
-        return []
+        return [], []
     skills_dir = PLUGIN_ROOT / "skills"
     if not skills_dir.exists():
-        return []
+        return [], []
     provided = {p.name for p in skills_dir.iterdir() if p.is_dir()}
-    removable = []
-    for f in commands_dir.glob("*.md"):
+    duplicates: list[Path] = []
+    divergent: list[Path] = []
+    for f in sorted(commands_dir.glob("*.md")):
         if f.stem not in provided:
             continue
         try:
@@ -286,8 +316,22 @@ def _find_removable_command_files(project_path: Path) -> list[Path]:
             continue
         if "openspec-alias:" in content:
             continue
-        removable.append(f)
-    return removable
+        skill = skills_dir / f.stem / "SKILL.md"
+        try:
+            shipped = skill.read_text()
+        except Exception:
+            divergent.append(f)
+            continue
+        if _normalize_command_text(content) == _normalize_command_text(shipped):
+            duplicates.append(f)
+        else:
+            divergent.append(f)
+    return duplicates, divergent
+
+
+def _find_removable_command_files(project_path: Path) -> list[Path]:
+    """Nur die nachweislichen Kopien. Beibehalten fuer bestehende Aufrufer."""
+    return _classify_command_files(project_path)[0]
 
 
 def _read_installed_modules(project_path: Path) -> list[str]:
@@ -400,7 +444,14 @@ def migrate(project_path: Path, dry_run: bool = True) -> None:
         print("\nNo plugin hook files found in .claude/hooks/ to remove.")
 
     # --- 6. Remove legacy command files that duplicate plugin skills ---
-    removable_commands = _find_removable_command_files(project_path)
+    removable_commands, divergent_commands = _classify_command_files(project_path)
+    if divergent_commands:
+        print(f"\n{len(divergent_commands)} Befehlsdatei(en) in .claude/commands/ tragen den Namen "
+              "eines Plugin-Skills, weichen aber inhaltlich ab — EIGENE FASSUNG, bleibt stehen:")
+        for f in divergent_commands:
+            print(f"  {f.relative_to(project_path)}")
+        print("  (wird NICHT entfernt. Namensgleichheit ist kein Duplikat-Beweis — `70-deploy`")
+        print("   etwa ist ausdruecklich projektspezifisch. Pruefen und ggf. selbst loeschen.)")
     if removable_commands:
         print(f"\n{len(removable_commands)} legacy command file(s) in .claude/commands/ duplicate a plugin skill and can be removed:")
         for f in removable_commands:
