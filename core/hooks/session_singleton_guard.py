@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -223,6 +224,39 @@ def _is_worktree_cwd(cwd: str) -> bool:
 def _is_rescue_command(tool_name: str, tool_input: dict) -> bool:
     """EnterWorktree ist der einzige erlaubte Rettungsweg."""
     return tool_name == "EnterWorktree"
+
+
+def _is_sync_main_command(tool_name: str, tool_input: dict, cwd: str) -> bool:
+    """Einzige Bash-Ausnahme im Haupt-Ordner: exakt `python3 <guard> sync-main`.
+
+    Kein Praefix-Match und keine freien Git-Befehle: Flags wie `-c`,
+    `--upload-pack` oder `--exec` fuehren Code aus, und `git pull` erkennt
+    einen schmutzigen Ordner nicht. Der Modus bringt seine eigene Vorpruefung mit.
+    """
+    if tool_name != "Bash":
+        return False
+    try:
+        command = (tool_input or {}).get("command") or ""
+        if not isinstance(command, str) or _has_shell_metachars(command) \
+                or "\r" in command:
+            return False
+        import shlex
+        tokens = shlex.split(command)
+        if len(tokens) != 3 or tokens[0] not in ("python", "python3") \
+                or tokens[2] != "sync-main":
+            return False
+        script = Path(tokens[1])
+        if not script.is_absolute():
+            script = Path(cwd) / script
+        if script.name != "session_singleton_guard.py" or not script.is_file():
+            return False
+        allowed = {
+            Path(__file__).resolve(),
+            (Path(cwd) / ".claude" / "hooks" / "session_singleton_guard.py").resolve(),
+        }
+        return script.resolve() in allowed
+    except Exception:
+        return False
 
 
 def _has_override_token() -> bool:
@@ -622,6 +656,10 @@ def _do_guard(payload: dict) -> None:
     if _is_rescue_command(tool_name, tool_input):
         sys.exit(0)
 
+    # Haupt-Ordner nachziehen (#169): genau ein fester Befehl, s. _is_sync_main_command.
+    if _is_sync_main_command(tool_name, tool_input, cwd):
+        sys.exit(0)
+
     # Override-Token: expliziter Notausgang für Ausnahmefälle.
     if _has_override_token():
         sys.exit(0)
@@ -635,7 +673,9 @@ def _do_guard(payload: dict) -> None:
         "Parameter). Das Tool erstellt einen eigenen Worktree für\n"
         "diese Sitzung. Danach kannst du normal weiterarbeiten.\n"
         "\n"
-        "(Nur EnterWorktree und lesende Tools sind jetzt erlaubt.)\n",
+        "(Nur EnterWorktree und lesende Tools sind jetzt erlaubt; zum\n"
+        "Nachziehen des Haupt-Ordners: python3 .claude/hooks/\n"
+        "session_singleton_guard.py sync-main)\n",
         file=sys.stderr,
     )
     sys.exit(2)
@@ -758,6 +798,74 @@ def _claim_impl(argv: list) -> None:
     print(f"claim: Issue #{issue} fuer Session {session_id} eingetragen.")
 
 
+def _run_git(args: list, cwd: str) -> "tuple[int, str]":
+    """git ohne Rueckfrage; (returncode, stdout+stderr getrimmt)."""
+    env = dict(os.environ)
+    env.update(GIT_TERMINAL_PROMPT="0", LC_ALL="C")
+    proc = subprocess.run(
+        ["git", *args], cwd=cwd, capture_output=True, text=True,
+        timeout=120, env=env,
+    )
+    return proc.returncode, (proc.stdout + proc.stderr).strip()
+
+
+def _do_sync_main() -> None:
+    """Haupt-Ordner per fetch + merge --ff-only nachziehen (#169).
+
+    Ueberschreibt nie Arbeit: kein reset/checkout/stash/rebase. Jeder
+    Abbruchgrund laesst den Ordner unveraendert (Exit 1, Meldung auf stdout).
+    """
+    def abort(msg: str) -> None:
+        print(f"sync-main: {msg} — nichts geaendert.")
+        sys.exit(1)
+
+    try:
+        cwd = os.getcwd()
+        if _is_worktree_cwd(cwd):
+            abort("Das ist ein Worktree. Der Befehl gehoert in eine Session im "
+                  "Haupt-Ordner des Projekts")
+        rc, top = _run_git(["rev-parse", "--show-toplevel"], cwd)
+        if rc != 0 or Path(top).resolve() != Path(cwd).resolve():
+            abort("Kein Git-Repository oder nicht dessen Hauptordner")
+        rc, upstream = _run_git(
+            ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], cwd)
+        if rc != 0:
+            abort("Der aktuelle Branch hat keinen Upstream")
+        rc, dirty = _run_git(["status", "--porcelain", "--untracked-files=no"], cwd)
+        if rc != 0:
+            abort(f"git status fehlgeschlagen ({dirty})")
+        if dirty:
+            abort("Der Haupt-Ordner hat ungespeicherte Änderungen an versionierten "
+                  f"Dateien:\n{dirty}\nZuerst committen oder verwerfen")
+        rc, branch = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], cwd)
+        rc2, remote = _run_git(["config", "--get", f"branch.{branch}.remote"], cwd)
+        if rc != 0 or rc2 != 0 or not remote or remote == ".":
+            abort(f"Der Upstream {upstream} liegt nicht auf einem Remote")
+        rc, out = _run_git(["fetch", "--quiet", remote], cwd)
+        if rc != 0:
+            abort(f"git fetch {remote} fehlgeschlagen ({out})")
+        rc, before = _run_git(["rev-parse", "HEAD"], cwd)
+        rc2, after = _run_git(["rev-parse", "@{u}"], cwd)
+        if rc == 0 and rc2 == 0 and before == after:
+            print(f"sync-main: Haupt-Ordner ist bereits aktuell ({upstream}).")
+            sys.exit(0)
+        rc, _ = _run_git(["merge-base", "--is-ancestor", "@{u}", "HEAD"], cwd)
+        if rc == 0:
+            print(f"sync-main: Haupt-Ordner ist lokal voraus ({upstream}), "
+                  "nichts nachzuziehen.")
+            sys.exit(0)
+        rc, out = _run_git(["merge", "--ff-only", "--quiet", "@{u}"], cwd)
+        if rc != 0:
+            abort("Die Historie weicht von "
+                  f"{upstream} ab (lokale Commits) oder Dateien kollidieren ({out})")
+        print(f"sync-main: Haupt-Ordner auf {upstream} nachgezogen.")
+        sys.exit(0)
+    except SystemExit:
+        raise
+    except Exception as exc:
+        abort(f"interner Fehler ({type(exc).__name__})")
+
+
 def _do_cleanup(payload: dict) -> None:
     session_id = (payload.get("session_id") or "").strip()
     if not session_id:
@@ -780,6 +888,9 @@ def main() -> None:
     if mode == "claim":
         # Direkter CLI-Aufruf ohne stdin-Payload — nicht auf stdin warten.
         _do_claim(sys.argv[2:])
+        return
+    if mode == "sync-main":
+        _do_sync_main()
         return
     payload = _read_payload()
     if mode == "register":
