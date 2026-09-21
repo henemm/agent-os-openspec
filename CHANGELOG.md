@@ -24,6 +24,108 @@ Das Muster ist jetzt `\.env(rc)?\b`: Wortgrenze nach `env`. `.env`, `.env.local`
 zwischen `v` und `i` keine Wortgrenze und faellt heraus. Die README-Vorlage fuer
 `secrets_guard.sensitive_patterns` zeigt das neue Muster.
 
+## [3.26.5] - 2026-09-21
+
+### Fixed
+
+**Session-Banner empfahl einen Reparatur-Befehl, der den Zustand verschlechtern konnte (#163)**
+
+`session_banner.py` meldete Alias-Kopien als „veraltet" und druckte dazu einen `setup.py`-Befehl.
+Zwei Fehler: `find_stale_aliases()` verglich nur Inhalte auf Gleichheit und kannte keine Versionen —
+eine Kopie mit *neuerem* Marker als die Session galt ebenfalls als veraltet, der Befehl hätte sie
+herabgestuft. Und der Befehl zeigte auf `CLAUDE_PLUGIN_ROOT` (die beim Session-Start eingefrorene
+Fassung) und für den Scope `~` auf den globalen Lauf, vor dem `setup.py` selbst warnt (#87). Real
+am 2026-09-21: der Lauf legte ein globales `70-deploy.md` an, das `gregor_zwanzig/.claude/commands/
+70-deploy.md` überschattete.
+
+- `alias_sync.alias_version()` liest die Version aus der `⚙`-Zeile einer Kopie (letzter Treffer),
+  `version_tuple()` vergleicht numerisch (`3.9.0` < `3.25.0`), `is_newer_than()` ist nur bei
+  beidseitig lesbarer Version wahr. `find_stale_aliases(..., loaded_version=None)` nimmt beweisbar
+  neuere Kopien aus; ohne den Parameter bleibt das Verhalten für andere Aufrufer unverändert.
+- Ohne lesbare Version (reine Redirects, `30-write-spec`) wird weiter gemeldet — unterdrückt wird
+  nur bei Beweis.
+- `session_banner.installed_plugin()` löst die INSTALLIERTE Fassung aus
+  `~/.claude/plugins/installed_plugins.json` auf (Version aus deren `plugin.json`). Ist sie nicht
+  auffindbar oder fehlt dort `setup.py`, nennt der Banner gar keinen Pfad — nie den Session-Root.
+- Scope `~`: kein Befehl, sondern der Verweis auf den Pro-Projekt-Lauf.
+- Zwei bestehende Tests kodierten das Fehlverhalten (Session-Root-Pfad, `setup.py ~`) und wurden
+  umgeschrieben; sechs neue Tests decken die Fälle aus dem Issue ab.
+
+Offen, bewusst nicht Teil dieses Fixes: Eine veraltete globale Kopie überschattet projekteigene
+Befehle (#87) und wird vom Pro-Projekt-Lauf nicht repariert — die ehrliche Abhilfe wäre Löschen.
+
+## [3.26.4] - 2026-09-21
+
+### Fixed
+
+**Plugin-Shim ueberlebte keinen Geschwister-Import (#165, Folgefund)**
+
+Beim Nachziehen der Bestandsprojekte gemessen: Nach `migrate_to_plugin.py --apply`
+starben in `gregor-zwanzig` drei projekteigene Hooks mit
+`ModuleNotFoundError: No module named 'hook_utils'` — vor der Migration liefen
+sie mit Exit 0.
+
+Der Shim ersetzt die lokale `config_loader.py` und laedt die Fassung des Plugins
+per `spec_from_file_location`. Die des Plugins beginnt mit
+`from hook_utils import find_main_repo_from_worktree`, einem Geschwister-Modul im
+selben Ordner. Bei diesem Ladeweg steht dieser Ordner nicht im Suchpfad — der
+Import scheitert, der Hook stirbt beim Start. Betroffen war jedes Projekt, dessen
+eigene Hooks `config_loader` importieren.
+
+- `SHIM_TEMPLATE` legt den Hook-Ordner des Plugins in `sys.path`, bevor das Modul
+  ausgefuehrt wird.
+- `_find_shim_candidates()` erneuert jetzt auch **veraltete** Shims: Bisher galt
+  allein der Marker in Zeile 1 als „schon migriert", und der ist in alter wie
+  neuer Fassung derselbe — eine fehlerhafte Fassung waere in jedem bereits
+  migrierten Projekt liegengeblieben. Verglichen wird nun der Inhalt.
+- Regressionstests: `tests/test_plugin_shim_sibling_import_165.py` (5 Tests,
+  hermetisch gegen eine Fake-Plugin-Installation).
+
+## [3.26.3] - 2026-09-21
+
+### Fixed
+
+**Hook-Kommandos mit cwd-relativem Pfad brechen jede Nachricht ab (#165)**
+
+Gemeldet aus `Meditationstimer`: Jede Nutzer-Nachricht brach ab mit
+
+```
+UserPromptSubmit operation blocked by hook: [python3 .claude/hooks/phase_listener.py]:
+can't open file '.../Meditationstimer iOS/Media/.claude/hooks/phase_listener.py':
+[Errno 2] No such file or directory
+```
+
+Es hat nichts blockiert — Python fand die Datei nicht. Hook-Kommandos laufen im
+**aktuellen Arbeitsverzeichnis** der Sitzung, nicht im Projekt-Root
+(https://code.claude.com/docs/en/hooks). Stand die Sitzung in einem Unterordner
+(hier: `Meditationstimer iOS/Media`), zeigte der relative Pfad ins Leere.
+Vorgesehen ist dafuer `${CLAUDE_PROJECT_DIR}`.
+
+Nachgestellt mit identischer Fehlermeldung:
+`cd "<projekt>/Meditationstimer iOS/Media" && python3 .claude/hooks/phase_listener.py`.
+
+Betroffen waren drei Bestandsprojekte (`Meditationstimer`, `my-daily-sprints`,
+`gregor-zwanzig`) aus einer aelteren `setup.py`-Fassung, die den uebergebenen
+Projektpfad nicht aufloeste.
+
+- `setup.py` → `collect_hooks()` erzeugt Hook-Kommandos jetzt als
+  `python3 "${CLAUDE_PROJECT_DIR}/.claude/hooks/<x>.py"` statt mit
+  eingebackenem absolutem Pfad. Der backte den Projektort fest ein (bricht beim
+  Verschieben/Umbenennen) und stand ohne Anfuehrungszeichen da — Ordner mit
+  Leerzeichen wie `Meditationstimer iOS` brachen daran ebenfalls.
+- `migrate_to_plugin.py` → neues `_anchor_command()` schreibt **verbleibende,
+  projekteigene** Hook-Kommandos auf die Platzhalter-Form um, statt sie mit
+  kaputtem Pfad stehen zu lassen. Bisher entfernte das Werkzeug nur die
+  Plugin-Hooks; ein projekteigener Hook wie `session_start.py` blieb relativ,
+  der Abbruch waere also nach der Migration wiedergekommen. Praefixe
+  (Env-Zuweisungen), Zusatzargumente und Shell-Huellen bleiben erhalten,
+  absolute Pfade werden mitverankert, der Umbau ist idempotent.
+- `migrate_to_plugin.py` nimmt jetzt auch `settings.local.json` mit, sofern dort
+  Hooks registriert sind. Der `permissions`-Abschnitt bleibt unberuehrt.
+- `PROJECT_DIR_PLACEHOLDER` in `setup.py` als einzige Quelle der Schreibweise.
+- Regressionstests: `tests/test_hook_paths_project_dir_165.py` (14 Tests, ein
+  Test je Punkt der Spec plus der gemeldete Fall).
+
 ## [3.26.2] - 2026-09-21
 
 ### Fixed

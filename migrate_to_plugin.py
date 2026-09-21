@@ -34,6 +34,7 @@ sys.path.insert(0, str(PLUGIN_ROOT))
 from setup import (  # noqa: E402
     PLUGIN_MODE_VERSION_SOURCE,
     PLUGIN_MODE_VERSION_NOTE,
+    PROJECT_DIR_PLACEHOLDER,
 )
 
 # Core hooks — live in ${CLAUDE_PLUGIN_ROOT}/core/hooks/
@@ -91,6 +92,7 @@ re-exports all of its public attributes, so both import styles keep working.
 import importlib.util
 import json
 import os
+import sys
 
 
 def _resolve_plugin_module():
@@ -112,10 +114,15 @@ def _resolve_plugin_module():
         install_path = ""
 
     if install_path:
-        _module_path = os.path.join(
-            install_path, "core", "hooks", "__MODULE__.py"
-        )
+        _hooks_dir = os.path.join(install_path, "core", "hooks")
+        _module_path = os.path.join(_hooks_dir, "__MODULE__.py")
         if os.path.isfile(_module_path):
+            # Das Plugin-Modul importiert Geschwister-Module (z.B.
+            # `from hook_utils import ...` in config_loader.py). Ohne den
+            # Hook-Ordner im Suchpfad scheitert der Import mit
+            # ModuleNotFoundError, sobald der Shim geladen wird (#165).
+            if _hooks_dir not in sys.path:
+                sys.path.insert(0, _hooks_dir)
             _spec = importlib.util.spec_from_file_location(
                 "__MODULE__", _module_path
             )
@@ -158,8 +165,12 @@ def _find_shim_candidates(project_path: Path) -> tuple[list[Path], list[Path]]:
     """
     Return (to_replace, already_shimmed) for SHIM_HOOKS present in the project.
 
-    - to_replace: real local copies that should become a shim.
-    - already_shimmed: files already carrying the marker (idempotency).
+    - to_replace: real local copies that should become a shim, PLUS veraltete
+      Shims, deren Inhalt von der heutigen Fassung abweicht. Ein Shim mit
+      bekanntem Fehler bliebe sonst ewig liegen: Der Marker ist derselbe, und
+      reine Marker-Pruefung haelt ihn faelschlich fuer aktuell (#165 —
+      Geschwister-Import).
+    - already_shimmed: Shims, die bereits der heutigen Fassung entsprechen.
     """
     hooks_dir = project_path / ".claude" / "hooks"
     if not hooks_dir.exists():
@@ -170,10 +181,15 @@ def _find_shim_candidates(project_path: Path) -> tuple[list[Path], list[Path]]:
         f = hooks_dir / name
         if not f.exists():
             continue
-        if _is_shim(f):
-            already_shimmed.append(f)
-        else:
+        if not _is_shim(f):
             to_replace.append(f)
+            continue
+        current = _render_shim(name.removesuffix(".py"))
+        try:
+            is_current = f.read_text() == current
+        except Exception:
+            is_current = False
+        (already_shimmed if is_current else to_replace).append(f)
     return to_replace, already_shimmed
 
 # .py filename regex — matches "foo_bar.py" or "foo-bar.py"
@@ -223,10 +239,39 @@ def _migrate_command(command: str) -> str | None:
     return None
 
 
+# Pfad-Token eines Hook-Kommandos, das auf .claude/hooks/<datei>.py zeigt —
+# in Anfuehrungszeichen (Pfad darf dann Leerzeichen enthalten) oder nackt.
+_HOOK_PATH_RE = re.compile(
+    r"""(?P<q>["'])(?P<qpath>[^"']*\.claude/hooks/(?P<qname>[\w.\-]+\.py))(?P=q)"""
+    r"""|(?P<path>\S*\.claude/hooks/(?P<name>[\w.\-]+\.py))"""
+)
+
+
+def _anchor_command(command: str) -> str:
+    """Verankert jeden .claude/hooks/-Pfad im Kommando an ${CLAUDE_PROJECT_DIR}.
+
+    Hook-Kommandos laufen im aktuellen Arbeitsverzeichnis der Sitzung, nicht im
+    Projekt-Root (https://code.claude.com/docs/en/hooks). Ein cwd-relativer Pfad
+    (`python3 .claude/hooks/x.py`) bricht deshalb, sobald die Sitzung in einem
+    Unterordner steht — gemeldet aus Meditationstimer, Issue #165. Ein
+    eingebackener absoluter Pfad bricht beim Verschieben des Projekts.
+
+    Praefixe (Env-Zuweisungen), Zusatzargumente und Shell-Huellen bleiben
+    erhalten: ersetzt wird nur das Pfad-Token. Idempotent — ein bereits
+    verankertes Kommando wird zeichengleich neu aufgebaut.
+    """
+    def _replace(match: re.Match) -> str:
+        name = match.group("qname") or match.group("name")
+        return f'"{PROJECT_DIR_PLACEHOLDER}/.claude/hooks/{name}"'
+
+    return _HOOK_PATH_RE.sub(_replace, command)
+
+
 def _patch_settings(settings: dict, dry_run: bool) -> list[tuple[str, str, str]]:
     """
-    Remove plugin hook commands from settings dict in-place.
-    Returns list of (event_name, old_command, "<removed>").
+    Remove plugin hook commands from settings dict in-place, and anchor the
+    remaining (project-own) hook commands at ${CLAUDE_PROJECT_DIR}.
+    Returns list of (event_name, old_command, "<removed>" | new_command).
     """
     changes = []
     for event_name, event_entries in settings.get("hooks", {}).items():
@@ -238,6 +283,12 @@ def _patch_settings(settings: dict, dry_run: bool) -> list[tuple[str, str, str]]
                 if _migrate_command(old_cmd) == _REMOVE:
                     changes.append((event_name, old_cmd, "<removed>"))
                     to_remove.append(hook)
+                    continue
+                new_cmd = _anchor_command(old_cmd)
+                if new_cmd != old_cmd:
+                    changes.append((event_name, old_cmd, new_cmd))
+                    if not dry_run:
+                        hook["command"] = new_cmd
             if to_remove and not dry_run:
                 for h in to_remove:
                     hooks_list.remove(h)
@@ -345,6 +396,48 @@ def _read_installed_modules(project_path: Path) -> list[str]:
     return []
 
 
+def _print_changes(changes: list[tuple[str, str, str]]) -> None:
+    """Gibt die Kommando-Aenderungen einheitlich aus (entfernt / verankert)."""
+    for event_name, old_cmd, action in changes:
+        short_old = old_cmd if len(old_cmd) <= 80 else old_cmd[:77] + "..."
+        print(f"  [{event_name}] {short_old}")
+        if action == "<removed>":
+            print("           → <removed> (already provided by plugin hooks/hooks.json)")
+        else:
+            short_new = action if len(action) <= 80 else action[:77] + "..."
+            print(f"           → {short_new}")
+            print("             (an ${CLAUDE_PROJECT_DIR} verankert — Issue #165)")
+
+
+def _patch_local_settings(project_path: Path, dry_run: bool) -> None:
+    """settings.local.json mitnehmen, falls sie Hooks registriert (Issue #165).
+
+    Fehlende Datei, fehlender hooks-Abschnitt oder unlesbares JSON sind kein
+    Fehler: settings.json ist bereits migriert, dieser Schritt ergaenzt nur.
+    """
+    local_path = project_path / ".claude" / "settings.local.json"
+    if not local_path.exists():
+        return
+    try:
+        local_settings = json.loads(local_path.read_text())
+    except Exception as exc:
+        print(f"\nWARNUNG: .claude/settings.local.json ist nicht lesbar ({exc}) — uebersprungen.")
+        return
+    if not local_settings.get("hooks"):
+        return
+
+    print("\nScanning hook commands in .claude/settings.local.json ...")
+    local_changes = _patch_settings(local_settings, dry_run)
+    if not local_changes:
+        print("  Nichts zu aendern.")
+        return
+    print(f"Found {len(local_changes)} hook command(s) to change in settings.local.json:")
+    _print_changes(local_changes)
+    if not dry_run:
+        local_path.write_text(json.dumps(local_settings, indent=2))
+        print("\nWritten: .claude/settings.local.json")
+
+
 def migrate(project_path: Path, dry_run: bool = True) -> None:
     print(f"OpenSpec Plugin Migration")
     print(f"=========================")
@@ -368,14 +461,16 @@ def migrate(project_path: Path, dry_run: bool = True) -> None:
     print("Scanning hook commands in .claude/settings.json ...")
     changes = _patch_settings(settings, dry_run)
     if changes:
-        print(f"Found {len(changes)} plugin hook(s) to remove from settings.json:")
-        for event_name, old_cmd, _action in changes:
-            short_old = old_cmd if len(old_cmd) <= 80 else old_cmd[:77] + "..."
-            print(f"  [{event_name}] {short_old}")
-            print(f"           → <removed> (already provided by plugin hooks/hooks.json)")
+        print(f"Found {len(changes)} hook command(s) to change in settings.json:")
+        _print_changes(changes)
         wrote_settings = True
     else:
         print("  No plugin hook commands found in settings.json.")
+
+    # --- 1b. Same treatment for settings.local.json (Issue #165) ---
+    # Auch dort koennen Hooks registriert sein; der permissions-Abschnitt
+    # bleibt unberuehrt, weil _patch_settings nur unter "hooks" arbeitet.
+    _patch_local_settings(project_path, dry_run)
 
     # --- 2. Add OPENSPEC_ENABLED_MODULES ---
     modules = _read_installed_modules(project_path)
