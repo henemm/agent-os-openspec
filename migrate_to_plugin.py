@@ -92,6 +92,7 @@ re-exports all of its public attributes, so both import styles keep working.
 import importlib.util
 import json
 import os
+import sys
 
 
 def _resolve_plugin_module():
@@ -113,10 +114,15 @@ def _resolve_plugin_module():
         install_path = ""
 
     if install_path:
-        _module_path = os.path.join(
-            install_path, "core", "hooks", "__MODULE__.py"
-        )
+        _hooks_dir = os.path.join(install_path, "core", "hooks")
+        _module_path = os.path.join(_hooks_dir, "__MODULE__.py")
         if os.path.isfile(_module_path):
+            # Das Plugin-Modul importiert Geschwister-Module (z.B.
+            # `from hook_utils import ...` in config_loader.py). Ohne den
+            # Hook-Ordner im Suchpfad scheitert der Import mit
+            # ModuleNotFoundError, sobald der Shim geladen wird (#165).
+            if _hooks_dir not in sys.path:
+                sys.path.insert(0, _hooks_dir)
             _spec = importlib.util.spec_from_file_location(
                 "__MODULE__", _module_path
             )
@@ -159,8 +165,12 @@ def _find_shim_candidates(project_path: Path) -> tuple[list[Path], list[Path]]:
     """
     Return (to_replace, already_shimmed) for SHIM_HOOKS present in the project.
 
-    - to_replace: real local copies that should become a shim.
-    - already_shimmed: files already carrying the marker (idempotency).
+    - to_replace: real local copies that should become a shim, PLUS veraltete
+      Shims, deren Inhalt von der heutigen Fassung abweicht. Ein Shim mit
+      bekanntem Fehler bliebe sonst ewig liegen: Der Marker ist derselbe, und
+      reine Marker-Pruefung haelt ihn faelschlich fuer aktuell (#165 —
+      Geschwister-Import).
+    - already_shimmed: Shims, die bereits der heutigen Fassung entsprechen.
     """
     hooks_dir = project_path / ".claude" / "hooks"
     if not hooks_dir.exists():
@@ -171,10 +181,15 @@ def _find_shim_candidates(project_path: Path) -> tuple[list[Path], list[Path]]:
         f = hooks_dir / name
         if not f.exists():
             continue
-        if _is_shim(f):
-            already_shimmed.append(f)
-        else:
+        if not _is_shim(f):
             to_replace.append(f)
+            continue
+        current = _render_shim(name.removesuffix(".py"))
+        try:
+            is_current = f.read_text() == current
+        except Exception:
+            is_current = False
+        (already_shimmed if is_current else to_replace).append(f)
     return to_replace, already_shimmed
 
 # .py filename regex — matches "foo_bar.py" or "foo-bar.py"
