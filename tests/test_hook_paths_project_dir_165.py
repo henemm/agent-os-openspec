@@ -14,6 +14,7 @@ Ein Test je "Expected Behavior"-Zeile aus docs/specs/hook-paths-project-dir.md.
 """
 
 import json
+import shlex
 import sys
 from pathlib import Path
 
@@ -139,6 +140,238 @@ def test_absolute_path_is_anchored_too():
         'python3 "/Users/hem/Developer/My Project/.claude/hooks/session_start.py"'
     )
     assert anchored == f'python3 "{PLACEHOLDER}/.claude/hooks/session_start.py"'
+
+
+def test_unquoted_absolute_path_with_space_is_anchored():
+    """Der historische Normalfall: absoluter Pfad MIT Leerzeichen, OHNE Quotes.
+
+    Genau so hat die alte `setup.py` geschrieben (`f"python3 {h}"`, h absolut,
+    ungequotet). Ein halb ersetzter Pfad ist schlimmer als gar keiner: Das
+    Kommando laeuft dann auf den Ordner vor dem Leerzeichen und der richtige
+    Pfad landet als Argument — und das Werkzeug meldet trotzdem Erfolg.
+    """
+    anchored = _anchor_command(
+        "python3 /Users/hem/Developer/Meditationstimer iOS/.claude/hooks/foo.py"
+    )
+
+    assert anchored == f'python3 "{PLACEHOLDER}/.claude/hooks/foo.py"'
+    assert shlex.split(anchored) == [
+        "python3", f"{PLACEHOLDER}/.claude/hooks/foo.py"
+    ]
+
+
+def test_unquoted_absolute_path_with_space_keeps_arguments():
+    """Derselbe Fall mit Zusatzargument — genau zwei Tokens plus Argument."""
+    anchored = _anchor_command(
+        "python3 /Users/hem/My Projekt/.claude/hooks/qa_gate.py --hook-mode"
+    )
+
+    assert shlex.split(anchored) == [
+        "python3", f"{PLACEHOLDER}/.claude/hooks/qa_gate.py", "--hook-mode"
+    ]
+
+
+def test_command_is_never_left_with_a_path_fragment():
+    """Kein Rest des alten Pfads bleibt als eigenes Token stehen."""
+    for raw in (
+        "python3 /Users/hem/Developer/Meditationstimer iOS/.claude/hooks/foo.py",
+        'python3 "/Users/hem/Developer/Meditationstimer iOS/.claude/hooks/foo.py"',
+        "python3 ./relativ mit luecke/.claude/hooks/foo.py",
+        "python3 .claude/hooks/foo.py",
+    ):
+        tokens = shlex.split(_anchor_command(raw))
+        assert tokens == ["python3", f"{PLACEHOLDER}/.claude/hooks/foo.py"], raw
+
+
+def test_absolute_interpreter_survives():
+    """Ist der Interpreter selbst absolut geschrieben, bleibt er stehen.
+
+    Adversary-Befund F004: Die links-verankerte Suche begann beim ERSTEN Token
+    mit Pfad-Sigel — das war dann `/usr/bin/python3`, und der Interpreter wurde
+    mitverschluckt. Das Kommando haengt danach am Ausfuehrbar-Bit der Hook-Datei
+    statt an Python. Dafuer braucht es nicht einmal ein Leerzeichen im Pfad.
+    """
+    anchored = _anchor_command("/usr/bin/python3 /Users/hem/Projekt/.claude/hooks/x.py")
+
+    assert shlex.split(anchored) == [
+        "/usr/bin/python3", f"{PLACEHOLDER}/.claude/hooks/x.py"
+    ]
+
+
+def test_absolute_interpreter_with_env_prefix_and_argument():
+    """Env-Praefix, absoluter Interpreter und Argument bleiben vollstaendig."""
+    anchored = _anchor_command(
+        "WF=1 /usr/bin/python3 /Users/hem/Projekt/.claude/hooks/x.py --flag"
+    )
+
+    assert shlex.split(anchored) == [
+        "WF=1", "/usr/bin/python3", f"{PLACEHOLDER}/.claude/hooks/x.py", "--flag"
+    ]
+
+
+def test_absolute_argument_before_the_hook_path_survives():
+    """Ein absolutes Argument VOR dem Hook-Pfad wird nicht einverleibt."""
+    anchored = _anchor_command(
+        "python3 /usr/bin/wrapper /pfad mit luecke/.claude/hooks/x.py"
+    )
+
+    assert shlex.split(anchored) == [
+        "python3", "/usr/bin/wrapper", f"{PLACEHOLDER}/.claude/hooks/x.py"
+    ]
+
+
+@pytest.mark.parametrize("raw", [
+    "python3 /Users/hem/env foo/.claude/hooks/x.py",
+    "python3 /Users/hem/node modules/.claude/hooks/x.py",
+    "python3 /Users/hem/python3 experimente/.claude/hooks/x.py",
+])
+def test_directory_named_like_an_interpreter_is_part_of_the_path(raw):
+    """Ein Ordner, der heisst wie ein Interpreter, ist trotzdem ein Ordner.
+
+    Adversary-Befund F006: Die Interpreter-Erkennung lief auf JEDES Token der
+    Linkserweiterung. Ein Pfad wie `/Users/hem/env foo/…` brach deshalb
+    auseinander — `/Users/hem/env` blieb als eigenes Token stehen, und Python
+    versuchte diesen Ordner als Skript auszufuehren. Der Interpreter ist immer
+    der Kopf des Aufrufs, nie ein Stueck mitten im Pfad.
+    """
+    anchored = _anchor_command(raw)
+
+    assert shlex.split(anchored) == [
+        "python3", f"{PLACEHOLDER}/.claude/hooks/x.py"
+    ]
+
+
+def test_bare_path_with_space_and_no_interpreter():
+    """Kommando ohne Interpreter: der ganze Pfad ist das Kommando."""
+    anchored = _anchor_command("/Users/hem/My Projekt/.claude/hooks/x.py")
+
+    assert shlex.split(anchored) == [f"{PLACEHOLDER}/.claude/hooks/x.py"]
+
+
+def test_absolute_interpreter_with_relative_spaced_path():
+    """Absoluter Interpreter, Pfad mit Leerzeichen ohne Sigel: kein Rest."""
+    anchored = _anchor_command("/usr/bin/python3 My Projekt/.claude/hooks/x.py")
+
+    assert shlex.split(anchored) == [
+        "/usr/bin/python3", f"{PLACEHOLDER}/.claude/hooks/x.py"
+    ]
+
+
+def test_tab_separated_prefix_survives():
+    """Tabulator statt Leerzeichen vor dem Aufruf-Kopf.
+
+    Adversary-Befund F008: `_head_start` trennte nur an Leerzeichen, der Rest
+    des Codes auch an Tabulatoren. Die beiden Zaehlungen liefen auseinander,
+    der Kopf wurde nie erkannt, und die Linkssuche loeschte Env-Praefix und
+    Interpreter gleich mit.
+    """
+    anchored = _anchor_command("WF=1\tpython3 foo/.claude/hooks/x.py")
+
+    assert shlex.split(anchored) == [
+        "WF=1", "python3", f"{PLACEHOLDER}/.claude/hooks/x.py"
+    ]
+
+
+def test_left_scan_stops_at_a_shell_separator():
+    """Die Linkssuche laeuft nicht ueber einen Shell-Operator hinweg.
+
+    Adversary-Befund F009: Ohne Grenze verschluckte die Suche alles bis zum
+    naechsten Pfad-Sigel — bei `echo hi; python3 bar/…` auch `hi; python3`.
+    """
+    anchored = _anchor_command("echo hi; python3 bar/.claude/hooks/a.py")
+
+    assert anchored == (
+        f'echo hi; python3 "{PLACEHOLDER}/.claude/hooks/a.py"'
+    )
+
+
+def test_unbalanced_quotes_leave_the_command_untouched():
+    """Unpaarige Anfuehrungszeichen: nicht anfassen, statt kaputt zu machen.
+
+    Adversary-Befund F007: Das fuehrende Quote blieb stehen, die Ersetzung
+    brachte ihr eigenes mit — das Ergebnis war nicht mehr zerlegbar. Was nicht
+    verlaesslich gelesen werden kann, wird nicht umgeschrieben.
+    """
+    raw = 'python3 "/Users/hem/My Projekt/.claude/hooks/x.py'
+
+    assert _anchor_command(raw) == raw
+
+
+def test_shell_separator_after_the_path_survives():
+    """Ein Trennzeichen direkt hinter dem Pfad bleibt stehen.
+
+    Die v2-Wrapper-Form endet mit `…/foo.py; fi`. Wird das Semikolon als Teil
+    des Pfads verschluckt, entsteht `then python3 "…" fi` — syntaktisch kaputt.
+    """
+    raw = ("if [ -f /Users/hem/P/.claude/hooks/foo.py ]; "
+           "then python3 /Users/hem/P/.claude/hooks/foo.py; fi")
+
+    anchored = _anchor_command(raw)
+
+    assert anchored == (
+        f'if [ -f "{PLACEHOLDER}/.claude/hooks/foo.py" ]; '
+        f'then python3 "{PLACEHOLDER}/.claude/hooks/foo.py"; fi'
+    )
+
+
+def test_preexisting_empty_entry_is_left_alone():
+    """Ein Eintrag, der schon vorher leer war, wird nicht mitentfernt.
+
+    Adversary-Befund F005: Das Aufraeumen griff breiter als noetig und nur im
+    Apply-Lauf — der Trockenlauf sagte es nicht voraus.
+    """
+    settings = {"hooks": {"PreToolUse": [
+        {"matcher": "Bash", "hooks": []},
+        {"matcher": "Nix"},
+        {"matcher": "Edit|Write", "hooks": [
+            {"command": "python3 .claude/hooks/session_start.py"}
+        ]},
+    ]}}
+
+    _patch_settings(settings, dry_run=False)
+
+    assert [e.get("matcher") for e in settings["hooks"]["PreToolUse"]] == [
+        "Bash", "Nix", "Edit|Write"
+    ]
+
+
+def test_dry_run_and_apply_report_the_same_changes():
+    """Vorschau und Anwendung melden dasselbe — sonst ist die Vorschau wertlos."""
+    def _fresh():
+        return {"hooks": {"PreToolUse": [
+            {"matcher": "Edit|Write", "hooks": [
+                {"command": "python3 .claude/hooks/edit_gate.py"}
+            ]},
+            {"matcher": "Bash", "hooks": [
+                {"command": "python3 .claude/hooks/session_start.py"}
+            ]},
+        ]}}
+
+    preview = _patch_settings(_fresh(), dry_run=True)
+    applied = _patch_settings(_fresh(), dry_run=False)
+
+    assert preview == applied
+
+
+def test_emptied_hook_entry_is_pruned():
+    """Wird der letzte Hook eines Eintrags entfernt, bleibt kein leerer Rumpf."""
+    settings = _settings_with("python3 .claude/hooks/edit_gate.py")
+
+    _patch_settings(settings, dry_run=False)
+
+    assert settings["hooks"]["PreToolUse"] == []
+
+
+def test_entry_with_remaining_hooks_is_kept():
+    """Ein Eintrag mit verbleibendem Hook behaelt Matcher und Inhalt."""
+    settings = _settings_with("python3 .claude/hooks/edit_gate.py",
+                              "python3 .claude/hooks/session_start.py")
+
+    _patch_settings(settings, dry_run=False)
+
+    entry = settings["hooks"]["PreToolUse"][0]
+    assert entry["matcher"] == "Bash"
+    assert len(entry["hooks"]) == 1
 
 
 def test_rewrite_is_idempotent():

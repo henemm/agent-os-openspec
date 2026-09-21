@@ -239,12 +239,114 @@ def _migrate_command(command: str) -> str | None:
     return None
 
 
-# Pfad-Token eines Hook-Kommandos, das auf .claude/hooks/<datei>.py zeigt —
-# in Anfuehrungszeichen (Pfad darf dann Leerzeichen enthalten) oder nackt.
-_HOOK_PATH_RE = re.compile(
-    r"""(?P<q>["'])(?P<qpath>[^"']*\.claude/hooks/(?P<qname>[\w.\-]+\.py))(?P=q)"""
-    r"""|(?P<path>\S*\.claude/hooks/(?P<name>[\w.\-]+\.py))"""
-)
+# Die Hook-Datei selbst — der einzige zuverlaessige Ankerpunkt im Kommando.
+_HOOK_FILE_RE = re.compile(r"\.claude/hooks/(?P<name>[\w.\-]+\.py)")
+
+# Ein Token, das damit beginnt, ist ein Pfad-Anfang und nichts anderes.
+_PATH_SIGILS = ("/", "~/", "./", "../")
+
+# Basisnamen, die als Interpreter gelten. Diese Liste wird AUSSCHLIESSLICH auf
+# den Kopf des Aufrufs angewandt — das erste Token nach etwaigen
+# Env-Zuweisungen. Sie auf jedes Token der Linkserweiterung anzuwenden war
+# Adversary-Befund F006: Ein Ordner, der `env`, `node` oder `python3` heisst,
+# beendete die Suche mitten im Pfad, und der Teil davor blieb als eigenes Token
+# stehen. Der Interpreter steht am Anfang des Kommandos, nie mitten im Pfad.
+_INTERPRETERS = {
+    "python", "python2", "python3", "sh", "bash", "zsh", "env",
+    "node", "ruby", "perl",
+}
+
+# Vorangestellte Env-Zuweisung (`WF=1 python3 …`) — gehoert zum Praefix, nicht
+# zum Aufruf-Kopf.
+_ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+# Token, ueber das die Linkssuche nie hinweglaeuft: Shell-Operator oder
+# Schalter. Beides gehoert nie zu einem Dateipfad.
+_STOP_TOKEN_RE = re.compile(r"[;&|()<>]|^-")
+
+
+def _token_start(text: str, index: int) -> int:
+    """Anfang des Tokens (Leerraum- und Quote-frei), das `index` enthaelt."""
+    start = index
+    while start > 0 and text[start - 1] not in " \t\"'":
+        start -= 1
+    return start
+
+
+def _head_start(command: str) -> int:
+    """Position des Aufruf-Kopfs — erstes Token, das keine Env-Zuweisung ist.
+
+    Trennt an Leerraum, nicht nur an Leerzeichen: Eine eigene Tokenisierung
+    lief hier bei einem Tabulator gegen die des uebrigen Codes, der Kopf wurde
+    nie erkannt, und die Linkssuche loeschte Praefix und Interpreter gleich mit
+    (Adversary-Befund F008).
+    """
+    for token in re.finditer(r"\S+", command):
+        if not _ENV_ASSIGNMENT_RE.match(token.group(0)):
+            return token.start()
+    return 0
+
+
+def _is_interpreter(token: str) -> bool:
+    return token.strip("\"'").rsplit("/", 1)[-1] in _INTERPRETERS
+
+
+def _path_span(command: str, match: re.Match) -> "tuple[int, int]":
+    """Anfang und Ende des Pfads, zu dem die gefundene Hook-Datei gehoert.
+
+    Von RECHTS aufgebaut: Die Hook-Datei ist der sichere Anker, der Anfang wird
+    tokenweise nach links gesucht. Links zu beginnen ginge schief, sobald der
+    Interpreter selbst absolut geschrieben ist (`/usr/bin/python3 …`) — dann
+    waere er das erste Token mit Pfad-Sigel und wuerde mitverschluckt
+    (Adversary-Befund F004).
+
+    Erweitert wird, bis ein Token mit Pfad-Sigel den Anfang markiert. Der Kopf
+    des Aufrufs (erstes Token nach Env-Zuweisungen) wird nur dann einbezogen,
+    wenn er selbst ein Pfad ist UND kein Interpreter — `/usr/bin/python3` ist
+    der Aufrufer, `/Users/hem/My` der Anfang eines Pfads.
+
+    Das ENDE ist immer das Ende der Hook-Datei. Bis zum naechsten Leerzeichen
+    weiterzulaufen wuerde ein angehaengtes Trennzeichen mitverschlucken: aus
+    `… python3 /p/.claude/hooks/x.py; fi` wuerde `… python3 "…" fi`.
+    """
+    end = match.end()
+    start = _token_start(command, match.start())
+
+    token = command[start:end]
+    # Normalfall `.claude/hooks/x.py` und jeder Pfad, der selbst mit einem
+    # Sigel beginnt: das Token IST der Pfad, keine Erweiterung noetig.
+    if token.startswith(_PATH_SIGILS) or token == match.group(0):
+        return start, end
+
+    # Sonst kann der Pfad ueber Leerzeichen reichen (`/Users/My Projekt/…`).
+    # Nach links, Token fuer Token, bis ein Sigel-Token den Anfang markiert.
+    head_start = _head_start(command)
+    cursor = start
+    while cursor > 0 and command[cursor - 1] in " \t":
+        prev_end = cursor - 1
+        while prev_end > 0 and command[prev_end - 1] in " \t":
+            prev_end -= 1
+        prev_start = _token_start(command, prev_end - 1)
+        prev_token = command[prev_start:prev_end]
+        if not prev_token:
+            break
+        if prev_start == head_start:
+            # Der Kopf des Aufrufs. Ein Interpreter bleibt draussen, ein Pfad
+            # gehoert dazu (Kommando ohne Interpreter, direkt ausgefuehrt).
+            if prev_token.startswith(_PATH_SIGILS) and not _is_interpreter(prev_token):
+                return prev_start, end
+            break
+        if prev_token.startswith(_PATH_SIGILS):
+            return prev_start, end
+        # Grenzen der Suche: Ein Shell-Operator, ein Schalter oder ein
+        # Interpreter mitten im Kommando gehoert nie zu einem Pfad. Ohne diese
+        # Grenze lief die Suche bis zum naechsten Sigel durch und verschluckte
+        # fremde Kommandoteile (Adversary-Befund F009).
+        if _STOP_TOKEN_RE.search(prev_token) or _is_interpreter(prev_token):
+            break
+        cursor = prev_start
+
+    return cursor, end
 
 
 def _anchor_command(command: str) -> str:
@@ -256,15 +358,38 @@ def _anchor_command(command: str) -> str:
     Unterordner steht — gemeldet aus Meditationstimer, Issue #165. Ein
     eingebackener absoluter Pfad bricht beim Verschieben des Projekts.
 
-    Praefixe (Env-Zuweisungen), Zusatzargumente und Shell-Huellen bleiben
-    erhalten: ersetzt wird nur das Pfad-Token. Idempotent — ein bereits
-    verankertes Kommando wird zeichengleich neu aufgebaut.
-    """
-    def _replace(match: re.Match) -> str:
-        name = match.group("qname") or match.group("name")
-        return f'"{PROJECT_DIR_PLACEHOLDER}/.claude/hooks/{name}"'
+    Interpreter, Env-Praefixe, Zusatzargumente und Shell-Huellen bleiben
+    erhalten: ersetzt wird nur der Pfad. Umschliessende Anfuehrungszeichen
+    werden mit ersetzt, damit keine verwaisten Quotes zurueckbleiben.
+    Idempotent — ein bereits verankertes Kommando wird zeichengleich neu
+    aufgebaut.
 
-    return _HOOK_PATH_RE.sub(_replace, command)
+    Ein Kommando mit unpaarigen Anfuehrungszeichen wird unveraendert
+    zurueckgegeben (Adversary-Befund F007). Was nicht verlaesslich gelesen
+    werden kann, wird nicht umgeschrieben — ein halb ersetztes Kommando waere
+    schlimmer als das unreparierte.
+    """
+    if command.count('"') % 2 or command.count("'") % 2:
+        return command
+
+    result = []
+    cursor = 0
+    for match in _HOOK_FILE_RE.finditer(command):
+        if match.start() < cursor:
+            continue  # bereits von einer vorherigen Ersetzung abgedeckt
+        start, end = _path_span(command, match)
+        # Umschliessende Anfuehrungszeichen mitnehmen
+        if start > 0 and command[start - 1] in "\"'" and end < len(command) \
+                and command[end] == command[start - 1]:
+            start -= 1
+            end += 1
+        result.append(command[cursor:start])
+        result.append(
+            f'"{PROJECT_DIR_PLACEHOLDER}/.claude/hooks/{match.group("name")}"'
+        )
+        cursor = end
+    result.append(command[cursor:])
+    return "".join(result)
 
 
 def _patch_settings(settings: dict, dry_run: bool) -> list[tuple[str, str, str]]:
@@ -275,6 +400,7 @@ def _patch_settings(settings: dict, dry_run: bool) -> list[tuple[str, str, str]]
     """
     changes = []
     for event_name, event_entries in settings.get("hooks", {}).items():
+        emptied = []
         for entry in event_entries:
             hooks_list = entry.get("hooks", [])
             to_remove = []
@@ -289,9 +415,25 @@ def _patch_settings(settings: dict, dry_run: bool) -> list[tuple[str, str, str]]
                     changes.append((event_name, old_cmd, new_cmd))
                     if not dry_run:
                         hook["command"] = new_cmd
-            if to_remove and not dry_run:
-                for h in to_remove:
-                    hooks_list.remove(h)
+            if to_remove:
+                # Nur Eintraege, aus denen DIESER Lauf den letzten Hook nimmt.
+                # Schon vorher leere Eintraege bleiben, wo sie sind: Das
+                # Werkzeug raeumt nur auf, was es selbst geleert hat, und es
+                # meldet das auch im Trockenlauf (Adversary-Befund F005).
+                if len(to_remove) == len(hooks_list):
+                    matcher = entry.get("matcher", "")
+                    label = f'<leerer Eintrag: {matcher}>' if matcher \
+                        else "<leerer Eintrag>"
+                    changes.append((event_name, label, "<removed>"))
+                    emptied.append(entry)
+                if not dry_run:
+                    for h in to_remove:
+                        hooks_list.remove(h)
+        if not dry_run and emptied:
+            event_entries[:] = [
+                e for e in event_entries
+                if not any(e is dead for dead in emptied)
+            ]
     return changes
 
 
