@@ -2,7 +2,7 @@
 
 > **Meta-Projekt**: Dies ist das zentrale Framework-Repository, das abstraktes Projekt- und Workflow-Wissen konsolidiert. Alle Projekte können Improvements hierher zurückführen und von Verbesserungen aus anderen Projekten profitieren.
 
-**Version**: 3.26.6
+**Version**: 3.26.7
 
 ## Projektzweck
 
@@ -342,6 +342,8 @@ Reboot. Bestandsproblem, kein Regressionsschaden.
 ### Hook-Entwicklung
 
 Checks, die zum Phase-/TDD-/Commit-Gate gehoeren, kommen IN die 4 Kern-Hooks (`edit_gate.py`, `bash_gate.py`, `post_bash.py`, `phase_listener.py`), nicht als separate Dateien. Ein eigenstaendiger neuer Hook (wie `secrets_guard.py`, `worktree_write_guard.py`) ist nur gerechtfertigt, wenn der Check ein eigenes Event/eigene Matcher-Kombination braucht oder unabhaengig von den Kern-Gates greifen muss (z.B. Session-/Worktree-Enforcement). Neue Hooks IMMER in `hooks/hooks.json` registrieren. Modul-spezifische Hooks werden via `modules/<name>/config.yaml` → `hooks:` registriert.
+
+**Hook-Pfade niemals cwd-relativ (#165).** Hook-Kommandos laufen im *aktuellen* Arbeitsverzeichnis der Sitzung, nicht im Projekt-Root ([Doku](https://code.claude.com/docs/en/hooks)). `python3 .claude/hooks/x.py` bricht deshalb, sobald die Sitzung in einem Unterordner steht — im Plugin `${CLAUDE_PLUGIN_ROOT}/...`, in Projekt-`settings.json` `python3 "${CLAUDE_PROJECT_DIR}/.claude/hooks/x.py"` (Anfuehrungszeichen Pflicht: Projektordner duerfen Leerzeichen enthalten).
 
 ```python
 # Modul-Hook schreiben — nutze hook_utils fuer Bootstrap:

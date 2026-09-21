@@ -5,6 +5,23 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.26.7] - 2026-09-21
+
+### Documentation
+
+**Hook-Pfad-Konvention dokumentiert (#165)**
+
+- `CLAUDE.md` → „Hook-Entwicklung": Hook-Kommandos laufen im aktuellen
+  Arbeitsverzeichnis der Sitzung, nicht im Projekt-Root. Cwd-relative Pfade
+  sind damit verboten; im Plugin gilt `${CLAUDE_PLUGIN_ROOT}`, in
+  Projekt-`settings.json` `python3 "${CLAUDE_PROJECT_DIR}/.claude/hooks/x.py"`
+  — mit Anfuehrungszeichen, weil Projektordner Leerzeichen enthalten duerfen.
+  Die Regel stand bisher nirgends; der Fehler aus #165 konnte deshalb jahrelang
+  unbemerkt weitergegeben werden.
+- `README.md`: Der Abschnitt zu `migrate_to_plugin.py` nennt jetzt auch, dass
+  projekteigene Hook-Kommandos erhalten und neu verankert werden, und empfiehlt
+  den Trockenlauf vor `--apply`.
+
 ## [3.26.6] - 2026-09-21
 
 ### Fixed
