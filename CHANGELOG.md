@@ -5,6 +5,51 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.26.3] - 2026-09-21
+
+### Fixed
+
+**Hook-Kommandos mit cwd-relativem Pfad brechen jede Nachricht ab (#165)**
+
+Gemeldet aus `Meditationstimer`: Jede Nutzer-Nachricht brach ab mit
+
+```
+UserPromptSubmit operation blocked by hook: [python3 .claude/hooks/phase_listener.py]:
+can't open file '.../Meditationstimer iOS/Media/.claude/hooks/phase_listener.py':
+[Errno 2] No such file or directory
+```
+
+Es hat nichts blockiert — Python fand die Datei nicht. Hook-Kommandos laufen im
+**aktuellen Arbeitsverzeichnis** der Sitzung, nicht im Projekt-Root
+(https://code.claude.com/docs/en/hooks). Stand die Sitzung in einem Unterordner
+(hier: `Meditationstimer iOS/Media`), zeigte der relative Pfad ins Leere.
+Vorgesehen ist dafuer `${CLAUDE_PROJECT_DIR}`.
+
+Nachgestellt mit identischer Fehlermeldung:
+`cd "<projekt>/Meditationstimer iOS/Media" && python3 .claude/hooks/phase_listener.py`.
+
+Betroffen waren drei Bestandsprojekte (`Meditationstimer`, `my-daily-sprints`,
+`gregor-zwanzig`) aus einer aelteren `setup.py`-Fassung, die den uebergebenen
+Projektpfad nicht aufloeste.
+
+- `setup.py` → `collect_hooks()` erzeugt Hook-Kommandos jetzt als
+  `python3 "${CLAUDE_PROJECT_DIR}/.claude/hooks/<x>.py"` statt mit
+  eingebackenem absolutem Pfad. Der backte den Projektort fest ein (bricht beim
+  Verschieben/Umbenennen) und stand ohne Anfuehrungszeichen da — Ordner mit
+  Leerzeichen wie `Meditationstimer iOS` brachen daran ebenfalls.
+- `migrate_to_plugin.py` → neues `_anchor_command()` schreibt **verbleibende,
+  projekteigene** Hook-Kommandos auf die Platzhalter-Form um, statt sie mit
+  kaputtem Pfad stehen zu lassen. Bisher entfernte das Werkzeug nur die
+  Plugin-Hooks; ein projekteigener Hook wie `session_start.py` blieb relativ,
+  der Abbruch waere also nach der Migration wiedergekommen. Praefixe
+  (Env-Zuweisungen), Zusatzargumente und Shell-Huellen bleiben erhalten,
+  absolute Pfade werden mitverankert, der Umbau ist idempotent.
+- `migrate_to_plugin.py` nimmt jetzt auch `settings.local.json` mit, sofern dort
+  Hooks registriert sind. Der `permissions`-Abschnitt bleibt unberuehrt.
+- `PROJECT_DIR_PLACEHOLDER` in `setup.py` als einzige Quelle der Schreibweise.
+- Regressionstests: `tests/test_hook_paths_project_dir_165.py` (14 Tests, ein
+  Test je Punkt der Spec plus der gemeldete Fall).
+
 ## [3.26.2] - 2026-09-21
 
 ### Fixed

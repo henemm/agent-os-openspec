@@ -47,6 +47,12 @@ MODULES_DIR = FRAMEWORK_ROOT / "modules"
 TEMPLATES_DIR = FRAMEWORK_ROOT / "templates"
 SCRIPTS_DIR = FRAMEWORK_ROOT / "scripts"
 
+# Von Claude Code in Hook-Kommandos ersetzt: Projekt-Root, in dem die Sitzung
+# gestartet ist. Einzige verlaessliche Verankerung fuer Hook-Pfade — Hooks
+# laufen im aktuellen Arbeitsverzeichnis, nicht im Projekt-Root (Issue #165).
+# Wird auch von migrate_to_plugin.py importiert: eine Quelle fuer die Schreibweise.
+PROJECT_DIR_PLACEHOLDER = "${CLAUDE_PROJECT_DIR}"
+
 # Im Plugin-Modus darf `framework_version.json` KEINE Versionsnummer nennen.
 # Sie waere die Version des setup.py, das zufaellig gerade lief: danach laufen
 # alle Aktualisierungen ueber `claude plugin update`, und das ruehrt die Datei
@@ -311,11 +317,21 @@ def generate_settings_json(project_path: Path, modules: list):
             print(f"  WARNING: Could not load hooks from {module_name}: {e}")
 
     def collect_hooks(order: list) -> list:
+        """Hook-Kommando-Pfade, verankert an ${CLAUDE_PROJECT_DIR} (Issue #165).
+
+        Hook-Kommandos laufen im AKTUELLEN Arbeitsverzeichnis der Sitzung, nicht
+        im Projekt-Root (https://code.claude.com/docs/en/hooks). Ein relativer
+        Pfad zeigt deshalb ins Leere, sobald die Sitzung in einem Unterordner
+        steht; ein eingebackener absoluter Pfad bricht beim Verschieben oder
+        Umbenennen des Projekts. Der Platzhalter loest beides. Die doppelten
+        Anfuehrungszeichen sind Pflicht — Projektordner duerfen Leerzeichen
+        enthalten (z.B. "Meditationstimer iOS").
+        """
         result = []
         for hook_name in order:
             hook_path = hooks_dir / hook_name
             if hook_path.exists():
-                result.append(str(hook_path))
+                result.append(f'"{PROJECT_DIR_PLACEHOLDER}/.claude/hooks/{hook_name}"')
         return result
 
     edit_write_hooks = collect_hooks(CORE_EDIT_WRITE + module_edit)
