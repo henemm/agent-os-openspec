@@ -222,6 +222,10 @@ def status_note(data: dict) -> "str | None":
         "Nenne diesen Schritt in jeder Arbeitsstandsmeldung als Pflicht — nie als "
         "„bei Bedarf“ oder „optional“; Empfehlungen zu /clear oder Token-Kosten "
         "stehen nie darüber.\n"
+        "Kennzeichne für den PO, wer am Zug ist: „❗ Du: <Schritt>“, wenn der PO "
+        "ihn tippen oder entscheiden muss — „ℹ️ Nichts zu tun: <Claude arbeitet / "
+        "wartet auf …> — danach: <Schritt>“, wenn Claude gerade selbst arbeitet "
+        "oder wartet.\n"
         "„fertig“/„abgeschlossen“/„erledigt“ gilt für den Workflow erst ab "
         "phase8_complete."
     )
