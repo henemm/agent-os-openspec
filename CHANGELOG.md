@@ -5,6 +5,45 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.26.2] - 2026-09-21
+
+### Fixed
+
+**`migrate_to_plugin.py --apply` löschte projekteigene Befehle (#160)**
+
+`_find_removable_command_files` hielt jede `.claude/commands/<name>.md` für eine „legacy
+duplicate", sobald ein Plugin-Skill gleichen Namens existierte. Einzige Schutzvorrichtung war der
+`openspec-alias:`-Marker, den nur generierte Kurz-Aliase tragen. Der Docstring versprach
+ausdrücklich *„never touch project-specific custom commands"* — der Code hielt das nicht.
+
+Gemessen gegen gregor_zwanzig: Das Werkzeug meldete `.claude/commands/70-deploy.md` als
+entfernbar. Das ist die vollständige Produktions-Deploy-Prozedur des Projekts, die in ihrer
+zweiten Zeile selbst sagt, dass sie das generische Template ersetzt. `70-deploy` ist laut CLAUDE.md
+ausdrücklich ein projektspezifisches Template, das angepasst werden **muss** — die angepasste
+Fassung ist also der vorgesehene Normalzustand und war genau das Löschziel.
+
+- `migrate_to_plugin._classify_command_files()` trennt nachweisliche Kopien von abweichenden
+  Dateien. Entfernt wird nur noch, was nach `_normalize_command_text()` (ohne Alias-Kommentar,
+  ohne Versions-Marker, ohne Leerraum-Rauschen) inhaltsgleich zum ausgelieferten Skill ist.
+- Abweichende Dateien bleiben stehen und werden im Bericht mit Grund genannt, statt
+  stillschweigend zu verschwinden.
+- `_find_removable_command_files()` bleibt als Name erhalten und liefert die erste Liste.
+- `tests/test_migrate_custom_commands_160.py`: 10 neue Tests.
+- `tests/test_migrate_command_cleanup.py`: zwei Bestandstests benutzten den Platzhalter `"legacy"`
+  als Dateiinhalt und prüften damit die alte Regel „Name genügt". Ihre Aussage bleibt unverändert,
+  die Fixtures benutzen jetzt echten Skill-Inhalt.
+
+**Kein Ähnlichkeitsmaß — bewusst.** An echten Daten gemessen (Plugin 3.26.1) streuen Alt-Kopien
+(`/var/www/henemm`, Framework 3.3.0) zwischen 0.221 und 0.640 Ähnlichkeit, eine echte Anpassung
+(gregor `70-deploy`) lag bei 0.028. Eine Schwelle dazwischen wäre aus zwei Stichproben geraten.
+Für eine **löschende** Operation sind die Fehlerkosten asymmetrisch: eine übersehene Doppelung
+kostet einen Eintrag in der Befehlsliste, eine fälschlich gelöschte Datei eine Produktionsprozedur
+— und der Verlust fällt erst beim nächsten Deploy auf.
+
+**Folge:** Das Werkzeug räumt weniger auf. Alte, abweichende Kopien bleiben liegen und werden
+berichtet. Beabsichtigt: es hört auf, an Stelle des Menschen zu entscheiden, und verliert dafür
+die Fähigkeit, unbemerkt Schaden anzurichten.
+
 ## [3.26.1] - 2026-09-20
 
 ### Fixed
