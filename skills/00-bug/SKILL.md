@@ -141,7 +141,7 @@ $WF finish
 Beende deine letzte Nachricht in diesem Befehl mit diesen zwei Zeilen, in dieser Reihenfolge:
 
 Workflow `<name>` · Phase `<x>` von 8 · Nächster Pflicht-Schritt: `/<befehl> #<N>`
-⚙ /00-bug · agent-os-openspec 3.26.5
+⚙ /00-bug · agent-os-openspec 3.26.7
 
 Die Statuszeile übernimmst du aus dem Hinweis `[agent-os-openspec] AKTIVER WORKFLOW …`, den der Hook bei jeder Nachricht mitliefert — Phase und Schritt wörtlich von dort. Fehlt der Hinweis (kein Workflow oder `phase8_complete`), entfällt die Statuszeile.
 

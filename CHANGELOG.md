@@ -24,6 +24,108 @@ Das Muster ist jetzt `\.env(rc)?\b`: Wortgrenze nach `env`. `.env`, `.env.local`
 zwischen `v` und `i` keine Wortgrenze und faellt heraus. Die README-Vorlage fuer
 `secrets_guard.sensitive_patterns` zeigt das neue Muster.
 
+## [3.26.7] - 2026-09-21
+
+### Documentation
+
+**Hook-Pfad-Konvention dokumentiert (#165)**
+
+- `CLAUDE.md` → „Hook-Entwicklung": Hook-Kommandos laufen im aktuellen
+  Arbeitsverzeichnis der Sitzung, nicht im Projekt-Root. Cwd-relative Pfade
+  sind damit verboten; im Plugin gilt `${CLAUDE_PLUGIN_ROOT}`, in
+  Projekt-`settings.json` `python3 "${CLAUDE_PROJECT_DIR}/.claude/hooks/x.py"`
+  — mit Anfuehrungszeichen, weil Projektordner Leerzeichen enthalten duerfen.
+  Die Regel stand bisher nirgends; der Fehler aus #165 konnte deshalb jahrelang
+  unbemerkt weitergegeben werden.
+- `README.md`: Der Abschnitt zu `migrate_to_plugin.py` nennt jetzt auch, dass
+  projekteigene Hook-Kommandos erhalten und neu verankert werden, und empfiehlt
+  den Trockenlauf vor `--apply`.
+
+## [3.26.6] - 2026-09-21
+
+### Fixed
+
+**Reparatur zerlegte ungequotete absolute Pfade mit Leerzeichen (#165, Adversary-Befund F001)**
+
+Vom Adversary-Agenten in der Gegenpruefung zu 3.26.3 gefunden und unabhaengig
+nachgestellt. `_anchor_command()` ersetzte bei einem ungequoteten absoluten Pfad
+mit Leerzeichen nur das Stueck hinter der letzten Luecke:
+
+```
+vorher : python3 /Users/hem/Developer/Meditationstimer iOS/.claude/hooks/foo.py
+nachher: python3 /Users/hem/Developer/Meditationstimer "${CLAUDE_PROJECT_DIR}/.claude/hooks/foo.py"
+```
+
+Das Kommando zerfaellt damit in drei Tokens: Python wird der Ordner *vor* der
+Luecke als Skript uebergeben, der richtige Pfad nur noch als Argument. Der Hook
+lief danach genauso wenig wie vorher — und das Werkzeug meldete Erfolg. Genau
+diese Form hat die alte `setup.py` jahrelang erzeugt (`f"python3 {h}"` mit
+absolutem, ungequotetem `h`), und `Meditationstimer iOS` ist der Beispielordner
+der Spec selbst.
+
+Die erste Behebung tauschte den Befund gegen einen groesseren ein (F004,
+CRITICAL, in Adversary-Runde 2 gefunden): Ein Zweig, der beim ersten Token mit
+Pfad-Sigel begann, verschluckte den Interpreter, sobald dieser selbst absolut
+geschrieben war — `/usr/bin/python3 /pfad/.claude/hooks/x.py` wurde zu
+`"${CLAUDE_PROJECT_DIR}/.claude/hooks/x.py"`, ohne Interpreter. Dafuer brauchte
+es nicht einmal ein Leerzeichen. Der Weg von links ist grundsaetzlich falsch.
+
+- `_anchor_command()` bestimmt den Pfad jetzt **von rechts**: Anker ist die
+  Hook-Datei, von dort wird tokenweise nach links gesucht und beim ersten Token
+  mit Pfad-Sigel gestoppt. Ein Interpreter-Basisname (`python3`, `sh`, `env`, …)
+  beendet die Suche ohne Erweiterung. Das Ende ist immer das Ende der Hook-Datei
+  — bis zum naechsten Leerzeichen zu laufen verschluckte in der ungequoteten
+  v2-Wrapper-Form das angehaengte `;` (bei der eigenen Randfallpruefung nach dem
+  Umbau gefunden).
+- `_patch_settings()` entfernt Eintraege, deren letzter Hook entfernt wurde
+  (F002) — aber nur die, die DIESER Lauf geleert hat, und meldet das auch im
+  Trockenlauf (F005): Vorschau und Anwendung liefern dieselbe Aenderungsliste.
+  Schon vorher leere Eintraege bleiben unangetastet.
+- Nicht behoben, bewusst: F003 (LOW) — ein `.claude/hooks/*.py` in einem
+  angehaengten Shell-Kommentar wird mit umgeschrieben. Begruendung in der Spec
+  unter „Out of Scope"; die Umschreibung bleibt dabei funktional korrekt.
+Adversary-Runde 3 fand den naechsten Riss derselben Wurzel (F006, CRITICAL):
+Die Interpreter-Erkennung lief auf JEDES Token der Linkssuche. Ein Ordner, der
+`env`, `node` oder `python3` heisst, beendete die Suche mitten im Pfad:
+
+```
+vorher : python3 /Users/hem/env foo/.claude/hooks/x.py
+nachher: python3 /Users/hem/env "${CLAUDE_PROJECT_DIR}/.claude/hooks/x.py"
+```
+
+- Die Interpreter-Liste greift jetzt **nur am Kopf des Aufrufs** — dem ersten
+  Token nach Env-Zuweisungen. Dort entscheidet sie zwischen
+  `/usr/bin/python3 My Projekt/…` (Aufrufer plus Pfad) und
+  `/Users/hem/My Projekt/…` (nur Pfad, direkt ausgefuehrt); mitten im Pfad hat
+  sie nichts zu suchen.
+- Kommandos mit unpaarigen Anfuehrungszeichen bleiben unveraendert (F007).
+  Bisher blieb das fuehrende Quote stehen, die Ersetzung brachte ihr eigenes
+  mit, und das Ergebnis war nicht mehr zerlegbar.
+- Regressionstests: 17 weitere in `tests/test_hook_paths_project_dir_165.py`
+  (jetzt 31), darunter `shlex`-Rundlaeufe, die beweisen, dass weder ein
+  Pfad-Rest als eigenes Token stehenbleibt noch Interpreter, Wrapper-Argument
+  oder Trennzeichen verloren gehen. RED vor den Fixes: 4 + 4 + 1 + 5 rot.
+- Gegen die drei bereits reparierten Bestandsprojekte ist der Lauf idempotent:
+  Trockenlauf meldet dort nichts zu tun.
+
+Adversary-Runde 4 (F008 HIGH, F009 MEDIUM):
+
+- `_head_start()` trennte an Leerzeichen, der uebrige Code auch an
+  Tabulatoren. Bei `WF=1<TAB>python3 …` liefen beide Zaehlungen auseinander,
+  der Kopf wurde nie erkannt, und die Linkssuche loeschte Env-Praefix und
+  Interpreter gleich mit. Jetzt eine Tokenisierung fuer das ganze Modul.
+- Die Linkssuche stoppt an Shell-Operatoren (`;`, `&&`, `|`, Klammern),
+  Schaltern und einem Interpreter mitten im Kommando. Ohne diese Grenze lief
+  sie bis zum naechsten Pfad-Sigel durch und verschluckte fremde
+  Kommandoteile.
+
+Umfang: Die Aenderung ist ueber vier Gegenpruefungs-Runden von ~30 auf ~300
+Zeilen gewachsen, jede Runde an derselben Wurzel — wo ein Dateipfad in einer
+Kommandozeile endet, ist ohne Shell-Grammatik nicht entscheidbar, sobald er
+Leerzeichen enthaelt und ungequotet ist. Die Grenze fuer diesen Vorgang wurde
+nach Ruecksprache mit dem PO auf 320 Zeilen angehoben. Die verbleibenden
+Grenzen des Verfahrens stehen in der Spec unter „Out of Scope".
+
 ## [3.26.5] - 2026-09-21
 
 ### Fixed
