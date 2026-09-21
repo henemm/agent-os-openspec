@@ -5,8 +5,6 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
 ## [3.28.0] - 2026-09-21
 
 ### Fixed
@@ -54,6 +52,15 @@ etwas Grundlegendes unzuverlässig, und jeder war für sich zu klein, um je vorg
 
 **Offen aus #150:** Der Kopiermodus registriert weiterhin keine SessionStart-Hooks
 (`generate_settings_json`). Eigener Befund, eigener Zuschnitt — bleibt im Issue.
+
+### Hinweis zur Veröffentlichung
+
+3.27.1 und 3.27.2 liegen seit dem 21.09.2026 auf `main`, haben aber **nie einen Tag bekommen**:
+`release.yml` bricht an `release_check.py` ab, sobald ein `## [Unreleased]`-Abschnitt über dem
+Versionseintrag steht — auch ein leerer. Der letzte veröffentlichte Tag war
+`agent-os-openspec--v3.27.0`. Der leere Abschnitt ist hier deshalb entfernt; 3.28.0 liefert den
+Inhalt beider übersprungener Versionen mit aus. Die Ursache — ein stiller Fehlschlag der
+Release-Automatik, den niemand bemerkt — ist als Issue #204 erfasst.
 
 ## [3.27.2] - 2026-09-21
 
