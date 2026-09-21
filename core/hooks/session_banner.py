@@ -12,6 +12,12 @@ aendern sich bei einem Plugin-Update NICHT mit — der User tippt `/name` und
 bekommt still die alte Anleitung. Soll-Inhalt und Vergleich kommen aus
 `alias_sync.py`, derselben Logik, mit der setup.py die Kopien schreibt.
 
+Zwei Regeln haelt der Banner dabei ein (#163): Kopien mit einem beweisbar
+neueren Versions-Marker als die geladene Fassung bleiben unerwaehnt — ein
+Neuerzeugen wuerde sie herabstufen. Und der genannte Reparatur-Befehl kommt
+immer aus der INSTALLIERTEN Fassung; laesst sie sich nicht aufloesen, nennt
+der Banner gar keinen Pfad.
+
 Robust by design: jede Exception → still Exit 0. Ein Banner darf den
 Session-Start nie blockieren. Bei `framework: {enabled: false}` bzw.
 OPENSPEC_FRAMEWORK=off wird nichts ausgegeben.
@@ -61,6 +67,56 @@ def project_dir(payload_cwd: "str | None") -> Path:
     return Path(env or payload_cwd or os.getcwd())
 
 
+def installed_plugin() -> "tuple[Path, str] | None":
+    """setup.py-Pfad und Version der INSTALLIERTEN Fassung, sonst None.
+
+    Wirft nie: fehlende oder defekte Registry-Datei ergibt None.
+
+    Quelle ist `~/.claude/plugins/installed_plugins.json`: der Eintrag, dessen
+    Schluessel mit `agent-os-openspec@` beginnt, bevorzugt `scope: user`. Die
+    Version kommt aus der `plugin.json` dieser Installation, nicht aus dem
+    Verzeichnisnamen. Aufloesbar ist sie nur, wenn dort auch wirklich eine
+    `setup.py` liegt — sonst waere der Reparatur-Befehl eine Luege.
+
+    Bewusst NICHT `CLAUDE_PLUGIN_ROOT`: das ist die beim Session-Start
+    eingefrorene, moeglicherweise aeltere Fassung (#163).
+    """
+    registry = Path.home() / ".claude" / "plugins" / "installed_plugins.json"
+    entries = []
+    try:
+        data = json.loads(registry.read_text())
+        for key, value in (data.get("plugins") or {}).items():
+            if key.startswith("agent-os-openspec@") and isinstance(value, list):
+                entries.extend(e for e in value if isinstance(e, dict))
+    except Exception:
+        return None
+    if not entries:
+        return None
+    entry = next((e for e in entries if e.get("scope") == "user"), entries[0])
+    install_path = entry.get("installPath")
+    if not isinstance(install_path, str) or not install_path:
+        return None
+    root = Path(install_path)
+    setup_py = root / "setup.py"
+    version = plugin_version(root)
+    if not setup_py.is_file() or not version:
+        return None
+    return setup_py, version
+
+
+def _repair_hint(label: str, installed: "tuple[Path, str] | None") -> str:
+    """Wie der User die Kopien erneuert — oder warum hier kein Befehl steht."""
+    if installed is None:
+        return ("installierte Plugin-Fassung nicht auffindbar — bitte Kopien "
+                "nach dem Plugin-Update von Hand neu erzeugen")
+    setup_py, version = installed
+    if label == "~":
+        # Der globale Lauf ueberschattet projekteigene Befehle (#87) — nie raten.
+        return (f"global nicht neu erzeugen (#87) — stattdessen je Projekt mit "
+                f"{version}: python3 {setup_py} <projekt> --command-aliases")
+    return f"neu erzeugen mit {version}: python3 {setup_py} {label} --command-aliases"
+
+
 def stale_alias_lines(root: Path, project: Path) -> "list[str]":
     """Eine Warnzeile je Scope (~ bzw. Projekt) mit veralteten Alias-Kopien."""
     from alias_sync import find_stale_aliases
@@ -75,16 +131,24 @@ def stale_alias_lines(root: Path, project: Path) -> "list[str]":
     if not same:
         scopes.append((str(project), project))
 
+    loaded = plugin_version(root)
+    try:
+        installed = installed_plugin()
+    except Exception:
+        installed = None
+
     lines = []
     for label, scope in scopes:
         try:
-            stale = find_stale_aliases(skills_dir, scope / ".claude" / "commands")
+            stale = find_stale_aliases(
+                skills_dir, scope / ".claude" / "commands", loaded_version=loaded
+            )
         except Exception:
             continue
         if stale:
             lines.append(
-                f"Veraltete Befehls-Kopien: {', '.join(stale)} — neu erzeugen mit: "
-                f"python3 {root / 'setup.py'} {label} --command-aliases"
+                f"Veraltete Befehls-Kopien: {', '.join(stale)} "
+                f"(Scope {label}) — {_repair_hint(label, installed)}"
             )
     return lines
 
