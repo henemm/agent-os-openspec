@@ -120,6 +120,22 @@ git push heroku main
    # heroku logs --tail
    ```
 
+## Haupt-Ordner nachziehen (nach gemergtem PR)
+
+Ein Workflow endet im Worktree; der Haupt-Ordner des Projekts auf der Platte bleibt auf altem
+Stand — relevant z. B. für Xcode, das den Haupt-Ordner öffnet. Aus einer Worktree-Session heraus
+lässt er sich nicht aktualisieren (Claude Code verweigert dort Git-Aufrufe auf den Haupt-Ordner).
+
+**Weg:** eine neue Claude-Session **im Haupt-Ordner** öffnen und ausführen:
+
+```bash
+python3 .claude/hooks/session_singleton_guard.py sync-main
+```
+
+Der Guard lässt in dieser Session genau diesen Befehl durch. Er zieht per `git fetch` +
+`git merge --ff-only` nach und bricht mit klarer Meldung ab (nichts geändert), wenn der Ordner
+Änderungen an versionierten Dateien hat, die Historie abweicht oder kein Upstream existiert.
+
 ## Rollback (if needed)
 
 ```bash

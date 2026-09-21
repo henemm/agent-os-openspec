@@ -24,6 +24,27 @@ Das Muster ist jetzt `\.env(rc)?\b`: Wortgrenze nach `env`. `.env`, `.env.local`
 zwischen `v` und `i` keine Wortgrenze und faellt heraus. Die README-Vorlage fuer
 `secrets_guard.sensitive_patterns` zeigt das neue Muster.
 
+## [3.27.0] - 2026-09-21
+
+### Added
+
+**Haupt-Ordner nach Workflow-Abschluss nachziehen (#169)**
+
+Ein Workflow endet im Worktree, der Haupt-Ordner des Projekts blieb auf altem Stand (Xcode & Co.
+öffnen den Haupt-Ordner). Im Haupt-Ordner sperrte der Guard `Bash`, in einer Worktree-Session
+verweigert Claude Code selbst Git-Aufrufe auf den Haupt-Ordner — ein Weg dafür fehlte.
+
+- `session_singleton_guard.py sync-main`: Preflight (kein Worktree, Repo-Wurzel, Upstream, keine
+  Änderungen an versionierten Dateien), dann `git fetch` + `git merge --ff-only`. Jeder Abbruch
+  lässt den Ordner unverändert und nennt den Grund.
+- `_do_guard`: im Haupt-Ordner wird genau dieser eine Bash-Aufruf durchgelassen (keine
+  Shell-Metazeichen, exakt drei Tokens, Skriptpfad = laufender Guard oder Projekt-Shim). Bewusst
+  keine freie `git pull --ff-only`-Ausnahme: Flags wie `-c`/`--upload-pack` führen Code aus, und
+  `pull` erkennt einen schmutzigen Ordner nicht.
+- `/70-deploy`: Abschlussschritt „Haupt-Ordner nachziehen".
+- **Grenze:** aus einer Worktree-Session heraus bleibt das Nachziehen unmöglich (Claude-Code-Sperre,
+  nicht änderbar). Der Weg ist eine neue Session im Haupt-Ordner.
+
 ## [3.26.7] - 2026-09-21
 
 ### Documentation

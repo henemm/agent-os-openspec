@@ -2,7 +2,7 @@
 
 > **Meta-Projekt**: Dies ist das zentrale Framework-Repository, das abstraktes Projekt- und Workflow-Wissen konsolidiert. Alle Projekte können Improvements hierher zurückführen und von Verbesserungen aus anderen Projekten profitieren.
 
-**Version**: 3.26.7
+**Version**: 3.27.0
 
 ## Projektzweck
 
@@ -304,6 +304,12 @@ Registrierung zentral in `hooks/hooks.json` (Plugin-Modus) bzw. `.claude/setting
   Workflow-Start. Ein Claim verfaellt automatisch, sobald der aktive Workflow zu einer anderen
   Issue-Nummer gehoert. Als einziger Modus gibt `claim` Meldungen auf stdout aus; die drei
   Hook-Modi bleiben still.
+
+**Kein Hook — zweiter CLI-Modus:** `session_singleton_guard.py sync-main` zieht den Haupt-Ordner
+per `git fetch` + `git merge --ff-only` nach (Issue #169). Der Guard lässt im Haupt-Ordner genau
+diesen einen Bash-Aufruf durch; bei Änderungen, abweichender Historie oder ohne Upstream bricht er
+ab, ohne etwas zu ändern. Nur aus einer Session im Haupt-Ordner nutzbar — Worktree-Sessions dürfen
+laut Claude Code keine Git-Aufrufe auf den Haupt-Ordner richten.
 
 ## Session-Register
 
