@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.28.0] - 2026-09-21
+
+### Fixed
+
+**Hausputz: sechs bestätigte Kleinfehler (Epic #198)**
+
+Sechs Befunde ohne offene Designfrage, gebündelt abgeräumt. Gemeinsames Merkmal: jeder machte
+etwas Grundlegendes unzuverlässig, und jeder war für sich zu klein, um je vorgezogen zu werden.
+
+- **Nacktes `pytest` bricht nicht mehr ab (#154, Teil 1 von #70).**
+  `modules/ios-swiftui/hooks/test_lock_guard.py` rief seinen Modul-Guard beim *Import* auf
+  (`sys.exit(0)` auf Modulebene). Der pytest-Collector fängt `SystemExit` nicht ab, die Datei heißt
+  `test_*` und wurde eingesammelt — `python3 -m pytest` ohne Zusatzpfad endete mit INTERNALERROR,
+  bevor ein einziger Test lief. Ein abbrechender Sammellauf verdeckt echte Fehlschläge. Der Guard
+  liegt jetzt als `module_active()` in `main()`; der Import ist nebenwirkungsfrei, die Hook-Wirkung
+  unverändert.
+- **README-Version driftet nicht mehr (#195).** `README.md` nannte über Monate `3.9.0`, ausgeliefert
+  wurde `3.27.2` — weil `scripts/release_check.py` `plugin.json` gegen `CHANGELOG.md` abglich und
+  das README ausließ. Neu: `readme_version()` + `check_readme_version()`, als eigene Zeile in der
+  Prüfliste. Ein Release aus einem Stand mit abweichender README-Version ist ab jetzt nicht mehr
+  möglich.
+- **`.worktrees/` ist ignoriert (#70).** `git worktree add .worktrees/<name>` hinterließ einen
+  untracked Eintrag — im Repo, dessen eigener Release-Wächter einen sauberen Arbeitsbaum verlangt.
+- **`setup.py --update` erhält den Plugin-Modus (#159).** `update_project` schrieb
+  `framework_version.json` blind neu und verlor dabei `plugin_mode`, `version_source` und `note`;
+  zugleich bekam `framework_version` wieder eine Zahl gestempelt, die im Plugin-Modus nicht stimmen
+  kann. Ein einziges `--update` machte damit den Fix aus 3.26.0 rückgängig, ohne Meldung. Der
+  bestehende Zustand wird jetzt gelesen und im Plugin-Modus erhalten; eine unlesbare Datei wird neu
+  aufgebaut, aber mit Warnung statt stillschweigend. Copy-Modus unverändert.
+- **Laufzeit-Zustand landet nicht mehr im Konsumenten-Repo (#78).** `workflow.py start` legt
+  `.claude/active_workflow` an — reiner Werkzeug-Zustand, der genau während eines Workflows
+  existiert, also genau dann, wenn committet wird. Neu: `GITIGNORE_RUNTIME_ENTRIES` +
+  `ensure_gitignore_entries()`, aufgerufen von beiden Installationswegen und von `--update`.
+  Vorhandener `.gitignore`-Inhalt bleibt unangetastet, der Aufruf ist idempotent.
+- **Alias-Inhalt hat genau eine Quelle (#150).** `setup.py::generate_command_aliases` trug die
+  Logik aus `core/hooks/alias_sync.py` ein zweites Mal (eigener `ALIAS_MARKER`, eigene
+  Fallunterscheidung über `disable-model-invocation`). Dieselbe Logik nutzt das SessionStart-Banner,
+  um veraltete Kopien zu erkennen — driftet eine Seite, meldet der Banner falsch. `setup.py`
+  importiert jetzt aus `alias_sync`. Zweiter Teil desselben Issues: Der Kopiermodus ersetzt
+  `{{OPENSPEC_VERSION}}` beim Kopieren (`copy_command_text`), statt die rohe Platzhalter-Zeile ins
+  Zielprojekt zu schreiben; `should_update_command` vergleicht gegen den ersetzten Text, damit das
+  Update nicht jeden betroffenen Befehl dauerhaft als „geändert" meldet.
+
+**Verteilung:** wirkt in Konsumenten-Projekten erst nach dem Plugin-Update.
+
+**Offen aus #150:** Der Kopiermodus registriert weiterhin keine SessionStart-Hooks
+(`generate_settings_json`). Eigener Befund, eigener Zuschnitt — bleibt im Issue.
+
 ## [3.27.2] - 2026-09-21
 
 ### Changed

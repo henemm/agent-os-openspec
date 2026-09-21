@@ -47,6 +47,42 @@ MODULES_DIR = FRAMEWORK_ROOT / "modules"
 TEMPLATES_DIR = FRAMEWORK_ROOT / "templates"
 SCRIPTS_DIR = FRAMEWORK_ROOT / "scripts"
 
+# Alias-Inhalt hat genau eine Quelle (Issue #150). Dieselben Funktionen nutzt
+# das SessionStart-Banner, um veraltete Kopien zu erkennen — zwei Fassungen
+# derselben Logik wuerden auseinanderlaufen und der Banner meldete falsch.
+sys.path.insert(0, str(CORE_DIR / "hooks"))
+from alias_sync import (  # noqa: E402
+    ALIAS_MARKER,
+    alias_content,
+    embeds_full_skill,
+    is_alias_file,
+    skill_names,
+)
+
+# Platzhalter, den sync_skills.py fuer skills/ ersetzt. Im Kopiermodus kopierte
+# setup.py die Befehle unveraendert — im Zielprojekt landete die rohe
+# Platzhalter-Zeile (Issue #150).
+VERSION_PLACEHOLDER = "{{OPENSPEC_VERSION}}"
+
+# Laufzeit-Zustand, den das Framework im Projektordner anlegt. Nichts davon
+# gehoert je in ein Repository — `.claude/active_workflow` existiert genau
+# waehrend eines Workflows, also genau dann, wenn committet wird, und ein
+# `git add -A` nimmt sie mit (Issue #78). Das Framework kennt diese Liste als
+# einziges, weil es die Dateien selbst anlegt; also traegt es sie auch ein,
+# statt es jedem Konsumenten-Projekt einzeln zu ueberlassen.
+GITIGNORE_RUNTIME_ENTRIES = [
+    ".claude/active_workflow",
+    ".claude/workflows/",
+    ".claude/session-locks/",
+    ".claude/stop_lock.json",
+    ".claude/user_override_token.json",
+    ".claude/pending_validation_*.json",
+    ".claude/user_approved_validation_*",
+    ".worktrees/",
+]
+
+GITIGNORE_SECTION_HEADER = "# OpenSpec runtime state (never commit)"
+
 # Von Claude Code in Hook-Kommandos ersetzt: Projekt-Root, in dem die Sitzung
 # gestartet ist. Einzige verlaessliche Verankerung fuer Hook-Pfade — Hooks
 # laufen im aktuellen Arbeitsverzeichnis, nicht im Projekt-Root (Issue #165).
@@ -96,6 +132,36 @@ def should_update_file(src: Path, dst: Path, force: bool = False) -> tuple[bool,
     return False, "unchanged"
 
 
+def ensure_gitignore_entries(project_path: Path) -> None:
+    """Laufzeit-Eintraege in die `.gitignore` des Projekts aufnehmen (Issue #78).
+
+    Legt die Datei an, wenn sie fehlt, und haengt nur an, was noch nicht
+    drinsteht. Vorhandener Inhalt bleibt unangetastet — eine `.gitignore` ist
+    Projekteigentum, das Framework traegt dort nur seine eigenen Spuren ein.
+    """
+    gitignore = project_path / ".gitignore"
+    existing_text = gitignore.read_text() if gitignore.exists() else ""
+    present = {line.strip() for line in existing_text.splitlines()}
+
+    missing = [e for e in GITIGNORE_RUNTIME_ENTRIES if e not in present]
+    if not missing:
+        return
+
+    parts = []
+    if existing_text and not existing_text.endswith("\n"):
+        # Sonst klebt der erste neue Eintrag an der letzten vorhandenen Zeile.
+        parts.append("\n")
+    if existing_text:
+        parts.append("\n")
+    parts.append(GITIGNORE_SECTION_HEADER + "\n")
+    parts.extend(entry + "\n" for entry in missing)
+
+    with open(gitignore, "a") as f:
+        f.write("".join(parts))
+
+    print(f"  Updated: .gitignore ({len(missing)} Eintrag/Eintraege ergaenzt)")
+
+
 def create_directory_structure(project_path: Path):
     """Create the .claude/, .agent-os/, and docs/ directory structure."""
     dirs = [
@@ -117,6 +183,38 @@ def create_directory_structure(project_path: Path):
     for d in dirs:
         (project_path / d).mkdir(parents=True, exist_ok=True)
         print(f"  Created: {d}/")
+
+
+def copy_command_text(text: str) -> str:
+    """Befehlstext fuer den Kopiermodus aufbereiten (Issue #150).
+
+    `scripts/sync_skills.py` ersetzt `{{OPENSPEC_VERSION}}` beim Erzeugen von
+    `skills/`. Der Kopiermodus kopierte dieselben Quelldateien unveraendert —
+    im Zielprojekt stand danach die rohe Platzhalter-Zeile in der Ausgabe, die
+    der Befehl woertlich ausgeben soll.
+    """
+    return text.replace(VERSION_PLACEHOLDER, FRAMEWORK_VERSION)
+
+
+def copy_command_file(src: Path, dst: Path) -> None:
+    """Eine Befehlsdatei kopieren und dabei Platzhalter ersetzen."""
+    dst.write_text(copy_command_text(src.read_text()))
+
+
+def should_update_command(src: Path, dst: Path, force: bool = False) -> tuple[bool, str]:
+    """Wie `should_update_file`, aber fuer Befehle mit ersetzten Platzhaltern.
+
+    Ein Hash-Vergleich gegen die *Quelle* meldete jeden Befehl mit Platzhalter
+    bei jedem Update als geaendert, weil das Ziel den ersetzten Text traegt.
+    Verglichen wird deshalb gegen das, was hier tatsaechlich geschrieben wuerde.
+    """
+    if not dst.exists():
+        return True, "new file"
+    if force:
+        return True, "forced update"
+    if copy_command_text(src.read_text()) != dst.read_text():
+        return True, "content changed"
+    return False, "unchanged"
 
 
 def copy_core_components(project_path: Path):
@@ -142,7 +240,7 @@ def copy_core_components(project_path: Path):
     commands_dst = project_path / ".claude" / "commands"
 
     for cmd_file in commands_src.glob("*.md"):
-        shutil.copy(cmd_file, commands_dst / cmd_file.name)
+        copy_command_file(cmd_file, commands_dst / cmd_file.name)
         print(f"  Copied command: {cmd_file.name}")
 
     # Copy tools (v2.0 - validation, E2E testing, output validation)
@@ -225,7 +323,7 @@ def install_module(project_path: Path, module_name: str):
     if commands_src.exists():
         commands_dst = project_path / ".claude" / "commands"
         for cmd_file in commands_src.glob("*.md"):
-            shutil.copy(cmd_file, commands_dst / cmd_file.name)
+            copy_command_file(cmd_file, commands_dst / cmd_file.name)
             print(f"  Copied module command: {cmd_file.name}")
 
     # Copy module tools
@@ -450,6 +548,7 @@ def install_plugin_mode(project_path: Path, modules: list):
     generate_config_yaml(project_path, modules)
     create_spec_template(project_path)
     create_workflows_dir(project_path)
+    ensure_gitignore_entries(project_path)
 
     version_file = project_path / ".claude" / "framework_version.json"
     version_info = {
@@ -780,10 +879,10 @@ def update_project(project_path: Path, modules: list, force: bool = False):
     if commands_dst.exists():
         for cmd_file in commands_src.glob("*.md"):
             dst = commands_dst / cmd_file.name
-            should_update, reason = should_update_file(cmd_file, dst, force)
+            should_update, reason = should_update_command(cmd_file, dst, force)
 
             if should_update:
-                shutil.copy(cmd_file, dst)
+                copy_command_file(cmd_file, dst)
                 if reason == "new file":
                     new_files.append(f"command: {cmd_file.name}")
                 else:
@@ -836,13 +935,44 @@ def update_project(project_path: Path, modules: list, force: bool = False):
             # Similar logic for module files...
             install_module(project_path, module)
 
+    # Laufzeit-Eintraege nachziehen — auch in Projekten, die vor #78
+    # installiert wurden.
+    ensure_gitignore_entries(project_path)
+
     # Update version tracking
+    #
+    # Der vorherige Stand schrieb die Datei blind neu und verlor dabei
+    # `plugin_mode`, `version_source` und `note` — ein Plugin-Modus-Projekt
+    # galt nach jedem `--update` als Copy-Modus-Projekt, und die in 3.26.0
+    # entfernte Falschauskunft ("framework_version" im Plugin-Modus) kehrte
+    # zurueck. Ein Update ist kein Moduswechsel (Issue #159).
     version_file = project_path / ".claude" / "framework_version.json"
-    version_info = {
-        "framework_version": FRAMEWORK_VERSION,
-        "last_updated": datetime.now().isoformat(),
-        "installed_modules": modules,
-    }
+    existing = {}
+    if version_file.exists():
+        try:
+            existing = json.loads(version_file.read_text())
+        except (json.JSONDecodeError, OSError):
+            # Unlesbare Datei wird neu aufgebaut — aber nicht stillschweigend.
+            print("  WARNING: .claude/framework_version.json unlesbar, wird neu geschrieben")
+            existing = {}
+
+    if existing.get("plugin_mode"):
+        version_info = {
+            # Bewusst None — siehe PLUGIN_MODE_VERSION_NOTE.
+            "framework_version": None,
+            "version_source": PLUGIN_MODE_VERSION_SOURCE,
+            "note": PLUGIN_MODE_VERSION_NOTE,
+            "installed": existing.get("installed"),
+            "last_updated": datetime.now().isoformat(),
+            "installed_modules": modules,
+            "plugin_mode": True,
+        }
+    else:
+        version_info = {
+            "framework_version": FRAMEWORK_VERSION,
+            "last_updated": datetime.now().isoformat(),
+            "installed_modules": modules,
+        }
     with open(version_file, 'w') as f:
         json.dump(version_info, f, indent=2)
 
@@ -865,9 +995,6 @@ def update_project(project_path: Path, modules: list, force: bool = False):
         print(f"\nUnchanged ({len(skipped)}): Use --force to overwrite all")
 
     print(f"\nFramework updated to version {FRAMEWORK_VERSION}")
-
-
-ALIAS_MARKER = "<!-- openspec-alias: do-not-treat-as-legacy-duplicate -->"
 
 
 def generate_command_aliases(project_path: Path) -> None:
@@ -910,11 +1037,7 @@ def generate_command_aliases(project_path: Path) -> None:
     commands_dir = project_path / ".claude" / "commands"
     commands_dir.mkdir(parents=True, exist_ok=True)
 
-    names = sorted(
-        p.name
-        for p in skills_dir.iterdir()
-        if p.is_dir() and (p / "SKILL.md").exists()
-    )
+    names = skill_names(skills_dir)
 
     created = 0
     updated = 0
@@ -923,26 +1046,14 @@ def generate_command_aliases(project_path: Path) -> None:
     for name in names:
         target = commands_dir / f"{name}.md"
         skill_text = (skills_dir / name / "SKILL.md").read_text()
-
-        if "disable-model-invocation: true" in skill_text:
-            content = f"{ALIAS_MARKER}\n{skill_text}"
-        else:
-            content = (
-                f"{ALIAS_MARKER}\n"
-                "---\n"
-                f"description: Kurz-Alias für /agent-os-openspec:{name}\n"
-                "---\n"
-                "\n"
-                f"/agent-os-openspec:{name} $ARGUMENTS\n"
-            )
+        content = alias_content(name, skill_text)
 
         if not target.exists():
             target.write_text(content)
             created += 1
             continue
 
-        first_line = target.read_text().splitlines()[0] if target.read_text() else ""
-        if first_line.startswith("<!-- openspec-alias:"):
+        if is_alias_file(target.read_text()):
             target.write_text(content)
             updated += 1
         else:
@@ -958,8 +1069,7 @@ def generate_command_aliases(project_path: Path) -> None:
     if project_path.resolve() == Path.home().resolve():
         full_content_names = [
             name for name in names
-            if "disable-model-invocation: true"
-            in (skills_dir / name / "SKILL.md").read_text()
+            if embeds_full_skill((skills_dir / name / "SKILL.md").read_text())
         ]
         if full_content_names:
             print(
@@ -1120,6 +1230,7 @@ Available modules:
     generate_config_yaml(project_path, args.modules)
     create_spec_template(project_path)
     create_workflows_dir(project_path)
+    ensure_gitignore_entries(project_path)
 
     # Save version info
     version_file = project_path / ".claude" / "framework_version.json"

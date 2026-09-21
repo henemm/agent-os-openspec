@@ -35,6 +35,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PLUGIN_JSON = REPO_ROOT / ".claude-plugin" / "plugin.json"
 CHANGELOG = REPO_ROOT / "CHANGELOG.md"
+README = REPO_ROOT / "README.md"
 RELEASE_BRANCH = "main"
 
 # Tag-Konvention: die Form, die Claude Code fuer Plugin-Abhaengigkeiten
@@ -43,6 +44,13 @@ TAG_TEMPLATE = "{name}--v{version}"
 
 # Erste Ueberschrift der Form "## [3.11.4] - 2026-08-10"
 _CHANGELOG_VERSION_RE = re.compile(r"^##\s*\[([^\]]+)\]", re.MULTILINE)
+
+# Versionszeile des README: "**Version**: 3.27.2 · [Changelog](CHANGELOG.md)".
+# Bewusst an den Marker gebunden und nicht an "die erste Zahl im Dokument" —
+# sonst gewinnt eine Versionsnummer aus einem Beispielblock (Issue #195).
+_README_VERSION_RE = re.compile(
+    r"^\*\*Version\*\*:\s*(\d+(?:\.\d+)*)", re.MULTILINE
+)
 
 
 def _git(*args: str) -> "subprocess.CompletedProcess":
@@ -139,6 +147,27 @@ def check_version_match(manifest_version: str, changelog_version: "str | None") 
     return True, f"Version {manifest_version} in plugin.json und CHANGELOG"
 
 
+def readme_version(text: str) -> "str | None":
+    """Version aus der Marker-Zeile des README, oder None."""
+    match = _README_VERSION_RE.search(text)
+    return match.group(1) if match else None
+
+
+def check_readme_version(manifest_version: str, readme_text: str) -> "tuple[bool, str]":
+    """README-Version gegen plugin.json (Issue #195).
+
+    Das README nannte ueber Monate 3.9.0, waehrend 3.27.x ausgeliefert wurde —
+    weil nichts es geprueft hat. Es ist die Datei, die ein Fremder zuerst
+    liest; eine falsche Zahl dort ist teurer als in jeder internen Datei.
+    """
+    found = readme_version(readme_text)
+    if found is None:
+        return False, "Keine '**Version**:'-Zeile im README gefunden"
+    if found != manifest_version:
+        return False, (f"README sagt {found}, plugin.json {manifest_version}")
+    return True, f"Version {manifest_version} auch im README"
+
+
 def check_tag_free(tag: str) -> "tuple[bool, str]":
     _git("fetch", "origin", "--tags", "--quiet")
     result = _git("tag", "--list", tag)
@@ -200,6 +229,7 @@ def main() -> int:
         ("Arbeitsbaum", check_clean_tree()),
         ("Abgleich", check_in_sync()),
         ("Version", check_version_match(version, latest_changelog_version(CHANGELOG.read_text()))),
+        ("README", check_readme_version(version, README.read_text())),
         ("Tag", check_tag_free(tag)),
         ("Skills", check_skills_sync()),
     ]
