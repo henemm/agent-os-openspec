@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.27.2] - 2026-09-21
+
+### Changed
+
+**Fußzeile sagt, wer am Zug ist (#174)**
+
+Jede Phasen-Nachricht endete mit „… Nächster Pflicht-Schritt: /befehl“. Der PO las das als
+Aufforderung — auch wenn Claude gerade selbst arbeitete oder auf einen Agenten wartete.
+
+- Neues Ende jeder Phasen-Nachricht: erste Zeile entweder `❗ Du: /befehl #N — warum`
+  (der PO muss tippen oder entscheiden; `‼️` bei Dringendem) oder
+  `ℹ️ Nichts zu tun: Claude arbeitet / wartet auf … — danach: /befehl #N`; darunter
+  `ℹ️ Status: Workflow … · Phase x von 8` und die unveränderte ⚙-Zeile.
+- Quelle: `scripts/sync_skills.py` (`marker_block`, alle Skills neu erzeugt) und
+  `core/hooks/workflow.py` (`status_note`, gilt auch für frei formulierte Nachrichten).
+- **Unverändert:** Der nächste Schritt wird weiter in jeder Nachricht genannt; Phase < 8 heißt
+  nie „optional“ oder „fertig“.
+- Ein erzwingender Stop-Hook (#177) wird bewusst nicht gebaut, bis sich zeigt, dass die Zeile
+  in der Praxis fehlt.
+- **Verteilung:** wirkt in Konsumenten-Projekten erst nach dem Plugin-Update.
+
 ## [3.27.1] - 2026-09-21
 
 ### Fixed
