@@ -15,10 +15,15 @@ Veraltet-Pruefung nie auseinanderlaufen.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 ALIAS_MARKER = "<!-- openspec-alias: do-not-treat-as-legacy-duplicate -->"
 _MARKER_PREFIX = "<!-- openspec-alias:"
+# Versions-Marker, den sync_skills.py an jede Vollkopie anhaengt:
+# "⚙ /50-implement · agent-os-openspec 3.26.2"
+_VERSION_PREFIX = "⚙ "
+_VERSION_RE = re.compile(r"agent-os-openspec\s+(\d+(?:\.\d+)*)")
 
 
 def skill_names(skills_dir: Path) -> "list[str]":
@@ -55,7 +60,45 @@ def is_alias_file(text: str) -> bool:
     return first_line.startswith(_MARKER_PREFIX)
 
 
-def find_stale_aliases(skills_dir: Path, commands_dir: Path) -> "list[str]":
+def alias_version(text: str) -> "str | None":
+    """Version aus dem Versions-Marker einer Alias-Kopie, sonst None.
+
+    Gewertet wird der LETZTE Treffer: der Marker steht am Ende der Datei,
+    frueher im Text kann derselbe Satzbau zitiert sein. Kopien ohne Marker
+    (reine Redirects, MARKER_EXEMPT) liefern None — ohne Version gibt es
+    keinen Beweis, und ohne Beweis wird nichts unterdrueckt.
+    """
+    found = None
+    for line in text.splitlines():
+        if not line.startswith(_VERSION_PREFIX):
+            continue
+        match = _VERSION_RE.search(line)
+        if match:
+            found = match.group(1)
+    return found
+
+
+def version_tuple(version: "str | None") -> "tuple[int, ...] | None":
+    """Version als Zahlen-Tupel. String-Vergleich waere falsch: '3.9.0' > '3.25.0'."""
+    if not isinstance(version, str):
+        return None
+    parts = version.strip().split(".")
+    if not parts or not all(part.isdigit() for part in parts):
+        return None
+    return tuple(int(part) for part in parts)
+
+
+def is_newer_than(text: str, loaded_version: "str | None") -> bool:
+    """True nur, wenn die Kopie beweisbar neuer ist als `loaded_version`."""
+    copy = version_tuple(alias_version(text))
+    loaded = version_tuple(loaded_version)
+    if copy is None or loaded is None:
+        return False
+    return copy > loaded
+
+
+def find_stale_aliases(skills_dir: Path, commands_dir: Path,
+                       loaded_version: "str | None" = None) -> "list[str]":
     """Namen der Framework-Aliase in `commands_dir`, die nicht dem Soll entsprechen.
 
     Veraltet ist eine markierte Datei, deren Inhalt von `alias_content` fuer
@@ -63,6 +106,11 @@ def find_stale_aliases(skills_dir: Path, commands_dir: Path) -> "list[str]":
     einer aelteren SKILL.md-Fassung, und eine Vollkopie zu einem Skill, der
     inzwischen `disable-model-invocation: false` hat (Soll waere dann der
     Redirect). Nicht markierte Dateien sind projekteigene Befehle — tabu.
+
+    Ist `loaded_version` gesetzt, bleiben Kopien aussen vor, deren Marker
+    beweisbar neuer ist: sie stammen aus einer neueren Fassung als der
+    aufrufenden, und ein Neuerzeugen wuerde sie herabstufen. Ohne den
+    Parameter bleibt das Verhalten fuer alle anderen Aufrufer unveraendert.
     """
     if not commands_dir.is_dir() or not skills_dir.is_dir():
         return []
@@ -75,6 +123,9 @@ def find_stale_aliases(skills_dir: Path, commands_dir: Path) -> "list[str]":
         if not is_alias_file(actual):
             continue
         expected = alias_content(name, (skills_dir / name / "SKILL.md").read_text())
-        if actual != expected:
-            stale.append(name)
+        if actual == expected:
+            continue
+        if is_newer_than(actual, loaded_version):
+            continue
+        stale.append(name)
     return stale

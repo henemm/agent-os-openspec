@@ -5,6 +5,36 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.26.5] - 2026-09-21
+
+### Fixed
+
+**Session-Banner empfahl einen Reparatur-Befehl, der den Zustand verschlechtern konnte (#163)**
+
+`session_banner.py` meldete Alias-Kopien als „veraltet" und druckte dazu einen `setup.py`-Befehl.
+Zwei Fehler: `find_stale_aliases()` verglich nur Inhalte auf Gleichheit und kannte keine Versionen —
+eine Kopie mit *neuerem* Marker als die Session galt ebenfalls als veraltet, der Befehl hätte sie
+herabgestuft. Und der Befehl zeigte auf `CLAUDE_PLUGIN_ROOT` (die beim Session-Start eingefrorene
+Fassung) und für den Scope `~` auf den globalen Lauf, vor dem `setup.py` selbst warnt (#87). Real
+am 2026-09-21: der Lauf legte ein globales `70-deploy.md` an, das `gregor_zwanzig/.claude/commands/
+70-deploy.md` überschattete.
+
+- `alias_sync.alias_version()` liest die Version aus der `⚙`-Zeile einer Kopie (letzter Treffer),
+  `version_tuple()` vergleicht numerisch (`3.9.0` < `3.25.0`), `is_newer_than()` ist nur bei
+  beidseitig lesbarer Version wahr. `find_stale_aliases(..., loaded_version=None)` nimmt beweisbar
+  neuere Kopien aus; ohne den Parameter bleibt das Verhalten für andere Aufrufer unverändert.
+- Ohne lesbare Version (reine Redirects, `30-write-spec`) wird weiter gemeldet — unterdrückt wird
+  nur bei Beweis.
+- `session_banner.installed_plugin()` löst die INSTALLIERTE Fassung aus
+  `~/.claude/plugins/installed_plugins.json` auf (Version aus deren `plugin.json`). Ist sie nicht
+  auffindbar oder fehlt dort `setup.py`, nennt der Banner gar keinen Pfad — nie den Session-Root.
+- Scope `~`: kein Befehl, sondern der Verweis auf den Pro-Projekt-Lauf.
+- Zwei bestehende Tests kodierten das Fehlverhalten (Session-Root-Pfad, `setup.py ~`) und wurden
+  umgeschrieben; sechs neue Tests decken die Fälle aus dem Issue ab.
+
+Offen, bewusst nicht Teil dieses Fixes: Eine veraltete globale Kopie überschattet projekteigene
+Befehle (#87) und wird vom Pro-Projekt-Lauf nicht repariert — die ehrliche Abhilfe wäre Löschen.
+
 ## [3.26.4] - 2026-09-21
 
 ### Fixed
