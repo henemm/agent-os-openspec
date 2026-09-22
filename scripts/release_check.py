@@ -67,13 +67,24 @@ def plugin_manifest() -> dict:
 def latest_changelog_version(text: str) -> "str | None":
     """Version des obersten Eintrags im CHANGELOG, oder None.
 
-    'Unreleased' zaehlt bewusst NICHT als Version: ein Release aus einem
-    Stand mit offenem Unreleased-Block waere unvollstaendig dokumentiert.
+    Ein GEFUELLTER 'Unreleased'-Abschnitt zaehlt bewusst NICHT als Version: ein
+    Release aus einem Stand mit offenem Unreleased-Block waere unvollstaendig
+    dokumentiert. Ein LEERER 'Unreleased'-Abschnitt dagegen wird uebersprungen
+    (Issue #204): nach jedem Release traegt Keep-a-Changelog-Konvention genau
+    so einen Platzhalter fuer die naechste Arbeit ein — dessen blosse Anwesenheit
+    blockierte bislang faelschlich jedes weitere Release (3.27.1, 3.27.2 nie
+    getaggt, obwohl `main` laengst weiter war).
     """
-    for match in _CHANGELOG_VERSION_RE.finditer(text):
+    headings = list(_CHANGELOG_VERSION_RE.finditer(text))
+    for index, match in enumerate(headings):
         version = match.group(1).strip()
         if version.lower() == "unreleased":
-            return None
+            start = text.find("\n", match.end())
+            end = headings[index + 1].start() if index + 1 < len(headings) else len(text)
+            body = text[start:end] if start >= 0 else ""
+            if body.strip():
+                return None
+            continue
         return version
     return None
 
@@ -202,6 +213,67 @@ def check_tests() -> "tuple[bool, str]":
     return True, f"Testsuite gruen — {summary[0]}"
 
 
+def base_plugin_version(base_ref: str) -> "str | None":
+    """Version aus `plugin.json` am Basis-Ref, oder None (Ref/Datei fehlt)."""
+    result = _git("show", f"{base_ref}:.claude-plugin/plugin.json")
+    if result.returncode != 0:
+        return None
+    try:
+        return json.loads(result.stdout).get("version")
+    except Exception:
+        return None
+
+
+def run_pr_gate(base_ref: str) -> int:
+    """Release-Bereitschaft schon im PR pruefen (Issue #204).
+
+    Ein stiller Fehlschlag von `release_check.py` NACH dem Merge (in
+    `release.yml`) hat 3.27.1 und 3.27.2 nie ausgeliefert — niemand schaut
+    nach dem Merge in die Actions. Dieser Modus laeuft deshalb schon im PR.
+
+    Er greift bewusst NUR, wenn dieser PR die Version in `plugin.json`
+    gegenueber `base_ref` aendert. Ein gefuellter 'Unreleased'-Abschnitt ohne
+    Versions-Bump ist der Normalzustand fast jedes PRs (die Version wird erst
+    beim naechsten Release-Schnitt erhoeht) und darf nicht rot werden. Die
+    drei Pruefungen, die nur auf `main` selbst Sinn ergeben (Branch, sauberer
+    Arbeitsbaum, Abgleich mit origin — auf einem Feature-Branch immer "davor"),
+    entfallen hier bewusst.
+    """
+    manifest = plugin_manifest()
+    version = manifest.get("version", "")
+    name = manifest.get("name", "")
+    base_version = base_plugin_version(base_ref)
+
+    if base_version == version:
+        print(f"Kein Versions-Bump in plugin.json gegenueber {base_ref} "
+              "— Release-Gate uebersprungen.")
+        return 0
+
+    print(f"Versions-Bump erkannt: {base_version or '(keine Basis-Version)'} -> {version}. "
+          "Pruefe Release-Bereitschaft...")
+    tag = TAG_TEMPLATE.format(name=name, version=version)
+    checks = [
+        ("Version", check_version_match(version, latest_changelog_version(CHANGELOG.read_text()))),
+        ("README", check_readme_version(version, README.read_text())),
+        ("Tag", check_tag_free(tag)),
+        ("Skills", check_skills_sync()),
+    ]
+
+    failed = 0
+    for label, (ok, detail) in checks:
+        print(f"  {'OK  ' if ok else 'FAIL'}  {label:12} {detail}")
+        if not ok:
+            failed += 1
+
+    print()
+    if failed:
+        print(f"ABBRUCH: {failed} Pruefung(en) gescheitert — dieser Versions-Bump "
+              "wuerde das Release nach dem Merge blockieren.", file=sys.stderr)
+        return 1
+    print(f"Versions-Bump {version} bereit fuer Release nach dem Merge. Tag: {tag}")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--no-tests", action="store_true",
@@ -210,7 +282,17 @@ def main() -> int:
                         help="CHANGELOG-Abschnitt der aktuellen Version ausgeben und beenden")
     parser.add_argument("--tag", action="store_true",
                         help="Tag-Namen der aktuellen Version ausgeben und beenden")
+    parser.add_argument("--pr-gate", action="store_true",
+                        help="Nur pruefen, ob ein Versions-Bump gegenueber --base "
+                             "release-bereit waere (fuer CI auf pull_request, Issue #204)")
+    parser.add_argument("--base", help="Basis-Ref fuer --pr-gate, z.B. origin/main")
     args = parser.parse_args()
+
+    if args.pr_gate:
+        if not args.base:
+            print("--pr-gate braucht --base <ref>", file=sys.stderr)
+            return 1
+        return run_pr_gate(args.base)
 
     manifest = plugin_manifest()
     version = manifest.get("version", "")

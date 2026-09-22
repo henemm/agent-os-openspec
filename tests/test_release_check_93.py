@@ -55,10 +55,22 @@ class TestChangelogParsing:
         assert release_check.latest_changelog_version(text) == "3.11.4"
 
     def test_unreleased_block_is_not_a_version(self):
-        """Ein offener Unreleased-Block heisst: der Stand ist nicht fertig
-        dokumentiert — daraus darf kein Release entstehen."""
+        """Ein offener, GEFUELLTER Unreleased-Block heisst: der Stand ist
+        nicht fertig dokumentiert — daraus darf kein Release entstehen."""
         text = "# Changelog\n\n## [Unreleased]\n\n- wip\n\n## [3.11.3] - 2026-08-09\n"
         assert release_check.latest_changelog_version(text) is None
+
+    def test_empty_unreleased_block_is_skipped(self):
+        """Issue #204: nach jedem Release traegt Keep-a-Changelog-Konvention
+        einen leeren Unreleased-Platzhalter fuer die naechste Arbeit ein.
+        Dessen blosse Anwesenheit blockierte bislang faelschlich jedes
+        weitere Release (3.27.1, 3.27.2 nie getaggt)."""
+        text = "# Changelog\n\n## [Unreleased]\n\n## [3.11.3] - 2026-08-09\n"
+        assert release_check.latest_changelog_version(text) == "3.11.3"
+
+    def test_unreleased_block_with_only_whitespace_is_skipped(self):
+        text = "# Changelog\n\n## [Unreleased]\n\n   \n\n## [3.11.3] - 2026-08-09\n"
+        assert release_check.latest_changelog_version(text) == "3.11.3"
 
     def test_no_version_heading_at_all(self):
         assert release_check.latest_changelog_version("# Changelog\n\nnichts\n") is None
@@ -173,6 +185,93 @@ class TestTagCheck:
         ok, detail = release_check.check_tag_free("agent-os-openspec--v3.11.4")
         assert not ok
         assert "existiert bereits" in detail
+
+
+class TestPrGate:
+    """run_pr_gate greift nur bei einem echten Versions-Bump (Issue #204):
+    das haette den stillen Post-Merge-Fehlschlag von 3.27.1/3.27.2 schon im
+    PR rot gemacht, statt erst in Actions, die niemand ansieht."""
+
+    def _write_manifest(self, repo: Path, version: str) -> None:
+        plugin_dir = repo / ".claude-plugin"
+        plugin_dir.mkdir(parents=True, exist_ok=True)
+        (plugin_dir / "plugin.json").write_text(
+            json.dumps({"name": "agent-os-openspec", "version": version})
+        )
+
+    def _write_changelog(self, repo: Path, version: str, unreleased_body: str = "") -> None:
+        (repo / "CHANGELOG.md").write_text(
+            f"# Changelog\n\n## [Unreleased]\n\n{unreleased_body}\n"
+            f"## [{version}] - 2026-09-22\n\nx\n"
+        )
+
+    def _write_readme(self, repo: Path, version: str) -> None:
+        (repo / "README.md").write_text(f"**Version**: {version} · [Changelog](CHANGELOG.md)\n")
+
+    def _commit_and_push_base(self, repo: Path, version: str) -> None:
+        self._write_manifest(repo, version)
+        self._write_changelog(repo, version)
+        self._write_readme(repo, version)
+        _git(["add", "-A"], repo)
+        _git(["commit", "-m", f"release {version}"], repo)
+        _git(["push"], repo)
+
+    @pytest.fixture(autouse=True)
+    def _patch_release_check_paths(self, repo, monkeypatch):
+        """PLUGIN_JSON/CHANGELOG/README werden beim Modul-Import einmalig auf
+        das echte Repo gebunden — fuer den Fake-Git-Baum muessen sie
+        umgebogen werden. check_skills_sync bleibt bewusst ungestubt geprueft
+        NICHT hier: es liest core/commands/ des echten Repos, ist also von
+        diesem Fake-Baum unabhaengig und wird deshalb gestubt."""
+        monkeypatch.setattr(release_check, "PLUGIN_JSON", repo / ".claude-plugin" / "plugin.json")
+        monkeypatch.setattr(release_check, "CHANGELOG", repo / "CHANGELOG.md")
+        monkeypatch.setattr(release_check, "README", repo / "README.md")
+        monkeypatch.setattr(release_check, "check_skills_sync",
+                            lambda: (True, "stub – nicht Teil dieses Tests"))
+
+    def test_no_bump_is_skipped(self, repo, capsys):
+        """AC-3: gewoehnlicher PR ohne Versions-Bump wird nicht rot."""
+        self._commit_and_push_base(repo, "1.0.0")
+        code = release_check.run_pr_gate("origin/main")
+        assert code == 0
+        assert "uebersprungen" in capsys.readouterr().out
+
+    def test_bump_with_valid_release_state_passes(self, repo, capsys):
+        """AC-5: korrekter Versions-Bump (inkl. leerem Unreleased-Platzhalter
+        ueber dem neuen Eintrag) ist gruen."""
+        self._commit_and_push_base(repo, "1.0.0")
+        self._write_manifest(repo, "1.1.0")
+        self._write_changelog(repo, "1.1.0")
+        self._write_readme(repo, "1.1.0")
+        code = release_check.run_pr_gate("origin/main")
+        out = capsys.readouterr().out
+        assert code == 0, out
+        assert "bereit fuer Release" in out
+
+    def test_bump_blocked_by_stale_filled_unreleased_fails(self, repo, capsys):
+        """AC-4: genau der reale Fehlerfall — Versions-Bump, aber CHANGELOG-Kopf
+        ist noch ein gefuellter Unreleased-Block statt des neuen Eintrags."""
+        self._commit_and_push_base(repo, "1.0.0")
+        self._write_manifest(repo, "1.1.0")
+        (repo / "CHANGELOG.md").write_text(
+            "# Changelog\n\n## [Unreleased]\n\n- noch offen\n\n## [1.0.0] - 2026-09-01\n\nx\n"
+        )
+        self._write_readme(repo, "1.1.0")
+        code = release_check.run_pr_gate("origin/main")
+        out = capsys.readouterr().out
+        assert code == 1
+        assert "FAIL" in out and "Version" in out
+
+    def test_bump_blocked_by_readme_mismatch_fails(self, repo, capsys):
+        """AC-4: README vergessen zu aktualisieren blockiert ebenfalls."""
+        self._commit_and_push_base(repo, "1.0.0")
+        self._write_manifest(repo, "1.1.0")
+        self._write_changelog(repo, "1.1.0")
+        self._write_readme(repo, "1.0.0")
+        code = release_check.run_pr_gate("origin/main")
+        out = capsys.readouterr().out
+        assert code == 1
+        assert "FAIL" in out and "README" in out
 
 
 class TestTagNaming:
