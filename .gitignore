@@ -43,4 +43,6 @@ timebox-ios/
 # zwischen Laufzeit-Zustand verschwand (Issue #135).
 .claude/pending_validation_*.json
 .claude/user_approved_validation_*
+# Gate-Event-Log (Issue #181) — Laufzeit-Beobachtungsdaten, kein Quellinhalt.
+.claude/gate-events.jsonl
 docs/artifacts/

@@ -78,6 +78,7 @@ GITIGNORE_RUNTIME_ENTRIES = [
     ".claude/user_override_token.json",
     ".claude/pending_validation_*.json",
     ".claude/user_approved_validation_*",
+    ".claude/gate-events.jsonl",
     ".worktrees/",
 ]
 

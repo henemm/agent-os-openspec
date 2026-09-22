@@ -48,7 +48,7 @@ def _setup():
 
 _setup()
 
-from hook_utils import find_project_root  # noqa: E402
+from hook_utils import find_project_root, log_gate_event  # noqa: E402
 
 try:
     from config_loader import load_config
@@ -299,6 +299,20 @@ def main() -> None:
     if not hits:
         sys.exit(0)
     names = ", ".join(hits)
+    # command_excerpt bewusst NICHT befuellt: tool_input traegt hier per
+    # Definition den ausgeschriebenen Geheimnis-Wert, den dieser Guard gerade
+    # verhindert. Nur die (bereits im User-Text offengelegten) Schluessel-
+    # NAMEN gehen ins Log — derselbe Verzicht, den die Meldung selbst schon
+    # macht ("Der Wert selbst wird hier bewusst nicht ausgegeben").
+    try:
+        log_gate_event(
+            hook="secret_egress_guard",
+            tool=tool_name,
+            reason=f"env var(s) leaked: {names}",
+            command_excerpt="",
+        )
+    except Exception:
+        pass
     print(
         f"BLOCKED [secret_egress_guard]: {tool_name} enthaelt den ausgeschriebenen "
         f"Wert von: {names} (aus .env).\n"

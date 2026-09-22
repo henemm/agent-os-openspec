@@ -664,6 +664,16 @@ def _do_guard(payload: dict) -> None:
     if _has_override_token():
         sys.exit(0)
 
+    try:
+        from hook_utils import log_gate_event
+        log_gate_event(
+            hook="session_singleton_guard",
+            tool=tool_name,
+            reason="Haupt-Repo-Schreibzugriff blockiert — Worktree-Pflicht",
+            command_excerpt=tool_input.get("file_path") or tool_input.get("command", ""),
+        )
+    except Exception:
+        pass
     print(
         "============================================================\n"
         "BLOCKIERT — Alle Sessions müssen im Worktree laufen!\n"

@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.29.0] - 2026-09-22
+
+### Added
+
+**Gate-Event-Log (#181, Epic #199 — erster Posten)**
+
+Blockaden waren bisher nur im Transcript sichtbar. Kein Zähler, kein Weg von einem Fehlalarm
+zum Regressionstest. Laut /insights-Report vom 21.09.2026 (241 Sessions, 15.482 Bash-Aufrufe):
+„Eigene Guardrails sind die größte Reibungsquelle." Ohne Log war jede Entscheidung über die
+übrigen Gate-Vorschläge im Backlog eine Meinung; mit Log ist sie eine Rechnung.
+
+- Neue Funktion `hook_utils.log_gate_event(hook, tool, reason, command_excerpt)`: hängt eine
+  JSON-Zeile pro Blockade an `.claude/gate-events.jsonl` an. Nie eine Ausnahme, kein
+  Rotations-/Auswertungscode — das Log beobachtet, es entscheidet nichts.
+- `hook_utils.block()` ruft sie automatisch auf. Deckt `bash_gate.py`, `edit_gate.py`,
+  `post_implementation_gate.py` und `tdd_enforcement.py` ohne jede Änderung an diesen vier
+  Dateien ab (Herkunft von `hook`/`tool`/`command_excerpt` über `sys.argv`/`CLAUDE_TOOL_NAME`/
+  `CLAUDE_TOOL_INPUT`, wenn nicht explizit übergeben).
+- Fünf weitere Hooks blockieren mit rohem `sys.exit(2)` statt über `block()` und wurden einzeln
+  um einen Log-Aufruf ergänzt: `claude_md_protection.py`, `secret_egress_guard.py`,
+  `secrets_guard.py` (4 Stellen), `session_singleton_guard.py`, `worktree_write_guard.py` — alle
+  Stellen in `core/hooks/*.py`, die `sys.exit(2)` aufrufen, sind damit abgedeckt.
+- Maskierung: `command_excerpt` läuft durch `mask_and_truncate_excerpt()` — ein gefundenes
+  Geheimnis-Schlüsselwort (`API_KEY`, `token`, `password`, `Authorization`, …) verwirft den
+  gesamten Rest des Ausschnitts, nicht nur das nächste Wort (sonst bliebe bei
+  „Authorization: Bearer sk-…" das eigentliche Token stehen). Bewusst großzügig statt präzise —
+  ein zu kurzer Ausschnitt ist ein akzeptabler Verlust, ein geleaktes Geheimnis nicht.
+  `secret_egress_guard.py` reicht überhaupt keinen Inhalt weiter: dort ist `tool_input` per
+  Definition der ausgeschriebene Geheimnis-Wert, den der Guard gerade verhindert.
+
+**Bewusst nicht enthalten:** `/91-gate-audit` (Clustering/Auswertung) — zurückgestellt, bis
+Daten vorliegen und sich zeigt, was gebraucht wird. Kein Weg vom Log zurück in ein Gate.
+
+**Verteilung:** wirkt in Konsumenten-Projekten erst nach dem Plugin-Update.
+
 ## [3.28.4] - 2026-09-22
 
 ### Fixed
