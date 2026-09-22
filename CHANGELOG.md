@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+**PO-Briefing-Freigabe zeigt jetzt die ❗Du-Markierung (#209)**
+
+`30-write-spec` hat eine eigene, feste Freigabe-Vorlage und ist deshalb bewusst vom
+generischen Phasen-Marker aus #174 ausgenommen (`MARKER_EXEMPT`). Diese eigene Vorlage
+wurde beim #174-Fix aber nie nachgezogen — ausgerechnet an der Stelle, die *immer* eine
+PO-Entscheidung verlangt, fehlte die `❗ Du: …`-Zeile. Live beobachtet: eine
+PO-Briefing-Freigabe endete nur mit der `⚙`-Marker-Zeile und einer nicht standardkonformen
+„Schreibe approved …"-Zeile.
+
+- `core/commands/30-write-spec.md`: neue Zeile `❗ Du: \`approved\` — Freigabe der Spec,
+  danach beginnt die Umsetzung` direkt vor der `⚙`-Marker-Zeile.
+- `skills/30-write-spec/SKILL.md` per `sync_skills.py` neu erzeugt.
+
 **Ursache der Release-Blockade behoben (#204)**
 
 `release_check.py` behandelte jede `## [Unreleased]`-Überschrift als Blockade — auch eine
