@@ -42,7 +42,7 @@ gleich ganz abzuschalten — das Gegenteil dessen, was der Guard erreichen soll.
 ## Test Plan
 
 `tests/test_swiftui_environment_not_dotenv.py`, hermetisch fuer beide Guards
-(12 Tests, vor dem Fix rot, danach gruen):
+(10 Tests, vor dem Fix rot, danach gruen):
 
 - [x] `grep` auf `.environmentObject(` in einer Swift-Datei → kein Block.
 - [x] `sed -n` auf eine Swift-Datei mit `.environment(` → kein Block.

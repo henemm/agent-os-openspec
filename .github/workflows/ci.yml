@@ -35,3 +35,23 @@ jobs:
         run: |
           python3 scripts/ci_spec_gate.py \
             --base "origin/${{ github.event.pull_request.base.ref }}"
+
+  release-readiness:
+    # Ein Versions-Bump, der nach dem Merge release.yml zum Scheitern bringt,
+    # faellt sonst erst POST-MERGE auf — der Job wird rot, niemand schaut in
+    # die Actions (Issue #204: 3.27.1/3.27.2 nie getaggt). Greift nur, wenn
+    # dieser PR die Version in plugin.json aendert; gewoehnliche PRs mit
+    # gefuelltem Unreleased-Abschnitt bleiben gruen.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Release-Bereitschaft bei Versions-Bump pruefen
+        run: |
+          python3 scripts/release_check.py --pr-gate \
+            --base "origin/${{ github.event.pull_request.base.ref }}"

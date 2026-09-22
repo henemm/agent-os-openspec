@@ -27,6 +27,10 @@ Thumbs.db
 timebox-ios/
 
 # Runtime state (never commit)
+# Worktrees der parallelen Workflows. `git worktree add .worktrees/<name>`
+# hinterliess sie sonst als untracked Eintrag — im Repo, dessen eigener
+# Release-Waechter einen sauberen Arbeitsbaum verlangt (Issue #70).
+.worktrees/
 .claude/active_workflow
 .claude/session-locks/
 .claude/stop_lock.json

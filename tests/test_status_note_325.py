@@ -84,6 +84,14 @@ def test_note_forbids_optional_wording_and_premature_done(tmp_path):
     assert "/clear" in out
 
 
+def test_note_tells_claude_to_mark_who_is_on_turn(tmp_path):
+    """#174: ❗ = der PO muss etwas tun, ℹ️ = Claude arbeitet, nichts zu tun."""
+    project = _project(tmp_path)
+    out = _run(project, "fix-1761-statusvermerk", "Wie ist der Stand?").stdout
+    assert "❗ Du:" in out
+    assert "ℹ️ Nichts zu tun:" in out
+
+
 def test_note_also_appears_on_harness_injected_turns(tmp_path):
     """Der Fundfall war ein Loop-Aufwacher, kein getippter Satz. Solche Turns
     verlassen den Hook frueh (Issue #46) — ohne den Vermerk dort waere genau

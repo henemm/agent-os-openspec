@@ -123,7 +123,7 @@ def test_render_skill_marker_opt_in_and_exempt():
     assert "## Versions-Marker" not in sync_skills.render_skill(cmd, FRONTMATTER, "1.2.3")
     with_name = sync_skills.render_skill(cmd, FRONTMATTER, "1.2.3", "40-tdd-red")
     assert with_name.rstrip("\n").endswith(
-        "auch wenn die Statuszeile entfällt.")
+        "auch wenn die übrigen Zeilen entfallen.")
     assert "⚙ /40-tdd-red · agent-os-openspec 1.2.3" in with_name
     exempt = sync_skills.render_skill(cmd, FRONTMATTER, "1.2.3", "30-write-spec")
     assert "## Versions-Marker" not in exempt
@@ -308,10 +308,25 @@ def test_reentry_section_reaches_the_generated_skills():
 
 def test_marker_block_demands_a_status_line_above_the_version_marker():
     block = sync_skills.marker_block("60-validate", "9.9.9")
-    status_idx = block.index("Nächster Pflicht-Schritt:")
+    action_idx = block.index("❗ Du:")
+    status_idx = block.index("ℹ️ Status: Workflow")
     marker_idx = block.index("⚙ /60-validate · agent-os-openspec 9.9.9")
-    assert status_idx < marker_idx, block
+    assert action_idx < status_idx < marker_idx, block
     assert "Phase `<x>` von 8" in block
+
+
+def test_marker_block_says_who_is_on_turn_with_one_of_two_lines():
+    """#174: Die Fußzeile darf nicht wie eine Aufgabe wirken, wenn Claude
+    selbst arbeitet. Die erste Zeile ist entweder ❗ (PO ist dran) oder
+    ℹ️ (nichts zu tun) — und nennt trotzdem den nächsten Schritt."""
+    block = sync_skills.marker_block("60-validate", "9.9.9")
+    assert "`❗ Du: …`" in block
+    assert "ℹ️ Nichts zu tun:" in block
+    assert "danach: /<befehl> #<N>" in block
+    assert "‼️" in block
+    # Das Wort „Pflicht-Schritt“ ist nur noch der Name im Hook-Hinweis,
+    # keine Zeile mehr, die der PO als Aufforderung liest.
+    assert "Nächster Pflicht-Schritt: `/<befehl> #<N>`" not in block
 
 
 def test_marker_block_forbids_optional_wording_before_phase_8():
@@ -326,9 +341,9 @@ def test_status_line_rule_is_in_every_non_exempt_skill():
         if name in sync_skills.MARKER_EXEMPT:
             continue
         text = (REPO_ROOT / "skills" / name / "SKILL.md").read_text()
-        # Dieselbe Formulierung wie im Hook-Vermerk — "wörtlich übernehmen"
-        # ist sonst nicht wörtlich.
-        assert "Nächster Pflicht-Schritt:" in text, name
+        assert "❗ Du:" in text, name
+        assert "ℹ️ Nichts zu tun:" in text, name
+        assert "ℹ️ Status: Workflow" in text, name
 
 
 def test_status_line_wording_matches_the_hook_note():
@@ -337,9 +352,14 @@ def test_status_line_wording_matches_the_hook_note():
 
     note = workflow.status_note({"name": "fix-1761-x",
                                  "current_phase": "phase7_validate"})
-    label = "Nächster Pflicht-Schritt:"
-    assert label in note
-    assert label in sync_skills.marker_block("60-validate", "9.9.9")
+    # Der Hook nennt den Schritt unter diesem Namen; der Baustein verweist
+    # darauf, damit „wörtlich von dort“ eindeutig bleibt.
+    assert "Nächster Pflicht-Schritt: /60-validate" in note
+    assert "„Nächster Pflicht-Schritt“" in sync_skills.marker_block("60-validate", "9.9.9")
+    # Beide Seiten kennen dieselben zwei Kennzeichnungen.
+    for label in ("❗ Du:", "ℹ️ Nichts zu tun:"):
+        assert label in note
+        assert label in sync_skills.marker_block("60-validate", "9.9.9")
 
 
 def test_marker_block_does_not_contradict_the_verbatim_handover_blocks():

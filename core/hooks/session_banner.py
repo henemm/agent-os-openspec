@@ -18,6 +18,11 @@ Neuerzeugen wuerde sie herabstufen. Und der genannte Reparatur-Befehl kommt
 immer aus der INSTALLIERTEN Fassung; laesst sie sich nicht aufloesen, nennt
 der Banner gar keinen Pfad.
 
+Der genannte Befehl ist immer `--refresh-aliases` (#205), nie `--command-aliases`:
+er ueberschreibt nur vorhandene veraltete Kopien und legt nie eine neue Datei an —
+sicher auch im globalen Scope `~`, wo `--command-aliases` projekteigene Befehle
+ueberschatten wuerde (#87).
+
 Robust by design: jede Exception → still Exit 0. Ein Banner darf den
 Session-Start nie blockieren. Bei `framework: {enabled: false}` bzw.
 OPENSPEC_FRAMEWORK=off wird nichts ausgegeben.
@@ -110,11 +115,10 @@ def _repair_hint(label: str, installed: "tuple[Path, str] | None") -> str:
         return ("installierte Plugin-Fassung nicht auffindbar — bitte Kopien "
                 "nach dem Plugin-Update von Hand neu erzeugen")
     setup_py, version = installed
-    if label == "~":
-        # Der globale Lauf ueberschattet projekteigene Befehle (#87) — nie raten.
-        return (f"global nicht neu erzeugen (#87) — stattdessen je Projekt mit "
-                f"{version}: python3 {setup_py} <projekt> --command-aliases")
-    return f"neu erzeugen mit {version}: python3 {setup_py} {label} --command-aliases"
+    # --refresh-aliases erneuert nur vorhandene, veraltete Kopien und legt nie
+    # eine neue Datei an — kann daher nichts ueberschatten (#87), auch nicht
+    # im globalen Scope `~` (#205).
+    return f"aktualisieren mit {version}: python3 {setup_py} {label} --refresh-aliases"
 
 
 def stale_alias_lines(root: Path, project: Path) -> "list[str]":

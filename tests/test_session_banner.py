@@ -133,8 +133,9 @@ def test_full_copy_for_now_invocable_skill_is_stale(tmp_path):
     """Live-Fall: ~/.claude/commands/40-tdd-red.md ist eine Vollkopie mit
     disable-model-invocation: true, der Skill ist inzwischen false.
 
-    AC-3: Fuer den Scope `~` nennt der Banner nie den globalen Lauf
-    (`setup.py ~`, siehe #87), sondern den Pro-Projekt-Lauf.
+    AC-4 (#205): Fuer den Scope `~` nennt der Banner `--refresh-aliases`
+    (erzeugt nie neue Dateien, ueberschattet also nichts) statt des
+    frueheren Pro-Projekt-Umwegs, der bei `~`-Kopien nichts reparierte.
     """
     plugin = _plugin(tmp_path)
     home, project = _dirs(tmp_path)
@@ -146,8 +147,8 @@ def test_full_copy_for_now_invocable_skill_is_stale(tmp_path):
     assert lines[0] == "agent-os-openspec 9.9.9 aktiv"
     assert len(lines) == 2, msg
     assert "Veraltete Befehls-Kopien: 40-tdd-red" in lines[1]
-    assert "setup.py ~" not in msg
-    assert f"python3 {installed / 'setup.py'} <projekt> --command-aliases" in lines[1]
+    assert f"python3 {installed / 'setup.py'} ~ --refresh-aliases" in lines[1]
+    assert "--command-aliases" not in msg
     assert str(plugin / "setup.py") not in msg
 
 
@@ -161,8 +162,8 @@ def test_outdated_full_copy_in_project_is_stale(tmp_path):
     (project / ".claude" / "commands" / "50-implement.md").write_text(f"{ALIAS_MARKER}\n{old}")
     msg = _message(_run(plugin, home, project))
     assert "Veraltete Befehls-Kopien: 50-implement" in msg
-    assert f"python3 {installed / 'setup.py'} {project} --command-aliases" in msg
-    assert "setup.py ~" not in msg
+    assert f"python3 {installed / 'setup.py'} {project} --refresh-aliases" in msg
+    assert "--command-aliases" not in msg
     assert str(plugin / "setup.py") not in msg
 
 
@@ -189,7 +190,7 @@ def test_copy_with_older_marker_points_to_installed_version(tmp_path):
     )
     msg = _message(_run(plugin, home, project))
     assert "Veraltete Befehls-Kopien: 50-implement" in msg
-    assert f"python3 {installed / 'setup.py'} {project} --command-aliases" in msg
+    assert f"python3 {installed / 'setup.py'} {project} --refresh-aliases" in msg
     assert str(plugin / "setup.py") not in msg
 
 

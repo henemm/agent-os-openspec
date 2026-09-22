@@ -202,9 +202,11 @@ Die Ausgabe besteht aus genau diesen Teilen, in dieser Reihenfolge:
 2. **Optional: deine Gegenstimme** — nur zu einer *Kritischen Anmerkung*, der du
    widersprichst, je genau eine Zeile `Meine Einschätzung: …`, höchstens 3 Zeilen
    insgesamt. Stimmst du allen Anmerkungen zu: nichts schreiben.
-3. **Marker-Zeile** — wörtlich, als letzte Zeile vor der Freigabe-Aufforderung:
-   `⚙ PO-Briefing unabhängig erstellt · agent-os-openspec 3.27.1`
-4. **Freigabe-Aufforderung** — eine Zeile.
+3. **❗Du-Zeile + Marker-Zeile** — wörtlich, als letzte beiden Zeilen, `⚙` ganz zuletzt:
+   `❗ Du: \`approved\` — Freigabe der Spec, danach beginnt die Umsetzung`
+   `⚙ PO-Briefing unabhängig erstellt · agent-os-openspec 3.28.2`
+   Diese Freigabe verlangt *immer* eine PO-Entscheidung — anders als bei den generischen
+   Pflicht-Markern in anderen Befehlen gibt es hier keine `ℹ️ Nichts-zu-tun`-Variante.
 
 Vorlage:
 
@@ -213,8 +215,8 @@ Vorlage:
 
 Meine Einschätzung: [nur bei Widerspruch zu einer Anmerkung — sonst weglassen]
 
-⚙ PO-Briefing unabhängig erstellt · agent-os-openspec 3.27.1
-Schreibe `approved`, wenn der Plan so stimmt — danach geht es in die Umsetzung.
+❗ Du: `approved` — Freigabe der Spec, danach beginnt die Umsetzung
+⚙ PO-Briefing unabhängig erstellt · agent-os-openspec 3.28.2
 
 ---
 

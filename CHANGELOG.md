@@ -7,9 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.28.2] - 2026-09-22
+
 ### Fixed
 
-**`.environment(...)` in SwiftUI-Dateien loeste den .env-Schutz aus**
+**`.environment(...)` in SwiftUI-Dateien loeste den .env-Schutz aus (#137)**
 
 `SECRETS_SENSITIVE_PATTERNS` fuehrte das unverankerte Muster `\.env`. Es trifft
 jedes Token, das mit `.env` beginnt, also auch die SwiftUI-Modifier
@@ -23,6 +25,134 @@ Das Muster ist jetzt `\.env(rc)?\b`: Wortgrenze nach `env`. `.env`, `.env.local`
 `tests/test_swiftui_environment_not_dotenv.py`, beide Guards); `.environment` hat
 zwischen `v` und `i` keine Wortgrenze und faellt heraus. Die README-Vorlage fuer
 `secrets_guard.sensitive_patterns` zeigt das neue Muster.
+
+## [3.28.1] - 2026-09-22
+
+### Fixed
+
+**PO-Briefing-Freigabe zeigt jetzt die ❗Du-Markierung (#209)**
+
+`30-write-spec` hat eine eigene, feste Freigabe-Vorlage und ist deshalb bewusst vom
+generischen Phasen-Marker aus #174 ausgenommen (`MARKER_EXEMPT`). Diese eigene Vorlage
+wurde beim #174-Fix aber nie nachgezogen — ausgerechnet an der Stelle, die *immer* eine
+PO-Entscheidung verlangt, fehlte die `❗ Du: …`-Zeile. Live beobachtet: eine
+PO-Briefing-Freigabe endete nur mit der `⚙`-Marker-Zeile und einer nicht standardkonformen
+„Schreibe approved …"-Zeile.
+
+- `core/commands/30-write-spec.md`: neue Zeile `❗ Du: \`approved\` — Freigabe der Spec,
+  danach beginnt die Umsetzung` direkt vor der `⚙`-Marker-Zeile.
+- `skills/30-write-spec/SKILL.md` per `sync_skills.py` neu erzeugt.
+
+**Ursache der Release-Blockade behoben (#204)**
+
+`release_check.py` behandelte jede `## [Unreleased]`-Überschrift als Blockade — auch eine
+leere. Nach jedem Release trägt die Keep-a-Changelog-Konvention aber genau so einen leeren
+Platzhalter für die nächste Arbeit ein; das hat 3.27.1 und 3.27.2 still nie ausgeliefert
+(PR #203 war die Sofortmaßnahme für den Einzelfall).
+
+- `latest_changelog_version` überspringt jetzt einen **leeren** `Unreleased`-Abschnitt und
+  liest den darunterliegenden Versions-Eintrag. Ein **gefüllter** Abschnitt blockiert
+  weiterhin — das ist Absicht, kein Bug.
+- Neuer CI-Job `release-readiness` (`.github/workflows/ci.yml`, `pull_request`-Trigger):
+  läuft nur, wenn ein PR die Version in `plugin.json` gegenüber dem Ziel-Branch ändert, und
+  prüft dann Version/README/Tag/Skills-Konsistenz — der Fehlschlag wird vor dem Merge rot
+  sichtbar statt danach unbemerkt in den Actions. Gewöhnliche PRs ohne Versions-Bump bleiben
+  unberührt. Neuer Modus `release_check.py --pr-gate --base <ref>`.
+
+## [3.28.0] - 2026-09-21
+
+### Fixed
+
+**Hausputz: sechs bestätigte Kleinfehler (Epic #198)**
+
+Sechs Befunde ohne offene Designfrage, gebündelt abgeräumt. Gemeinsames Merkmal: jeder machte
+etwas Grundlegendes unzuverlässig, und jeder war für sich zu klein, um je vorgezogen zu werden.
+
+- **Nacktes `pytest` bricht nicht mehr ab (#154, Teil 1 von #70).**
+  `modules/ios-swiftui/hooks/test_lock_guard.py` rief seinen Modul-Guard beim *Import* auf
+  (`sys.exit(0)` auf Modulebene). Der pytest-Collector fängt `SystemExit` nicht ab, die Datei heißt
+  `test_*` und wurde eingesammelt — `python3 -m pytest` ohne Zusatzpfad endete mit INTERNALERROR,
+  bevor ein einziger Test lief. Ein abbrechender Sammellauf verdeckt echte Fehlschläge. Der Guard
+  liegt jetzt als `module_active()` in `main()`; der Import ist nebenwirkungsfrei, die Hook-Wirkung
+  unverändert.
+- **README-Version driftet nicht mehr (#195).** `README.md` nannte über Monate `3.9.0`, ausgeliefert
+  wurde `3.27.2` — weil `scripts/release_check.py` `plugin.json` gegen `CHANGELOG.md` abglich und
+  das README ausließ. Neu: `readme_version()` + `check_readme_version()`, als eigene Zeile in der
+  Prüfliste. Ein Release aus einem Stand mit abweichender README-Version ist ab jetzt nicht mehr
+  möglich.
+- **`.worktrees/` ist ignoriert (#70).** `git worktree add .worktrees/<name>` hinterließ einen
+  untracked Eintrag — im Repo, dessen eigener Release-Wächter einen sauberen Arbeitsbaum verlangt.
+- **`setup.py --update` erhält den Plugin-Modus (#159).** `update_project` schrieb
+  `framework_version.json` blind neu und verlor dabei `plugin_mode`, `version_source` und `note`;
+  zugleich bekam `framework_version` wieder eine Zahl gestempelt, die im Plugin-Modus nicht stimmen
+  kann. Ein einziges `--update` machte damit den Fix aus 3.26.0 rückgängig, ohne Meldung. Der
+  bestehende Zustand wird jetzt gelesen und im Plugin-Modus erhalten; eine unlesbare Datei wird neu
+  aufgebaut, aber mit Warnung statt stillschweigend. Copy-Modus unverändert.
+- **Laufzeit-Zustand landet nicht mehr im Konsumenten-Repo (#78).** `workflow.py start` legt
+  `.claude/active_workflow` an — reiner Werkzeug-Zustand, der genau während eines Workflows
+  existiert, also genau dann, wenn committet wird. Neu: `GITIGNORE_RUNTIME_ENTRIES` +
+  `ensure_gitignore_entries()`, aufgerufen von beiden Installationswegen und von `--update`.
+  Vorhandener `.gitignore`-Inhalt bleibt unangetastet, der Aufruf ist idempotent.
+- **Alias-Inhalt hat genau eine Quelle (#150).** `setup.py::generate_command_aliases` trug die
+  Logik aus `core/hooks/alias_sync.py` ein zweites Mal (eigener `ALIAS_MARKER`, eigene
+  Fallunterscheidung über `disable-model-invocation`). Dieselbe Logik nutzt das SessionStart-Banner,
+  um veraltete Kopien zu erkennen — driftet eine Seite, meldet der Banner falsch. `setup.py`
+  importiert jetzt aus `alias_sync`. Zweiter Teil desselben Issues: Der Kopiermodus ersetzt
+  `{{OPENSPEC_VERSION}}` beim Kopieren (`copy_command_text`), statt die rohe Platzhalter-Zeile ins
+  Zielprojekt zu schreiben; `should_update_command` vergleicht gegen den ersetzten Text, damit das
+  Update nicht jeden betroffenen Befehl dauerhaft als „geändert" meldet.
+
+**Verteilung:** wirkt in Konsumenten-Projekten erst nach dem Plugin-Update.
+
+**Offen aus #150:** Der Kopiermodus registriert weiterhin keine SessionStart-Hooks
+(`generate_settings_json`). Eigener Befund, eigener Zuschnitt — bleibt im Issue.
+
+### Hinweis zur Veröffentlichung
+
+3.27.1 und 3.27.2 liegen seit dem 21.09.2026 auf `main`, haben aber **nie einen Tag bekommen**:
+`release.yml` bricht an `release_check.py` ab, sobald ein `## [Unreleased]`-Abschnitt über dem
+Versionseintrag steht — auch ein leerer. Der letzte veröffentlichte Tag war
+`agent-os-openspec--v3.27.0`. Der leere Abschnitt ist hier deshalb entfernt; 3.28.0 liefert den
+Inhalt beider übersprungener Versionen mit aus. Die Ursache — ein stiller Fehlschlag der
+Release-Automatik, den niemand bemerkt — ist als Issue #204 erfasst.
+
+### Fixed
+
+**Sicherer Refresh statt Sackgasse für veraltete Befehls-Kopien (#205)**
+
+Der Banner empfahl bei veralteten globalen Alias-Kopien (`~/.claude/commands/`) den
+Pro-Projekt-Lauf `setup.py <projekt> --command-aliases`. Der reparierte nichts: der
+User-Scope gewinnt gegen den Projekt-Scope (#87), die alte globale Kopie blieb aktiv.
+Der globale Lauf selbst (`setup.py ~ --command-aliases`) legt dagegen für jeden Skill
+eine Datei an und überschattet damit projekteigene Befehle — real passiert mit
+`gregor_zwanzig/.claude/commands/70-deploy.md` am 2026-09-21.
+
+- Neues Flag `setup.py <scope> --refresh-aliases`: erneuert nur vorhandene, veraltete,
+  markierte Kopien und legt **nie** eine neue Datei an — kann daher nichts überschatten,
+  sicher auch für `~`.
+- `session_banner.py` nennt für beide Scopes jetzt diesen Befehl statt des
+  Pro-Projekt-Umwegs.
+
+## [3.27.2] - 2026-09-21
+
+### Changed
+
+**Fußzeile sagt, wer am Zug ist (#174)**
+
+Jede Phasen-Nachricht endete mit „… Nächster Pflicht-Schritt: /befehl“. Der PO las das als
+Aufforderung — auch wenn Claude gerade selbst arbeitete oder auf einen Agenten wartete.
+
+- Neues Ende jeder Phasen-Nachricht: erste Zeile entweder `❗ Du: /befehl #N — warum`
+  (der PO muss tippen oder entscheiden; `‼️` bei Dringendem) oder
+  `ℹ️ Nichts zu tun: Claude arbeitet / wartet auf … — danach: /befehl #N`; darunter
+  `ℹ️ Status: Workflow … · Phase x von 8` und die unveränderte ⚙-Zeile.
+- Quelle: `scripts/sync_skills.py` (`marker_block`, alle Skills neu erzeugt) und
+  `core/hooks/workflow.py` (`status_note`, gilt auch für frei formulierte Nachrichten).
+- **Unverändert:** Der nächste Schritt wird weiter in jeder Nachricht genannt; Phase < 8 heißt
+  nie „optional“ oder „fertig“.
+- Ein erzwingender Stop-Hook (#177) wird bewusst nicht gebaut, bis sich zeigt, dass die Zeile
+  in der Praxis fehlt.
+- **Verteilung:** wirkt in Konsumenten-Projekten erst nach dem Plugin-Update.
 
 ## [3.27.1] - 2026-09-21
 
