@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.28.2] - 2026-09-22
+
 ### Fixed
 
 **ℹ️-Formulierung präzisiert — nie mit „PO ist dran" verwechselbar (#213)**
