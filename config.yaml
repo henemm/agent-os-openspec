@@ -191,7 +191,7 @@ stop_lock:
   stop_keywords:
     - "stop"
     - "stopp"
-    - "halt"
+    - "anhalten"
   resume_keywords:
     - "resume"
     - "weiter"
