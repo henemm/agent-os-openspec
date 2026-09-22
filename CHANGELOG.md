@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+**Fußzeile entfiel bei selbst herbeigeführtem Phasenwechsel im selben Turn (#221)**
+
+Live-Beispiel (gregor_zwanzig): Eine Nachricht endete mit „Workflow steht jetzt in Phase 3
+(Spec)…" — ohne jede Marker-Zeile, nicht einmal die `⚙`-Zeile. Rekonstruiert per
+Workflow-JSON: Claude hatte innerhalb desselben Turns per `workflow.py phase phase3_spec`
+selbst die Phase gewechselt. Der `status_note()`-Hinweis wird aber nur beim Start eines
+Turns injiziert und spiegelte noch die alte Phase — die Instruktion sagte nichts darüber,
+was in diesem Fall gilt, und die komplette Fußzeile wurde offenbar deshalb weggelassen.
+
+- `core/hooks/workflow.py::status_note` und `scripts/sync_skills.py::marker_block`:
+  klargestellt, dass ein selbst herbeigeführter Phasenwechsel im selben Turn den NEUEN
+  Stand für die Fußzeile verlangt — nie deren Weglassen.
+- `skills/*/SKILL.md` per `sync_skills.py` neu erzeugt.
+- Dritte Präzisierung in Folge nach #209 (fehlende ❗Du-Zeile bei 30-write-spec) und #213
+  (ℹ️ mit „PO ist dran" verwechselbar, doppelte Marker im Fließtext).
+
 ## [3.30.0] - 2026-09-22
 
 ### Added
