@@ -36,6 +36,7 @@ Exit-Codes: 0 = erlaubt, 2 = blockiert
 import json
 import os
 import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -49,6 +50,7 @@ def _setup():
 _setup()
 
 from hook_utils import find_project_root, log_gate_event  # noqa: E402
+from override_token import has_valid_token  # noqa: E402
 
 try:
     from config_loader import load_config
@@ -117,6 +119,8 @@ def _get_config() -> dict:
         "ignore_keys": {str(k).upper() for k in cfg.get("ignore_keys", [])},
         "extra_key_patterns": list(cfg.get("extra_key_patterns", [])),
         "scan_all_keys": bool(cfg.get("scan_all_keys", False)),
+        "redirect_guard_enabled": bool(cfg.get("redirect_guard_enabled", True)),
+        "extra_allowed_write_dirs": list(cfg.get("extra_allowed_write_dirs", [])),
     }
 
 
@@ -290,13 +294,128 @@ def find_leaks(tool_name: str, tool_input: dict, cfg: dict, root: Path) -> "list
     return hits
 
 
+def _shell_write_targets(command: str) -> "list[str]":
+    """Ziel-Pfade von '>', '>>' und 'tee' in einem Bash-Kommando (Issue #97).
+
+    Tokenisierung identisch zu bash_gate.py::_has_real_redirect() (shlex mit
+    Fallback auf den Roh-Scan bei verschachtelter Shell/eval oder Parse-Fehler,
+    kein Guard-Drift-Import — bewusst eine parallele, kommentierte Kopie, wie
+    zwischen bash_gate.py und secrets_guard.py bereits etabliert) — hier um die
+    Ziel-STRINGS statt eine reine Bool-Erkennung erweitert.
+
+    Beim sh -c/eval-Fallback liefert nur der rohe '>'-Scan Ziele (kein
+    'tee'-Ziel aus dem Rohtext extrahierbar) — ein Redirect-Fund im Rohtext
+    reicht bereits zum Block, siehe find_unsafe_redirects().
+    """
+    if re.search(r"\b(?:ba|z|da|k)?sh\s+-c\b|\beval\b", command):
+        return [
+            m.group(1) for m in re.finditer(r"(?<![\d-])>{1,2}\s*(\S+)", command)
+            if m.group(1) != "/dev/null" and not re.match(r"^&\d+$", m.group(1))
+        ]
+    try:
+        tokens = shlex.split(command, posix=True)
+    except ValueError:
+        return [
+            m.group(1) for m in re.finditer(r"(?<![\d-])>{1,2}\s*(\S+)", command)
+            if m.group(1) != "/dev/null" and not re.match(r"^&\d+$", m.group(1))
+        ]
+
+    targets = []
+    for i, tok in enumerate(tokens):
+        m = re.match(r"^\d*>{1,2}(.*)$", tok)
+        if m:
+            target = m.group(1) or (tokens[i + 1] if i + 1 < len(tokens) else "")
+            if target and target != "/dev/null" and not re.match(r"^&\d+$", target):
+                targets.append(target)
+        elif tok == "tee" or tok.endswith("/tee"):
+            for nxt in tokens[i + 1:]:
+                if nxt in ("-a", "--append"):
+                    continue
+                if nxt.startswith("-"):
+                    break  # andere Flag (-i, --output-error, ...) — kein Ziel-Token
+                targets.append(nxt)
+                break
+    return targets
+
+
+def _is_outside_safe_zone(target: str, root: Path, cfg: dict) -> bool:
+    """True, wenn `target` ausserhalb Projekt UND ausserhalb aller konfigurierten
+    Ausnahme-Verzeichnisse liegt.
+
+    Relative Ziele werden wie in _targets_env_file() gegen Path.cwd() aufgeloest
+    (dieselbe Annahme, die der Rest dieser Datei bereits trifft: die
+    Hook-Subprocess-CWD entspricht der Ausfuehrungs-CWD des Bash-Tools).
+    """
+    try:
+        p = Path(target).expanduser()
+        if not p.is_absolute():
+            p = Path.cwd() / p
+        resolved = str(p.resolve())
+    except (OSError, ValueError):
+        return False  # nicht als Pfad interpretierbar -> fail-open, wie der Rest der Datei
+    root_str = str(root.resolve())
+    if resolved == root_str or resolved.startswith(root_str + os.sep):
+        return False
+    for pattern in cfg["extra_allowed_write_dirs"]:
+        if re.match(pattern, resolved):
+            return False
+    return True
+
+
+def find_unsafe_redirects(tool_name: str, tool_input: dict, cfg: dict, root: Path) -> "list[str]":
+    """Schreibziele ausserhalb der Sicherheitszone, nur fuer Bash-Kommandos (Issue #97)."""
+    if not cfg["redirect_guard_enabled"] or tool_name != "Bash" or not isinstance(tool_input, dict):
+        return []
+    command = tool_input.get("command", "")
+    if not command:
+        return []
+    targets = _shell_write_targets(command)
+    unsafe = []
+    for t in targets:
+        if _is_outside_safe_zone(t, root, cfg) and t not in unsafe:
+            unsafe.append(t)
+    return unsafe
+
+
+def _block_unsafe_redirect(tool_name: str, unsafe: "list[str]") -> None:
+    targets = ", ".join(unsafe)
+    try:
+        log_gate_event(
+            hook="secret_egress_guard",
+            tool=tool_name,
+            reason=f"write target(s) outside safe zone: {targets}",
+            command_excerpt="",
+        )
+    except Exception:
+        pass
+    print(
+        f"BLOCKED [secret_egress_guard]: {tool_name} schreibt per Umleitung (>, >>, tee) "
+        f"auf ein Ziel ausserhalb von Projekt und erlaubten Verzeichnissen:\n"
+        f"  {targets}\n"
+        "  Zugangsdaten, die als Prozess-AUSGABE entstehen (z.B. eine fehlschlagende\n"
+        "  Test-Assertion), waeren sonst unsichtbar fuer die Wert-Pruefung dieses Guards\n"
+        "  (Issue #97).\n"
+        "  Richtiges Ziel: eine Datei innerhalb des Projekts, oder das private\n"
+        "  Sitzungs-Scratchpad.\n"
+        "  Fehlalarm? config.yaml -> secret_egress_guard.extra_allowed_write_dirs: "
+        "[\"^<pfad-praefix>\"]\n"
+        "  Einmaliger Bypass: 'override' tippen (1h gueltig).",
+        file=sys.stderr,
+    )
+    sys.exit(2)
+
+
 def main() -> None:
     cfg = _get_config()
     if not cfg["enabled"]:
         sys.exit(0)
     tool_name, tool_input = _read_payload()
-    hits = find_leaks(tool_name, tool_input, cfg, find_project_root())
+    root = find_project_root()
+    hits = find_leaks(tool_name, tool_input, cfg, root)
     if not hits:
+        unsafe = find_unsafe_redirects(tool_name, tool_input, cfg, root)
+        if unsafe and not has_valid_token():
+            _block_unsafe_redirect(tool_name, unsafe)
         sys.exit(0)
     names = ", ".join(hits)
     # command_excerpt bewusst NICHT befuellt: tool_input traegt hier per
