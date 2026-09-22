@@ -267,7 +267,7 @@ Beende deine letzte Nachricht in diesem Befehl mit diesen Zeilen, in dieser Reih
 
 ❗ Du: `/<befehl> #<N>` — <ein Halbsatz, warum>
 ℹ️ Status: Workflow `<name>` · Phase `<x>` von 8
-⚙ /80-workflow · agent-os-openspec 3.28.0
+⚙ /80-workflow · agent-os-openspec 3.28.1
 
 Die erste Zeile sagt, wer am Zug ist, und steht in genau einer von zwei Formen: `❗ Du: …`, wenn der PO den Schritt tippen oder eine Entscheidung treffen muss (bei Dringendem `‼️` statt `❗`) — oder `ℹ️ Nichts zu tun: <Claude arbeitet / wartet auf …> — danach: /<befehl> #<N>`, wenn Claude gerade selbst arbeitet oder auf ein Ergebnis wartet. So muss der PO nie raten, ob etwas von ihm erwartet wird.
 
