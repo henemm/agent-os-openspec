@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [3.28.2] - 2026-09-22
+## [3.28.3] - 2026-09-22
 
 ### Fixed
 
@@ -25,6 +25,27 @@ Das Muster ist jetzt `\.env(rc)?\b`: Wortgrenze nach `env`. `.env`, `.env.local`
 `tests/test_swiftui_environment_not_dotenv.py`, beide Guards); `.environment` hat
 zwischen `v` und `i` keine Wortgrenze und faellt heraus. Die README-Vorlage fuer
 `secrets_guard.sensitive_patterns` zeigt das neue Muster.
+
+## [3.28.2] - 2026-09-22
+
+### Fixed
+
+**ℹ️-Formulierung präzisiert — nie mit „PO ist dran" verwechselbar (#213)**
+
+Zwei Live-Beispiele zeigten, dass die #174-Kennzeichnung noch missverständlich war:
+1. Eine Fußzeile lautete „ℹ️ Nichts zu tun: Claude wartet auf deinen nächsten Befehl" — das
+   ist aber der klassische `❗ Du`-Fall, kein „nichts zu tun".
+2. Eine Nachricht enthielt beide Marker gleichzeitig: eine `ℹ️`-Zeile mitten im Fließtext und
+   eine widersprüchliche `❗`-Fußzeile („bis dahin ist nichts von dir nötig").
+
+Die ursprüngliche #174-Spec meinte mit `ℹ️` explizit „wartet auf einen **Hintergrund-Agenten**"
+— die ausgelieferte Formulierung sagte nur vage „wartet auf …".
+
+- `core/hooks/workflow.py::status_note` und `scripts/sync_skills.py::marker_block`:
+  präzisiert, dass „wartet auf den nächsten Befehl des PO" IMMER `❗ Du` ist, und dass die
+  Kennzeichnung ausschließlich einmal als terminale Fußzeile steht — nie als Vokabular im
+  Fließtext davor.
+- `skills/*/SKILL.md` per `sync_skills.py` neu erzeugt.
 
 ## [3.28.1] - 2026-09-22
 
