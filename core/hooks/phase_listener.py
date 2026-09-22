@@ -33,7 +33,7 @@ APPROVAL_PHRASES = [
     "abgenommen", "passt", "sieht gut aus",
 ]
 
-STOP_PHRASES = ["stop", "stopp", "halt", "anhalten"]
+STOP_PHRASES = ["stop", "stopp", "anhalten"]
 CONTINUE_PHRASES = ["weiter", "continue", "weitermachen", "fortfahren", "resume"]
 OVERRIDE_PHRASES = ["override", "ich genehmige", "genehmige", "ueberschreiben"]
 GREEN_PHRASES = ["go", "green ok", "tests ok", "gruen ok"]

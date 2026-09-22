@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.29.1] - 2026-09-22
+
+### Fixed
+
+**'halt' als Stop-Wort löste Fehlalarme aus (#146, Epic #199)**
+
+`STOP_PHRASES` matcht bewusst großzügig überall im Text (Not-Aus soll immer greifen). Im
+Deutschen ist „halt" aber ein extrem häufiges Füllwort („das ist halt so") — jede normale
+Nachricht damit löste ungewollt einen echten Stop-Lock aus.
+
+- `core/hooks/phase_listener.py::STOP_PHRASES` und `config.yaml::stop_lock.stop_keywords`:
+  `"halt"` entfernt. `"stop"`/`"stopp"`/`"anhalten"` bleiben und decken den echten
+  Anwendungsfall eindeutig ab.
+- Nebenbefund beim Fix: `config.yaml` führte `"anhalten"` bisher gar nicht (unabhängiger Drift
+  von `STOP_PHRASES`) — jetzt mit ergänzt, beide Listen wieder deckungsgleich (derselbe
+  Fehlerklasse wie #145: die Config-Vorlage gewinnt zur Laufzeit gegen den Code-Default).
+
+Spec: `docs/specs/fast/fix-146-stop-word-halt.md`. Tests: `tests/test_stop_word_halt_146.py`.
+
 ## [3.29.0] - 2026-09-22
 
 ### Added
