@@ -18,9 +18,16 @@ import re
 import subprocess
 import sys
 
-# Module guard — No-Op wenn ios-swiftui nicht aktiv
-if "ios-swiftui" not in os.environ.get("OPENSPEC_ENABLED_MODULES", "").split(","):
-    sys.exit(0)
+def module_active() -> bool:
+    """True, wenn das ios-swiftui-Modul fuer diese Sitzung aktiviert ist.
+
+    Bewusst eine Funktion und kein `sys.exit(0)` auf Modulebene (Issue #154):
+    ein Import mit Nebenwirkung bricht den pytest-Collector ab, weil der
+    `SystemExit` beim Einsammeln nicht abgefangen wird. Die Datei heisst
+    `test_*`, wird also eingesammelt — ein nacktes `python3 -m pytest` endete
+    dadurch mit INTERNALERROR, bevor ein einziger Test lief.
+    """
+    return "ios-swiftui" in os.environ.get("OPENSPEC_ENABLED_MODULES", "").split(",")
 
 
 def get_tool_input() -> dict:
@@ -77,6 +84,10 @@ def get_running_xcodebuild_info() -> str:
 
 
 def main():
+    # Module guard — No-Op wenn ios-swiftui nicht aktiv
+    if not module_active():
+        sys.exit(0)
+
     tool_name = os.environ.get("CLAUDE_TOOL", "")
     if tool_name != "Bash":
         sys.exit(0)
