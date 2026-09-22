@@ -132,21 +132,26 @@ strict_code_gate:
   #   - "lib/gates/"
 
 # Secrets Guard — Prevents accidental exposure of sensitive files
-# Used by bash_gate.py
+# Used by secrets_guard.py and bash_gate.py (shared source: core/hooks/hook_utils.py
+# ::SECRETS_SENSITIVE_PATTERNS / SECRETS_ALWAYS_BLOCKED). Muster hier MUESSEN mit dem
+# Code-Default uebereinstimmen (tests/test_config_yaml_secrets_pattern_drift_145.py
+# prueft das) — ein Feld, das hier gesetzt ist, gewinnt in _get_config() gegen den
+# Code-Default. Die alten unverankerten Formen `_key`/`_secret` (Issue #145) blockierten
+# jede Datei mit "key"/"secret" als Substring im Namen (z.B. "...keyword_guard.py").
 secrets_guard:
   sensitive_patterns:
-    - "\\.env"
+    - "\\.env(rc)?\\b"
     - "credentials\\.json"
     - "service[_-]?account.*\\.json"
-    - "_key"
-    - "_secret"
+    - "private[_.]key"
+    - "[_.]secret\\."
     - "\\.pem$"
     - "\\.key$"
   always_blocked:  # Even in staging mode
     - "credentials\\.json"
     - "service[_-]?account.*\\.json"
-    - "_key"
-    - "_secret"
+    - "private[_.]key"
+    - "[_.]secret\\."
     - "\\.pem$"
     - "\\.key$"
 
