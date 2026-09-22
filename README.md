@@ -2,7 +2,7 @@
 
 A modular workflow enforcement system for Claude Code that ensures quality through spec-first development, TDD with real artifacts, and hook-enforced phase gating.
 
-**Version**: 3.28.2 · [Changelog](CHANGELOG.md) · [GitHub Issues](https://github.com/henemm/agent-os-openspec/issues)
+**Version**: 3.28.3 · [Changelog](CHANGELOG.md) · [GitHub Issues](https://github.com/henemm/agent-os-openspec/issues)
 
 ---
 
@@ -277,7 +277,7 @@ scope_guard:
   test_path_patterns: []        # Optional: eigene Regex statt eingebauter Testpfad-Konventionen (tests/, *_test.py, ...)
 
 secrets_guard:
-  sensitive_patterns: ["\\.env", "credentials\\.json"]
+  sensitive_patterns: ["\\.env(rc)?\\b", "credentials\\.json"]
 
 pre_commit:
   required_staged_files: ["docs/ACTIVE-todos.md"]

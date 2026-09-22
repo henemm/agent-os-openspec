@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.28.3] - 2026-09-22
+
+### Fixed
+
+**`.environment(...)` in SwiftUI-Dateien loeste den .env-Schutz aus (#137)**
+
+`SECRETS_SENSITIVE_PATTERNS` fuehrte das unverankerte Muster `\.env`. Es trifft
+jedes Token, das mit `.env` beginnt, also auch die SwiftUI-Modifier
+`.environment(...)` und `.environmentObject(...)`, die in praktisch jeder
+SwiftUI-Datei stehen. Ein `grep` oder `sed` auf einen dieser Modifier in einer
+Swift-Datei wurde deshalb als Ausgabe einer .env-Datei geblockt, und der Hinweis
+„touch .claude/staging" verleitete dazu, den Schutz gleich ganz abzuschalten.
+
+Das Muster ist jetzt `\.env(rc)?\b`: Wortgrenze nach `env`. `.env`, `.env.local`,
+`.env.production`, `.envrc` und `config/.env` bleiben geschuetzt (Gegenproben in
+`tests/test_swiftui_environment_not_dotenv.py`, beide Guards); `.environment` hat
+zwischen `v` und `i` keine Wortgrenze und faellt heraus. Die README-Vorlage fuer
+`secrets_guard.sensitive_patterns` zeigt das neue Muster.
+
 ## [3.28.2] - 2026-09-22
 
 ### Fixed
