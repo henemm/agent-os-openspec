@@ -5,6 +5,26 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+**Ursache der Release-Blockade behoben (#204)**
+
+`release_check.py` behandelte jede `## [Unreleased]`-Überschrift als Blockade — auch eine
+leere. Nach jedem Release trägt die Keep-a-Changelog-Konvention aber genau so einen leeren
+Platzhalter für die nächste Arbeit ein; das hat 3.27.1 und 3.27.2 still nie ausgeliefert
+(PR #203 war die Sofortmaßnahme für den Einzelfall).
+
+- `latest_changelog_version` überspringt jetzt einen **leeren** `Unreleased`-Abschnitt und
+  liest den darunterliegenden Versions-Eintrag. Ein **gefüllter** Abschnitt blockiert
+  weiterhin — das ist Absicht, kein Bug.
+- Neuer CI-Job `release-readiness` (`.github/workflows/ci.yml`, `pull_request`-Trigger):
+  läuft nur, wenn ein PR die Version in `plugin.json` gegenüber dem Ziel-Branch ändert, und
+  prüft dann Version/README/Tag/Skills-Konsistenz — der Fehlschlag wird vor dem Merge rot
+  sichtbar statt danach unbemerkt in den Actions. Gewöhnliche PRs ohne Versions-Bump bleiben
+  unberührt. Neuer Modus `release_check.py --pr-gate --base <ref>`.
+
 ## [3.28.0] - 2026-09-21
 
 ### Fixed
