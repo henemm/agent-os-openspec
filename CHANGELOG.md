@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+**Sicherer Refresh statt Sackgasse für veraltete Befehls-Kopien (#205)**
+
+Der Banner empfahl bei veralteten globalen Alias-Kopien (`~/.claude/commands/`) den
+Pro-Projekt-Lauf `setup.py <projekt> --command-aliases`. Der reparierte nichts: der
+User-Scope gewinnt gegen den Projekt-Scope (#87), die alte globale Kopie blieb aktiv.
+Der globale Lauf selbst (`setup.py ~ --command-aliases`) legt dagegen für jeden Skill
+eine Datei an und überschattet damit projekteigene Befehle — real passiert mit
+`gregor_zwanzig/.claude/commands/70-deploy.md` am 2026-09-21.
+
+- Neues Flag `setup.py <scope> --refresh-aliases`: erneuert nur vorhandene, veraltete,
+  markierte Kopien und legt **nie** eine neue Datei an — kann daher nichts überschatten,
+  sicher auch für `~`.
+- `session_banner.py` nennt für beide Scopes jetzt diesen Befehl statt des
+  Pro-Projekt-Umwegs.
+
 ## [3.27.2] - 2026-09-21
 
 ### Changed

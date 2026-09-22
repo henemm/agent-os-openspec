@@ -117,6 +117,85 @@ def test_creates_commands_dir_when_missing(tmp_path):
 
     setup.generate_command_aliases(tmp_path)
 
+
+# --- refresh_command_aliases (#205: sicherer Update-only-Modus) -------------
+
+def test_refresh_updates_existing_stale_marker_file(tmp_path):
+    """AC-1: Vorhandene, veraltete markierte Kopie wird auf den Soll-Inhalt gebracht."""
+    commands_dir = tmp_path / ".claude" / "commands"
+    commands_dir.mkdir(parents=True)
+    stale = commands_dir / "10-context.md"
+    stale.write_text(MARKER + "\nveralteter inhalt der ueberschrieben werden muss\n")
+
+    setup.refresh_command_aliases(tmp_path)
+
+    content = stale.read_text()
+    assert content.splitlines()[0] == MARKER
+    assert "/agent-os-openspec:10-context $ARGUMENTS" in content
+    assert "veralteter inhalt" not in content
+
+
+def test_refresh_never_creates_missing_files(tmp_path):
+    """AC-2: Fuer Skills ohne vorhandene Datei im Scope wird nichts angelegt —
+    das ist der ganze Sinn des Modus (kann nichts ueberschatten, #87/#205)."""
+    commands_dir = tmp_path / ".claude" / "commands"
+    commands_dir.mkdir(parents=True)
+    (commands_dir / "10-context.md").write_text(MARKER + "\nveraltet\n")
+
+    setup.refresh_command_aliases(tmp_path)
+
+    for name in _skill_names():
+        if name == "10-context":
+            continue
+        assert not (commands_dir / f"{name}.md").exists()
+
+
+def test_refresh_leaves_unmarked_custom_command_untouched(tmp_path):
+    """AC-3: Datei ohne Marker (Custom-Command) bleibt unveraendert."""
+    commands_dir = tmp_path / ".claude" / "commands"
+    commands_dir.mkdir(parents=True)
+    custom = commands_dir / "50-implement.md"
+    original = "custom user command"
+    custom.write_text(original)
+
+    setup.refresh_command_aliases(tmp_path)
+
+    assert custom.read_text() == original
+
+
+def test_refresh_leaves_newer_marked_copy_untouched(tmp_path):
+    """AC-3: Eine Kopie mit beweisbar neuerem Versions-Marker als die
+    geladene FRAMEWORK_VERSION wird nicht herabgestuft."""
+    commands_dir = tmp_path / ".claude" / "commands"
+    commands_dir.mkdir(parents=True)
+    target = commands_dir / "10-context.md"
+    newer_version = ".".join(
+        str(int(p) + 1) if i == 0 else p
+        for i, p in enumerate(setup.FRAMEWORK_VERSION.split("."))
+    )
+    content = (
+        f"{MARKER}\nirgendein inhalt\n\n"
+        f"⚙ /10-context · agent-os-openspec {newer_version}\n"
+    )
+    target.write_text(content)
+
+    setup.refresh_command_aliases(tmp_path)
+
+    assert target.read_text() == content
+
+
+def test_refresh_is_idempotent_on_already_current_copy(tmp_path):
+    """Ein bereits aktueller Alias bleibt unangetastet — kein unnoetiger Schreibvorgang."""
+    commands_dir = tmp_path / ".claude" / "commands"
+    commands_dir.mkdir(parents=True)
+    setup.generate_command_aliases(tmp_path)
+    before = {p.name: p.read_text() for p in commands_dir.glob("*.md")}
+
+    setup.refresh_command_aliases(tmp_path)
+
+    after = {p.name: p.read_text() for p in commands_dir.glob("*.md")}
+    assert after == before
+
     assert commands_dir.is_dir()
     names = _skill_names()
     for name in names:
