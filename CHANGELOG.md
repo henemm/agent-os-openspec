@@ -5,6 +5,52 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.28.1] - 2026-09-22
+
+### Fixed
+
+**Die Release-Automatik scheitert nicht mehr still (#204)**
+
+Am 21./22.09.2026 lag `main` auf 3.27.2, der letzte Tag war
+`agent-os-openspec--v3.27.0`. **Zwei fertige, dokumentierte, als erledigt geschlossene Versionen
+wurden nie veröffentlicht** — die Konsumenten-Projekte liefen weiter auf 3.27.0. Innerhalb von
+zwölf Stunden trat derselbe Fehlschlag dreimal auf (Release-Läufe #43, #44, #45). Aufgefallen ist
+er erst bei der Abnahme von Epic #198, und auch nur, weil dort gezielt nachgesehen wurde.
+
+Zwei Ursachen, zwei Korrekturen:
+
+- **Ein leerer `## [Unreleased]`-Abschnitt blockierte das Release.** `latest_changelog_version`
+  lieferte `None`, sobald der oberste Eintrag `Unreleased` hieß — und `release.yml` bricht daran
+  ab. Die Absicht war richtig (ein Release mit offenem, *gefülltem* Unreleased-Block wäre
+  unvollständig dokumentiert), die Umsetzung zu grob: Die leere Überschrift ist der
+  Keep-a-Changelog-Platzhalter, den jeder stehen lässt, und dokumentiert nichts. Ein leerer Block
+  wird jetzt übersprungen, ein gefüllter blockiert unverändert. Eine angefangene Rubrik
+  (`### Added` ohne Inhalt) gilt als gefüllt — wer eine Rubrik anlegt, hat etwas vor.
+- **Der Fehlschlag war unsichtbar.** `release_check.py` lief ausschließlich in `release.yml`, also
+  *nach* dem Merge. Wird der Job dort rot, schaut niemand nach. Neu: `--content-only` führt die
+  inhaltlichen Prüfungen (Version, README, Skills, Release) schon im Pull Request aus, als eigener
+  CI-Job `release-readiness`. Dort ist ein Fehlschlag ein rotes Kreuz am PR, das gesehen wird.
+
+**Neue Prüfung `Release`:** Liegt auf `main` eine Version, für die kein Tag existiert, ist das
+letzte Release nicht herausgekommen. Genau der Zustand vom 21.09. — der nächste Pull Request danach
+hätte Alarm geschlagen, statt dass der Rückstand weiterwächst. Läuft nur auf Pull Requests: Beim
+Release selbst trägt die gerade gemergte Version naturgemäß noch keinen Tag.
+
+**Trennung der Prüfungen:** `Branch`, `Arbeitsbaum` und `Abgleich` beschreiben den *Zustand des
+Release-Laufs* und sind im Pull Request per Definition nicht erfüllbar — sie bleiben dem
+Release-Lauf vorbehalten. `Version`, `README`, `Skills` und `Release` beschreiben den *Inhalt des
+Commits* und gelten auf jedem Branch. Die `Tag`-Prüfung bleibt ebenfalls release-seitig: Ein
+Pull Request ohne Versions-Bump ist zulässig (das Release meldet dann „bereits veröffentlicht" und
+tut nichts), und ihn zu blockieren wäre ein neues Gate ohne Anlass.
+
+**Wirkung auf #206/#205:** Jener Pull Request hatte seinen CHANGELOG-Eintrag unter `[Unreleased]`
+stehen — mit dem neuen Job wäre er schon im Pull Request rot geworden (gefüllter Unreleased-Block →
+`Version` schlägt fehl), statt nach dem Merge still zu scheitern.
+
+**Repo-intern:** `scripts/release_check.py` wird nicht in Konsumenten-Projekte installiert
+(`setup.py` liefert nur `ci_spec_gate.py` aus). Diese Version ändert für Konsumenten nichts —
+außer dass ihre Updates künftig zuverlässig erscheinen.
+
 ## [3.28.0] - 2026-09-21
 
 ### Fixed

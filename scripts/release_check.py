@@ -67,14 +67,32 @@ def plugin_manifest() -> dict:
 def latest_changelog_version(text: str) -> "str | None":
     """Version des obersten Eintrags im CHANGELOG, oder None.
 
-    'Unreleased' zaehlt bewusst NICHT als Version: ein Release aus einem
-    Stand mit offenem Unreleased-Block waere unvollstaendig dokumentiert.
+    Ein **gefuellter** 'Unreleased'-Block zaehlt bewusst nicht als Version: Ein
+    Release aus einem solchen Stand waere unvollstaendig dokumentiert — die dort
+    beschriebenen Aenderungen bekaemen keine Versionsnummer.
+
+    Ein **leerer** 'Unreleased'-Block wird dagegen uebersprungen (Issue #204).
+    Er ist der Keep-a-Changelog-Platzhalter, den jeder stehen laesst, und
+    dokumentiert nichts. Dass er blockierte, hat zwei fertige Versionen
+    (3.27.1, 3.27.2) daran gehindert, ueberhaupt veroeffentlicht zu werden.
     """
-    for match in _CHANGELOG_VERSION_RE.finditer(text):
+    matches = list(_CHANGELOG_VERSION_RE.finditer(text))
+    for index, match in enumerate(matches):
         version = match.group(1).strip()
-        if version.lower() == "unreleased":
+        if version.lower() != "unreleased":
+            return version
+
+        # Abschnittsrumpf: ab dem Zeilenende der Ueberschrift bis zur naechsten
+        # '## [...]'-Ueberschrift. Unterueberschriften wie '### Added' matchen
+        # das Muster nicht und zaehlen damit als Inhalt — wer eine Rubrik
+        # anlegt, hat etwas vor, und im Zweifel wird blockiert.
+        body_start = text.find("\n", match.end())
+        if body_start == -1:
             return None
-        return version
+        body_end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        if text[body_start:body_end].strip():
+            return None
+        # Leer — weiter zum naechsten Eintrag.
     return None
 
 
@@ -147,6 +165,67 @@ def check_version_match(manifest_version: str, changelog_version: "str | None") 
     return True, f"Version {manifest_version} in plugin.json und CHANGELOG"
 
 
+def version_tuple(version: str) -> tuple:
+    """'3.28.0' -> (3, 28, 0). Fuer Vergleiche — als Text waere '3.9.0'
+    groesser als '3.28.0'."""
+    return tuple(int(part) for part in version.split("."))
+
+
+def latest_tagged_version(tags: "list[str]", name: str) -> "str | None":
+    """Hoechste veroeffentlichte Version aus einer Tag-Liste, oder None."""
+    prefix = TAG_TEMPLATE.format(name=name, version="")
+    versions = [
+        tag[len(prefix):] for tag in tags
+        if tag.startswith(prefix) and re.fullmatch(r"\d+(?:\.\d+)*", tag[len(prefix):])
+    ]
+    return max(versions, key=version_tuple) if versions else None
+
+
+def main_plugin_version() -> "str | None":
+    """Version, die aktuell auf `main` liegt — oder None, wenn nicht lesbar."""
+    result = _git("show", f"origin/{RELEASE_BRANCH}:.claude-plugin/plugin.json")
+    if result.returncode != 0:
+        return None
+    try:
+        return json.loads(result.stdout).get("version") or None
+    except json.JSONDecodeError:
+        return None
+
+
+def all_tags() -> "list[str]":
+    _git("fetch", "origin", "--tags", "--quiet")
+    result = _git("tag", "--list")
+    return result.stdout.split() if result.returncode == 0 else []
+
+
+def check_main_release_published(main_version: "str | None",
+                                 latest_tag: "str | None") -> "tuple[bool, str]":
+    """Liegt auf `main` eine Version, die nie veroeffentlicht wurde? (Issue #204)
+
+    Das ist die Pruefung, die am 21.09.2026 gefehlt hat: `main` stand auf
+    3.27.2, der letzte Tag war 3.27.0. Zwei Versionen waren fertig, dokumentiert
+    und geschlossen — und kamen bei keinem Konsumenten-Projekt an, weil der
+    Release-Job nach dem Merge rot wurde und niemand in die Actions schaut.
+
+    Laeuft in der Inhaltspruefung, also im Pull Request: Dort wird ein rotes
+    Kreuz gesehen. Der naechste PR nach einem verpassten Release schlaegt Alarm,
+    statt dass der Rueckstand weiterwaechst.
+    """
+    if not main_version:
+        # Flacher Klon o.ae. — eine Pruefung, die an einer Git-Eigenheit
+        # scheitert, ist schlimmer als der Fehler, den sie sucht.
+        return True, f"Stand von {RELEASE_BRANCH} nicht lesbar — uebersprungen"
+    if not latest_tag:
+        return True, "noch kein Release getaggt"
+    if version_tuple(latest_tag) >= version_tuple(main_version):
+        return True, f"letztes Release {latest_tag} deckt {RELEASE_BRANCH} ({main_version}) ab"
+    return False, (
+        f"{RELEASE_BRANCH} steht auf {main_version}, letzter Tag ist {latest_tag} — "
+        "das letzte Release ist nicht herausgekommen (Issue #204). "
+        "Zuerst den Release-Lauf auf main reparieren, sonst waechst der Rueckstand."
+    )
+
+
 def readme_version(text: str) -> "str | None":
     """Version aus der Marker-Zeile des README, oder None."""
     match = _README_VERSION_RE.search(text)
@@ -210,6 +289,10 @@ def main() -> int:
                         help="CHANGELOG-Abschnitt der aktuellen Version ausgeben und beenden")
     parser.add_argument("--tag", action="store_true",
                         help="Tag-Namen der aktuellen Version ausgeben und beenden")
+    parser.add_argument("--content-only", action="store_true",
+                        help="Nur die inhaltlichen Pruefungen — fuer den Pull "
+                             "Request, wo Branch/Arbeitsbaum/Abgleich nie "
+                             "erfuellt sein koennen (Issue #204)")
     args = parser.parse_args()
 
     manifest = plugin_manifest()
@@ -224,15 +307,36 @@ def main() -> int:
         print(changelog_section(CHANGELOG.read_text(), version))
         return 0
 
-    checks = [
-        ("Branch", check_branch()),
-        ("Arbeitsbaum", check_clean_tree()),
-        ("Abgleich", check_in_sync()),
+    # Zwei Gruppen, inhaltlich getrennt (Issue #204):
+    #
+    #   Zustand  — beschreibt den Release-Lauf selbst (steht er auf main, ist
+    #              der Baum sauber, ist er synchron). Im Pull Request per
+    #              Definition nicht erfuellbar.
+    #   Inhalt   — beschreibt den Commit (Versionen konsistent, Skills
+    #              synchron, letztes Release draussen). Gilt auf jedem Branch
+    #              und laeuft deshalb schon im Pull Request, wo ein rotes Kreuz
+    #              gesehen wird — anders als ein roter Job nach dem Merge.
+    content_checks = [
         ("Version", check_version_match(version, latest_changelog_version(CHANGELOG.read_text()))),
         ("README", check_readme_version(version, README.read_text())),
-        ("Tag", check_tag_free(tag)),
         ("Skills", check_skills_sync()),
+        ("Release", check_main_release_published(
+            main_plugin_version(), latest_tagged_version(all_tags(), name))),
     ]
+
+    if args.content_only:
+        checks = content_checks
+    else:
+        checks = [
+            ("Branch", check_branch()),
+            ("Arbeitsbaum", check_clean_tree()),
+            ("Abgleich", check_in_sync()),
+            # Die Release-Pruefung entfaellt hier: Beim Release steht auf main
+            # genau die Version, die dieser Lauf gerade taggt — sie hat noch
+            # keinen Tag, und das ist der Normalfall.
+            *[c for c in content_checks if c[0] != "Release"],
+            ("Tag", check_tag_free(tag)),
+        ]
     if not args.no_tests:
         checks.append(("Tests", check_tests()))
 
@@ -244,9 +348,15 @@ def main() -> int:
 
     print()
     if failed:
-        print(f"ABBRUCH: {failed} Pruefung(en) gescheitert — kein Release aus diesem Stand.",
+        reason = ("dieser Stand wuerde das Release blockieren"
+                  if args.content_only
+                  else "kein Release aus diesem Stand")
+        print(f"ABBRUCH: {failed} Pruefung(en) gescheitert — {reason}.",
               file=sys.stderr)
         return 1
+    if args.content_only:
+        print(f"Inhalt in Ordnung — Version {version} ist release-faehig.")
+        return 0
     print(f"Bereit fuer Release {version}. Tag: {tag}")
     return 0
 

@@ -18,6 +18,33 @@ jobs:
       - name: Run test suite
         run: python3 -m pytest tests/ -q
 
+  release-readiness:
+    # Inhaltliche Release-Vorbedingungen schon im Pull Request (Issue #204).
+    #
+    # `release_check.py` lief bisher ausschliesslich in release.yml, also NACH
+    # dem Merge. Wird der Job dort rot, schaut niemand nach — so blieben 3.27.1
+    # und 3.27.2 unveroeffentlicht, waehrend alle Beteiligten sie fuer
+    # ausgeliefert hielten. Hier wird dieselbe Pruefung zu einem roten Kreuz am
+    # Pull Request, wo sie jemand sieht.
+    #
+    # Nur auf Pull Requests: Auf main traegt die gerade gemergte Version
+    # naturgemaess noch keinen Tag — das ist der Normalfall, kein Fehler.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Volle Historie und Tags: ohne sie kann die Release-Pruefung weder
+          # den Stand von main noch die veroeffentlichten Versionen sehen.
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install pyyaml
+      - name: Inhaltliche Release-Vorbedingungen
+        run: python3 scripts/release_check.py --content-only --no-tests
+
   spec-gate:
     # Serverseitige Nachpruefung: lokale Hooks sind abschaltbar, und
     # .claude/workflows/ ist gitignored — die CI sieht nur committete Dateien.
