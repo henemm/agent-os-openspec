@@ -83,6 +83,22 @@ def main() -> None:
 
     # Schreibzugriff in Main-Repo aus Worktree-Kontext → BLOCKIEREN
     if abs_file.startswith(abs_main + sep) or abs_file == abs_main:
+        # Logging best-effort, in eigenem try/except: die Fail-safe-Garantie
+        # dieser Datei ("jede unerwartete Exception -> exit(0), nie
+        # blockieren") gilt fuer die eigentliche Guard-Logik oben — hier,
+        # NACH der Entscheidung "blockieren", darf ein Logging-Fehler den
+        # bereits feststehenden exit(2) nicht mehr veraendern.
+        try:
+            sys.path.insert(0, str(Path(__file__).parent))
+            from hook_utils import log_gate_event
+            log_gate_event(
+                hook="worktree_write_guard",
+                tool=os.environ.get("CLAUDE_TOOL_NAME", ""),
+                reason=f"Worktree '{wt_name}' darf nicht direkt ins Main-Repo schreiben",
+                command_excerpt=abs_file,
+            )
+        except Exception:
+            pass
         print(
             f"BLOCKED [worktree_write_guard]: Worktree '{wt_name}' darf nicht direkt"
             f" ins Main-Repo schreiben.\n"

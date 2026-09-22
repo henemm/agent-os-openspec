@@ -35,7 +35,7 @@ def _setup():
 _setup()
 
 from hook_utils import (  # noqa: E402
-    find_project_root, strip_heredoc_bodies,
+    find_project_root, strip_heredoc_bodies, log_gate_event,
     SECRETS_SENSITIVE_PATTERNS, SECRETS_ALWAYS_BLOCKED, SECRETS_FREETEXT_FLAGS,
 )
 
@@ -148,6 +148,13 @@ def main() -> None:
     always = cfg["always_blocked"]
     staging = _is_staging()
 
+    def _log(reason: str, excerpt: str) -> None:
+        try:
+            log_gate_event(hook="secrets_guard", tool=tool_name, reason=reason,
+                           command_excerpt=excerpt)
+        except Exception:
+            pass
+
     if tool_name == "Bash":
         # Heredoc-Bodies sind stdin-Daten, kein Kommandotext (Issues #64/#75):
         # Freitext darin (Commit-Messages, Doku) darf die Datei-Token- und
@@ -156,6 +163,7 @@ def main() -> None:
         cmd = strip_heredoc_bodies(tool_input.get("command", ""))
         if _references_sensitive_file(cmd, sensitive) and _DANGEROUS_CMD_RE.search(cmd):
             if _references_sensitive_file(cmd, always):
+                _log("Befehl würde geschützte Credentials/Keys ausgeben (always_blocked)", cmd)
                 print(
                     "BLOCKED [secrets_guard]: Befehl würde geschützte Credentials/Keys ausgeben.\n"
                     "  Diese Dateien sind immer geschützt (auch im Staging-Modus).\n"
@@ -164,6 +172,7 @@ def main() -> None:
                 )
                 sys.exit(2)
             if not staging:
+                _log("Befehl würde sensible Datei ausgeben", cmd)
                 print(
                     "BLOCKED [secrets_guard]: Befehl würde sensible Datei ausgeben.\n"
                     "  Für .env-Zugriff im Staging: touch .claude/staging\n"
@@ -176,6 +185,7 @@ def main() -> None:
         file_path = tool_input.get("file_path", "")
         if _matches(file_path, sensitive):
             if _matches(file_path, always):
+                _log("Datei enthält Credentials/Keys (always_blocked)", file_path)
                 print(
                     f"BLOCKED [secrets_guard]: {Path(file_path).name} enthält Credentials/Keys.\n"
                     "  Diese Datei ist immer geschützt.",
@@ -183,6 +193,7 @@ def main() -> None:
                 )
                 sys.exit(2)
             if not staging:
+                _log("Sensible Datei", file_path)
                 print(
                     f"BLOCKED [secrets_guard]: Sensible Datei: {Path(file_path).name}\n"
                     "  Für .env-Zugriff im Staging: touch .claude/staging",

@@ -33,7 +33,7 @@ def _setup():
 
 _setup()
 
-from hook_utils import find_project_root  # noqa: E402
+from hook_utils import find_project_root, log_gate_event  # noqa: E402
 
 try:
     from config_loader import load_config
@@ -94,11 +94,20 @@ def main() -> None:
 
     ok, message = _check_patterns(content)
     if not ok:
-        print(
+        full_message = (
             f"BLOCKED [claude_md_protection]: {message}\n"
-            f"  Schreibe diesen Inhalt stattdessen in die passende /docs/-Datei.",
-            file=sys.stderr,
+            f"  Schreibe diesen Inhalt stattdessen in die passende /docs/-Datei."
         )
+        try:
+            log_gate_event(
+                hook="claude_md_protection",
+                tool=os.environ.get("CLAUDE_TOOL_NAME", ""),
+                reason=full_message,
+                command_excerpt=content,
+            )
+        except Exception:
+            pass
+        print(full_message, file=sys.stderr)
         sys.exit(2)
 
     sys.exit(0)

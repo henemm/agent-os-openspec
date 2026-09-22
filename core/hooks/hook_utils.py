@@ -18,6 +18,7 @@ import os
 import re
 import shlex
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -454,10 +455,129 @@ def get_tool_result() -> dict:
         return {}
 
 
-def block(message: str):
-    """Block the operation with an error message and exit."""
+def block(message: str, *, hook: "str | None" = None, tool: "str | None" = None,
+          command_excerpt: "str | None" = None):
+    """Block the operation with an error message and exit.
+
+    Also logs a gate event (Issue #181) before exiting — best effort, never
+    raises, never changes the exit code. Existing callers need no changes:
+    `hook` defaults to the calling script's filename, `tool`/`command_excerpt`
+    default to the CLAUDE_TOOL_NAME/CLAUDE_TOOL_INPUT env vars that every hook
+    already receives. Pass them explicitly only when a hook has better
+    information at hand (e.g. a file_path it already extracted) or, as in
+    secret_egress_guard.py, to deliberately withhold a command_excerpt that
+    would otherwise carry the very secret the block is preventing from leaking.
+    """
+    try:
+        _log_gate_event_for_block(message, hook, tool, command_excerpt)
+    except Exception:
+        pass
     print(message, file=sys.stderr)
     sys.exit(2)
+
+
+# --- Gate-Event-Log (Issue #181) --------------------------------------------
+# Bisher waren Blockaden nur im Transcript sichtbar — kein Zaehler, kein Weg
+# von einem Fehlalarm zum Regressionstest. Diese Funktion beobachtet nur: sie
+# schreibt eine JSON-Zeile pro Blockade nach .claude/gate-events.jsonl und
+# entscheidet nichts. Keine Rotation, keine Auswertung hier — das ist bewusst
+# ausgeklammert, bis genug Daten vorliegen, um zu wissen, was gebraucht wird.
+#
+# Sicherheitsregel: log_gate_event() darf NIE eine Ausnahme nach aussen
+# durchlassen und NIE den Exit-Code eines Gates veraendern. Ein Logger, der
+# ein Gate zum Absturz bringt, waere der teuerste Fehler, den dieses Ticket
+# machen koennte — schlimmer als gar kein Log.
+GATE_EVENTS_RELATIVE_PATH = Path(".claude") / "gate-events.jsonl"
+
+_EXCERPT_LIMIT = 200
+
+# Findet die erste Stelle, an der ein bekanntes Geheimnis-Schluesselwort direkt
+# von einem Zuweisungs-/Trenner-Zeichen gefolgt wird ("API_KEY=", "password:",
+# "Authorization:"). Ab dort wird der GESAMTE Rest des Ausschnitts verworfen —
+# nicht nur das naechste Token — weil Formen wie "Authorization: Bearer <tok>"
+# sonst nur das Wort "Bearer" maskieren wuerden und das eigentliche Token
+# dahinter stehen liesse. Bewusst grosszuegig statt praezise: ein zu kurzer
+# Ausschnitt ist ein akzeptabler Verlust, ein geleaktes Geheimnis nicht.
+# Erkennt keine geheimnisartigen Werte OHNE Schluesselwort-Kontext (z.B. ein
+# nackt eingefuegtes Token) — das ist eine bekannte Grenze, kein Versprechen:
+# dieses Log beobachtet bereits blockierte Vorgaenge, es ist keine zweite
+# Verteidigungslinie fuer Secrets. Die Guards selbst bleiben das.
+_SECRET_KEYWORD_RE = re.compile(
+    r"(?i)\b(?:api[_-]?key|access[_-]?key|secret|password|passwd|pwd|token"
+    r"|authorization|bearer|private[_.]?key)\w*\s*[:=]"
+)
+
+
+def mask_and_truncate_excerpt(text: "str | None") -> str:
+    """Best-effort Maskierung + Laengenbegrenzung fuer command_excerpt.
+
+    Oeffentlich (nicht nur intern), weil aufrufende Hooks damit auch eigene
+    Roh-Werte vor der Uebergabe pruefen koennen, statt der Funktion blind zu
+    vertrauen.
+    """
+    if not text:
+        return ""
+    text = str(text)
+    match = _SECRET_KEYWORD_RE.search(text)
+    if match:
+        text = text[:match.end()] + "***"
+    if len(text) > _EXCERPT_LIMIT:
+        text = text[:_EXCERPT_LIMIT] + "…"
+    return text
+
+
+def log_gate_event(hook: str, tool: str, reason: str, command_excerpt: str = "") -> None:
+    """Eine Blockade als JSON-Zeile anhaengen. Schlaegt niemals sichtbar fehl.
+
+    Schema pro Zeile: ts (UTC ISO8601), hook, tool, reason (erste Zeile,
+    gekappt), command_excerpt (maskiert + gekappt), session_id (leer wenn
+    nicht ermittelbar).
+    """
+    try:
+        root = find_project_root()
+        path = root / GATE_EVENTS_RELATIVE_PATH
+        reason_line = (reason or "").strip().splitlines()[0] if reason else ""
+        event = {
+            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "hook": hook or "",
+            "tool": tool or "",
+            "reason": reason_line[:300],
+            "command_excerpt": mask_and_truncate_excerpt(command_excerpt),
+            "session_id": os.environ.get("CLAUDE_CODE_SESSION_ID", ""),
+        }
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(event, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
+def _log_gate_event_for_block(message: str, hook: "str | None", tool: "str | None",
+                              command_excerpt: "str | None") -> None:
+    """Fehlende hook/tool/command_excerpt aus Umgebung/Aufrufkontext ableiten.
+
+    Laesst bestehende block()-Aufrufer unveraendert: sie liefern nur die
+    Nachricht, die drei Zusatzfelder werden hier best-effort ergaenzt.
+    """
+    if hook is None:
+        try:
+            hook = Path(sys.argv[0]).stem
+        except Exception:
+            hook = ""
+    if tool is None:
+        tool = os.environ.get("CLAUDE_TOOL_NAME", "") or os.environ.get("CLAUDE_TOOL", "")
+    if command_excerpt is None:
+        command_excerpt = ""
+        ti_raw = os.environ.get("CLAUDE_TOOL_INPUT", "")
+        if ti_raw:
+            try:
+                ti = json.loads(ti_raw)
+                command_excerpt = (
+                    ti.get("command") or ti.get("file_path") or ti.get("content", "")
+                )
+            except Exception:
+                command_excerpt = ""
+    log_gate_event(hook, tool, message, command_excerpt)
 
 
 def allow():
