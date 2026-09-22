@@ -12,7 +12,16 @@ tags: [secret-egress-guard, bash-gate, secrets, egress]
 
 ## Approval
 
-- [ ] Approved
+- [x] Approved
+
+PO-Briefing: `docs/briefings/feat-97-secret-egress-redirect-guard.md` (unabhängig erstellt,
+ohne Kenntnis dieses Gesprächs — nur Spec + Issue #97 gelesen). Freigabe-Frage dort beantwortet:
+**Ja, mit den drei genannten Einschränkungen freigeben.** Alle drei sind bereits als bewusste,
+begründete Scope-Entscheidungen in dieser Spec dokumentiert (Scratchpad-Default, `--output`-Flags
+zurückgestellt, Override-Dauer folgt dem Framework-Standard) — kein neuer Fund, der die
+Freigabe aufhalten sollte. Der Fix schließt eine gemessene, aktiv ausgenutzte Lücke (75 reale
+Leck-Fälle); auf eine vollständigere Lösung zu warten hieße, in der Zwischenzeit gar keinen
+Schutz zu haben. Tech-Lead-Entscheidung.
 
 ## GitHub Issue
 
