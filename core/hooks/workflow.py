@@ -230,6 +230,11 @@ def status_note(data: dict) -> "str | None":
         "<du arbeitest gerade selbst / wartest auf ein Ergebnis, z. B. einen "
         "Hintergrund-Agenten> — danach: <Schritt>“ gilt ausschließlich, wenn du "
         "auf etwas ANDERES als den PO wartest.\n"
+        "Hast DU SELBST in dieser Nachricht per `workflow.py phase <x>` (oder "
+        "`complete`) die Phase gewechselt, ist dieser Hinweis hier noch der ALTE "
+        "Stand von Turn-Beginn — nutze für Schritt und Phase in der Fußzeile "
+        "trotzdem den NEUEN, von dir selbst herbeigeführten Stand. Die "
+        "Marker-Zeilen entfallen NIE aus diesem Grund.\n"
         "„fertig“/„abgeschlossen“/„erledigt“ gilt für den Workflow erst ab "
         "phase8_complete."
     )
