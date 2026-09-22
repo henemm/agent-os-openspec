@@ -978,6 +978,29 @@ def generate_command_aliases(project_path: Path) -> None:
             )
 
 
+def refresh_command_aliases(scope_path: Path) -> None:
+    """Erneuert veraltete Framework-Aliase in <scope>/.claude/commands/.
+
+    Anders als generate_command_aliases legt dieser Modus NIE eine Datei an:
+    nur bereits vorhandene, markierte und veraltete Kopien werden ueber-
+    schrieben. Damit kann er nichts ueberschatten (#87) und ist auch fuer
+    `~` sicher.
+    """
+    sys.path.insert(0, str(FRAMEWORK_ROOT / "core" / "hooks"))
+    from alias_sync import alias_content, find_stale_aliases
+
+    skills_dir = FRAMEWORK_ROOT / "skills"
+    commands_dir = scope_path / ".claude" / "commands"
+    stale = find_stale_aliases(
+        skills_dir, commands_dir, loaded_version=FRAMEWORK_VERSION
+    )
+    for name in stale:
+        skill_text = (skills_dir / name / "SKILL.md").read_text()
+        (commands_dir / f"{name}.md").write_text(alias_content(name, skill_text))
+        print(f"  Refreshed: {name}.md")
+    print(f"Command aliases: {len(stale)} refreshed, none created.")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Install or update OpenSpec Framework for a project",
@@ -1063,6 +1086,15 @@ Available modules:
     )
 
     parser.add_argument(
+        "--refresh-aliases",
+        action="store_true",
+        help=(
+            "Refresh outdated command aliases that already exist in "
+            ".claude/commands/ (never creates files; safe for ~ as well)"
+        )
+    )
+
+    parser.add_argument(
         "--version", "-v",
         action="version",
         version=f"OpenSpec Framework {FRAMEWORK_VERSION}"
@@ -1077,6 +1109,10 @@ Available modules:
         sys.exit(1)
 
     # Command aliases mode
+    if args.refresh_aliases:
+        refresh_command_aliases(project_path)
+        return
+
     if args.command_aliases:
         generate_command_aliases(project_path)
         return
