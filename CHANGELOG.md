@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.28.4] - 2026-09-22
+
+### Fixed
+
+**`config.yaml` fuehrte die geharteten Secrets-Muster aus #75 nie nach (#145)**
+
+`secrets_guard.py` blockierte den Lesezugriff auf `tests/test_phase_listener_keyword_guard.py`
+vollstaendig — eine normale pytest-Datei ohne jedes Geheimnis, mit „immer geschuetzt", kein
+Override moeglich. Der Verdacht im Issue („keyword" matcht „key") war eine Ebene zu flach:
+`core/hooks/hook_utils.py::SECRETS_SENSITIVE_PATTERNS` traegt seit #75 die geharteten,
+verankerten Formen (`private[_.]key`, `[_.]secret\.`) — die matchen „keyword" nicht.
+
+Der wahre Fehler lag in `config.yaml`. `secrets_guard.py::_get_config()` nutzt den Code-Default
+nur, wenn die Projekt-Config das Feld nicht setzt — `config.yaml` setzte es, mit den ALTEN,
+unverankerten Mustern `_key`/`_secret`, die #75 im Code laengst ersetzt hat. Die Config gewann
+gegen den Code-Default und machte die #75-Haertung dadurch wirkungslos.
+
+Groesserer Radius als der einzelne Vorfall: `config.yaml` ist nicht nur die Config dieses Repos,
+sondern auch die Vorlage, die `setup.py::generate_config_yaml()` in JEDES Konsumenten-Projekt
+kopiert (Copy- und Plugin-Modus). Jedes neu installierte Projekt hat die ungehaerteten Muster
+geerbt.
+
+- `config.yaml::secrets_guard.sensitive_patterns`/`always_blocked` auf dieselben Muster wie
+  `hook_utils.SECRETS_SENSITIVE_PATTERNS`/`SECRETS_ALWAYS_BLOCKED` gebracht.
+- Damit beide Quellen nicht wieder auseinanderlaufen, prueft
+  `tests/test_config_yaml_secrets_pattern_drift_145.py` direkt, dass die YAML-Werte mit den
+  Code-Defaults uebereinstimmen — derselbe Drift, den ein Kommentar in `hook_utils.py` bereits
+  einmal dokumentiert (zwischen `bash_gate.py` und `secrets_guard.py`, ebenfalls #75), diesmal
+  zwischen Code-Default und ausgelieferter Vorlage.
+
+**Verteilung:** wirkt in neu installierten Konsumenten-Projekten sofort; bestehende Projekte
+erst nach `setup.py --update --force` (die generierte `config.yaml` wird sonst nicht
+ueberschrieben) oder manueller Anpassung.
+
 ## [3.28.3] - 2026-09-22
 
 ### Fixed
