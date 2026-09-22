@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.30.0] - 2026-09-22
+
+### Added
+
+**Secret-Egress-Guard: Redirect-Ziel-Pruefung (#97)**
+
+`secret_egress_guard.py` prueft bisher nur, ob ein bekannter Secret-WERT literal im Tool-Input
+steht. Ein Wert, der erst als Prozess-AUSGABE entsteht (z.B. eine fehlschlagende Test-Assertion,
+die einen Konfigurationswert druckt) und per Shell-Redirect in eine Datei geschrieben wird, stand
+zu keinem Zeitpunkt im Tool-Input — der Guard sah ihn nie. Nach dem Schaerfen des Guards
+(2026-07-25) entstanden trotzdem 75 belegte Klartext-Dateien mit gueltigen Zugangsdaten
+ausserhalb jedes geschuetzten Sitzungsordners, alle ueber genau diesen Weg.
+
+- Zweiter, unabhaengiger Check, nur fuer das `Bash`-Tool: extrahiert Schreibziele aus `>`, `>>`
+  und `tee` im Kommandotext (Tokenisierung nach demselben, bereits gehaerteten `shlex`-Muster wie
+  `bash_gate.py::_has_real_redirect()`) und blockt, wenn das Ziel ausserhalb des Projekts UND
+  ausserhalb konfigurierter Ausnahme-Pfade liegt (`secret_egress_guard.extra_allowed_write_dirs`,
+  neues Config-Feld, Regex-Liste, leer per Default).
+- Laeuft NUR, wenn die bestehende Literal-Wert-Pruefung nichts gefunden hat — die bleibt
+  unveraendert unbedingt blockierend, ohne Override.
+- Der neue Check IST uebersteuerbar (Override-Token) — anders als die Literal-Pruefung, weil er
+  eine syntaktische Heuristik mit erwartbaren Fehlalarmen ist, kein bestaetigter Treffer. Eigener
+  Kill-Switch `secret_egress_guard.redirect_guard_enabled`, unabhaengig vom Gesamt-Guard.
+- Bewusst nicht enthalten: Inhaltspruefung von Prozess-Ausgaben (`PostToolUse` kann nicht
+  blockieren), tool-spezifische Ausgabe-Flags (`curl -o`, `scp`, `rsync`, …) — ohne gemessene
+  Faelle waere jede Liste geraten; das Gate-Event-Log aus #181 macht das jetzt beobachtbar.
+
+Spec: `docs/specs/feat-97-secret-egress-redirect-guard.md`.
+Tests: `tests/test_secret_egress_redirect_guard_97.py`.
+
 ## [3.29.1] - 2026-09-22
 
 ### Fixed

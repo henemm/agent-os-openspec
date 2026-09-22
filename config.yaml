@@ -155,6 +155,15 @@ secrets_guard:
     - "\\.pem$"
     - "\\.key$"
 
+# Secret Egress Guard — Prevents secret VALUES from leaving via tool output
+# Used by secret_egress_guard.py. redirect_guard_enabled/extra_allowed_write_dirs (Issue #97)
+# MUESSEN mit dem Code-Default in _get_config() uebereinstimmen (dieselbe Drift-Klasse wie
+# #145/#146: ein hier gesetztes Feld gewinnt gegen den Code-Default) — leer/true sind hier
+# UND im Code der Default, es gibt also aktuell nichts, das auseinanderlaufen koennte.
+secret_egress_guard:
+  redirect_guard_enabled: true
+  extra_allowed_write_dirs: []  # Regex-Muster, z.B. ["^/tmp/claude-\\d+/"] fuers eigene Scratchpad
+
 # Credentials Guard — Detects hardcoded secrets in bash commands
 # Used by bash_gate.py (step 4b). Empty patterns list = use built-in defaults.
 credentials_guard:
