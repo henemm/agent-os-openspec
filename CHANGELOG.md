@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.30.2] - 2026-09-23
+
+### Fixed
+
+**`tdd_enforcement`: Testname mit „placeholder" blockierte jede RED-Artefakt-Registrierung (#89, Epic #199)**
+
+`_PLACEHOLDER_RE` prüfte `TODO|PLACEHOLDER|FIXME` ohne Wortgrenzen — anders als `_FAILURE_RE`
+zwei Definitionen weiter oben in derselben Datei, das seine Keywords bereits mit `\b(...)\b`
+prüft. Ein RED-Artefakt ist echte pytest-Ausgabe; enthielt darin auch nur ein Testname das Wort
+„placeholder" als Teilstring — z.B. `test_gate_ignores_known_placeholder_values`, typischerweise
+dreimal in echter Ausgabe (Testkopf, Traceback, short test summary) — feuerte die Regel und
+blockierte jede Neuanlage von Dateien in `phase6_implement`/`phase6b_adversary`, obwohl das
+Artefakt echte Fehler-Evidenz enthielt. Je genauer ein Projekt seine Tests benennt, desto
+wahrscheinlicher der Fehlalarm — dieselbe Fehlerklasse wie #73 (TAP-Summary „# todo 0"), neuer
+Anlass.
+
+- `core/hooks/tdd_enforcement.py::_PLACEHOLDER_RE`: die drei bloßen Wörter bekommen
+  `\b`-Wortgrenzen. Die Klammer-/Phrasen-Alternativen (`<test_output>`, `insert output` etc.)
+  bleiben unverändert — sie enthalten Leerzeichen bzw. spitze Klammern, die in einem
+  snake_case-/camelCase-Bezeichner nicht vorkommen können.
+- Ein echter Platzhalter-Marker (das Wort für sich, mit echten Wortgrenzen) bleibt unverändert
+  blockiert — bestätigt durch die weiterhin grünen `TestTapSummaryNotPlaceholder`-Tests aus #73.
+- Bewusst nicht enthalten: Testnamen-/Pfadzeilen vor der Prüfung entfernen (bräuchte eine
+  Framework-spezifische Heuristik pro Runner, die Wortgrenzen unnötig macht); ein
+  `workflow.py`-Kommando zum Ersetzen ungültiger RED-Artefakte (eigener Ausweg, im Issue selbst
+  als Zusatz markiert).
+
+Spec: `docs/specs/fast/fix-89-placeholder-wordboundary.md`.
+Tests: `tests/test_tdd_enforcement_placeholder_wordboundary_89.py`.
+
 ## [3.30.1] - 2026-09-22
 
 ### Fixed

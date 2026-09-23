@@ -56,9 +56,15 @@ _FAILURE_RE = re.compile(
     re.MULTILINE,
 )
 
-# Platzhalter-Patterns die auf gefälschte Artefakte hinweisen
+# Platzhalter-Patterns die auf gefälschte Artefakte hinweisen. Die drei
+# bloßen Wörter stehen mit \b-Wortgrenzen (wie _FAILURE_RE unten), damit ein
+# Testname wie "test_gate_ignores_known_placeholder_values" nicht schon durch
+# den Teilstring "placeholder" matcht (Issue #89). Die Klammer-/Phrasen-
+# Alternativen brauchen keine Wortgrenzen: sie enthalten Leerzeichen bzw.
+# spitze Klammern, die in einem snake_case-/camelCase-Bezeichner nicht
+# vorkommen können.
 _PLACEHOLDER_RE = re.compile(
-    r"(TODO|PLACEHOLDER|FIXME|<test_output>|<your output>"
+    r"\b(TODO|PLACEHOLDER|FIXME)\b|(<test_output>|<your output>"
     r"|insert output|copy output|example output)",
     re.IGNORECASE,
 )
