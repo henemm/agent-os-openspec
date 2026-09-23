@@ -111,6 +111,44 @@ def _measurement_root() -> Path:
     return worktree_root if worktree_root is not None else _root
 
 
+def _is_outside_project(file_path: str) -> bool:
+    """True wenn der aufgelöste Zielpfad weder unter dem Hauptrepo (`_root`)
+    noch unter dem aktuellen Worktree liegt (#80).
+
+    Ein echter Git-Worktree kann AUSSERHALB von `_root` liegen -- Standard-
+    `git worktree add`-Verhalten, bereits so nachgebildet in
+    tests/test_loc_gate_worktree_root_96.py. Eine reine `_root`-Prüfung würde
+    deshalb jede Worktree-Sitzung fälschlich als "außerhalb des Projekts"
+    einstufen und ihren gesamten Schutz abschalten -- schlimmer als der
+    ursprüngliche Fehlalarm. Beide Wurzeln werden deshalb geprüft.
+
+    `Path.resolve()` folgt Symlinks: ein Link, der außerhalb liegt aber nach
+    innen zeigt, rutscht dadurch nicht durch (Issue-Anforderung).
+    Nicht auflösbare Pfade gelten als "innerhalb" (fail-safe -- die
+    bestehenden Prüfungen greifen dann wie bisher, statt sie zu umgehen).
+    """
+    try:
+        resolved = Path(file_path).expanduser().resolve()
+    except (OSError, RuntimeError, ValueError):
+        return False
+    roots = [_root]
+    worktree_root = hook_utils.find_worktree_root()
+    if worktree_root is not None:
+        roots.append(worktree_root)
+    for root in roots:
+        try:
+            root_resolved = root.resolve()
+        except (OSError, RuntimeError, ValueError):
+            continue
+        try:
+            if resolved.is_relative_to(root_resolved):
+                return False
+        except (ValueError, AttributeError):
+            if str(resolved).startswith(str(root_resolved) + os.sep):
+                return False
+    return True
+
+
 def _read_active_workflow() -> dict | None:
     """Read the active workflow from OPENSPEC_ACTIVE_WORKFLOW env var.
 
@@ -424,6 +462,15 @@ def main():
                     "→ Blocker im Report an den Orchestrator zurückmelden.\n"
                     "→ Konfigurationsänderungen: update-config Skill verwenden."
                 )
+
+    # 1c. Path origin (#80): a target outside the project is not project code
+    # -- the strict code gate (steps 2 onward) protects THIS project's source,
+    # not an arbitrary throwaway path elsewhere on disk (e.g. a scratch file
+    # far outside any repo). Runs AFTER the protected-state/orchestrator
+    # checks above, which keep their existing priority even for an outside
+    # path, and BEFORE every other check below.
+    if _is_outside_project(file_path):
+        allow()
 
     # 2. Always-allowed directories (component match — avoids false positives
     # when project folder names happen to contain "test/" etc.)

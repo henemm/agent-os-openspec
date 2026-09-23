@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.30.3] - 2026-09-23
+
+### Fixed
+
+**edit_gate blockierte Schreibvorgänge außerhalb des Projekts (#80, Epic #199)**
+
+`edit_gate.py` entschied bisher allein anhand von Dateiendung und Workflow-Phase, ob ein
+Schreibvorgang erlaubt ist, ohne je zu prüfen, ob der Zielpfad überhaupt zum Projekt gehört. Eine
+Wegwerf-Datei weit außerhalb des Repos wurde dadurch wie geschützter Projektcode behandelt und
+erzeugte eine irreführende Berechtigungsanfrage an den PO — über Bash zudem trivial umgehbar
+(Heredoc statt Write-Tool), verhinderte also nichts, nur verlagerte es auf den unsaubereren Weg.
+
+- Neue Funktion `_is_outside_project()`: prüft den aufgelösten Zielpfad gegen sowohl `_root`
+  (Hauptrepo) als auch den aktuellen Worktree (`hook_utils.find_worktree_root()`, falls
+  vorhanden). Ein echter Git-Worktree kann per `git worktree add` außerhalb von `_root` liegen
+  (Standardverhalten) — eine reine `_root`-Prüfung hätte jede Worktree-Sitzung fälschlich
+  ungeschützt gelassen.
+- `Path.resolve()` folgt Symlinks, damit ein Link von außen nach innen nicht durchrutscht.
+- Eingefügt NACH den bestehenden Protected-State-/Orchestrator-Prüfungen, deren Vorrang für
+  Pfade außerhalb des Projekts erhalten bleibt.
+
+Spec: `docs/specs/fast/fix-80-edit-gate-outside-repo.md`.
+Tests: `tests/test_edit_gate_outside_repo_80.py`.
+
 ## [3.30.2] - 2026-09-23
 
 ### Fixed
