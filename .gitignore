@@ -46,3 +46,7 @@ timebox-ios/
 # Gate-Event-Log (Issue #181) — Laufzeit-Beobachtungsdaten, kein Quellinhalt.
 .claude/gate-events.jsonl
 docs/artifacts/
+# `workflow.py start` schreibt OPENSPEC_ACTIVE_WORKFLOW hierhin (Sitzungs-
+# lokaler Zustand, wie .claude/active_workflow) — nie zuvor versioniert,
+# gehoert in dieselbe Kategorie wie der Rest dieses Abschnitts.
+.claude/settings.local.json
