@@ -159,6 +159,23 @@ Recommendation: User should review F003 before proceeding
 - Evidence is inconclusive (e.g., timing-dependent behavior)
 - **AMBIGUOUS now blocks git commit** — user must run `workflow.py override-ambiguous '<reason>'` to proceed
 
+## Step 6: Stamp the Dialog Artifact (MANDATORY, after the VERDICT)
+
+The gate does NOT accept your artifact based on how recently you wrote it.
+After saving your VERDICT to the dialog artifact file, run:
+
+```bash
+python3 .claude/hooks/adversary_dialog.py stamp <path-to-dialog-artifact>
+```
+
+This reads every `Code reference:` line from your Findings and Confirmations,
+hashes those files (SHA-256, current on-disk content) and appends a
+`## Geprüfte Dateien` block to the artifact. `qa_gate`/`adversary_dialog.py
+validate` compares these hashes against the working tree instead of the
+artifact's age — an unstamped artifact, or one whose referenced files have
+since changed, is rejected regardless of how fresh it is. Skipping this step
+means your VERIFIED verdict cannot be accepted.
+
 ## Rules
 
 1. **NEVER trust claims** — verify everything yourself by reading code and running tests
@@ -168,4 +185,6 @@ Recommendation: User should review F003 before proceeding
 5. **Be thorough but focused** — check what changed, not the entire codebase
 6. **Report specifics** — file paths, line numbers, exact error messages
 7. **Minimum 2 dialog rounds** — do not converge in round 1
+8. **Use structured findings** — every issue gets an ID, severity, category, evidence
+9. **ALWAYS run `adversary_dialog.py stamp`** on the dialog artifact after writing your VERDICT — see Step 6. The gate rejects an unstamped artifact regardless of age.
 8. **Use structured findings** — every issue gets an ID, severity, category, evidence

@@ -15,25 +15,23 @@ Best Practices implementiert:
 Usage (CLI):
   python3 adversary_dialog.py parse <spec-path>
   python3 adversary_dialog.py validate <artifact-path>
+  python3 adversary_dialog.py stamp <artifact-path>
   python3 adversary_dialog.py schema
 """
 
+import hashlib
 import re
 import sys
-import time
 from datetime import datetime
 from pathlib import Path
 
-from hook_utils import extract_ac_entries
+from hook_utils import extract_ac_entries, find_project_root, find_worktree_root
 
 # Circuit Breaker: max iterations before escalation to user
 MAX_ITERATIONS = 3
 
 # Minimum dialog rounds before VERIFIED is accepted
 MIN_ROUNDS = 2
-
-# Max age of artifact in minutes
-MAX_AGE_MINUTES = 60
 
 # Valid verdicts (tri-state)
 VERDICTS = ("VERIFIED", "BROKEN", "AMBIGUOUS")
@@ -416,36 +414,37 @@ def validate_dialog_artifact_ex(artifact_path: str) -> "tuple[bool, str, str | N
 
     Prueft:
     1. Datei existiert
-    2. Datei ist < MAX_AGE_MINUTES alt
-    3. Alle Checklisten-Punkte sind [x] (abgehakt) — oder, als Fallback,
+    2. Alle Checklisten-Punkte sind [x] (abgehakt) — oder, als Fallback,
        Confirmation-Bloecke des implementation-validator ('Status: CONFIRMED')
-    4. Mindestens MIN_ROUNDS Dialog-Runden dokumentiert
-    5. Verdict ist VERIFIED/HOLDS oder AMBIGUOUS (nicht BROKEN) —
+    3. Mindestens MIN_ROUNDS Dialog-Runden dokumentiert
+    4. Verdict ist VERIFIED/HOLDS oder AMBIGUOUS (nicht BROKEN) —
        HOLDS ist das dokumentierte Vokabular des implementation-validator
        und wird als Synonym fuer VERIFIED akzeptiert (Issue #77)
+    5. Datei-Identitaet: die im '## Geprüfte Dateien'-Block gehashten Dateien
+       (per 'stamp' geschrieben) muessen mit dem Ist-Stand uebereinstimmen —
+       Ersatz fuer die fruehere Alters-Pruefung (Issue #131). Laeuft NUR fuer
+       Artefakte, die sonst valid=True ergeben wuerden (VERIFIED/HOLDS/
+       AMBIGUOUS); ein BROKEN- oder unbekanntes Verdict blockt unabhaengig
+       davon bereits — das ist die sichere Richtung und braucht keine
+       zusaetzliche Datei-Pruefung.
     6. Circuit Breaker nicht ausgeloest ohne Eskalation
 
     Returns:
         (valid, message, failure_kind) — failure_kind ist None bei Erfolg,
         'content' wenn das Artefakt ein INHALTLICH negatives Ergebnis belegt
         (BROKEN-Verdict, offene Checklisten-Punkte), 'format' wenn nur die
-        FORM nicht lesbar ist (fehlende/unbekannte Marker, Alter, fehlende
-        Datei). Die Unterscheidung braucht qa_gate: ein Formfehler darf kein
-        BROKEN-Verdict in den Workflow-State schreiben (Issue #77).
+        FORM nicht lesbar ist (fehlende/unbekannte Marker, fehlender/
+        veralteter Datei-Hash-Block, fehlende Datei). Die Unterscheidung
+        braucht qa_gate: ein Formfehler darf kein BROKEN-Verdict in den
+        Workflow-State schreiben (Issue #77) — das gilt unveraendert auch
+        fuer einen Hash-Mismatch: der belegt keinen Adversary-Befund, nur
+        dass der Nachweis nicht mehr zum Ist-Stand passt.
     """
     path = Path(artifact_path)
 
     # 1. Existenz
     if not path.exists():
         return False, f"Dialog artifact not found: {artifact_path}", "format"
-
-    # 2. Alter
-    age_min = (time.time() - path.stat().st_mtime) / 60
-    if age_min > MAX_AGE_MINUTES:
-        return False, (
-            f"Dialog artifact is {age_min:.0f} min old "
-            f"(max {MAX_AGE_MINUTES}). Re-run dialog."
-        ), "format"
 
     content = path.read_text(errors="replace")
     # Struktur-Checks (Checkliste, Runden, Verdict) laufen auf einem Inhalt OHNE
@@ -463,7 +462,7 @@ def validate_dialog_artifact_ex(artifact_path: str) -> "tuple[bool, str, str | N
     # das ist korrekt, denn eine Markdown-Ueberschrift IST per Definition
     # zeilenanfangs-definiert und damit ununterscheidbar von einer echten.
 
-    # 3. Checkliste: Alle Punkte muessen [x] sein
+    # 2. Checkliste: Alle Punkte muessen [x] sein
     checked = len(re.findall(r"(?m)^- \[x\]", scan, re.IGNORECASE))
     unchecked = len(re.findall(r"(?m)^- \[ \]", scan))
 
@@ -481,7 +480,7 @@ def validate_dialog_artifact_ex(artifact_path: str) -> "tuple[bool, str, str | N
         if checked == 0:
             return False, "Keine Checklisten-Punkte gefunden.", "format"
 
-    # 4. Mindestens MIN_ROUNDS Runden
+    # 3. Mindestens MIN_ROUNDS Runden
     rounds = len(re.findall(r"(?m)^### Runde \d+", scan))
     if rounds < MIN_ROUNDS:
         return False, (
@@ -489,7 +488,7 @@ def validate_dialog_artifact_ex(artifact_path: str) -> "tuple[bool, str, str | N
             f"Minimum sind {MIN_ROUNDS} Runden."
         ), "format"
 
-    # 5. Verdict — drei real vorkommende Formen (Issue #77); bei mehreren
+    # 4. Verdict — drei real vorkommende Formen (Issue #77); bei mehreren
     #    Bloecken (Fix-Loop-Runden) zaehlt der LETZTE im Dokument:
     #      a) '## Verdict' mit Fettschrift-Folgezeile (render_dialog_artifact)
     #      b) einzeilig '## Verdict: X' bzw. '### VERDICT: X'
@@ -513,22 +512,165 @@ def validate_dialog_artifact_ex(artifact_path: str) -> "tuple[bool, str, str | N
     if v.startswith("BROKEN"):
         return False, f"Verdict ist '{verdict_text}' — nicht VERIFIED.", "content"
 
+    if v.startswith("HOLDS"):
+        v = "VERIFIED"  # Validator-Vokabular — Synonym (Issue #77)
+
+    if not (v.startswith("VERIFIED") or v.startswith("AMBIGUOUS")):
+        return False, f"Unbekanntes Verdict: '{verdict_text}'", "format"
+
+    # 5. Datei-Identitaet (Issue #131): nur fuer Artefakte, die hier sonst
+    # valid=True ergeben wuerden. Ein Hash-Mismatch ist kein inhaltliches
+    # Urteil des Adversary, sondern ein Formproblem des Nachweises selbst.
+    hashes_ok, hashes_msg = _verify_examined_file_hashes(scan)
+    if not hashes_ok:
+        return False, hashes_msg, "format"
+
     if v.startswith("AMBIGUOUS"):
         return True, (
             f"Dialog valid (AMBIGUOUS): {checked} Punkte bewiesen, "
             f"{rounds} Runden. User-Review empfohlen."
         ), None
 
-    if v.startswith("HOLDS"):
-        v = "VERIFIED"  # Validator-Vokabular — Synonym (Issue #77)
-
-    if not v.startswith("VERIFIED"):
-        return False, f"Unbekanntes Verdict: '{verdict_text}'", "format"
-
     return True, (
         f"Dialog valid: {checked} Punkte bewiesen, "
         f"{rounds} Runden, Verdict VERIFIED."
     ), None
+
+
+_CODE_REF_RE = re.compile(r"(?im)^\s*Code reference:\s*(\S+)")
+_EXAMINED_FILES_HEADER_RE = re.compile(r"(?m)^## Geprüfte Dateien\s*$")
+_EXAMINED_FILES_LINE_RE = re.compile(r"(?m)^-\s*sha256:([0-9a-f]{64})\s+(.+?)\s*$")
+
+
+def _extract_examined_files(scan: str) -> list[str]:
+    """Eindeutige Dateipfade aus 'Code reference: <pfad>:<zeile>'-Zeilen.
+
+    Quelle bewusst NICHT die Spec-Source-Section oder `affected_files` im
+    Workflow-State (beides vom Issue #131 nur als Beispiel genannt): die
+    Code-reference-Zeile ist in implementation-validator.md fuer jedes
+    Finding/jede Confirmation bereits verpflichtend und spiegelt exakt, was
+    der Adversary tatsaechlich gelesen hat.
+    """
+    files = set()
+    for m in _CODE_REF_RE.finditer(scan):
+        token = m.group(1)
+        path = re.sub(r":\d[\d,\-]*$", "", token)  # ':<zeile>'-Suffix abtrennen
+        if path:
+            files.add(path)
+    return sorted(files)
+
+
+def _hash_root() -> Path:
+    """Root fuer relative Datei-Pfade — Worktree bevorzugt vor Haupt-Repo.
+
+    Mirrors die in Issue #80/#96 etablierte Regel: eine Worktree-Session
+    misst gegen ihren EIGENEN Arbeitsbaum, nicht gegen den geteilten
+    Haupt-Repo (der dort eine andere, meist unveraenderte Kopie haelt).
+    """
+    return find_worktree_root() or find_project_root()
+
+
+def _resolve_hash_path(rel_path: str) -> Path:
+    p = Path(rel_path)
+    return p if p.is_absolute() else (_hash_root() / p)
+
+
+def render_examined_files_section(hashes: dict) -> str:
+    """Rendert den '## Geprüfte Dateien'-Block ('- sha256:<hex>  <pfad>')."""
+    lines = ["## Geprüfte Dateien", ""]
+    for path in sorted(hashes):
+        lines.append(f"- sha256:{hashes[path]}  {path}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _parse_examined_files_section(scan: str) -> "list[tuple[str, str]] | None":
+    """(hash, pfad)-Paare aus dem LETZTEN '## Geprüfte Dateien'-Block.
+
+    None wenn KEIN solcher Block existiert (Unterschied zu einer leeren
+    Liste: ein vorhandener, aber leerer Block waere kein sinnvoller Fall,
+    da 'stamp' ohne Code-reference-Zeilen bereits fehlschlaegt). Mehrere
+    Bloecke (Fix-Loop-Iterationen) -> nur der LETZTE zaehlt, exakt wie beim
+    Verdict (Issue #77 last-wins).
+    """
+    headers = list(_EXAMINED_FILES_HEADER_RE.finditer(scan))
+    if not headers:
+        return None
+    rest = scan[headers[-1].end():]
+    next_heading = re.search(r"(?m)^##\s", rest)
+    body = rest[:next_heading.start()] if next_heading else rest
+    return _EXAMINED_FILES_LINE_RE.findall(body)
+
+
+def _verify_examined_file_hashes(scan: str) -> tuple[bool, str]:
+    """Vergleicht den letzten Hash-Block mit dem Ist-Stand im Arbeitsbaum.
+
+    Ersetzt die fruehere Alters-Pruefung (Issue #131): Uebereinstimmung ist
+    unabhaengig vom Datei-Alter gueltig, Abweichung blockt sofort.
+    """
+    entries = _parse_examined_files_section(scan)
+    if entries is None:
+        return False, (
+            "Kein Datei-Hash-Block (## Geprüfte Dateien) im Artifact "
+            "gefunden. Re-run dialog."
+        )
+    for expected_hash, rel_path in entries:
+        full = _resolve_hash_path(rel_path)
+        try:
+            actual_hash = hashlib.sha256(full.read_bytes()).hexdigest()
+        except OSError:
+            return False, (
+                f"Prüfling seit dem Dialog geändert: {rel_path} "
+                "(nicht mehr lesbar). Re-run dialog."
+            )
+        if actual_hash != expected_hash:
+            return False, f"Prüfling seit dem Dialog geändert: {rel_path}. Re-run dialog."
+    return True, ""
+
+
+def stamp_dialog_artifact(artifact_path: str) -> tuple[bool, str]:
+    """Haengt einen '## Geprüfte Dateien'-Hash-Block ans Dialog-Artifact an.
+
+    Liest jede 'Code reference: <pfad>:<zeile>'-Zeile aus Findings/
+    Confirmations, hasht die referenzierten Dateien (SHA-256, aktueller
+    Arbeitsbaum-Stand) und schreibt sie als maschinenlesbaren Block ins
+    Artifact. Vom implementation-validator-Agenten als letzter Schritt
+    nach dem Verdict aufzurufen — validate_dialog_artifact_ex() vergleicht
+    spaeter gegen genau diese Hashes statt gegen die Datei-mtime.
+    """
+    path = Path(artifact_path)
+    if not path.exists():
+        return False, f"Dialog artifact not found: {artifact_path}"
+
+    content = path.read_text(errors="replace")
+    scan = _strip_fenced_code_blocks(content)
+    files = _extract_examined_files(scan)
+    if not files:
+        return False, (
+            "Keine 'Code reference:'-Zeilen im Artifact gefunden — "
+            "nichts zu hashen. Jedes Finding/jede Confirmation braucht "
+            "eine 'Code reference: <pfad>:<zeile>'-Zeile."
+        )
+
+    hashes = {}
+    skipped = []
+    for rel in files:
+        full = _resolve_hash_path(rel)
+        try:
+            hashes[rel] = hashlib.sha256(full.read_bytes()).hexdigest()
+        except OSError:
+            skipped.append(rel)
+
+    if not hashes:
+        return False, f"Keine der referenzierten Dateien war lesbar: {', '.join(files)}"
+
+    section = render_examined_files_section(hashes)
+    path.write_text(content.rstrip("\n") + "\n\n" + section)
+
+    msg = f"{len(hashes)} Datei(en) gehasht und in {artifact_path} gespeichert."
+    if skipped:
+        msg += f" Uebersprungen (nicht lesbar): {', '.join(skipped)}"
+    return True, msg
 
 
 def print_finding_schema():
@@ -554,6 +696,7 @@ def main():
         print("Usage:")
         print("  python3 adversary_dialog.py parse <spec-path>")
         print("  python3 adversary_dialog.py validate <artifact-path>")
+        print("  python3 adversary_dialog.py stamp <artifact-path>")
         print("  python3 adversary_dialog.py schema")
         sys.exit(1)
 
@@ -580,6 +723,15 @@ def main():
         valid, message = validate_dialog_artifact(artifact_path)
         print(message)
         sys.exit(0 if valid else 1)
+
+    elif cmd == "stamp":
+        if len(sys.argv) < 3:
+            print("Error: artifact-path required")
+            sys.exit(1)
+        artifact_path = sys.argv[2]
+        ok, message = stamp_dialog_artifact(artifact_path)
+        print(message)
+        sys.exit(0 if ok else 1)
 
     elif cmd == "schema":
         print_finding_schema()
