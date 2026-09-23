@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.30.4] - 2026-09-23
+
+### Fixed
+
+**adversary_dialog: 60-Minuten-Frist maß die Uhr statt den Prüfling — durch Hash-Bindung ersetzt (#131, Epic #199)**
+
+`validate_dialog_artifact_ex()` band die Gültigkeit eines Adversary-Dialog-Protokolls bisher an
+die Datei-`mtime` (`MAX_AGE_MINUTES = 60`) — ein grober Stellvertreter für die eigentliche Frage
+„wurde der geprüfte Code seither verändert?", der in beide Richtungen irrte: ein über Nacht liegen
+gebliebenes, aber unverändert gültiges Protokoll wurde blockiert (Falsch-negativ, belegter Fall aus
+einer Partnersitzung), während Code, der innerhalb der 60 Minuten NACH dem Dialog noch geändert
+wurde, ein formal frisches — aber nie geprüftes — Protokoll durchwinkte (Falsch-positiv, die
+gefährlichere Richtung, bis jetzt unsichtbar).
+
+- Neuer CLI-Befehl `adversary_dialog.py stamp <artifact-pfad>`: hasht (SHA-256) jede per
+  `Code reference: <pfad>:<zeile>` in Findings/Confirmations zitierte Datei und hängt einen
+  maschinenlesbaren `## Geprüfte Dateien`-Block ans Artifact an. Dateiliste bewusst aus den
+  bereits verpflichtenden Code-reference-Zeilen abgeleitet, nicht aus der Spec-Source-Section
+  oder dem meist leeren, nirgends automatisch gesetzten `affected_files`-Workflow-Feld.
+- `validate_dialog_artifact_ex()`: `MAX_AGE_MINUTES`-Check ersatzlos entfernt. Neuer Check
+  vergleicht den letzten `## Geprüfte Dateien`-Block (Fix-Loop: last-wins wie beim Verdict) mit
+  einer frischen SHA-256-Berechnung — Pfade lösen gegen `find_worktree_root() or
+  find_project_root()` auf (Worktree-Präzedenz aus #80/#96: eine Worktree-Session misst gegen
+  ihren eigenen Arbeitsbaum, nicht den geteilten Haupt-Repo). Abweichung ⇒ `failure_kind="format"`
+  („Prüfling seit dem Dialog geändert: `<datei>`. Re-run dialog."), genau wie der frühere
+  Alters-Fehler — kein inhaltliches Adversary-Urteil, `qa_gate` überschreibt dafür kein
+  bestehendes `adversary_verdict`. Läuft erst NACH der Verdict-Klassifikation (nur für Artefakte,
+  die sonst `valid=True` ergäben) — ein BROKEN-Verdict blockt unverändert unabhängig vom Hash-Stand.
+- `core/agents/implementation-validator.md`: neuer Pflicht-Schritt 6, `stamp` nach dem VERDICT
+  aufzurufen; `core/commands/50-implement.md` Step 8c entsprechend ergänzt.
+- ~30 Bestandstests in `test_adversary_dialog_verdict.py`/`test_verdict_pipeline_77.py`, die
+  Artefakte ohne Hash-Block per Hand bauen und `valid=True` erwarten, um einen gültigen Block
+  ergänzt (Tests, die ohnehin vorher auf `valid=False` enden, sind unberührt).
+
+Spec: `docs/specs/fix-131-adversary-dialog-hash-binding.md`.
+Tests: `tests/test_adversary_dialog_hash_binding_131.py`.
+
 ## [3.30.3] - 2026-09-23
 
 ### Fixed

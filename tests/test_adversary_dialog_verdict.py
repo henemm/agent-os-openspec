@@ -12,8 +12,15 @@ nach dem Generator in `adversary_dialog.render_dialog_artifact()`
 RED-Erwartung (gegen den aktuellen Code):
   * test_second_verdict_verified_wins  → FÄLLT (liest erstes BROKEN → (False, ...))
   * test_second_verdict_broken_wins    → FÄLLT (liest erstes VERIFIED → falsch (True, ...))
+
+Seit Issue #131 braucht jedes Artefakt, das hier `valid=True` erreichen soll,
+zusaetzlich einen gueltigen '## Geprüfte Dateien'-Hash-Block (sonst: Format-
+Fehler "Kein Datei-Hash-Block gefunden") — die Tests unten, die tatsaechlich
+bis zum Verdict durchlaufen, haengen dafuer `_hash_block(tmp_path)` an. Das
+Hash-Feature selbst pruefen tests/test_adversary_dialog_hash_binding_131.py.
 """
 
+import hashlib
 import sys
 from pathlib import Path
 
@@ -22,6 +29,16 @@ HOOKS_DIR = REPO_ROOT / "core" / "hooks"
 sys.path.insert(0, str(HOOKS_DIR))
 
 from adversary_dialog import validate_dialog_artifact, MIN_ROUNDS
+
+
+def _hash_block(tmp_path: Path) -> str:
+    """Gueltiger Hash-Block fuer Tests, die nicht das Hash-Feature selbst
+    pruefen, aber (seit #131) eines brauchen um valid=True zu erreichen."""
+    dummy = tmp_path / "_dummy_examined_file.py"
+    if not dummy.exists():
+        dummy.write_text("# unveraendert waehrend des Tests\n")
+    digest = hashlib.sha256(dummy.read_bytes()).hexdigest()
+    return f"\n## Geprüfte Dateien\n\n- sha256:{digest}  {dummy}\n"
 
 
 def _artifact(verdicts: list[str]) -> str:
@@ -71,7 +88,8 @@ def test_second_verdict_verified_wins(tmp_path):
     mit VERIFIED im Meldungstext.
     """
     art = tmp_path / "adversary_dialog.md"
-    art.write_text(_artifact(["BROKEN", "VERIFIED: alle Punkte bewiesen"]))
+    art.write_text(_artifact(["BROKEN", "VERIFIED: alle Punkte bewiesen"])
+                   + _hash_block(tmp_path))
 
     valid, message = validate_dialog_artifact(str(art))
     assert valid is True, (
@@ -89,7 +107,8 @@ def test_second_verdict_broken_wins(tmp_path):
     Erwartet: (False, ...) mit BROKEN im Meldungstext.
     """
     art = tmp_path / "adversary_dialog.md"
-    art.write_text(_artifact(["VERIFIED: sah zunächst gut aus", "BROKEN"]))
+    art.write_text(_artifact(["VERIFIED: sah zunächst gut aus", "BROKEN"])
+                   + _hash_block(tmp_path))
 
     valid, message = validate_dialog_artifact(str(art))
     assert valid is False, (
@@ -176,7 +195,7 @@ def test_quoted_broken_in_codeblock_does_not_override_real_verified(tmp_path):
         "Finding X: illustratives Gegenbeispiel.",
         "```",
         "",
-    ]))
+    ]) + _hash_block(tmp_path))
 
     valid, message = validate_dialog_artifact(str(art))
     assert valid is True, (
@@ -273,7 +292,7 @@ def test_quoted_broken_in_tilde_fence_does_not_override_real_verified(tmp_path):
         "Finding X: illustratives Gegenbeispiel.",
         "~~~",
         "",
-    ]))
+    ]) + _hash_block(tmp_path))
 
     valid, message = validate_dialog_artifact(str(art))
     assert valid is True, (
@@ -378,7 +397,7 @@ def test_tilde_fence_with_inner_backtick_line_does_not_leak_quoted_broken(tmp_pa
         "Finding X: illustratives Gegenbeispiel.",
         "~~~",
         "",
-    ]))
+    ]) + _hash_block(tmp_path))
 
     valid, message = validate_dialog_artifact(str(art))
     assert valid is True, (
@@ -458,7 +477,7 @@ def test_longer_tilde_open_not_closed_by_shorter_inner_line(tmp_path):
         "~~~",
         "~~~~",
         "",
-    ]))
+    ]) + _hash_block(tmp_path))
 
     valid, message = validate_dialog_artifact(str(art))
     assert valid is True, (
@@ -492,7 +511,7 @@ def test_shorter_open_closed_by_longer_line_real_verdict_after_counts(tmp_path):
         "**VERIFIED**",
         "Offene Punkte: 0 / 2",
         "",
-    ]))
+    ]) + _hash_block(tmp_path))
 
     valid, message = validate_dialog_artifact(str(art))
     assert valid is True, (
@@ -606,7 +625,7 @@ def test_tab_indented_pseudo_close_does_not_close_fence(tmp_path):
         "Finding X: illustratives Gegenbeispiel.",
         "```",
         "",
-    ]))
+    ]) + _hash_block(tmp_path))
 
     valid, message = validate_dialog_artifact(str(art))
     assert valid is True, (
@@ -640,7 +659,7 @@ def test_close_line_indented_3spaces_still_closes(tmp_path):
         "**VERIFIED**",
         "Offene Punkte: 0 / 2",
         "",
-    ]))
+    ]) + _hash_block(tmp_path))
 
     valid, message = validate_dialog_artifact(str(art))
     assert valid is True, (
@@ -758,7 +777,7 @@ def test_backtick_infostring_opener_mirror_real_verified_wins(tmp_path):
         "Finding X: illustratives Gegenbeispiel.",
         "```",
         "",
-    ]))
+    ]) + _hash_block(tmp_path))
 
     valid, message = validate_dialog_artifact(str(art))
     assert valid is True, (

@@ -13,8 +13,15 @@ ein Formfehler ist kein inhaltliches Urteil.
 post_bash: stdout kommt im PostToolUse-Payload unter tool_response, nicht
 tool_input — der alte Zugriff war immer leer (tote Auto-Erkennung). Dazu
 Fail-Guard: Fehler-Evidenz im Output verhindert automatisches VERIFIED.
+
+Issue #131: jedes Artefakt, das hier `valid=True` erreichen soll, braucht seit
+diesem Fix zusaetzlich einen gueltigen '## Geprüfte Dateien'-Hash-Block statt
+der fruehreren Alters-Pruefung — Tests, die das erreichen wollen, haengen
+`_hash_block(tmp_path)` an ihren Body an (siehe
+tests/test_adversary_dialog_hash_binding_131.py fuer das Hash-Feature selbst).
 """
 
+import hashlib
 import json
 import os
 import shutil
@@ -54,11 +61,22 @@ def _write(tmp_path: Path, body: str) -> str:
     return str(p)
 
 
+def _hash_block(tmp_path: Path) -> str:
+    """Gueltiger Hash-Block fuer Tests, die nicht das Hash-Feature selbst
+    pruefen, aber (seit #131) eines brauchen um valid=True zu erreichen."""
+    dummy = tmp_path / "_dummy_examined_file.py"
+    if not dummy.exists():
+        dummy.write_text("# unveraendert waehrend des Tests\n")
+    digest = hashlib.sha256(dummy.read_bytes()).hexdigest()
+    return f"\n## Geprüfte Dateien\n\n- sha256:{digest}  {dummy}\n"
+
+
 # --- Teil 1a: HOLDS als Synonym für VERIFIED ---
 
 class TestHoldsSynonym:
     def test_bold_holds_verdict_is_valid(self, tmp_path):
-        art = _write(tmp_path, CHECKLIST + ROUNDS + "## Verdict\n**HOLDS**\n")
+        art = _write(tmp_path, CHECKLIST + ROUNDS + "## Verdict\n**HOLDS**\n"
+                     + _hash_block(tmp_path))
         valid, msg, kind = validate_dialog_artifact_ex(art)
         assert valid is True, msg
         assert kind is None
@@ -81,12 +99,14 @@ class TestHoldsSynonym:
 
 class TestSingleLineVerdictForms:
     def test_heading_colon_form_is_valid(self, tmp_path):
-        art = _write(tmp_path, CHECKLIST + ROUNDS + "## Verdict: VERIFIED\n")
+        art = _write(tmp_path, CHECKLIST + ROUNDS + "## Verdict: VERIFIED\n"
+                     + _hash_block(tmp_path))
         valid, msg = validate_dialog_artifact(art)
         assert valid is True, msg
 
     def test_uppercase_heading_colon_holds_is_valid(self, tmp_path):
-        art = _write(tmp_path, CHECKLIST + ROUNDS + "## VERDICT: HOLDS\n")
+        art = _write(tmp_path, CHECKLIST + ROUNDS + "## VERDICT: HOLDS\n"
+                     + _hash_block(tmp_path))
         valid, msg = validate_dialog_artifact(art)
         assert valid is True, msg
 
@@ -98,7 +118,8 @@ class TestSingleLineVerdictForms:
             + "═══════════════════════════════════════\n"
             + "VERDICT: HOLDS\n"
             + "═══════════════════════════════════════\n"
-            + "Tests: 12 passed, 0 failed\n",
+            + "Tests: 12 passed, 0 failed\n"
+            + _hash_block(tmp_path),
         )
         valid, msg = validate_dialog_artifact(art)
         assert valid is True, msg
@@ -111,7 +132,8 @@ class TestSingleLineVerdictForms:
             CHECKLIST + ROUNDS
             + "## Verdict\n**BROKEN**\n\n"
             + ROUNDS
-            + "VERDICT: VERIFIED\n",
+            + "VERDICT: VERIFIED\n"
+            + _hash_block(tmp_path),
         )
         valid, msg = validate_dialog_artifact(art)
         assert valid is True, msg
@@ -145,7 +167,8 @@ class TestConfirmationFallback:
     )
 
     def test_confirmed_blocks_count_as_checklist(self, tmp_path):
-        art = _write(tmp_path, self.CONFIRMATIONS + ROUNDS + "## Verdict\n**VERIFIED**\n")
+        art = _write(tmp_path, self.CONFIRMATIONS + ROUNDS + "## Verdict\n**VERIFIED**\n"
+                     + _hash_block(tmp_path))
         valid, msg = validate_dialog_artifact(art)
         assert valid is True, msg
         assert "2 Punkte" in msg
@@ -212,7 +235,8 @@ class TestQaGateFormatVsContent:
     def test_holds_artifact_yields_verified(self, tmp_path):
         fake_hooks = _setup_fake_project(tmp_path, "wf1")
         art = tmp_path / "dialog.md"
-        art.write_text(HEADER + CHECKLIST + ROUNDS + "VERDICT: HOLDS\n")
+        art.write_text(HEADER + CHECKLIST + ROUNDS + "VERDICT: HOLDS\n"
+                       + _hash_block(tmp_path))
         result = _run_qa_gate(fake_hooks, tmp_path, "wf1",
                               [str(self._green_output(tmp_path)), "--checklist", str(art)])
         assert result.returncode == 0, result.stdout + result.stderr
