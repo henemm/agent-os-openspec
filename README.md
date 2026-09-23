@@ -6,14 +6,24 @@ A modular workflow enforcement system for Claude Code that ensures quality throu
 
 ---
 
-## What is this?
+## What is this plugin?
 
-This framework combines two complementary approaches to AI-assisted development:
+A Claude Code plugin that makes Claude work through a change the way a disciplined engineering team would — gather context, write a specification, get it approved, write a failing test, then implement — and makes every one of those steps **mandatory**, not just recommended. The enforcement runs in hooks outside Claude's own judgment, so a step can't be skipped just because Claude decides it's unnecessary this time.
+
+Once installed in a project, it:
+
+- **Blocks code before there's an approved spec.** Claude cannot start implementing a feature or fixing a bug until a specification exists and a human has explicitly approved it.
+- **Blocks implementation before there's a failing test (TDD).** Claude must write and run a real, failing test first — a placeholder or a described-but-not-run test doesn't count.
+- **Verifies its own work adversarially.** Before a commit is allowed, a second, independent Claude instance actively tries to break the implementation and must sign off.
+- **Protects the project from itself.** Secrets, credentials, and the framework's own configuration are guarded against accidental exposure — including by Claude.
+- **Measures its own false alarms.** Every block any guard issues is logged, so a project can tell which checks are catching real problems and which are just friction, instead of guessing (see [Gate-Event-Log](#gate-event-log)).
+
+Why this matters, per the framework's own measurement across three projects: *"CLAUDE.md rules are followed with ~60–70% probability. Hooks with 100%."* A rule written in a doc is a suggestion Claude can talk itself out of; a rule enforced by a hook is not — this plugin moves as much of the workflow as possible from the former to the latter.
+
+### The two ideas underneath
 
 - **Agent OS**: Hook-based workflow enforcement for Claude Code — rules that Claude cannot bypass
 - **OpenSpec**: Spec-first development — no code without an approved, testable specification
-
-The core finding from three projects using this framework: *"CLAUDE.md rules are followed with ~60–70% probability. Hooks with 100%."* Every mandatory step in this framework has a corresponding hook. Documentation is a suggestion; hooks are law.
 
 ---
 
@@ -131,6 +141,8 @@ phase8_complete ─── write-log ───► Execution log + archive
 | AMBIGUOUS verdict | `override-ambiguous` not set | Commit blocked |
 | `complete` | Execution log exists | Archive blocked |
 
+**The phase3→4 approval gate has one more requirement:** before `approved` is accepted, an independently-written PO-briefing must exist — written by reading only the spec and the original request, never Claude's own conversation about it, so the person approving isn't just rubber-stamping Claude's own summary of its own work (`core/agents/po-briefer.md`). Disable with `po_briefing_gate.enabled: false` in `config.yaml`; Fast Track specs are exempt by default.
+
 ---
 
 ## Slash Commands
@@ -217,6 +229,14 @@ Template: `templates/spec_template.md`
 
 ---
 
+## CI Spec Gate
+
+Local hooks can be disabled, edited, or bypassed with Bash, and `.claude/workflows/` — where the phase state lives — is gitignored, so none of that state reaches CI. `scripts/ci_spec_gate.py` runs server-side on every pull request instead, checking only what's actually committed: a spec exists for the code change and is complete (scope, DoD, acceptance criteria, test plan), and — for a Standard/Full-Process spec — a matching PO-briefing exists and is still current, bound to the spec by a SHA-256 stamp. `setup.py` installs the script and its workflow (`.github/workflows/spec-gate.yml`) into consumer projects.
+
+Skip a single PR with a `Spec-Gate: skip <reason>` commit trailer (visible in the history); skip the whole project with `ci_spec_gate.enabled: false` in `config.yaml`.
+
+---
+
 ## GitHub Issues as Backlog
 
 All features and bugs are tracked as GitHub Issues. Agents search for existing issues before creating new ones.
@@ -253,8 +273,13 @@ python3 .claude/hooks/workflow.py set-field github_issue 42
 | `post_implementation_gate.py` | Edit/Write/MultiEdit | Forces user review of implementation results before further edits |
 | `edit_verify.py` | Edit/Write/MultiEdit (post) | Confirms the edit actually landed on disk |
 | `secrets_guard.py` | Bash + Read | Blocks access to `.env`, credentials, private keys |
+| `secret_egress_guard.py` | PreToolUse (all tools) | Blocks secret *values* from leaving via any tool's output, and (since #97) Bash redirects (`>`, `>>`, `tee`) writing outside the project |
 
 **Exit codes:** `0` = allowed, `2` = blocked (stderr shown to Claude)
+
+### Gate-Event-Log
+
+Every block any hook issues is appended to `.claude/gate-events.jsonl` — hook, tool, reason, a secret-masked excerpt of the command, nothing more. The log only observes; it never changes a gate's decision and never blocks anything itself. It exists so a recurring false alarm becomes a number and a regression test instead of a memory: before adding a new guardrail, check whether the log shows the problem it would solve actually happening.
 
 ---
 
@@ -264,17 +289,17 @@ Customize `openspec.yaml` in your project root:
 
 ```yaml
 framework:
-  enabled: false                # Workflow-Zwang ganz aus (Default: an)
+  enabled: false                # Turns workflow enforcement off entirely (default: on)
 
 strict_code_gate:
   code_extensions: [".swift", ".py", ".ts"]
   always_allowed_dirs: ["Tests/", "docs/"]
 
 scope_guard:
-  max_loc_delta: 250            # Limit fuer hinzugefuegte Zeilen Produktivcode (nur `added`, nicht `added+deleted`)
+  max_loc_delta: 250            # Limit on added production-code lines (`added` only, not `added+deleted`)
   loc_exclude_patterns: ["\\.xcstrings$", "\\.po$"]
-  max_test_loc_delta: 500       # Eigenes, hoeheres Limit fuer Testcode (Default 500)
-  test_path_patterns: []        # Optional: eigene Regex statt eingebauter Testpfad-Konventionen (tests/, *_test.py, ...)
+  max_test_loc_delta: 500       # Separate, higher limit for test code (default 500)
+  test_path_patterns: []        # Optional: custom regex instead of the built-in test-path conventions (tests/, *_test.py, ...)
 
 secrets_guard:
   sensitive_patterns: ["\\.env(rc)?\\b", "credentials\\.json"]
@@ -344,6 +369,7 @@ agent-os-openspec/
 │   │   ├── post_implementation_gate.py  # PreToolUse Edit|Write
 │   │   ├── edit_verify.py               # PostToolUse Edit|Write
 │   │   ├── secrets_guard.py             # PreToolUse Bash + Read
+│   │   ├── secret_egress_guard.py       # PreToolUse (all tools)
 │   │   ├── workflow.py                  # Workflow State CLI
 │   │   ├── qa_gate.py                   # Test output validation
 │   │   ├── adversary_dialog.py          # Adversary dialog protocol
@@ -373,6 +399,7 @@ agent-os-openspec/
 ### Core (Always installed)
 - 8-phase workflow enforcement
 - Spec-first development with human approval gate
+- Independent PO-briefing required before approval (phase3→4)
 - ADR reflection gate at spec approval (grandfathered if section absent, disable via `config.yaml → adr_gate.enabled: false`)
 - TDD with real artifacts (screenshots, logs — no placeholders)
 - Adversary verification with tri-state verdict (VERIFIED / BROKEN / AMBIGUOUS)
@@ -381,9 +408,11 @@ agent-os-openspec/
 - LoC delta enforcement (default 250 lines/workflow)
 - Acceptance Criteria format enforcement
 - GitHub Issues as backlog
+- CI Spec Gate — server-side check that a PR has a spec (and PO-briefing), independent of local hooks
+- Gate-Event-Log — every block is logged, so false alarms become measurable
 - Override token for emergency bypass
 - Stop-lock for immediate pause
-- Secrets guard
+- Secrets guard (blocks reading secrets) + secret-egress guard (blocks secret values or unsafe Bash redirects leaving)
 
 ### iOS/SwiftUI Module (`--module ios-swiftui`)
 - Sim-enforcer (use sim.sh instead of direct xcrun)
