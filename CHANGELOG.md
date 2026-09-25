@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+**edit_gate: "No active workflow"-Block prüfte keinen Override-Token (#232)**
+
+Anders als der Infrastruktur-Check (Schritt 4) prüfte der "No active workflow"-Block
+(Schritt 7) keinen Override-Token. In Worktree-Sessions, wo `_is_framework_repo()`
+strukturbedingt `False` liefert (der `.claude-plugin/`-Marker liegt nur im aufgelösten
+Hauptrepo, nicht in dessen Checkout — Symmetriefall zu #115), lief ein gültiger globaler
+Override (`__global__`) dadurch ins Leere: die Prüfung fiel bis zu diesem token-blinden
+Block durch, jede Framework-Wartung an `core/hooks/*.py` außerhalb eines Workflows blockte
+ohne Ausweg.
+
+- Schritt 7 bekommt dieselbe Fallback-Prüfung wie Schritt 4:
+  `_has_override_token("__infra__") or _has_override_token()` vor dem Block.
+- Neue Regressionstests: `tests/test_edit_gate_no_workflow_override_232.py`.
+
 ## [3.30.4] - 2026-09-23
 
 ### Fixed

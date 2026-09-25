@@ -512,8 +512,12 @@ def main():
     if not workflow:
         workflow = _find_workflow_for_file(file_path)
 
-    # 7. No workflow
+    # 7. No workflow — same override fallback as the infrastructure check in
+    # step 4. Without it, a valid global override runs into a dead end in
+    # every worktree session where framework self-detection fails (#232).
     if not workflow:
+        if _has_override_token("__infra__") or _has_override_token():
+            allow()
         block(f"BLOCKED: No active workflow for {Path(file_path).name}. Start with /context. "
               + gate_diagnostics())
 
