@@ -235,6 +235,11 @@ def status_note(data: dict) -> "str | None":
         "Stand von Turn-Beginn — nutze für Schritt und Phase in der Fußzeile "
         "trotzdem den NEUEN, von dir selbst herbeigeführten Stand. Die "
         "Marker-Zeilen entfallen NIE aus diesem Grund.\n"
+        "❗/ℹ️/⚙ erscheinen AUSSCHLIESSLICH in den hier und in den "
+        "Command-Vorlagen fest vorgeschriebenen Zeilen. Erfinde keine "
+        "weiteren Zeilen mit diesen oder anderen Emojis (z. B. eine eigene "
+        "„ℹ️ Status: ...“-Zusammenfassung) — Statusrekaps im Fließtext bleiben "
+        "Emoji-frei.\n"
         "„fertig“/„abgeschlossen“/„erledigt“ gilt für den Workflow erst ab "
         "phase8_complete."
     )
