@@ -38,6 +38,7 @@ import json
 import os
 import subprocess
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -260,3 +261,186 @@ def test_loop_guard_works_without_prompt_id(tmp_path):
     assert second.returncode == 0, (
         f"Zweiter Lauf desselben Turns muss durchlassen, war {second.returncode}"
     )
+
+
+# --- Gegenpruefung: zwei Fail-open-Defekte der ersten Fassung (BROKEN) ------
+#
+# F001 (Falsch-Positiv, CRITICAL): Der erste Slash-Treffer der ZEILE gewann —
+# stand ein Dateipfad oder eine URL vor dem Befehl, gewann der Pfad
+# (`/specs` statt `/50-implement`). Eine Fusszeile mit dem KORREKTEN Befehl
+# wurde dadurch blockiert.
+#
+# F002 (Schleifenschutz wirkungslos ohne `prompt_id`): Die Ersatzkennung ist
+# ein Hash der Antwort. Korrigiert Claude die Fusszeile, aendert sich der Text
+# und damit die Kennung — der naechste Lauf blockt erneut, unbegrenzt. Die
+# bestehenden Schleifenschutz-Tests schicken zweimal DENSELBEN Text und
+# konnten das nicht sehen.
+
+def _state_file(project: Path) -> Path:
+    return project / ".claude" / "footer_gate_state.json"
+
+
+def test_path_before_command_does_not_block(tmp_path):
+    """F001: Dateipfad vor dem korrekten Befehl -> Exit 0 (AC-2 bleibt gewahrt)."""
+    project = _project(tmp_path, phase="phase6_implement")
+    message = _message(
+        "❗ Du: siehe docs/specs/fix-234-footer-gate.md, dann `/50-implement #234`"
+    )
+    result = _run_hook(project, message)
+    assert result.returncode == 0, (
+        f"Fusszeile nennt den korrekten Befehl, Exit 0 erwartet, war "
+        f"{result.returncode}. stderr={result.stderr!r}"
+    )
+
+
+def test_url_in_du_line_does_not_block(tmp_path):
+    """F001: URL vor dem korrekten Befehl -> Exit 0 (`//` darf nicht treffen)."""
+    project = _project(tmp_path, phase="phase6_implement")
+    message = _message(
+        "❗ Du: siehe https://example.com/foo — dann `/50-implement #234`"
+    )
+    result = _run_hook(project, message)
+    assert result.returncode == 0, (
+        f"Exit 0 erwartet, war {result.returncode}. stderr={result.stderr!r}"
+    )
+
+
+def test_mismatch_with_path_before_command_still_blocks(tmp_path):
+    """Gegenprobe zu F001: der Fix darf die Erkennung nicht abschalten."""
+    project = _project(tmp_path, phase="phase6_implement")
+    message = _message(
+        "❗ Du: siehe docs/specs/x.md, dann `/40-tdd-red #234`"
+    )
+    result = _run_hook(project, message)
+    assert result.returncode == 2, (
+        f"Exit 2 erwartet, war {result.returncode}. stderr={result.stderr!r}"
+    )
+    assert "/40-tdd-red" in result.stderr
+    assert "/50-implement" in result.stderr
+
+
+def test_loop_guard_bounds_blocks_without_prompt_id(tmp_path):
+    """F002: ohne `prompt_id` hoechstens eine Blockade je Zeitfenster.
+
+    Zwei Laeufe mit UNTERSCHIEDLICHEM Text — genau der Fall, den die
+    Hash-Ersatzkennung nicht erkennt, weil Claudes Korrekturversuch den Text
+    veraendert.
+    """
+    project = _project(tmp_path, phase="phase6_implement")
+    first = _run_hook(project, _message(_du_line("/40-tdd-red #234")),
+                      prompt_id=None)
+    assert first.returncode == 2, (
+        f"Erster Lauf muss blocken, war {first.returncode}. stderr={first.stderr!r}"
+    )
+    second = _run_hook(
+        project,
+        _message(_du_line("/40-tdd-red #234")) + "\n\nNachtrag: anderer Text.",
+        prompt_id=None,
+    )
+    assert second.returncode == 0, (
+        f"Zweiter Lauf im Zeitfenster muss durchlassen, war {second.returncode}. "
+        f"stderr={second.stderr!r}"
+    )
+
+
+def test_loop_guard_window_expires(tmp_path):
+    """F002: die Grenze ist ein Fenster, kein dauerhaftes Abschalten."""
+    import footer_gate  # noqa: E402 — nur fuer die Fenstergroesse
+
+    project = _project(tmp_path, phase="phase6_implement")
+    first = _run_hook(project, _message(_du_line("/40-tdd-red #234")),
+                      prompt_id=None)
+    assert first.returncode == 2, f"stderr={first.stderr!r}"
+
+    state = json.loads(_state_file(project).read_text())
+    expired = datetime.now() - timedelta(
+        seconds=footer_gate._LOOP_WINDOW_SECONDS + 10
+    )
+    state["last_block_at"] = expired.isoformat()
+    _state_file(project).write_text(json.dumps(state))
+
+    second = _run_hook(
+        project,
+        _message(_du_line("/40-tdd-red #234")) + "\n\nNachtrag: anderer Text.",
+        prompt_id=None,
+    )
+    assert second.returncode == 2, (
+        f"Nach Ablauf des Fensters muss wieder geblockt werden, war "
+        f"{second.returncode}. stderr={second.stderr!r}"
+    )
+
+
+# --- Zweite Gegenpruefung: F003 / F004 -------------------------------------
+#
+# F003 (Falsch-Positiv): Die Zeile darf MEHRERE Slash-Befehle enthalten — der
+# erste ist nicht zwangslaeufig der gemeinte ("nicht mehr `/40-tdd-red`,
+# sondern `/50-implement`"). Regel laut PO-Entscheidung: blockiert wird nur,
+# wenn der erwartete Befehl unter KEINEM Treffer der Zeile ist. Bewusst in
+# Kauf genommen: eine Zeile, die den erwarteten Befehl irgendwo enthaelt, aber
+# auf einen anderen zeigt, wird durchgelassen — Fail-open ist die tragende
+# Anforderung.
+#
+# F004: Ein Zeitstempel in der ZUKUNFT (kaputte Zustandsdatei, Uhr-Drift)
+# machte das Schleifenschutz-Fenster dauerhaft wahr und schaltete das Gate
+# still ab.
+
+def test_correct_command_after_other_command_does_not_block(tmp_path):
+    """F003: erwarteter Befehl steht hinter einem anderen -> Exit 0."""
+    project = _project(tmp_path, phase="phase6_implement")
+    message = _message(
+        "❗ Du: nicht mehr `/40-tdd-red`, sondern `/50-implement #234`"
+    )
+    result = _run_hook(project, message)
+    assert result.returncode == 0, (
+        f"Exit 0 erwartet, war {result.returncode}. stderr={result.stderr!r}"
+    )
+
+
+def test_markdown_link_to_other_command_does_not_block(tmp_path):
+    """F003: Markdown-Link auf einen anderen Befehl davor -> Exit 0."""
+    project = _project(tmp_path, phase="phase6_implement")
+    message = _message(
+        "❗ Du: [nicht mehr aktuell](/40-tdd-red) — jetzt: `/50-implement #234`"
+    )
+    result = _run_hook(project, message)
+    assert result.returncode == 0, (
+        f"Exit 0 erwartet, war {result.returncode}. stderr={result.stderr!r}"
+    )
+
+
+def test_absolute_path_before_command_does_not_block(tmp_path):
+    """F003: absoluter Pfad davor -> Exit 0 (bisherige Known Limitation)."""
+    project = _project(tmp_path, phase="phase6_implement")
+    message = _message("❗ Du: /root/pfad.txt lesen, dann `/50-implement #234`")
+    result = _run_hook(project, message)
+    assert result.returncode == 0, (
+        f"Exit 0 erwartet, war {result.returncode}. stderr={result.stderr!r}"
+    )
+
+
+def test_future_block_timestamp_does_not_disable_gate(tmp_path):
+    """F004: Zeitstempel in der Zukunft darf das Gate nicht stilllegen."""
+    project = _project(tmp_path, phase="phase6_implement")
+    _state_file(project).parent.mkdir(parents=True, exist_ok=True)
+    _state_file(project).write_text(json.dumps({
+        "last_turn_id": "sha256:fremde-kennung",
+        "last_block_at": (datetime.now() + timedelta(days=3650)).isoformat(),
+    }))
+    result = _run_hook(project, _message(_du_line("/40-tdd-red #234")),
+                       prompt_id=None)
+    assert result.returncode == 2, (
+        f"Gate muss trotz Zukunfts-Zeitstempel wirksam bleiben, war "
+        f"{result.returncode}. stderr={result.stderr!r}"
+    )
+
+
+def test_only_wrong_command_still_blocks(tmp_path):
+    """Gegenprobe zu F003: die Erkennung darf nicht verlorengehen."""
+    project = _project(tmp_path, phase="phase6_implement")
+    message = _message("❗ Du: `/40-tdd-red #234` — der naechste Schritt")
+    result = _run_hook(project, message)
+    assert result.returncode == 2, (
+        f"Exit 2 erwartet, war {result.returncode}. stderr={result.stderr!r}"
+    )
+    assert "/40-tdd-red" in result.stderr
+    assert "/50-implement" in result.stderr

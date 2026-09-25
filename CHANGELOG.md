@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+**Footer-Gate: deterministische Prüfung der ❗Du-Fußzeile (#234) — 3.31.0**
+
+Die ❗Du-Fußzeile ist die einzige Zeile, die der PO als „das tippe ich jetzt" liest.
+Sie nannte wiederholt den bereits erledigten Befehl (zuletzt `/40-tdd-red #12` statt
+`/50-implement #12`). Vier Vorgänger-Fixes (#174/#209/#213/#221) haben ausschließlich
+Prompt-Text verschärft — die Fehlerklasse kam jedes Mal zurück. `workflow.next_step()`
+kennt den korrekten Schritt bereits deterministisch aus dem State; jetzt wird die
+Fußzeile mechanisch dagegen abgeglichen statt nur ermahnt.
+
+- Neuer Hook `core/hooks/footer_gate.py` auf dem Event `Stop` (erstmalige Nutzung
+  dieses Events im Framework): findet die letzte `❗ Du:`/`‼️ Du:`-Zeile und blockt per
+  Exit 2 — Korrektur im selben Turn —, wenn `workflow.expected_footer_command()` unter
+  KEINEM der Slash-Befehle dieser Zeile vorkommt. Bewusst nicht „der erste Treffer muss
+  stimmen": Pfade, URLs, Markdown-Links und Formulierungen wie „nicht mehr `/40-tdd-red`,
+  sondern `/50-implement`" stehen regelmäßig vor dem gemeinten Befehl.
+- Neue Funktion `workflow.expected_footer_command(data)`: dünne Hülle um
+  `next_step()` + `issue_number()` — dieselbe Quelle, die `status_note()` ansagt.
+- Fail-open ist die tragende Anforderung (der Hook läuft bei jedem Turn-Ende in jedem
+  Konsumenten-Projekt): kein Workflow, kaputter State, kaputte Payload, abgeschaltetes
+  Framework, fehlende Marker-Zeile, Freitext-Schritt (`phase3_spec`), `phase8_complete`
+  → immer Exit 0, nie eine Ausnahme nach außen.
+- Schleifenschutz über `.claude/footer_gate_state.json` (worktree-lokal): pro Turn
+  höchstens eine Korrektur. Turn-Kennung ist `prompt_id`, ersatzweise ein Hash der
+  Antwort (Claude Code < v2.1.196) — dann greift zusätzlich eine Zeitgrenze von 120 s,
+  weil Claudes Korrektur den Text und damit den Hash ändert; `stop_hook_active` wird
+  nur defensiv ausgewertet.
+- Registrierung in `hooks/hooks.json`. Bekannte Grenze: der Copy-Modus
+  (`setup.py::generate_settings_json()`) registriert das Event `Stop` noch nicht —
+  ausgelagert als #236.
+- Tests: `tests/test_footer_gate_234.py` (22 Tests, AC-1 bis AC-10 plus kaputte
+  Stop-Payload, Schleifenschutz ohne `prompt_id` und die in der Gegenprüfung
+  gefundenen Falsch-Positiv-Fälle).
+
 ### Fixed
 
 **edit_gate: "No active workflow"-Block prüfte keinen Override-Token (#232)**
