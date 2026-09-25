@@ -190,6 +190,21 @@ def issue_number(workflow_name: str) -> "str | None":
     return match.group(0) if match else None
 
 
+def expected_footer_command(data: dict) -> "str | None":
+    """Erwarteter Fusszeilen-Befehl — dieselbe Quelle wie status_note() (#234).
+
+    Duenne Huelle um next_step() + issue_number(), damit footer_gate.py die
+    Fusszeile gegen genau den Wert prueft, den status_note() ansagt. Keine
+    eigene Logik: None und Freitext-Schritte werden unveraendert
+    durchgereicht.
+    """
+    step = next_step(data)
+    if not step or not step.startswith("/"):
+        return step  # None oder Freitext-Schritt (z.B. "Freigabe der Spec ...")
+    issue = issue_number((data or {}).get("name", ""))
+    return f"{step} #{issue}" if issue else step
+
+
 def status_note(data: dict) -> "str | None":
     """Statusvermerk fuer den UserPromptSubmit-Hook, oder None.
 

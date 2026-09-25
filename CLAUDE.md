@@ -2,7 +2,7 @@
 
 > **Meta-Projekt**: Dies ist das zentrale Framework-Repository, das abstraktes Projekt- und Workflow-Wissen konsolidiert. Alle Projekte können Improvements hierher zurückführen und von Verbesserungen aus anderen Projekten profitieren.
 
-**Version**: 3.30.1
+**Version**: 3.31.0
 
 ## Projektzweck
 
@@ -39,6 +39,7 @@ agent-os-openspec/
 │   │   ├── bash_gate.py                 # PreToolUse Bash (Kern-Gate: Stop-Lock/Secrets/Commit)
 │   │   ├── post_bash.py                 # PostToolUse Bash (Adversary Detection)
 │   │   ├── phase_listener.py            # UserPromptSubmit (Approval/Stop-Lock/Override)
+│   │   ├── footer_gate.py               # Stop: prueft die ❗Du-Fusszeile gegen next_step()
 │   │   ├── session_singleton_guard.py   # SessionStart/PreToolUse(alle)/SessionEnd: Worktree-Pflicht + Session-Register; CLI-Modus `claim`
 │   │   ├── worktree_write_guard.py      # PreToolUse Edit|Write: blockt Schreibzugriff aufs Main-Repo bei Worktree-Split
 │   │   ├── claude_md_protection.py      # PreToolUse Edit|Write: schuetzt CLAUDE.md vor verbotenen Patterns/Aufblaehung
@@ -296,6 +297,8 @@ Registrierung zentral in `hooks/hooks.json` (Plugin-Modus) bzw. `.claude/setting
 **UserPromptSubmit:** `phase_listener.py` → [module hooks]
   Intern: Override → Stop-Lock → Approval (inkl. ADR-Reflexions-Gate via `workflow.py::_check_adr`) → New-UI → GREEN
 
+**Stop:** `footer_gate.py` — gleicht die ❗Du-Fusszeile gegen `workflow.expected_footer_command()` ab und blockt per Exit 2 (Korrektur im selben Turn), wenn der erwartete Befehl unter KEINEM Slash-Befehl der Zeile vorkommt. Fail-open ist die tragende Anforderung (laeuft bei jedem Turn-Ende in jedem Konsumenten-Projekt); Schleifenschutz ueber `.claude/footer_gate_state.json`.
+
 **SessionEnd:** `session_singleton_guard.py cleanup`
 
 **Kein Hook — direkter CLI-Aufruf:** `session_singleton_guard.py claim --issue N[,M]`
@@ -415,6 +418,7 @@ python3 /path/to/agent-os-openspec/setup.py --version
 | `core/hooks/bash_gate.py` | Kern-Gate Bash (Stop-Lock/State-Integrity/Secrets/Commit-Gates) |
 | `core/hooks/post_bash.py` | PostToolUse Bash (Adversary Detection) |
 | `core/hooks/phase_listener.py` | UserPromptSubmit Listener (Approval/Stop-Lock/Override/ADR-Gate) |
+| `core/hooks/footer_gate.py` | Stop-Hook: ❗Du-Fusszeile mechanisch gegen `expected_footer_command()` pruefen |
 | `core/hooks/session_singleton_guard.py` | SessionStart/PreToolUse/SessionEnd: Worktree-Pflicht + Session-Register; CLI-Modus `claim --issue` |
 | `core/hooks/worktree_write_guard.py` | PreToolUse Edit/Write: blockt Split-Brain-Schreibzugriff aufs Main-Repo |
 | `core/hooks/claude_md_protection.py` | PreToolUse Edit/Write: schuetzt CLAUDE.md vor verbotenen Patterns/Aufblaehung |

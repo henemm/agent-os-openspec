@@ -50,3 +50,6 @@ docs/artifacts/
 # lokaler Zustand, wie .claude/active_workflow) — nie zuvor versioniert,
 # gehoert in dieselbe Kategorie wie der Rest dieses Abschnitts.
 .claude/settings.local.json
+# Schleifenschutz des Footer-Gates (Issue #234) — merkt sich die zuletzt
+# korrigierte Turn-Kennung. Reiner Laufzeit-Zustand wie stop_lock.json.
+.claude/footer_gate_state.json
