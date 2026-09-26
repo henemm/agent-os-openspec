@@ -245,6 +245,21 @@ def _references_fieldname_marker(command: str) -> bool:
     return any(re.search(p, command) for p in APPROVAL_MARKER_PATTERNS_REQUIRE_PATH)
 
 
+def _strip_trailing_shell_noise(target: str) -> str:
+    """Entfernt ';', '&', '|', ')' am RECHTEN Rand eines Umleitungs-Ziels (#237).
+
+    Bewusste PARALLEL-KOPIE von secret_egress_guard.py::
+    _strip_trailing_shell_noise() — kein geteilter Import zwischen den Guards
+    (Konvention aus CLAUDE.md, Abschnitt Hook-Entwicklung, bereits in der ADR
+    von #97 festgehalten). Hier ohne Geraete-Liste und ohne Scratchpad-Begriff:
+    bash_gate.py kennt weiterhin nur '/dev/null' und hat keine Sicherheitszone.
+
+    Reihenfolge bindend: erst bereinigen, DANN die '/dev/null'-/'^&\\d+$'-
+    Ausnahmen pruefen. Ein FUEHRENDES '&' ('>&2') bleibt unberuehrt.
+    """
+    return target.rstrip(";&|)")
+
+
 def _raw_redirect(command: str) -> bool:
     """Roher Redirect-Scan ueber den gesamten String (konservativ).
 
@@ -253,8 +268,8 @@ def _raw_redirect(command: str) -> bool:
     Operator -- analog zum bestehenden Ziffern-Lookbehind fuer '2>&1'.
     """
     for m in re.finditer(r"(?<![\d-])>{1,2}\s*(\S+)", command):
-        target = m.group(1)
-        if target == "/dev/null":
+        target = _strip_trailing_shell_noise(m.group(1))
+        if not target or target == "/dev/null":
             continue
         if re.match(r"^&\d+$", target):
             continue  # FD-Duplizierung (2>&1, >&2, ...) ist kein Datei-Write
@@ -284,6 +299,7 @@ def _has_real_redirect(command: str) -> bool:
         if not m:
             continue
         target = m.group(1) or (tokens[i + 1] if i + 1 < len(tokens) else "")
+        target = _strip_trailing_shell_noise(target)
         if not target or target == "/dev/null":
             continue
         if re.match(r"^&\d+$", target):

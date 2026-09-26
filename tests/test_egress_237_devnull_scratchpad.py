@@ -23,8 +23,10 @@ Testaufbau (Stilvorlage tests/test_bash_gate_false_positives.py):
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -205,6 +207,132 @@ class TestScratchpadException:
         project.mkdir()
         command = "echo hi > /tmp/some-unrelated-dir-237/file.txt"
         result = _run_egress_guard(project, command, scratchpad_dir=None)
+        assert result.returncode == 2, result.stdout + result.stderr
+
+
+# --- AC-8/AC-9 mit /tmp-Schreibweise: dieselbe macOS-Symlink-Eigenheit wie #239 ---
+#
+# Bewusst KEIN tmp_path: pytest legt tmp_path unter /private/var/folders/... an,
+# also bereits in aufgeloester Form. Der Scratchpad-Pfad aus der echten Payload
+# kommt dagegen als /tmp/claude-<uid>/... herein, und /tmp ist auf macOS ein
+# Symlink nach /private/tmp. Genau dieses Delta bleibt mit tmp_path unsichtbar.
+
+def _tmp_style_scratchpad(name: str) -> str:
+    """Ein Scratchpad-Pfad in der UNAUFGELOESTEN /tmp-Schreibweise."""
+    return f"/tmp/claude-501/egress-237-{os.getpid()}/{name}"
+
+
+class TestScratchpadExceptionWithSymlinkedTmpPath:
+    def test_ac8_write_into_own_scratchpad_given_as_tmp_path_allowed(self, tmp_path):
+        """AC-8, /tmp-Schreibweise.
+        GIVEN: scratchpad_dir in der unaufgeloesten Form '/tmp/claude-501/.../scratchpad'
+        UND ein Bash-Kommando, das in einen Unterordner davon schreibt
+        WHEN: geprueft
+        THEN: Exit 0 -- Ziel UND scratchpad_dir muessen dieselbe Aufloesung
+        durchlaufen. Ohne das loest das Ziel nach /private/tmp/... auf, waehrend
+        scratchpad_dir als /tmp/... vorliegt -- der Vergleich schlaegt fehl und
+        der eigene Schreibvorgang wird faelschlich blockiert.
+        """
+        project = tmp_path / "project"
+        project.mkdir()
+        scratchpad = _tmp_style_scratchpad("scratchpad")
+        command = f"echo hi > {scratchpad}/sub/out.txt"
+        result = _run_egress_guard(project, command, scratchpad_dir=scratchpad)
+        assert result.returncode == 0, result.stdout + result.stderr
+
+    def test_ac9_sibling_dir_with_scratchpad_prefix_still_blocked(self, tmp_path):
+        """AC-9, /tmp-Schreibweise -- Gegenprobe, dass der Fix nicht zu weit geht.
+        GIVEN: dasselbe scratchpad_dir UND ein Ziel in einem Geschwister-
+        Verzeichnis, dessen Name mit dem Scratchpad-Namen BEGINNT
+        ('.../scratchpad-evil')
+        WHEN: geprueft
+        THEN: Exit 2 -- die Praefix-Pruefung muss weiterhin an der
+        Verzeichnis-Grenze (os.sep) haengen, nicht am reinen String-Praefix.
+        """
+        project = tmp_path / "project"
+        project.mkdir()
+        scratchpad = _tmp_style_scratchpad("scratchpad")
+        foreign = _tmp_style_scratchpad("scratchpad-evil")
+        command = f"echo hi > {foreign}/leak.txt"
+        result = _run_egress_guard(project, command, scratchpad_dir=scratchpad)
+        assert result.returncode == 2, result.stdout + result.stderr
+
+
+# --- F002: Ausbruch aus dem Scratchpad per '..' oder Symlink ---
+#
+# Ein Ziel-String, der mit dem Scratchpad-Praefix BEGINNT, muss noch lange nicht
+# im Scratchpad LIEGEN. Wird der Vergleich gegen die unaufgeloeste Form des Ziels
+# gefuehrt, normalisiert niemand '..' und niemand folgt einem Symlink -- die
+# Scratchpad-Ausnahme wird damit zum Generalschluessel fuer beliebige Ziele.
+# Deshalb muss BEIDE Seiten dieselbe Aufloesung durchlaufen (Path.resolve()).
+
+@pytest.fixture
+def real_tmp_scratchpad():
+    """Ein echtes Verzeichnis unterhalb von /tmp (nicht tmp_path!).
+
+    Fuer den Symlink-Fall muessen die Pfade tatsaechlich existieren, damit
+    Path.resolve() dem Symlink folgen kann. tmp_path taugt hier doppelt nicht:
+    es liegt unter /private/var/folders/... (also bereits aufgeloest) und
+    trifft die /tmp-Symlink-Eigenheit nicht.
+    """
+    base = Path(tempfile.mkdtemp(prefix="egress-237-f002-", dir="/tmp"))
+    try:
+        yield Path("/tmp") / base.name  # unaufgeloeste /tmp-Schreibweise
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+
+class TestScratchpadEscapeIsBlocked:
+    def test_f002_traversal_out_of_scratchpad_into_system_dir_blocked(self, tmp_path):
+        """F002, Fall 1: Aufstieg in ein Systemverzeichnis.
+        GIVEN: ein Ziel, dessen String mit scratchpad_dir beginnt, das per '..'
+        aber nach /etc/passwd hinauffuehrt
+        WHEN: geprueft
+        THEN: Exit 2 -- entscheidend ist, wohin der Pfad ZEIGT, nicht womit sein
+        String beginnt.
+        """
+        project = tmp_path / "project"
+        project.mkdir()
+        scratchpad = _tmp_style_scratchpad("scratchpad")
+        target = f"{scratchpad}/../../../../etc/passwd"
+        result = _run_egress_guard(project, f"echo hi > {target}", scratchpad_dir=scratchpad)
+        assert result.returncode == 2, result.stdout + result.stderr
+
+    def test_f002_traversal_into_foreign_scratchpad_blocked(self, tmp_path):
+        """F002, Fall 2 -- das ist AC-9 auf dem Umweg ueber '..'.
+        GIVEN: scratchpad_dir der Sitzung A UND ein Ziel, das per '..' in das
+        Scratchpad der Sitzung B hinueberwechselt
+        WHEN: geprueft
+        THEN: Exit 2 -- fremde Sitzungen derselben Maschine bleiben tabu, auch
+        wenn der Ziel-String mit dem eigenen Scratchpad beginnt.
+        """
+        project = tmp_path / "project"
+        project.mkdir()
+        scratchpad = _tmp_style_scratchpad("sess-A/scratchpad")
+        target = f"{scratchpad}/../../sess-B/scratchpad/leak.txt"
+        result = _run_egress_guard(project, f"echo hi > {target}", scratchpad_dir=scratchpad)
+        assert result.returncode == 2, result.stdout + result.stderr
+
+    def test_f002_symlink_inside_scratchpad_pointing_outward_blocked(
+        self, tmp_path, real_tmp_scratchpad
+    ):
+        """F002, Fall 3: Symlink statt '..'.
+        GIVEN: ein ECHTES Scratchpad, das einen Symlink auf ein Verzeichnis
+        ausserhalb enthaelt, UND ein Ziel durch diesen Symlink hindurch
+        WHEN: geprueft
+        THEN: Exit 2 -- der Vergleich muss dem Symlink folgen (Path.resolve()
+        auf beiden Seiten), sonst genuegt ein Symlink im eigenen Scratchpad, um
+        beliebige Ziele freizuschalten.
+        """
+        project = tmp_path / "project"
+        project.mkdir()
+        scratchpad = real_tmp_scratchpad / "scratchpad"
+        scratchpad.mkdir()
+        outside = real_tmp_scratchpad / "outside"
+        outside.mkdir()
+        (scratchpad / "raus").symlink_to(outside)
+        target = str(scratchpad / "raus" / "leak.txt")
+        result = _run_egress_guard(project, f"echo hi > {target}", scratchpad_dir=str(scratchpad))
         assert result.returncode == 2, result.stdout + result.stderr
 
 
