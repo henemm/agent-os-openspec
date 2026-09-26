@@ -2,7 +2,7 @@
 
 > **Meta-Projekt**: Dies ist das zentrale Framework-Repository, das abstraktes Projekt- und Workflow-Wissen konsolidiert. Alle Projekte können Improvements hierher zurückführen und von Verbesserungen aus anderen Projekten profitieren.
 
-**Version**: 3.31.0
+**Version**: 3.31.1
 
 ## Projektzweck
 
@@ -279,7 +279,7 @@ Registrierung zentral in `hooks/hooks.json` (Plugin-Modus) bzw. `.claude/setting
 
 **SessionStart:** `session_singleton_guard.py register` — legt Sitzungseintrag an → `session_banner.py` — zeigt geladene Version, warnt vor veralteten Befehls-Kopien
 
-**PreToolUse, alle Tools:** `session_singleton_guard.py guard` — erzwingt Worktree-Pflicht (blockt Schreib-Tools im Haupt-Repo)
+**PreToolUse, alle Tools:** `session_singleton_guard.py guard` — erzwingt Worktree-Pflicht (blockt Schreib-Tools im Haupt-Repo) → `secret_egress_guard.py` — blockt ausgeschriebene `.env`-Werte in JEDEM Tool-Input und, nur bei Bash, Umleitungsziele ausserhalb der Sicherheitszone (Issue #97/#237). Bewusst ohne Matcher: der Wert-Check gilt fuer alle Tools, nicht nur Bash.
 
 **PreToolUse Edit|Write|MultiEdit** (in dieser Reihenfolge): `worktree_write_guard.py` → `claude_md_protection.py` → `edit_gate.py` → `tdd_enforcement.py` → `post_implementation_gate.py` → [module hooks]
   Intern (edit_gate.py, das Kern-Gate): Protected State → Always-Allowed → Code-Check → Infra → Stop-Lock → Workflow → Phase → Override → TDD
@@ -426,6 +426,7 @@ python3 /path/to/agent-os-openspec/setup.py --version
 | `core/hooks/post_implementation_gate.py` | PreToolUse Edit/Write: erzwingt User-Review nach Implementierung |
 | `core/hooks/edit_verify.py` | PostToolUse Edit/Write: prueft Edit tatsaechlich auf Disk gelandet |
 | `core/hooks/secrets_guard.py` | PreToolUse Bash+Read: blockt Zugriff auf .env/Credentials/Keys |
+| `core/hooks/secret_egress_guard.py` | PreToolUse (alle Tools): blockt ausgeschriebene .env-WERTE im Tool-Input; bei Bash zusaetzlich Umleitungsziele ausserhalb der Sicherheitszone (Projekt, `extra_allowed_write_dirs`, eigenes Sitzungs-Scratchpad) |
 | `core/hooks/workflow.py` | Workflow State CLI (isolierte JSON-Files pro Workflow) |
 | `core/hooks/qa_gate.py` | QA-Gate: Test-Output validieren, Verdict setzen |
 | `core/hooks/override_token.py` | Shared Override-Token Management (TTL, Multi-WF) |

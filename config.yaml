@@ -162,7 +162,12 @@ secrets_guard:
 # UND im Code der Default, es gibt also aktuell nichts, das auseinanderlaufen koennte.
 secret_egress_guard:
   redirect_guard_enabled: true
-  extra_allowed_write_dirs: []  # Regex-Muster, z.B. ["^/tmp/claude-\\d+/"] fuers eigene Scratchpad
+  # Regex-Muster fuer zusaetzliche Schreib-Ziele ausserhalb des Projekts, z.B. ["^/var/log/meine-app/"].
+  # Geprueft wird gegen beide Pfad-Formen (aufgeloest UND unaufgeloest, Issue #239).
+  # Das eigene Sitzungs-Scratchpad braucht KEINEN Eintrag mehr — es ist seit #237
+  # automatisch erlaubt, sofern die PreToolUse-Payload das Feld scratchpad_dir
+  # mitliefert (beide Pfad-Formen). Fehlt das Feld, gibt es keinen Fallback.
+  extra_allowed_write_dirs: []
 
 # Credentials Guard — Detects hardcoded secrets in bash commands
 # Used by bash_gate.py (step 4b). Empty patterns list = use built-in defaults.

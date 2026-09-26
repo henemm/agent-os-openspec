@@ -110,6 +110,30 @@ _MAX_ENV_BYTES = 256 * 1024
 _MAX_HAYSTACK = 4 * 1024 * 1024
 _MAX_PAYLOAD_FILE_BYTES = 1024 * 1024
 
+# Geraete-Ziele, die kein Datei-Write sind: der Inhalt landet im Nirwana bzw.
+# in den Standard-Kanaelen des eigenen Prozesses, verlaesst das System also
+# nicht als Datei (Issue #237). /dev/tty und /dev/fd/N stehen bewusst NICHT
+# hier: /dev/fd/N zeigt auf einen beliebigen offenen Deskriptor und koennte
+# den Guard genau in dem Fall aushebeln, den er verhindern soll.
+_ALLOWED_DEVICES = {"/dev/null", "/dev/stdout", "/dev/stderr"}
+
+# Shell-Trennzeichen, die ohne Leerzeichen direkt am Umleitungs-Ziel kleben
+# koennen ('2>/dev/null; echo x', 'cmd 2>/dev/null&', '(cmd 2>/dev/null)').
+_TRAILING_SHELL_NOISE = ";&|)"
+
+
+def _strip_trailing_shell_noise(target: str) -> str:
+    """Entfernt eine beliebige Folge aus ';', '&', '|', ')' am RECHTEN Rand
+    eines gefundenen Umleitungs-Ziels (Issue #237).
+
+    Reihenfolge bindend: erst bereinigen, DANN die Ausnahme-Pruefungen
+    (_ALLOWED_DEVICES, '^&\\d+$'). Andersherum bliebe '2>&1; echo x' ein
+    Fehlalarm, weil '^&\\d+$' gegen den unbereinigten String '&1;' nicht passt.
+    Ein FUEHRENDES '&' (wie in '>&2') wird von einer rein rechtsseitigen
+    Bereinigung nie beruehrt — die FD-Duplizierungs-Ausnahme bleibt intakt.
+    """
+    return target.rstrip(_TRAILING_SHELL_NOISE)
+
 
 def _get_config() -> dict:
     cfg = load_config().get("secret_egress_guard", {})
@@ -260,19 +284,24 @@ def _targets_env_file(tool_input: dict, root: Path) -> bool:
         return False
 
 
-def _read_payload() -> "tuple[str, dict]":
+def _read_payload() -> "tuple[str, dict, str | None]":
+    """(tool_name, tool_input, scratchpad_dir) — `scratchpad_dir` ist das
+    Payload-Feld der aktuellen Sitzung (Issue #237, verfuegbar ab Claude Code
+    v2.1.257). Der Env-Zweig (Alt-Pfad ohne stdin) liefert dafuer None: aus zwei
+    isolierten Umgebungsvariablen laesst sich kein Scratchpad-Pfad gewinnen.
+    """
     ti_env = os.environ.get("CLAUDE_TOOL_INPUT", "")
     tn_env = os.environ.get("CLAUDE_TOOL_NAME", "")
     if ti_env and tn_env:
         try:
-            return tn_env, json.loads(ti_env)
+            return tn_env, json.loads(ti_env), None
         except json.JSONDecodeError:
-            return tn_env, {}
+            return tn_env, {}, None
     try:
         data = json.load(sys.stdin)
-        return data.get("tool_name", ""), data.get("tool_input", {})
+        return data.get("tool_name", ""), data.get("tool_input", {}), data.get("scratchpad_dir")
     except Exception:
-        return "", {}
+        return "", {}, None
 
 
 def find_leaks(tool_name: str, tool_input: dict, cfg: dict, root: Path) -> "list[str]":
@@ -308,16 +337,24 @@ def _shell_write_targets(command: str) -> "list[str]":
     reicht bereits zum Block, siehe find_unsafe_redirects().
     """
     if re.search(r"\b(?:ba|z|da|k)?sh\s+-c\b|\beval\b", command):
+        raw = [
+            _strip_trailing_shell_noise(m.group(1))
+            for m in re.finditer(r"(?<![\d-])>{1,2}\s*(\S+)", command)
+        ]
         return [
-            m.group(1) for m in re.finditer(r"(?<![\d-])>{1,2}\s*(\S+)", command)
-            if m.group(1) != "/dev/null" and not re.match(r"^&\d+$", m.group(1))
+            t for t in raw
+            if t and t not in _ALLOWED_DEVICES and not re.match(r"^&\d+$", t)
         ]
     try:
         tokens = shlex.split(command, posix=True)
     except ValueError:
+        raw = [
+            _strip_trailing_shell_noise(m.group(1))
+            for m in re.finditer(r"(?<![\d-])>{1,2}\s*(\S+)", command)
+        ]
         return [
-            m.group(1) for m in re.finditer(r"(?<![\d-])>{1,2}\s*(\S+)", command)
-            if m.group(1) != "/dev/null" and not re.match(r"^&\d+$", m.group(1))
+            t for t in raw
+            if t and t not in _ALLOWED_DEVICES and not re.match(r"^&\d+$", t)
         ]
 
     targets = []
@@ -325,7 +362,8 @@ def _shell_write_targets(command: str) -> "list[str]":
         m = re.match(r"^\d*>{1,2}(.*)$", tok)
         if m:
             target = m.group(1) or (tokens[i + 1] if i + 1 < len(tokens) else "")
-            if target and target != "/dev/null" and not re.match(r"^&\d+$", target):
+            target = _strip_trailing_shell_noise(target)
+            if target and target not in _ALLOWED_DEVICES and not re.match(r"^&\d+$", target):
                 targets.append(target)
         elif tok == "tee" or tok.endswith("/tee"):
             for nxt in tokens[i + 1:]:
@@ -333,36 +371,77 @@ def _shell_write_targets(command: str) -> "list[str]":
                     continue
                 if nxt.startswith("-"):
                     break  # andere Flag (-i, --output-error, ...) — kein Ziel-Token
-                targets.append(nxt)
+                nxt = _strip_trailing_shell_noise(nxt)
+                if nxt and nxt not in _ALLOWED_DEVICES:
+                    targets.append(nxt)
                 break
     return targets
 
 
-def _is_outside_safe_zone(target: str, root: Path, cfg: dict) -> bool:
+def _is_outside_safe_zone(target: str, root: Path, cfg: dict,
+                          scratchpad_dir: "str | None" = None) -> bool:
     """True, wenn `target` ausserhalb Projekt UND ausserhalb aller konfigurierten
     Ausnahme-Verzeichnisse liegt.
 
     Relative Ziele werden wie in _targets_env_file() gegen Path.cwd() aufgeloest
     (dieselbe Annahme, die der Rest dieser Datei bereits trifft: die
     Hook-Subprocess-CWD entspricht der Ausfuehrungs-CWD des Bash-Tools).
+
+    `scratchpad_dir` ist das private Sitzungs-Scratchpad aus dem Hook-Payload
+    (Issue #237). Fehlt das Feld, existiert fuer diese Sitzung auch kein
+    Scratchpad — dann wird der Zweig komplett uebersprungen (kein
+    Muster-Fallback, der fremde Sitzungen derselben Maschine mit einschliessen
+    wuerde).
     """
     try:
         p = Path(target).expanduser()
         if not p.is_absolute():
             p = Path.cwd() / p
+        unresolved = str(p)
         resolved = str(p.resolve())
     except (OSError, ValueError):
         return False  # nicht als Pfad interpretierbar -> fail-open, wie der Rest der Datei
     root_str = str(root.resolve())
     if resolved == root_str or resolved.startswith(root_str + os.sep):
         return False
+    if scratchpad_dir:
+        # BEIDE Seiten durch dieselbe Aufloesung schicken und nur die
+        # aufgeloesten Formen vergleichen. Das Problem war nie, dass ein Ziel in
+        # zwei Schreibweisen vorliegen kann, sondern dass Ziel und
+        # scratchpad_dir in UNTERSCHIEDLICHEN Formen verglichen wurden:
+        # scratchpad_dir kommt als /tmp/claude-<uid>/... aus der Payload,
+        # waehrend das Ziel auf macOS zu /private/tmp/... aufloest.
+        #
+        # Gegen die unaufgeloeste Ziel-Form zu vergleichen waere die falsche
+        # Reparatur: dieser String normalisiert weder '..' noch folgt er
+        # Symlinks, '<scratchpad>/../../fremd/leak.txt' bestuende die
+        # Praefix-Pruefung und die Ausnahme waere ein Generalschluessel.
+        # resolve() auf beiden Seiten entschaerft beides.
+        #
+        # Schlaegt das Aufloesen fehl, wird der Zweig uebersprungen (= nicht
+        # erlaubt). Das ist die bewusste Ausnahme vom Fail-open-Prinzip dieser
+        # Datei: ein Fehler waere hier eine Erlaubnis, nicht nur ein
+        # ausgelassener Hinweis.
+        try:
+            sp = str(Path(scratchpad_dir).expanduser().resolve())
+        except (OSError, ValueError):
+            sp = None
+        if sp and (resolved == sp or resolved.startswith(sp + os.sep)):
+            # Praefix-Pruefung an os.sep gebunden, damit '/x/scratchpad-evil'
+            # kein Unterordner von '/x/scratchpad' wird (AC-9).
+            return False
     for pattern in cfg["extra_allowed_write_dirs"]:
-        if re.match(pattern, resolved):
+        # Issue #239: bis hierher wurde nur gegen den AUFGELOESTEN Pfad geprueft —
+        # ein Muster wie '^/tmp/' konnte damit nie greifen, weil /tmp auf macOS
+        # zu /private/tmp aufloest. Jetzt zaehlt ein Treffer auf EINER der
+        # beiden Pfad-Formen.
+        if re.match(pattern, resolved) or re.match(pattern, unresolved):
             return False
     return True
 
 
-def find_unsafe_redirects(tool_name: str, tool_input: dict, cfg: dict, root: Path) -> "list[str]":
+def find_unsafe_redirects(tool_name: str, tool_input: dict, cfg: dict, root: Path,
+                          scratchpad_dir: "str | None" = None) -> "list[str]":
     """Schreibziele ausserhalb der Sicherheitszone, nur fuer Bash-Kommandos (Issue #97)."""
     if not cfg["redirect_guard_enabled"] or tool_name != "Bash" or not isinstance(tool_input, dict):
         return []
@@ -372,12 +451,13 @@ def find_unsafe_redirects(tool_name: str, tool_input: dict, cfg: dict, root: Pat
     targets = _shell_write_targets(command)
     unsafe = []
     for t in targets:
-        if _is_outside_safe_zone(t, root, cfg) and t not in unsafe:
+        if _is_outside_safe_zone(t, root, cfg, scratchpad_dir) and t not in unsafe:
             unsafe.append(t)
     return unsafe
 
 
-def _block_unsafe_redirect(tool_name: str, unsafe: "list[str]") -> None:
+def _block_unsafe_redirect(tool_name: str, unsafe: "list[str]",
+                           scratchpad_dir: "str | None" = None) -> None:
     targets = ", ".join(unsafe)
     try:
         log_gate_event(
@@ -388,6 +468,14 @@ def _block_unsafe_redirect(tool_name: str, unsafe: "list[str]") -> None:
         )
     except Exception:
         pass
+    # AC-15: Das Scratchpad nur empfehlen, wenn die Sitzung eins hat. Ein Rat,
+    # der auf ein nicht existierendes Verzeichnis zeigt, kostet bei jedem
+    # Treffer einen Fehlversuch — genau der Vorwurf aus Issue #237.
+    if scratchpad_dir:
+        right_target = ("  Richtiges Ziel: eine Datei innerhalb des Projekts, oder das private\n"
+                        "  Sitzungs-Scratchpad.\n")
+    else:
+        right_target = "  Richtiges Ziel: eine Datei innerhalb des Projekts.\n"
     print(
         f"BLOCKED [secret_egress_guard]: {tool_name} schreibt per Umleitung (>, >>, tee) "
         f"auf ein Ziel ausserhalb von Projekt und erlaubten Verzeichnissen:\n"
@@ -395,8 +483,7 @@ def _block_unsafe_redirect(tool_name: str, unsafe: "list[str]") -> None:
         "  Zugangsdaten, die als Prozess-AUSGABE entstehen (z.B. eine fehlschlagende\n"
         "  Test-Assertion), waeren sonst unsichtbar fuer die Wert-Pruefung dieses Guards\n"
         "  (Issue #97).\n"
-        "  Richtiges Ziel: eine Datei innerhalb des Projekts, oder das private\n"
-        "  Sitzungs-Scratchpad.\n"
+        + right_target +
         "  Fehlalarm? config.yaml -> secret_egress_guard.extra_allowed_write_dirs: "
         "[\"^<pfad-praefix>\"]\n"
         "  Einmaliger Bypass: 'override' tippen (1h gueltig).",
@@ -409,13 +496,13 @@ def main() -> None:
     cfg = _get_config()
     if not cfg["enabled"]:
         sys.exit(0)
-    tool_name, tool_input = _read_payload()
+    tool_name, tool_input, scratchpad_dir = _read_payload()
     root = find_project_root()
     hits = find_leaks(tool_name, tool_input, cfg, root)
     if not hits:
-        unsafe = find_unsafe_redirects(tool_name, tool_input, cfg, root)
+        unsafe = find_unsafe_redirects(tool_name, tool_input, cfg, root, scratchpad_dir)
         if unsafe and not has_valid_token():
-            _block_unsafe_redirect(tool_name, unsafe)
+            _block_unsafe_redirect(tool_name, unsafe, scratchpad_dir)
         sys.exit(0)
     names = ", ".join(hits)
     # command_excerpt bewusst NICHT befuellt: tool_input traegt hier per

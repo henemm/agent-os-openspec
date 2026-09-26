@@ -47,6 +47,33 @@ class TestFdDuplicationNotRedirect:
         cmd = 'sh -c "echo VERIFIED > .claude/workflows/x.json"'
         assert bash_gate._raw_redirect(cmd) is True
 
+    def test_devnull_with_trailing_semicolon_not_real_redirect(self):
+        """AC-12 (fix-237).
+        GIVEN: 'cmd 2>/dev/null; echo x' -- /dev/null mit angehaengtem ';'
+        WHEN: _has_real_redirect() prueft
+        THEN: False -- heute rot, weil der Ziel-String vor der
+        '/dev/null'-Ausnahmepruefung nicht um das Trennzeichen bereinigt
+        wird (Tokenisierungsluecke D5, Parallel-Kopie zu
+        secret_egress_guard.py::_shell_write_targets()).
+        """
+        assert bash_gate._has_real_redirect("cmd 2>/dev/null; echo x") is False
+
+    def test_devnull_with_closing_paren_not_real_redirect(self):
+        """AC-12 (fix-237).
+        GIVEN: '(cmd 2>/dev/null)' -- /dev/null mit angehaengtem ')'
+        WHEN: _has_real_redirect() prueft
+        THEN: False -- heute rot (siehe D5).
+        """
+        assert bash_gate._has_real_redirect("(cmd 2>/dev/null)") is False
+
+    def test_devnull_with_ampersand_not_real_redirect(self):
+        """AC-12 (fix-237).
+        GIVEN: 'cmd 2>/dev/null&' -- /dev/null mit angehaengtem '&'
+        WHEN: _has_real_redirect() prueft
+        THEN: False -- heute rot (siehe D5).
+        """
+        assert bash_gate._has_real_redirect("cmd 2>/dev/null&") is False
+
 
 # --- Issue #1478 Teil 1: "->" (Arrow-Notation) faelschlich als Redirect ---
 

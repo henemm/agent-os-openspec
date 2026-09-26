@@ -5,6 +5,55 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.31.1] - 2026-09-26
+
+### Fixed
+
+**Secret-Egress-Guard erlaubt /dev/null, Standard-Kanäle und das Sitzungs-Scratchpad (#237, #239) — 3.31.1**
+
+`secret_egress_guard.py` blockierte drei Ziele, die es nie blockieren sollte: `/dev/null` mit
+direkt angehängtem Shell-Trennzeichen (`ls -d ~/x 2>/dev/null; echo done`), jedes echte Ziel mit
+angehängtem Trennzeichen (verstümmelter Name in der Meldung) und das private Sitzungs-Scratchpad —
+obwohl die Blockade-Meldung selbst das Scratchpad als richtiges Ausweich-Ziel nannte.
+
+- `_shell_write_targets()`: neue Hilfsfunktion `_strip_trailing_shell_noise()` entfernt `;`, `&`,
+  `|`, `)` am rechten Rand des Ziel-Strings — **vor** den Ausnahme-Prüfungen, an allen vier
+  Fundstellen (shlex-Zweig, `sh -c`/`eval`-Rohtext-Zweig, `ValueError`-Rohtext-Zweig, `tee`-Ziel).
+  Ein führendes `&` (`>&2`) bleibt unberührt, die FD-Duplizierungs-Ausnahme gilt damit auch für
+  `cmd 2>&1; echo x`.
+- Neue Konstante `_ALLOWED_DEVICES = {"/dev/null", "/dev/stdout", "/dev/stderr"}` ersetzt den
+  Einzelvergleich gegen `/dev/null`. `/dev/tty` und `/dev/fd/N` bleiben bewusst blockiert:
+  `/dev/fd/N` zeigt auf einen beliebigen offenen Deskriptor und könnte den Guard aushebeln.
+- Neue Scratchpad-Ausnahme: `_read_payload()` liefert jetzt ein 3-Tupel
+  `(tool_name, tool_input, scratchpad_dir)` und reicht das Payload-Feld `scratchpad_dir` über
+  `main()`/`find_unsafe_redirects()` bis `_is_outside_safe_zone()` durch. Ziele innerhalb des
+  eigenen Scratchpads (auch in Unterordnern) sind sicher; ein FREMDES Scratchpad bleibt blockiert.
+  Fehlt das Feld, gibt es keinen Muster-Fallback — ein solcher würde fremde Sitzungen derselben
+  Maschine mit einschließen. **Ziel und `scratchpad_dir` durchlaufen dieselbe Auflösung**
+  (`Path.resolve()` auf beiden Seiten), bevor verglichen wird: `scratchpad_dir` kommt als
+  `/tmp/claude-<uid>/…` aus der Payload, während das Schreibziel auf macOS zu `/private/tmp/…`
+  auflöst — ein Vergleich zweier verschiedener Schreibweisen blockierte das eigene Scratchpad.
+  Gegen die *unaufgelöste* Ziel-Form zu vergleichen wäre die falsche Reparatur: dieser String
+  normalisiert weder `..` noch folgt er Symlinks, `<scratchpad>/../../fremd/leak.txt` bestünde
+  die Präfix-Prüfung und die Ausnahme wäre ein Generalschlüssel. Die Präfix-Prüfung bleibt an
+  `os.sep` gebunden, damit `…/scratchpad-evil` kein Unterordner von `…/scratchpad` wird. Lässt
+  sich `scratchpad_dir` nicht auflösen, wird der Zweig übersprungen (= nicht erlaubt) — bewusste
+  Ausnahme vom Fail-open-Prinzip der Datei, weil ein Fehler hier eine Erlaubnis wäre.
+- Die Blockade-Meldung empfiehlt das Sitzungs-Scratchpad nur noch Sitzungen, die eins haben.
+- **#239 mitgefixt:** `extra_allowed_write_dirs` wirkte seit Einführung (#97) nie, weil die Muster
+  ausschließlich gegen den mit `Path.resolve()` **aufgelösten** Pfad geprüft wurden — ein Muster
+  wie `^/tmp/` konnte auf macOS nie greifen (`/tmp` → `/private/tmp`). Jetzt zählt ein Treffer auf
+  einer der beiden Pfad-Formen. Feldname und Default (`[]`) bleiben unverändert; der `config.yaml`-
+  Kommentar verweist nicht mehr aufs Scratchpad (das ist jetzt automatisch erlaubt).
+- **`bash_gate.py` mitgezogen:** `_has_real_redirect()` und `_raw_redirect()` teilten exakt
+  dieselbe Tokenisierungslücke (`cmd 2>/dev/null; echo x` galt als echter Datei-Redirect). Sie
+  bekommen dieselbe Bereinigung als bewusste Parallel-Kopie — kein geteilter Import zwischen den
+  Guards (Konvention aus CLAUDE.md/ADR von #97), keine Geräte-Liste, kein Scratchpad-Begriff.
+
+Unverändert: die Wert-Prüfung (`find_leaks()`) läuft weiterhin zuerst und exklusiv, das
+Fail-open-Prinzip (jeder interne Fehler → Exit 0) bleibt bestehen, und jedes echte Ziel außerhalb
+der Zone wird weiterhin blockiert.
+
 ## [3.31.0] - 2026-09-25
 
 ### Added
