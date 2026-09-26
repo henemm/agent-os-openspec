@@ -1,6 +1,6 @@
 ---
 spec_file: docs/specs/fix-237-egress-guard-scratchpad.md
-spec_sha256: 97ed005fad683531df75923a5f862c83b7e115afc6f82e84ef20954f58dcfdcb
+spec_sha256: 4967bb68bbb774f3689a19d42e43f2fb136094795a28e41c2603b8731cd48fad
 ---
 
 # PO-Briefing: fix-237-egress-guard-scratchpad
@@ -11,22 +11,22 @@ spec_sha256: 97ed005fad683531df75923a5f862c83b7e115afc6f82e84ef20954f58dcfdcb
 
 ## Was gebaut wird
 
-Ein Sicherheits-Wächter blockiert seltener zu Unrecht: Nullgerät, Standardkanäle und das eigene Sitzungs-Scratchpad werden künftig erlaubt.
+Ein Sicherheits-Wächter lässt harmlose Befehle (Nullgerät, eigenes Sitzungs-Scratchpad) künftig durch, statt sie fälschlich zu blockieren.
 
 ## Definition of Done
 
-Alle festgelegten Testfälle laufen grün, echte Blockaden bleiben blockiert, der Praxisnachweis fürs Scratchpad folgt erst danach.
+Alle Testfälle sind grün, echte Blockaden bleiben blockiert, und die Scratchpad-Erkennung ist per Programmcode-Analyse belegt — nicht per echtem Abfang.
 
 ## Wie geprüft wird
 
-Automatisierte Tests belegen jede Freigabe einzeln; ob das Scratchpad in echten Sitzungen erkannt wird, bleibt unbewiesen.
+Automatisierte Tests decken jede Freigabe und jede weiterhin blockierte Lage ab; der komplette Testlauf hat keinen eigenen Test.
 
 ## Kritische Anmerkungen
 
-- Das zentrale Versprechen — automatische Scratchpad-Freigabe — ist unbewiesen; der Nachweis folgt erst nach der Umsetzung, nicht vorher.
-- Für 14 der 15 Prüfkriterien ist der zugehörige Test bei Freigabe noch nicht benannt, nur eines ist konkret verknüpft.
-- Die Lockerung betrifft eine Sicherheitsschranke, die in jedem Projekt mit diesem Framework aktiv ist, nicht nur hier.
+- Der Nachweis, dass das Scratchpad tatsächlich erkannt wird, stammt aus Programmcode-Analyse, nicht aus einem echten abgefangenen Vorgang.
+- Der Umbau wuchs während der Umsetzung: eine Nachprüfung fand zwei weitere Fehler im Scratchpad-Bereich, jetzt behoben.
+- Zwei dabei entdeckte Randthemen wurden bewusst nicht mitgelöst, sondern als eigene Aufgaben #245 und #246 vorgemerkt.
 
 ## Freigabe-Frage
 
-Sollen die drei Lockerungen freigegeben werden, obwohl der Praxisbeweis fürs Scratchpad erst nach dem Bauen erbracht wird?
+Sollen die Lockerungen freigegeben werden, obwohl der Scratchpad-Nachweis nur aus Programmcode-Analyse stammt und zwei Randfunde offen bleiben?
