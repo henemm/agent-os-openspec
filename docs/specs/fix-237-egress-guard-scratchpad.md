@@ -172,12 +172,21 @@ insbesondere die zwei zuvor roten #239-Tests.
   Feld-Emission und die Anlage des Scratchpad-Verzeichnisses hängen laut Analyse an derselben
   Bedingung in Claude Code — kein Muster-Fallback, weil ein solcher Fallback fremde Sitzungen
   auf derselben Maschine miteinschließen würde (D3).
-- **(d) Der Beweis, dass `scratchpad_dir` im realen Payload ankommt, ist offen.** Er steht
-  aktuell auf der ausgelesenen Programmdatei von Claude Code 2.1.274, nicht auf einem
-  abgefangenen PreToolUse-Payload einer Sitzung, die nachweislich ein Scratchpad hat. Fällt der
-  Nachweis in Phase 7 anders aus, greift die Scratchpad-Ausnahme in der Praxis nicht — die
-  reparierte Konfigurationsausnahme aus D4 bliebe dann das Sicherheitsnetz, um das Scratchpad
-  projektseitig per Muster einzutragen.
+- **(d) Der Beweis, dass `scratchpad_dir` im realen Payload ankommt, ist geführt — mit
+  benannter Einschränkung.** Nachweis in
+  `docs/artifacts/fix-237-egress-guard-scratchpad/phase7-scratchpad-dir-nachweis.md`: Das Feld
+  existiert im Payload-Schema von Claude Code 2.1.274, wird aus der Sitzungs-ID gebaut und unter
+  genau derselben Bedingung emittiert, unter der auch das Scratchpad-Verzeichnis angelegt wird
+  (`tw()`/`IZ()`); der so gebaute Pfad deckt sich mit dem real existierenden
+  Scratchpad-Verzeichnis dieser Sitzung. Eine Umgebungsvariable als Alternativquelle
+  (`CLAUDE_SCRATCHPAD_DIR`, Annahme aus dem Issue-Text) existiert nachweislich nicht. Die
+  verbleibende Einschränkung: Es ist ein Beweis aus dem ausgelieferten Programmcode, kein
+  abgefangener PreToolUse-Payload — drei Versuche, einen Payload live abzufangen (eigener
+  Hook in `settings.local.json`, `claude -p`, interaktive Sondierung per `expect`), scheiterten
+  aus dokumentierten Gründen. Für eine höhere Beweisstufe müsste der Live-Abfang gelingen; bis
+  dahin bleibt die reparierte Konfigurationsausnahme aus D4 das Sicherheitsnetz, um das
+  Scratchpad projektseitig per Muster einzutragen, falls sich die Codeanalyse doch als falsch
+  erweisen sollte.
 
 ## Definition of Done
 
@@ -203,41 +212,41 @@ Fertig ist diese Änderung, wenn:
 
 - **AC-1:** Given das Bash-Kommando `ls -d ~/x 2>/dev/null; echo done` / When
   `secret_egress_guard.py` es prüft / Then Exit 0 (kein Block, `/dev/null` mit angehängtem `;`).
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `tests/test_egress_237_devnull_scratchpad.py::TestDeviceTargetsAllowed::test_ac1_devnull_with_semicolon_allowed`
 - **AC-2:** Given das Bash-Kommando `cmd 2>/dev/null&` / When geprüft / Then Exit 0 (`/dev/null`
   mit angehängtem `&`).
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `tests/test_egress_237_devnull_scratchpad.py::TestDeviceTargetsAllowed::test_ac2_devnull_with_ampersand_allowed`
 - **AC-3:** Given das Bash-Kommando `(cmd 2>/dev/null)` / When geprüft / Then Exit 0 (`/dev/null`
   mit angehängtem `)`).
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `tests/test_egress_237_devnull_scratchpad.py::TestDeviceTargetsAllowed::test_ac3_devnull_with_closing_paren_allowed`
 - **AC-4:** Given das Bash-Kommando `cmd >/dev/stdout` / When geprüft / Then Exit 0.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `tests/test_egress_237_devnull_scratchpad.py::TestDeviceTargetsAllowed::test_ac4_devstdout_allowed`
 - **AC-5:** Given das Bash-Kommando `cmd 2>/dev/stderr` / When geprüft / Then Exit 0.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `tests/test_egress_237_devnull_scratchpad.py::TestDeviceTargetsAllowed::test_ac5_devstderr_allowed`
 - **AC-6:** Given das Bash-Kommando `echo x > ~/bericht.txt; echo fertig` (echtes Ziel außerhalb
   der Zone — absoluter Pfad im Home-Verzeichnis, nicht im Projekt —, mit angehängtem
   Trennzeichen) / When geprüft / Then Exit 2, und die Meldung nennt das bereinigte Ziel
   (`…/bericht.txt`, nicht `…/bericht.txt;`).
   *Hinweis: Ein **relativer** Name wie `bericht.txt` löst gegen die CWD auf und liegt damit
   innerhalb des Projekts — der wäre korrekt Exit 0 und taugt nicht als Kriterium.*
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `tests/test_egress_237_devnull_scratchpad.py::TestRealTargetOutsideZoneMessageIsClean::test_ac6_real_target_outside_zone_still_blocked_with_clean_name`
 - **AC-7:** Given das Bash-Kommando `cmd 2>&1; echo x` (FD-Duplizierung mit angehängtem
   Trennzeichen) / When geprüft / Then Exit 0 — die Ausnahme für `2>&1`/`>&2` bleibt auch mit
   angehängtem Trennzeichen wirksam.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `tests/test_egress_237_devnull_scratchpad.py::TestFdDuplicationWithTrailingSeparatorAllowed::test_ac7_stderr_to_stdout_with_semicolon_allowed`
 - **AC-8:** Given eine `PreToolUse`-Payload mit gesetztem `scratchpad_dir` UND ein Bash-Kommando,
   das per `>` in eine Datei innerhalb dieses Pfads (auch in einem Unterordner) schreibt / When
   geprüft / Then Exit 0.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `tests/test_egress_237_devnull_scratchpad.py::TestScratchpadException::test_ac8_write_into_own_scratchpad_subfolder_allowed`, `tests/test_egress_237_devnull_scratchpad.py::TestScratchpadExceptionWithSymlinkedTmpPath::test_ac8_write_into_own_scratchpad_given_as_tmp_path_allowed`, `tests/test_egress_237_devnull_scratchpad.py::TestIsOutsideSafeZoneScratchpadParamUnit::test_target_inside_scratchpad_dir_param_is_safe`, `tests/test_egress_237_devnull_scratchpad.py::TestReadPayloadUnit::test_read_payload_returns_three_tuple_with_scratchpad_dir`
 - **AC-9:** Given eine `PreToolUse`-Payload mit gesetztem `scratchpad_dir` UND ein Bash-Kommando,
   das in ein ANDERES Scratchpad-Verzeichnis schreibt (abweichender Session-Pfad, nicht Präfix
   von `scratchpad_dir`) / When geprüft / Then Exit 2.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `tests/test_egress_237_devnull_scratchpad.py::TestScratchpadException::test_ac9_write_into_foreign_scratchpad_still_blocked`, `tests/test_egress_237_devnull_scratchpad.py::TestScratchpadExceptionWithSymlinkedTmpPath::test_ac9_sibling_dir_with_scratchpad_prefix_still_blocked`, `tests/test_egress_237_devnull_scratchpad.py::TestScratchpadEscapeIsBlocked::test_f002_traversal_out_of_scratchpad_into_system_dir_blocked`, `tests/test_egress_237_devnull_scratchpad.py::TestScratchpadEscapeIsBlocked::test_f002_traversal_into_foreign_scratchpad_blocked`, `tests/test_egress_237_devnull_scratchpad.py::TestScratchpadEscapeIsBlocked::test_f002_symlink_inside_scratchpad_pointing_outward_blocked`, `tests/test_egress_237_devnull_scratchpad.py::TestIsOutsideSafeZoneScratchpadParamUnit::test_target_outside_scratchpad_dir_param_is_unsafe`
 - **AC-10:** Given eine `PreToolUse`-Payload OHNE `scratchpad_dir`-Feld UND ein Bash-Kommando,
   das in ein Verzeichnis unter `/tmp` schreibt, das keinem konfigurierten Muster entspricht /
   When geprüft / Then Exit 2 — kein Muster-Fallback, das Verhalten bleibt wie vor dieser
   Änderung.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `tests/test_egress_237_devnull_scratchpad.py::TestScratchpadException::test_ac10_no_scratchpad_dir_field_tmp_write_still_blocked`, `tests/test_egress_237_devnull_scratchpad.py::TestReadPayloadUnit::test_read_payload_returns_none_scratchpad_dir_when_absent`
 - **AC-11:** Given `config.yaml::secret_egress_guard.extra_allowed_write_dirs` enthält
   `["^/tmp/"]` UND ein Bash-Kommando schreibt nach `/tmp/pytest_full.log` (macOS: löst zu
   `/private/tmp/…` auf) / When geprüft / Then Exit 0 — die zwei seit #97 roten Tests
@@ -248,20 +257,22 @@ Fertig ist diese Änderung, wenn:
 - **AC-12:** Given die Kommandos `cmd 2>/dev/null; echo x`, `(cmd 2>/dev/null)` und
   `cmd 2>/dev/null&` / When `bash_gate.py::_has_real_redirect()` sie prüft / Then liefert die
   Funktion für alle drei `False` (kein fälschlicher Write-Indikator mehr).
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `tests/test_bash_gate_false_positives.py::TestFdDuplicationNotRedirect::test_devnull_with_trailing_semicolon_not_real_redirect`, `tests/test_bash_gate_false_positives.py::TestFdDuplicationNotRedirect::test_devnull_with_closing_paren_not_real_redirect`, `tests/test_bash_gate_false_positives.py::TestFdDuplicationNotRedirect::test_devnull_with_ampersand_not_real_redirect`
 - **AC-13:** Given ein Bash-Kommando, das gleichzeitig einen ausgeschriebenen Secret-Wert aus
   der `.env` enthält UND ein Ziel außerhalb der Zone / When `secret_egress_guard.py` es prüft /
   Then Exit 2 mit der Literal-Wert-Meldung (unverändertes Vorrang-Verhalten, `find_leaks()`
   bleibt von dieser Änderung unberührt).
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `tests/test_egress_237_devnull_scratchpad.py::TestLeakCheckTakesPrecedenceOverRedirectCheck::test_ac13_literal_secret_value_blocks_before_redirect_check`
 - **AC-14:** Given der vollständige Testbaum dieses Repositories / When `pytest tests/ -q`
   läuft / Then alle Tests bestehen (0 Fehlschläge, keine neuen Skips).
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: KEIN TEST GEFUNDEN — dieser AC beschreibt den vollständigen Regressionslauf
+    (`pytest tests/ -q`) als Prozessschritt, nicht ein einzelnes Testverhalten; siehe Test Plan.
+    Es existiert kein dedizierter Testfall dafür.
 - **AC-15:** Given ein blockiertes Ziel außerhalb der Zone UND eine Payload OHNE
   `scratchpad_dir` / When `secret_egress_guard.py` blockiert / Then nennt die Meldung das
   Sitzungs-Scratchpad **nicht** als richtiges Ziel (diese Sitzung hat keins — der Rat wäre
   nicht befolgbar). Ist `scratchpad_dir` gesetzt, nennt die Meldung es weiterhin.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `tests/test_egress_237_devnull_scratchpad.py::TestMessageMentionsScratchpadOnlyWhenPresent::test_ac15_message_omits_scratchpad_when_field_missing`, `tests/test_egress_237_devnull_scratchpad.py::TestMessageMentionsScratchpadOnlyWhenPresent::test_ac15_message_still_mentions_scratchpad_when_field_present`
 
 ## Test Plan
 
@@ -322,3 +333,13 @@ in denselben Dateien):
   absoluter Pfad außerhalb); AC-15 ergänzt: Meldungstext empfiehlt das Scratchpad nur noch
   Sitzungen, die eins haben (die Analyse verlangte eine Anpassung des Meldungstextes, die erste
   Spec-Fassung hatte sie für unnötig erklärt)
+- 2026-09-26: Gegenprüfung nach Implementierung deckte zwei Defekte im Scratchpad-Zweig von
+  `_is_outside_safe_zone()` auf: (1) der Vergleich zog `scratchpad_dir` unaufgelöst gegen das
+  bereits aufgelöste Ziel heran, wodurch verschiedene Pfadformen (`/tmp/...` vs.
+  `/private/tmp/...`) den Vergleich verfehlten; (2) die erste Korrektur (String-Präfix-Vergleich
+  auf der unaufgelösten Form) öffnete eine Umgehung, weil ein Ziel-String, der mit dem
+  Scratchpad-Präfix beginnt, per `..`-Aufstieg oder Symlink dennoch außerhalb des Scratchpads
+  liegen kann — behoben durch beidseitige `Path.resolve()`-Auflösung vor dem Präfix-Vergleich.
+  Beide Defekte sind in den zusätzlichen Testklassen `TestScratchpadExceptionWithSymlinkedTmpPath`
+  und `TestScratchpadEscapeIsBlocked` (`tests/test_egress_237_devnull_scratchpad.py`) abgedeckt.
+  Daraus entstandene Folgetickets: #245, #246.
