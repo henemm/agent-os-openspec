@@ -51,6 +51,20 @@ Bestimme aus dem Kontext:
 - **Bug:** User meldet ein Problem, etwas funktioniert nicht wie erwartet
 - **Feature:** User wuenscht neue Funktionalitaet oder Aenderung
 
+### Hängende Subagenten
+
+Primärer Schutz gegen einen hängenden Subagenten: Die Sitzung wird automatisch erneut aufgerufen,
+sobald der Hintergrund-Agent fertig ist. Liegt beim nächsten eigenen Zug noch kein Bericht vor,
+`TaskList` prüfen — ist der Agent dort noch als aktiv gelistet, ihn mit `TaskStop` beenden und
+mit präziserem Briefing neu starten. Kein endloses Warten.
+
+Nur falls dieser Befehl innerhalb eines `/loop`-Laufs (Selbsttaktung, dynamischer Modus) läuft,
+zusätzlich dieser Rückfall:
+
+```
+ScheduleWakeup(1200, "Analyse-Agenten Rückfall [20-analyse], nur im /loop-Kontext: TaskList → noch aktiver Explore-/Bug-Intake-/Plan-Agent? JA → TaskStop, dann User: 'Analyse-Agent hängt — bitte /20-analyse neu starten.' NEIN → ignorieren, fertig.")
+```
+
 ### Step 2a: Feature-Analyse (3x Explore/Haiku parallel)
 
 Bei Features dispatche **3 parallele Subagenten** fuer schnelle Kontextsammlung:
@@ -66,11 +80,6 @@ Task 3 (Explore/haiku, run_in_background: true): "Identifiziere Dependencies und
   [Feature-Bereich]. Welche Module haengen davon ab? Welche werden importiert?"
 ```
 
-**TIMEOUT-PFLICHT — sofort nach dem Spawn (für alle 3 gemeinsam):**
-```
-ScheduleWakeup(180, "Explore-Agents Timeout [20-analyse Step 2a]: TaskList → noch aktive Haiku-Agents? JA → alle TaskStop, dann User: 'Analyse-Agenten nach 3 Min gestoppt — bitte /20-analyse neu starten.' NEIN → ignorieren, fertig.")
-```
-
 ### Step 2b: Bug-Analyse (bug-intake/Haiku)
 
 Bei Bugs dispatche den **bug-intake Agent**:
@@ -79,11 +88,6 @@ Bei Bugs dispatche den **bug-intake Agent**:
 Task (general-purpose/haiku, run_in_background: true): Verwende die bug-intake Instruktionen.
   Input: symptom=[Fehlerbeschreibung], context=[Wo/Wann]
   Fuehre parallele Investigation durch und erstelle Bug Report.
-```
-
-**TIMEOUT-PFLICHT — sofort nach dem Spawn:**
-```
-ScheduleWakeup(180, "Bug-Intake Timeout [20-analyse Step 2b]: TaskList → noch aktiv? JA → TaskStop, dann User: 'Bug-Intake-Agent nach 3 Min gestoppt — bitte /20-analyse neu starten.' NEIN → ignorieren, fertig.")
 ```
 
 ### Step 3: Strategische Bewertung (Plan/Sonnet)
@@ -100,11 +104,6 @@ Task (Plan/sonnet, run_in_background: true): "Basierend auf folgenden Investigat
   3. Scope-Schaetzung (Dateien, LoC)
   4. Abhaengigkeiten und Reihenfolge
   5. Empfehlung (eine klare Empfehlung)"
-```
-
-**TIMEOUT-PFLICHT — sofort nach dem Spawn:**
-```
-ScheduleWakeup(300, "Plan-Agent Timeout [20-analyse Step 3]: TaskList → noch aktiv? JA → TaskStop, dann User: 'Strategie-Agent nach 5 Min gestoppt — bitte /20-analyse neu starten.' NEIN → ignorieren, fertig.")
 ```
 
 ### Step 4: Synthese praesentieren

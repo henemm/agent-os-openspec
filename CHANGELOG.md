@@ -5,6 +5,33 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.32.0] - 2026-09-26
+
+### Changed
+
+**Weckruf-Pflichtblöcke auf einen Rückfall je Befehl reduziert (#88) — 3.32.0**
+
+Vier Befehlsdateien schrieben nach jedem Subagenten-Spawn einen eigenen Pflichtblock mit
+`ScheduleWakeup(...)` vor — 13 Vorkommen in `core/commands/` und identisch 13 in den daraus
+generierten Skills, zusammen 26. Die Intervalle (180–600 s) feuerten regelmäßig erst, nachdem
+der überwachte Agent längst zurückgemeldet hatte: eine PFLICHT, die strukturell nie griff.
+
+- `core/commands/{20-analyse,30-write-spec,50-implement,60-validate}.md`: alle bisherigen
+  Pflichtblöcke entfernt, ersetzt durch **je einen** Abschnitt „### Hängende Subagenten“ direkt
+  vor dem ersten Spawn-Schritt der Datei — acht Vorkommen statt 26 (vier Befehle plus die vier
+  daraus erzeugten Skills).
+- Primärer Mechanismus ist jetzt der automatische Wiederaufruf der Sitzung, sobald der
+  Hintergrund-Agent fertig ist, plus Nachfassen per `TaskList` / `TaskStop` beim nächsten
+  eigenen Zug — kein endloses Warten, kein Wecker dazwischen.
+- Der verbliebene `ScheduleWakeup`-Aufruf ist ehrlich als nachrangiger Rückfall **nur für den
+  `/loop`-Kontext** gekennzeichnet und deckt mit Mindestintervall 1200 s den ganzen Phasen-
+  Ablauf ab statt eines einzelnen Spawns.
+- `skills/*/SKILL.md` über `scripts/sync_skills.py` nachgezogen (Generat, kein Hand-Edit).
+- Neu: `tests/test_wakeup_blocks.py` — prüft per Glob über `core/commands/*.md` und
+  `skills/*/SKILL.md`, dass je Datei höchstens ein `ScheduleWakeup(` steht, jedes Intervall
+  ≥ 1200 s beträgt, der alte Pflicht-Marker nirgends mehr vorkommt und der Ersatz-Absatz in
+  allen vier Befehlsdateien wortgleich vorhanden ist.
+
 ## [3.31.1] - 2026-09-26
 
 ### Fixed
