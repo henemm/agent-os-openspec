@@ -86,6 +86,25 @@ def _run_bash_gate(env: dict, command: str, cwd: "str | None" = None) -> subproc
     )
 
 
+def _write_valid_dialog(root: Path, wf_name: str, verdict: str) -> None:
+    """Gültiges, gestempeltes Dialog-Artefakt am Standardpfad (#253)."""
+    from adversary_dialog import stamp_dialog_artifact
+    examined = root / "src" / "examined.py"
+    examined.parent.mkdir(parents=True, exist_ok=True)
+    examined.write_text("VALUE = 1\n")
+    art = root / "docs" / "artifacts" / wf_name / "adversary-dialog.md"
+    art.parent.mkdir(parents=True, exist_ok=True)
+    art.write_text(
+        "# Adversary Dialog\n\n## Checkliste\n"
+        f"- [x] AC-1: geprüft — Beweis: Test\n  Code reference: {examined}:1\n\n"
+        "### Runde 1\n**Adversary:** Angriff\n**Implementierer:** Beweis\n\n"
+        "### Runde 2\n**Adversary:** Angriff\n**Implementierer:** Beweis\n\n"
+        f"VERDICT: {verdict}\n"
+    )
+    ok, msg = stamp_dialog_artifact(str(art))
+    assert ok, msg
+
+
 class TestAmbiguousBlock:
     def _make_workflow(self, tmp_path: Path, verdict: str, with_override: bool = False) -> str:
         wf_dir = tmp_path / ".claude" / "workflows"
@@ -114,6 +133,7 @@ class TestAmbiguousBlock:
 
     def test_ambiguous_with_override_allows(self, tmp_path):
         self._make_workflow(tmp_path, "AMBIGUOUS", with_override=True)
+        _write_valid_dialog(tmp_path, "test-wf", "AMBIGUOUS")  # seit #253 Pflicht
         env = {
             "CLAUDE_PROJECT_DIR": str(tmp_path),
             "OPENSPEC_ACTIVE_WORKFLOW": "test-wf",

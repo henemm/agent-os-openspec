@@ -137,7 +137,7 @@ phase8_complete ─── write-log ───► Execution log + archive
 | Approval (phase3→4) | `## Architektur-Entscheidung (ADR)` section filled (ADR number or justified "none") | Approval blocked |
 | Edit in phase6+ | RED artifacts + `## Acceptance Criteria` in spec | Edit blocked |
 | LoC limit | `git diff HEAD` ≤ 250 lines | Edit blocked |
-| git commit | Adversary verdict = VERIFIED | Commit blocked |
+| git commit / phase 8 | Adversary verdict = VERIFIED + registered, stamped dialog artifact matching the current code | Commit / completion blocked |
 | AMBIGUOUS verdict | `override-ambiguous` not set | Commit blocked |
 | `complete` | Execution log exists | Archive blocked |
 
@@ -264,7 +264,7 @@ python3 .claude/hooks/workflow.py set-field github_issue 42
 |------|---------|--------|
 | `edit_gate.py` | Edit/Write/MultiEdit | Phase, RED artifacts, Acceptance Criteria, LoC delta, stop-lock, override *(core gate)* |
 | `bash_gate.py` | Bash | Stop-lock, state integrity, secrets, commit gates (VERIFIED/AMBIGUOUS) *(core gate)* |
-| `post_bash.py` | Bash (post) | Test output detection, adversary verdict auto-set |
+| `post_bash.py` | Bash (post) | Test output detection, recorded as a hint in `last_test_run` (never sets the adversary verdict) |
 | `phase_listener.py` | UserPromptSubmit | Approval keyword, stop-lock, override token, GREEN signal |
 | `session_singleton_guard.py` | SessionStart / all tools (pre) / SessionEnd | Registers the session and blocks writes outside a worktree |
 | `worktree_write_guard.py` | Edit/Write/MultiEdit | Blocks writes to the main repo while running in a worktree (split-brain prevention) |
@@ -338,7 +338,7 @@ covers the main checkout, every worktree and every fresh clone.
 | `edit_gate` (phase / TDD / AC / LoC / workflow requirement) | `secrets_guard` |
 | `tdd_enforcement`, `post_implementation_gate` | `secret_egress_guard` |
 | `phase_listener` (approval phrases, stop-lock) | `bash_gate` secrets + credential checks |
-| `post_bash` (adversary detection) | `claude_md_protection`, `worktree_write_guard` |
+| `post_bash` (test-run detection) | `claude_md_protection`, `worktree_write_guard` |
 | `bash_gate` stop-lock, state-integrity, commit gates | `session_singleton_guard`, `edit_verify` |
 
 Only an explicit `enabled: false` disables anything. A missing key, an empty

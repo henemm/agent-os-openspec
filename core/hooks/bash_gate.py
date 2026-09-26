@@ -8,7 +8,8 @@ Replaces 15 separate hooks with 1. Sequential logic:
 2. Git commands → ALLOW (fast path)
 3. State-Integrity: protected file + write indicator → BLOCK (whitelist)
 4. Secrets: sensitive file + content output → BLOCK
-5. Git Commit gates (configurable required staged files, adversary verdict)
+5. Git Commit gates (configurable required staged files, adversary verdict
+   plus a valid, stamped dialog artifact — #253)
 6. ALLOW
 
 Project-specific gates (sim_enforcer, build_lock) belong in module hooks.
@@ -479,6 +480,39 @@ def _write_e2e_scope(wf: dict, scope: str) -> None:
         pass
 
 
+def _require_dialog_evidence(wf: dict, verdict: str) -> None:
+    """VERIFIED bzw. AMBIGUOUS+Override zaehlen nur mit gueltigem Dialog-Artefakt (#253).
+
+    Dieselbe Regel wie der Phase-8-Uebergang (adversary_dialog.check_dialog_evidence).
+    Scheitert der Import, gilt der Nachweis als nicht erbracht. Ein gueltiger
+    User-Override-Token hebt den Block auf — dieselbe Notbremse wie beim
+    fehlenden Verdict.
+    """
+    try:
+        from adversary_dialog import check_dialog_evidence
+        reason = check_dialog_evidence(wf)
+    except Exception as exc:
+        reason = f"Nachweis-Prüfung nicht verfügbar ({type(exc).__name__}: {exc})"
+    if not reason:
+        return
+    try:
+        from override_token import has_valid_token
+        if has_valid_token(wf.get("name")):
+            return
+    except ImportError:
+        pass
+    name = wf.get("name", "<workflow>")
+    block(
+        f"BLOCKED: Adversary verdict ohne gültigen Dialog-Nachweis — {reason}\n"
+        "  Ein grüner Testlauf ersetzt den Adversary-Dialog nicht.\n"
+        "  Weg (/50-implement Step 8): Adversary-Dialog führen, Protokoll unter\n"
+        f"  docs/artifacts/{name}/adversary-dialog.md speichern, dann\n"
+        "    adversary_dialog.py stamp <pfad>\n"
+        "    workflow.py add-artifact adversary_dialog <pfad> \"Adversary Dialog Protokoll\" phase6b_adversary\n"
+        "  " + gate_diagnostics(wf, verdict=verdict)
+    )
+
+
 # --- Main ---
 
 def main():
@@ -642,12 +676,13 @@ def main():
                 else:
                     verdict = str(wf.get("adversary_verdict", "") or "")
                     if verdict.startswith("VERIFIED"):
-                        pass  # green
+                        _require_dialog_evidence(wf, verdict)  # #253
                     elif verdict.startswith("AMBIGUOUS"):
                         if not wf.get("adversary_ambiguous_override"):
                             block("BLOCKED: Adversary verdict is AMBIGUOUS. "
                                   "Review findings, then: workflow.py override-ambiguous '<reason>' "
                                   + gate_diagnostics(wf, verdict="AMBIGUOUS"))
+                        _require_dialog_evidence(wf, verdict)  # #253
                     else:
                         has_override = False
                         try:

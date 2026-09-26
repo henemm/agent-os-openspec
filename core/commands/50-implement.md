@@ -251,6 +251,13 @@ und haengt einen `## Geprüfte Dateien`-Block an. Das Gate prueft in 8d
 gegen diese Hashes statt gegen das Datei-Alter — ohne diesen Schritt wird
 das Artifact unabhaengig davon abgelehnt, wie frisch es ist (Issue #131).
 
+**Gate-Wirkung (#253):** Commit-Gate und Phase 8 akzeptieren `VERIFIED` (bzw. `AMBIGUOUS` mit
+Override) nur mit diesem registrierten, gestempelten Artifact, dessen gehashte Dateien zum aktuellen
+Code passen. Es zaehlt das zuletzt registrierte `adversary_dialog`; ohne Registrierung der
+Standardpfad oben. Ein gruener Testlauf aktualisiert nur `last_test_run` — er setzt kein Verdict und
+oeffnet keinen Commit. Aendert ein spaeterer Fix (auch ein Auto-Fix in `/60-validate`) eine zitierte
+Datei, braucht es einen neuen Dialog.
+
 #### 8d. QA-Gate mit Checklist-Validierung
 
 ```bash
@@ -263,6 +270,8 @@ python3 .claude/hooks/qa_gate.py /tmp/adversary_test_output.txt \
     --checklist docs/artifacts/<workflow-name>/adversary-dialog.md \
     --infra --no-visual "Infra-Ticket ohne UI"
 ```
+
+Ohne `--checklist` prueft `qa_gate.py` nur die Testausgabe — das oeffnet weder Commit noch Phase 8.
 
 **Tri-State Verdict:**
 - **VERIFIED** — Alle Punkte bewiesen, weiter zu Phase 7

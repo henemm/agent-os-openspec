@@ -40,6 +40,26 @@ def _run_edit_gate(env: dict, file_path: str, cwd: str) -> subprocess.CompletedP
     )
 
 
+def _write_valid_dialog(root: Path, wf_name: str, verdict: str = "VERIFIED") -> None:
+    """Gültiges, gestempeltes Dialog-Artefakt am Standardpfad — seit #253 zählt
+    ein VERIFIED/AMBIGUOUS-Verdict bei Commit und Phase 8 nur damit."""
+    from adversary_dialog import stamp_dialog_artifact
+    examined = root / "src" / "examined.py"
+    examined.parent.mkdir(parents=True, exist_ok=True)
+    examined.write_text("VALUE = 1\n")
+    art = root / "docs" / "artifacts" / wf_name / "adversary-dialog.md"
+    art.parent.mkdir(parents=True, exist_ok=True)
+    art.write_text(
+        "# Adversary Dialog\n\n## Checkliste\n"
+        f"- [x] AC-1: geprüft — Beweis: Test\n  Code reference: {examined}:1\n\n"
+        "### Runde 1\n**Adversary:** Angriff\n**Implementierer:** Beweis\n\n"
+        "### Runde 2\n**Adversary:** Angriff\n**Implementierer:** Beweis\n\n"
+        f"VERDICT: {verdict}\n"
+    )
+    ok, msg = stamp_dialog_artifact(str(art))
+    assert ok, msg
+
+
 # --- #26: Rebase-Check nutzt cwd statt _root ---
 
 def _git(args, cwd):
@@ -84,7 +104,9 @@ def _make_rebase_fixture(tmp_path: Path):
     _git(["clone", str(origin), "."], current)
 
     # Aktiver Workflow-State im Hauptrepo (=_root via CLAUDE_PROJECT_DIR).
-    # adversary_verdict=VERIFIED → nur der Rebase-Check (5b) bestimmt das Ergebnis.
+    # adversary_verdict=VERIFIED + gültiges Dialog-Artefakt (#253) → nur der
+    # Rebase-Check (5b) bestimmt das Ergebnis.
+    _write_valid_dialog(mainrepo, "rebase-wf")
     wf_dir = mainrepo / ".claude" / "workflows"
     wf_dir.mkdir(parents=True)
     wf_data = {
@@ -226,6 +248,9 @@ def _make_verdict_workflow(tmp_path: Path, verdict: str, with_override: bool) ->
     if with_override:
         data["adversary_ambiguous_override"] = {"reason": "test", "at": "2026-01-01T00:00:00"}
     (wf_dir / "verdict-wf.json").write_text(json.dumps(data))
+    # #253: gültiges Artefakt, damit allein das Verdict über den Übergang entscheidet
+    _write_valid_dialog(tmp_path, "verdict-wf",
+                        "AMBIGUOUS" if verdict.startswith("AMBIGUOUS") else "VERIFIED")
     return data
 
 

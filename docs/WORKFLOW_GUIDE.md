@@ -217,9 +217,14 @@ Läuft **bevor Claude einen Shell-Befehl ausführt**. Besonders relevant bei `gi
 6. git commit:
    a. Required-Files nicht staged? → BLOCK
    b. Branch hinter origin/main? → BLOCK
-   c. Kein VERIFIED-Verdict? → BLOCK
+   c. Kein VERIFIED-Verdict (bzw. AMBIGUOUS + Override)? → BLOCK
+   d. Kein registriertes, gestempeltes, zum Ist-Stand passendes
+      Dialog-Artefakt? → BLOCK (Notbremse: User-Override-Token)
 → ALLOW
 ```
+
+Dieselbe Nachweis-Regel (`adversary_dialog.check_dialog_evidence`) gilt beim
+Übergang nach `phase8_complete` (`phase`, `complete`, `finish`) — dort ohne Override.
 
 ### `post_bash.py` — Test-Detektor (PostToolUse Bash)
 
@@ -227,7 +232,7 @@ Läuft **nachdem Claude einen Bash-Befehl ausgeführt hat**. Erkennt Test-Framew
 
 Frameworks: pytest, jest, xcodebuild, go test, cargo test, vitest, mocha
 
-Wenn ein Test-Run "passed" meldet → setzt automatisch `adversary_verdict = "VERIFIED:<framework>"` im Workflow-State. Kein manueller Schritt nötig.
+Das Ergebnis landet nur als Hinweis in `last_test_run` (`result` passed/failed, `runner`, `at`). Ein Verdict setzt `post_bash.py` nicht — ein grüner Testlauf ersetzt den Adversary-Dialog nicht (#253). Das Verdict entsteht aus dem gestempelten Dialog-Artefakt (`/50-implement` Step 8, `qa_gate.py --checklist`).
 
 ---
 
@@ -310,6 +315,7 @@ Der aktive Workflow wird über die Umgebungsvariable `OPENSPEC_ACTIVE_WORKFLOW` 
 | `test_artifacts` | Registrierte Artefakte (RED-Tests, Screenshots) |
 | `red_test_done` | Wurden RED-Tests durchgeführt? |
 | `adversary_verdict` | VERIFIED / BROKEN / AMBIGUOUS |
+| `last_test_run` | Letzter erkannter Testlauf (`post_bash.py`) — nur Hinweis, nicht gate-relevant |
 | `loc_delta_current` | Aktueller Code-Delta in Lines (Produktivcode, nur `added`) |
 | `loc_delta_test_current` | Aktueller Code-Delta in Lines (Testcode, nur `added`, eigenes Limit) |
 | `phase_log` | Timeline aller Phasen mit Zeiten |
@@ -402,7 +408,7 @@ Tests laufen durch
     ↓
 post_bash.py: pytest + "passed" erkannt
     ↓
-adversary_verdict = "VERIFIED:pytest" (automatisch)
+last_test_run = passed (nur Hinweis — kein Verdict, öffnet keinen Commit)
 
 User tippt "go"
     ↓
@@ -410,12 +416,15 @@ phase_listener.py: green_approved = true
     ↓
 Adversary-Dialog startet (implementation-validator Agent)
     ↓
+Dialog-Artefakt: stamp + add-artifact adversary_dialog → qa_gate.py --checklist
+    ↓
 VERIFIED → Phase 7 freigegeben
 
 User tippt git commit
     ↓ bash_gate.py:
       - Branch hinter main? nein ✓
       - VERIFIED-Verdict? ✓
+      - Dialog-Artefakt gültig, gestempelt, Code unverändert? ✓
       → ALLOW
 Commit wird erstellt
 ```

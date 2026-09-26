@@ -37,7 +37,7 @@ agent-os-openspec/
 │   ├── hooks/               # 4 konsolidierte Kern-Gates + ergänzende Guards (Registrierung: hooks/hooks.json)
 │   │   ├── edit_gate.py                 # PreToolUse Edit|Write (Kern-Gate: Phase/TDD/LoC)
 │   │   ├── bash_gate.py                 # PreToolUse Bash (Kern-Gate: Stop-Lock/Secrets/Commit)
-│   │   ├── post_bash.py                 # PostToolUse Bash (Adversary Detection)
+│   │   ├── post_bash.py                 # PostToolUse Bash (Testlauf-Hinweis last_test_run, kein Verdict)
 │   │   ├── phase_listener.py            # UserPromptSubmit (Approval/Stop-Lock/Override)
 │   │   ├── footer_gate.py               # Stop: prueft die ❗Du-Fusszeile gegen next_step()
 │   │   ├── session_singleton_guard.py   # SessionStart/PreToolUse(alle)/SessionEnd: Worktree-Pflicht + Session-Register; CLI-Modus `claim`
@@ -214,8 +214,8 @@ phase6_implement → User-Freigabe ("go") → phase6b_adversary → Dialog → V
 - Circuit Breaker: Max 3 Iterationen, dann Eskalation an User
 
 ### Hooks
-- `post_bash.py` erkennt Test-Framework-Output und setzt automatisch `adversary_verdict`
-- `bash_gate.py` prueft bei `git commit` ob ein VERIFIED-Verdict vorliegt
+- `post_bash.py` erkennt Test-Framework-Output und vermerkt ihn nur als Hinweis `last_test_run` — es setzt kein Verdict (#253)
+- `bash_gate.py` (bei `git commit`) und der Uebergang nach Phase 8 akzeptieren VERIFIED (bzw. AMBIGUOUS+Override) nur mit gueltigem, gestempeltem Dialog-Artefakt (`adversary_dialog.check_dialog_evidence`)
 - `qa_gate.py` validiert Test-Output + optional Adversary-Dialog-Checklist (`--checklist`)
 
 ### Fresh Eyes Inspector
@@ -290,7 +290,7 @@ Registrierung zentral in `hooks/hooks.json` (Plugin-Modus) bzw. `.claude/setting
 **PreToolUse Read:** `secrets_guard.py`
 
 **PostToolUse Bash:** `post_bash.py` → [module hooks]
-  Intern: Test-Output-Detection → Adversary-Verdict
+  Intern: Test-Output-Detection → `last_test_run` (Hinweis, kein Verdict)
 
 **PostToolUse Edit|Write|MultiEdit:** `edit_verify.py` — prueft, dass die Aenderung tatsaechlich auf Disk gelandet ist
 
@@ -416,7 +416,7 @@ python3 /path/to/agent-os-openspec/setup.py --version
 | `CHANGELOG.md` | Versionshistorie |
 | `core/hooks/edit_gate.py` | Kern-Gate Edit/Write (Phase/TDD/LoC/Acceptance-Criteria) |
 | `core/hooks/bash_gate.py` | Kern-Gate Bash (Stop-Lock/State-Integrity/Secrets/Commit-Gates) |
-| `core/hooks/post_bash.py` | PostToolUse Bash (Adversary Detection) |
+| `core/hooks/post_bash.py` | PostToolUse Bash (Testlauf-Hinweis `last_test_run`, kein Verdict) |
 | `core/hooks/phase_listener.py` | UserPromptSubmit Listener (Approval/Stop-Lock/Override/ADR-Gate) |
 | `core/hooks/footer_gate.py` | Stop-Hook: ❗Du-Fusszeile mechanisch gegen `expected_footer_command()` pruefen |
 | `core/hooks/session_singleton_guard.py` | SessionStart/PreToolUse/SessionEnd: Worktree-Pflicht + Session-Register; CLI-Modus `claim --issue` |

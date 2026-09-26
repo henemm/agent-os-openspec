@@ -1010,6 +1010,15 @@ def _validate_transition(data: dict, target: str) -> str | None:
             pass
         else:
             return "Adversary verdict missing or not VERIFIED"
+        # #253: das Verdict zaehlt nur mit gueltigem, gestempeltem Dialog-Artefakt —
+        # dieselbe Regel wie im Commit-Gate (bash_gate.py 5c), kein Override-Pfad.
+        try:
+            from adversary_dialog import check_dialog_evidence
+            reason = check_dialog_evidence(data)
+        except Exception as exc:
+            reason = f"Nachweis-Prüfung nicht verfügbar ({type(exc).__name__}: {exc})"
+        if reason:
+            return f"Adversary verdict ohne gültigen Dialog-Nachweis — {reason}"
 
     return None
 
