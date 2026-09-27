@@ -80,6 +80,22 @@ class TestRepositoryState:
             f"README nennt {found!r}, ausgeliefert wird {manifest['version']!r}"
         )
 
+    def test_claude_md_matches_plugin_manifest(self):
+        """AC-10 (fix-147-validierung-abstufen): CLAUDE.md Z. 5 deckt bisher kein
+        Test ab — anders als README.md gibt es dafuer keinen `release_check.py`-
+        Waechter, dabei ist es die erste Zeile jeder Sitzung. Wiederverwendet
+        dieselbe `readme_version`-Extraktion, weil CLAUDE.md dieselbe
+        `**Version**: X.Y.Z`-Marker-Zeile traegt wie README.md.
+
+        Stand vor dieser Spec (2026-09-27): beide bei 3.32.0, dieser Test ist
+        deshalb schon jetzt gruen und bleibt es nur, wenn ein kuenftiger
+        Versionsbump CLAUDE.md mitzieht (AC-10 verlangt 3.33.0 ueberall)."""
+        manifest = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text())
+        found = release_check.readme_version((REPO_ROOT / "CLAUDE.md").read_text())
+        assert found == manifest["version"], (
+            f"CLAUDE.md nennt {found!r}, ausgeliefert wird {manifest['version']!r}"
+        )
+
     def test_release_check_actually_runs_the_readme_check(self):
         """Eine Pruefung, die `main()` nicht aufruft, schuetzt nichts.
 

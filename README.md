@@ -2,7 +2,7 @@
 
 A modular workflow enforcement system for Claude Code that ensures quality through spec-first development, TDD with real artifacts, and hook-enforced phase gating.
 
-**Version**: 3.32.1 · [Changelog](CHANGELOG.md) · [GitHub Issues](https://github.com/henemm/agent-os-openspec/issues)
+**Version**: 3.33.0 · [Changelog](CHANGELOG.md) · [GitHub Issues](https://github.com/henemm/agent-os-openspec/issues)
 
 ---
 
@@ -129,6 +129,10 @@ phase7_validate ─── /60-validate ───► Final validation
     │
 phase8_complete ─── write-log ───► Execution log + archive
 ```
+
+After the approval gate, Claude chains the transitions to `/40-tdd-red`, `/50-implement` and
+`/60-validate` automatically — you only type a command again if you cleared the context in
+between.
 
 **Gate summary:**
 

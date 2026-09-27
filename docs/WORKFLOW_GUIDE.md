@@ -152,7 +152,7 @@ Der User sagt `go`. Dann startet der Adversary-Dialog:
 
 ### Phase 7 — Validieren (`/60-validate`)
 
-Manuelle Tests, Integration-Tests, UI-Checks. Claude dokumentiert den Validierungsstand. Am Ende: `workflow.py finish` archiviert den Workflow.
+Vier automatische Prüfagenten und der docs-updater prüfen die Implementierung gegen die Spec; dazu läuft die Regressionssuite. Claude dokumentiert den Validierungsstand. Am Ende: `workflow.py finish` archiviert den Workflow.
 
 ### Nach dem Abschluss — Deploy (`/70-deploy`) und Reset (`/99-reset`)
 
@@ -389,7 +389,7 @@ phase_listener.py erkennt Approval-Keyword
     ↓
 spec_approved = true, Phase → phase4_approved (automatisch)
 
-User tippt /50-implement
+Claude ruft den Skill 50-implement selbst auf
     ↓
 Developer Agent startet
     ↓
@@ -475,7 +475,7 @@ Nützlich für: Prozess-Verbesserungen, Team-Reflektionen, Schätzungs-Kalibrier
 | `/30-write-spec` | 3 | Spezifikation erstellen |
 | `/40-tdd-red` | 5 | Failing Tests schreiben (RED) |
 | `/50-implement` | 6 | Implementieren (Tests grün machen) |
-| `/60-validate` | 7 | Manuelle Validierung |
+| `/60-validate` | 7 | Validierung (automatische Prüfagenten) |
 | `/70-deploy` | nach 8 | Deploy auf Produktion (projektspezifisch anpassen) |
 | `/80-workflow` | — | Workflows verwalten (start, switch, status) |
 | `/81-add-artifact` | — | Test-Artefakte registrieren |

@@ -134,7 +134,7 @@ Sobald alle Artefakte registriert sind und Spec + RED-Testdateien committed sind
 python3 .claude/hooks/workflow.py phase phase6_implement
 ```
 
-Danach folgt die Ausgabe an den User — dann **STOPP**.
+Danach folgt die Ausgabe an den User, danach rufst du `50-implement` selbst auf (siehe unten).
 
 ### Checkpoint prüfen (Anweisung an dich — nicht ausgeben)
 
@@ -186,7 +186,12 @@ Erst sichern, dann ist `/clear` gefahrlos.
 
 ---
 
-**NICHT** selbst mit der Implementierung beginnen. Warte bis der User `/50-implement` tippt.
+Ohne `/clear` in derselben Session: Rufe den Skill `50-implement` jetzt sofort selbst
+auf — warte nicht auf eine weitere User-Eingabe, die registrierten RED-Artefakte sind
+bereits die Voraussetzung, keine zusätzliche Entscheidung steht mehr aus.
+
+Mit `/clear` dazwischen: Der Checkpoint-Block oben zeigt den regulären Wiedereinstieg
+über den expliziten Befehl `/50-implement #<N>`.
 
 ## Common Mistakes
 

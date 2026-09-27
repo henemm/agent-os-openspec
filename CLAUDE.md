@@ -2,7 +2,7 @@
 
 > **Meta-Projekt**: Dies ist das zentrale Framework-Repository, das abstraktes Projekt- und Workflow-Wissen konsolidiert. Alle Projekte können Improvements hierher zurückführen und von Verbesserungen aus anderen Projekten profitieren.
 
-**Version**: 3.32.1
+**Version**: 3.33.0
 
 ## Projektzweck
 
@@ -98,7 +98,7 @@ agent-os-openspec/
 │  phase6_implement ─ /50-implement ─► Code schreiben, Tests GRÜN machen     │
 │       │                                                                 │
 │       ▼                                                                 │
-│  phase7_validate ── /60-validate ──► Manuelle Tests, Validierung           │
+│  phase7_validate ── /60-validate ──► Validierung                           │
 │       │                                                                 │
 │       ▼                                                                 │
 │  phase8_complete                  ► Fertig, bereit für Commit           │
@@ -450,7 +450,7 @@ python3 /path/to/agent-os-openspec/setup.py --version
 | `/30-write-spec` | 3 | Spezifikation erstellen |
 | `/40-tdd-red` | 5 | Failing Tests schreiben |
 | `/50-implement` | 6 | Implementieren (Tests grün) |
-| `/60-validate` | 7 | Manuelle Validierung |
+| `/60-validate` | 7 | Validierung |
 | `/70-deploy` | - | Deployment (projektspezifisches Template, muss angepasst werden) |
 | `/80-workflow` | - | Workflows verwalten |
 | `/81-add-artifact` | - | Test-Artefakte registrieren |

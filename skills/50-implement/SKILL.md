@@ -1,6 +1,6 @@
 ---
 description: "Implement the feature (TDD GREEN + Adversary)"
-disable-model-invocation: true
+disable-model-invocation: false
 ---
 
 # Phase 6: Implementation (TDD GREEN)
@@ -310,7 +310,7 @@ Follow scoping limits:
 
 ## Next Step
 
-Wenn Adversary VERIFIED (oder AMBIGUOUS mit User-OK): Stelle sicher, dass alle geänderten Dateien committed sind und das Adversary-Verdict im State steht — der nächste Schritt setzt den Gesprächskontext zurück. Danach folgt die Ausgabe an den User — dann **STOPP**.
+Wenn Adversary VERIFIED (oder AMBIGUOUS mit User-OK): Stelle sicher, dass alle geänderten Dateien committed sind und das Adversary-Verdict im State steht — der nächste Schritt setzt den Gesprächskontext zurück. Danach folgt die Ausgabe an den User, danach rufst du `60-validate` selbst auf (siehe unten).
 
 ### Checkpoint prüfen (Anweisung an dich — nicht ausgeben)
 
@@ -361,7 +361,13 @@ Erst sichern, dann ist `/clear` gefahrlos.
 
 ---
 
-**NICHT** selbst mit der Validierung beginnen. Warte bis der User `/60-validate` tippt.
+Ohne `/clear` in derselben Session: Rufe den Skill `60-validate` jetzt sofort selbst
+auf — warte nicht auf eine weitere User-Eingabe, das VERIFIED-Verdict des Adversary und
+die GREEN-Freigabe `go` aus Step 6 sind bereits die Voraussetzung, keine zusätzliche
+Entscheidung steht mehr aus.
+
+Mit `/clear` dazwischen: Der Checkpoint-Block oben zeigt den regulären Wiedereinstieg
+über den expliziten Befehl `/60-validate #<N>`.
 
 ## Common Mistakes
 
@@ -379,7 +385,7 @@ Beende deine letzte Nachricht in diesem Befehl mit diesen Zeilen, in dieser Reih
 
 ❗ Du: `/<befehl> #<N>` — <ein Halbsatz, warum>
 ℹ️ Status: Workflow `<name>` · Phase `<x>` von 8
-⚙ /50-implement · agent-os-openspec 3.32.1
+⚙ /50-implement · agent-os-openspec 3.33.0
 
 Die erste Zeile sagt, wer am Zug ist — GENAU EINMAL, nur hier in der Fußzeile, nie zusätzlich als Vokabular mitten im Fließtext davor — und steht in genau einer von zwei Formen: `❗ Du: …`, wenn der PO den Schritt tippen oder eine Entscheidung treffen muss (bei Dringendem `‼️` statt `❗`). Das gilt AUCH, wenn du selbst gerade nichts mehr zu tun hast und nur auf den nächsten Befehl des PO wartest — das ist niemals „nichts zu tun“. Oder `ℹ️ Nichts zu tun: <du arbeitest gerade selbst / wartest auf ein Ergebnis, z. B. einen Hintergrund-Agenten> — danach: /<befehl> #<N>`, ausschließlich wenn du auf etwas ANDERES als den PO wartest. So muss der PO nie raten, ob etwas von ihm erwartet wird.
 
