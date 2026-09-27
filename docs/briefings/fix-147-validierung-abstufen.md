@@ -1,6 +1,6 @@
 ---
 spec_file: docs/specs/fix-147-validierung-abstufen.md
-spec_sha256: 5b3295e68bf9c873feb2756efa64b80717b13383354122dbced9488d0fc6c214
+spec_sha256: cfec00f46d530f627982665fccc46efc4cd346fe3c26a5f885c56bfcb89e6274
 ---
 
 # PO-Briefing: fix-147-validierung-abstufen
@@ -11,22 +11,19 @@ spec_sha256: 5b3295e68bf9c873feb2756efa64b80717b13383354122dbced9488d0fc6c214
 
 ## Was gebaut wird
 
-Nach deiner Freigabe laufen Umsetzung und Prüfung automatisch weiter, ohne dass du zwei Zwischenbefehle selbst eintippst.
+Nach deiner Freigabe laufen Umsetzung und Prüfung automatisch weiter, ohne dass du zwischendurch selbst etwas eintippst.
 
 ## Definition of Done
 
-Nach deinem "go" zu den fertigen Ergebnissen läuft die Prüfung von selbst weiter; du siehst nur noch Ergebnis-Meldungen, keine Eingabe-Aufforderung mehr.
+Fertig ist es, wenn nach deinem Ok die Prüfung ohne weitere Eingabe durchläuft und nur Ergebnismeldungen erscheinen.
 
 ## Wie geprüft wird
 
-Automatische Tests belegen, dass die beiden Zwischenschritte wegfallen und alles Bestehende weiterläuft; sie prüfen keine neue Schutzfunktion.
+Automatische Tests belegen den Wegfall der beiden Zwischenschritte; das Bestehende bleibt unverändert.
 
 ## Kritische Anmerkungen
 
-- Ein Teil deiner eigenen Analyse (Commit-Rückfrage wird zur Ankündigung) fehlt hier, hängt am noch offenen Folgeauftrag #260.
-- Versionsnummer kollidiert vermutlich mit einer parallel laufenden anderen Lieferung; muss beim Zusammenführen von Hand nachgezogen werden.
-- Zwei Gelegenheiten entfallen, an denen dir zufällig etwas auffallen könnte, bevor Umsetzung bzw. Prüfung starten.
-
-## Freigabe-Frage
-
-Reicht dir "go" nach der Umsetzung und die Commit-Frage am Ende als einzige verbleibende Kontrollpunkte, oder brauchst du mehr?
+- Die Nachführung hat inhaltlich nichts verändert — nur Testverweise je Kriterium und echte gemessene Zahlen neben der Schätzung ergänzt.
+- Widerspruch in der Fertig-Definition: Sie verspricht, jede Anforderung sei durch einen Test belegt — bei drei von elf ist der einzige Nachweis der Skript-Lauf selbst, kein eigener Test.
+- Du kontrollierst weiterhin Freigabe, dein Ok zu den Ergebnissen und die Übernahme-Rückfrage am Ende; nicht mehr die zwei Momente, in denen ein getippter Befehl dir zufällig etwas hätte auffallen lassen.
+- Rückgängigmachen wäre unaufwändig: zwei Schaltstellen plus automatisch abgeleitete Kopien, keine Prüfmechanik wird angerührt.
