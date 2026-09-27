@@ -218,6 +218,35 @@ nicht einen Zwischenstand, der auf seine Eingabe wartet.
 Fehlt eine solche explizite Projekt-Policy: Standardverhalten unten (fragen, nicht
 autonom weiterlaufen) — Autonomie ist ein Opt-in des Projekts, kein Default des Frameworks.
 
+### Beobachtbare Oberfläche prüfen (PFLICHT, vor der Ausgabe)
+
+Diese Prüfung ersetzt die Autonomie-Prüfung oben nicht, sie tritt daneben. Führe sie aus —
+**keine eigene Einschätzung von dir ersetzt den Aufruf**, auch dann nicht, wenn du sicher zu
+wissen glaubst, dass nur Hooks oder Tests geändert wurden:
+
+```bash
+python3 .claude/hooks/workflow.py observable-surface
+```
+
+Die Auskunft endet immer mit Rückgabecode 0 und nennt in fünf Zeilen Urteil (`OBSERVABLE_SURFACE=`),
+Begründung, Anzahl geprüfter Dateien, Messwurzel und Config-Quelle.
+
+Fehlt in dieser Ausgabe die Zeile `OBSERVABLE_SURFACE=no` — aus welchem Grund auch immer, also
+auch bei `OBSERVABLE_SURFACE=yes`, bei einem Absturz, bei abweichendem Format oder wenn der
+Aufruf ganz ausgeblieben ist —, dann gilt das als „Oberfläche vorhanden" und die Schlussfrage
+„Soll ich den Code committen?" wird gestellt. Nur die ausdrücklich gelesene Zeile
+`OBSERVABLE_SURFACE=no` lässt sie entfallen.
+
+Daraus ergeben sich vier Kombinationen — die Autonomie-Regel sticht, die neue Prüfung wirkt in
+genau einer Zeile:
+
+| Oberfläche | Autonomie dokumentiert | Schlusszeile |
+|---|---|---|
+| `yes` | nein | Frage „Soll ich den Code committen?" — unverändert wie bisher |
+| `yes` | ja | Ankündigung: schreibe fest und deploye, Kette im selben Turn |
+| `no` | nein | Ankündigung: schreibe jetzt fest, keine Rückfrage |
+| `no` | ja | Ankündigung: schreibe fest und deploye, Kette im selben Turn |
+
 ### Zusammenfassung an den User
 
 Nach erfolgreicher Validierung, gib dem User folgende Zusammenfassung:
@@ -242,6 +271,11 @@ Soll ich den Code committen?
 durch die kurze Ankündigung, dass jetzt committet und automatisch weiterdeployt wird —
 keine Frage, keine Wartezeile wie "Warte auf /70-deploy". Führe die Kette im selben Turn
 aus und melde danach das Endergebnis.
+
+**Ausnahme ohne beobachtbare Oberfläche (siehe Prüfung oben):** Liegt die Zeile
+`OBSERVABLE_SURFACE=no` vor und ist keine Autonomie dokumentiert, ersetze die letzte Zeile
+durch die kurze Ankündigung, dass du den Code jetzt festschreibst. Es gibt in diesem Fall
+nichts, was der User beurteilen könnte — eine Rückfrage wäre inhaltsleer.
 
 ## On Failure
 

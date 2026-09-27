@@ -26,6 +26,7 @@ Usage:
     python3 workflow.py abandon --reason "<warum kein Abschluss>"
     python3 workflow.py list
     python3 workflow.py sessions [--json]
+    python3 workflow.py observable-surface
 """
 
 from hook_utils import setup_path, find_project_root
@@ -1760,6 +1761,39 @@ def _read_session_entries() -> list:
     return entries
 
 
+def _one_line(value) -> str:
+    """Zeilenumbrueche platt machen — die Auskunft hat genau fuenf Zeilen."""
+    return " ".join(str(value).split())
+
+
+def cmd_observable_surface(args: list[str]) -> None:
+    """Auskunft, kein Gate: hat der Arbeitsstand eine beobachtbare Oberflaeche?
+
+    Genau fuenf Zeilen auf stdout, Rueckgabecode IMMER 0 — `/60-validate` liest
+    daraus nur, ob die Schlussfrage entfallen darf. Bewusst OHNE aktiven
+    Workflow (kein `_read_active()`): gelesen wird der Arbeitsbaum, nicht der
+    State. `ROOT=`/`CONFIG=` machen die Diskrepanz aus #153 sichtbar — Config
+    aus dem Hauptrepo, Messung im Worktree.
+    """
+    try:
+        from hook_utils import observable_surface_report
+        report = observable_surface_report()
+        surface = "no" if report.get("surface") is False else "yes"
+        reason = _one_line(report.get("reason") or "") or "unbekannt"
+        files = int(report.get("files") or 0)
+        root = _one_line(report.get("root") or "")
+    except Exception as exc:
+        # Ein Absturz darf keine Rueckfrage unterdruecken: yes + sprechender Grund.
+        surface, reason, files, root = "yes", f"internal-error {type(exc).__name__}", 0, ""
+    try:
+        from config_loader import config_source_note
+        note = _one_line(config_source_note() or "")
+    except Exception:
+        note = ""
+    print(f"OBSERVABLE_SURFACE={surface}\nREASON={reason}\nFILES={files}\n"
+          f"ROOT={root}\nCONFIG={note}")
+
+
 def cmd_sessions(args: list[str]) -> None:
     """List registered Claude sessions of this project (session-locks)."""
     entries = _read_session_entries()
@@ -1832,6 +1866,7 @@ COMMANDS = {
     "list": cmd_list,
     "retro-list": cmd_retro_list,
     "sessions": cmd_sessions,
+    "observable-surface": cmd_observable_surface,
     "retro": cmd_retro,
     "cleanup-stale-locks": cmd_cleanup_stale_locks,
 }

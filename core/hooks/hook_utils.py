@@ -984,3 +984,201 @@ def is_test_file(file_path: str) -> bool:
         "Test.", "Tests/", "UITests/",
     ]
     return any(pattern in file_path for pattern in test_patterns)
+
+
+# --- Beobachtbare Oberflaeche (Issue #260) ---------------------------------
+# Zwei Musterlisten als Modul-Konstanten, per Config ueberschreibbar (Vorbild
+# bash_gate.E2E_*_PATTERNS), geprueft per re.search gegen den Pfad, wie git ihn
+# liefert: repo-relativ, Forward-Slashes. `is_code_file()` prueft die falsche
+# Achse und passt NICHT: ein .swift-Service ist Code ohne Oberflaeche, eine
+# .strings-Datei ist kein Code, hat aber eine.
+
+# Die ersten vier Muster setzen PO-Entscheidung E1 um: Befehlstexte, die der PO
+# beim Tippen eines Slash-Befehls liest, sind Oberflaeche — nicht Doku.
+OBSERVABLE_SURFACE_PATTERNS = [
+    r"(^|/)core/commands/.*\.md$",
+    r"(^|/)\.claude/commands/.*\.md$",
+    r"(^|/)skills/[^/]+/SKILL\.md$",
+    r"(^|/)CLAUDE\.md$",
+    r"(^|/)lovelace/.*\.ya?ml$",
+    r"\.(strings|xcstrings)$",
+    r"\.xcassets/",
+]
+
+# Bewusst NICHT enthalten: kein pauschales \.md$, kein pauschales ^\.claude/,
+# keine generische YAML-Regel. Was keine der beiden Listen trifft, gilt als
+# "unbekannt" und damit als streng (Schritt 9) — diese Regel traegt die
+# Sicherheit des ganzen Verfahrens.
+OBSERVABLE_NON_SURFACE_PATTERNS = [
+    r"^docs/",
+    r"^tests?/",
+    r"(^|/)test_[^/]+\.py$",
+    r"(^|/)[^/]+_test\.(py|go|js|ts)$",
+    r"(^|/)[^/]+Tests?\.swift$",
+    r"^core/hooks/",
+    r"^scripts/",
+    r"^\.github/",
+    r"(^|/)(CHANGELOG|README|CONTRIBUTING)\.md$",
+    r"(^|/)\.gitignore$",
+    r"(^|/)\.editorconfig$",
+]
+
+
+def _observable_str_list(value) -> bool:
+    """Form-Pruefung (Schritt 1): Liste aus Strings?"""
+    return isinstance(value, list) and all(isinstance(i, str) for i in value)
+
+
+def _observable_compile(patterns: "list[str]") -> "list | None":
+    """Muster vorab uebersetzen; None, wenn eines kaputt ist. Eines davon
+    stillschweigend zu ueberspringen waere fail-open."""
+    compiled = []
+    for pattern in patterns:
+        try:
+            compiled.append(re.compile(pattern))
+        except re.error:
+            return None
+    return compiled
+
+
+def _observable_matches(path: str, compiled: "list") -> bool:
+    return any(rx.search(path) for rx in compiled)
+
+
+def _observable_git(args: "list[str]", cwd: Path) -> "tuple[int, str]":
+    """`git <args>` in `cwd` → (rc, stdout). Wirft nie. `subprocess` bewusst
+    lokal importiert: das Modul zieht es auf oberster Ebene nicht herein."""
+    import subprocess
+    try:
+        proc = subprocess.run(["git", *args], cwd=str(cwd), capture_output=True,
+                              text=True, timeout=30)
+        return proc.returncode, proc.stdout or ""
+    except Exception:
+        return 1, ""
+
+
+def _observable_base(cwd: Path, base_branch: str) -> "tuple[str | None, str]":
+    """Merge-Base gegen den Basis-Stand → (merge_base, fehlergrund). KEIN
+    literaler Rueckfallwert wie "origin/main": ohne Config-Wert und ohne
+    `origin/HEAD` ist die Antwort "no-base" (streng), kein geratener Zweig."""
+    base = base_branch.strip()
+    if not base:
+        rc, out = _observable_git(
+            ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], cwd)
+        if rc != 0 or not out.strip():
+            return None, "no-base"
+        base = out.strip()
+    rc, out = _observable_git(["merge-base", base, "HEAD"], cwd)
+    if rc != 0:
+        return None, "git-error"
+    if not out.strip():
+        return None, "no-base"
+    return out.strip(), ""
+
+
+def _observable_files(cwd: Path, merge_base: str) -> "tuple[list[str] | None, str]":
+    """Vereinigung aus vier git-Quellen → (sortierte Pfade, fehlergrund). Je
+    nach Stand der Phase 7 ist alles, nichts oder nur ein Teil eingecheckt;
+    Quelle 4 (`ls-files --others`) ist Pflicht, sonst erschiene eine neu
+    angelegte, noch nicht hinzugefuegte Datei als "keine Aenderung"."""
+    sources = (
+        ["diff", "--name-only", f"{merge_base}...HEAD"],
+        ["diff", "--name-only", "--cached"],
+        ["diff", "--name-only"],
+        ["ls-files", "--others", "--exclude-standard"],
+    )
+    found = set()
+    for args in sources:
+        rc, out = _observable_git(args, cwd)
+        if rc != 0:
+            return None, "git-error"
+        found.update(line.strip() for line in out.splitlines() if line.strip())
+    return sorted(found), ""
+
+
+def observable_surface_report() -> dict:
+    """Zaehlende Variante: {'surface', 'reason', 'files', 'root'}. Die
+    CLI-Auskunft braucht neben Urteil und Begruendung auch Dateianzahl und
+    Messwurzel. Die neun Vertragsschritte stehen ausschliesslich hier."""
+    try:
+        root = find_worktree_root() or find_project_root()
+    except Exception:
+        root = Path.cwd()
+    root_str = str(root)
+
+    def result(surface: bool, reason: str, files: int = 0) -> dict:
+        return {"surface": surface, "reason": reason, "files": files, "root": root_str}
+
+    # Schritt 1: Form des Config-Blocks. Ein FEHLENDER Block ist NICHT
+    # ungueltig — dann gelten die Modul-Konstanten und enabled=true.
+    try:
+        from config_loader import load_config
+        raw = load_config().get("observable_surface", {})
+    except Exception:
+        raw = {}
+    if not isinstance(raw, dict):
+        return result(True, "config-invalid")
+    surface_patterns = raw.get("surface_patterns", OBSERVABLE_SURFACE_PATTERNS)
+    non_surface_patterns = raw.get("non_surface_patterns",
+                                   OBSERVABLE_NON_SURFACE_PATTERNS)
+    base_branch = raw.get("base_branch")
+    if not _observable_str_list(surface_patterns):
+        return result(True, "config-invalid")
+    if not _observable_str_list(non_surface_patterns):
+        return result(True, "config-invalid")
+    if base_branch is not None and not isinstance(base_branch, str):
+        return result(True, "config-invalid")
+    surface_rx = _observable_compile(surface_patterns)
+    non_surface_rx = _observable_compile(non_surface_patterns)
+    if surface_rx is None or non_surface_rx is None:
+        return result(True, "config-invalid")
+
+    # Schritt 2: abgeschaltet ist streng.
+    if not raw.get("enabled", True):
+        return result(True, "disabled")
+
+    # Schritt 3/4/5: Messwurzel (oben), Basis-Stand, git-Fehler.
+    merge_base, error = _observable_base(root, base_branch or "")
+    if merge_base is None:
+        return result(True, error)
+    paths, error = _observable_files(root, merge_base)
+    if paths is None:
+        return result(True, error)
+
+    # Schritt 6: leere Liste VOR Schritt 7/8 — `all([])` ist True, eine leere
+    # Liste wuerde sonst faelschlich als "keine Oberflaeche" durchgehen.
+    count = len(paths)
+    if count == 0:
+        return result(True, "empty-list")
+
+    # Schritt 7: ein einziger Surface-Treffer genuegt.
+    for path in paths:
+        if _observable_matches(path, surface_rx):
+            return result(True, f"{path} trifft surface", count)
+
+    # Schritt 8: der EINZIGE Weg zu "keine Oberflaeche".
+    if all(_observable_matches(path, non_surface_rx) for path in paths):
+        return result(False, f"alle {count} Dateien ohne Oberfläche", count)
+
+    # Schritt 9: unbekannte Datei → streng.
+    for path in paths:
+        if not _observable_matches(path, non_surface_rx):
+            return result(True, f"{path} unbekannt", count)
+    return result(True, "unbekannt", count)
+
+
+def has_observable_surface() -> "tuple[bool, str]":
+    """Hat der Arbeitsstand eine fuer den PO beobachtbare Oberflaeche?
+
+    `(True, grund)`: hat oder koennte eine haben → die Schlussfrage in
+    `/60-validate` bleibt. `(False, grund)`: sicher keine → sie entfaellt.
+    Fail-CLOSED — nur der positive Nachweis, dass JEDE geaenderte Datei
+    nachweislich keine Oberflaeche beruehrt, fuehrt zu False; jede Unsicherheit
+    (kaputte oder abgeschaltete Config, kein Basis-Stand, git-Fehler, leere
+    Dateiliste, unbekannte Endung) liefert True. Die Reihenfolge der neun
+    Pruefungen ist Vertragsbestandteil (siehe `observable_surface_report()`).
+    Liest nur, schreibt nichts, blockt nichts: sie unterdrueckt eine
+    Rueckfrage, sie erlaubt nichts.
+    """
+    report = observable_surface_report()
+    return bool(report["surface"]), str(report["reason"])
