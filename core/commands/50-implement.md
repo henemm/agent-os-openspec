@@ -67,6 +67,20 @@ python3 .claude/hooks/workflow.py status
 python3 .claude/hooks/workflow.py status
 ```
 
+### Hängende Subagenten
+
+Primärer Schutz gegen einen hängenden Subagenten: Die Sitzung wird automatisch erneut aufgerufen,
+sobald der Hintergrund-Agent fertig ist. Liegt beim nächsten eigenen Zug noch kein Bericht vor,
+`TaskList` prüfen — ist der Agent dort noch als aktiv gelistet, ihn mit `TaskStop` beenden und
+mit präziserem Briefing neu starten. Kein endloses Warten.
+
+Nur falls dieser Befehl innerhalb eines `/loop`-Laufs (Selbsttaktung, dynamischer Modus) läuft,
+zusätzlich dieser Rückfall:
+
+```
+ScheduleWakeup(1200, "Implementierung Rückfall [50-implement], nur im /loop-Kontext: TaskList → noch aktiver Explore-/Developer-/Adversary-Agent? JA → TaskStop, dann User: 'Agent hängt — bitte /50-implement neu starten.' NEIN → ignorieren, fertig.")
+```
+
 ### Step 2: Kontext laden (Explore/Haiku)
 
 Dispatche einen **Explore/Haiku Subagenten** um den Implementierungs-Kontext zu laden:
@@ -80,11 +94,6 @@ Task (Explore/haiku, run_in_background: true): "Lies folgende Dateien und fasse 
 
   Fasse zusammen: Welche Interfaces existieren, welche Methoden muessen
   implementiert werden, welche Imports werden benoetigt."
-```
-
-**TIMEOUT-PFLICHT — sofort nach dem Spawn:**
-```
-ScheduleWakeup(180, "Explore-Agent Timeout [50-implement Step 2]: TaskList → Agent noch aktiv? JA → TaskStop, dann User: 'Kontext-Agent hängt, Step 2 bitte neu starten.' NEIN → ignorieren, fertig.")
 ```
 
 ### Step 3: Developer Agent spawnen (ORCHESTRATOR-PRINZIP)
@@ -118,11 +127,6 @@ Task (developer-agent/opus, run_in_background: true):
   - Refactoring das nicht zum Gruen benoetigt wird
   - Premature optimization
   - Mehr als 3 Loesungsversuche ohne Rueckmeldung"
-```
-
-**TIMEOUT-PFLICHT — sofort nach dem Spawn:**
-```
-ScheduleWakeup(600, "Developer Agent Timeout [50-implement Step 3]: TaskList → Agent noch aktiv? JA → TaskStop, dann User: 'Developer Agent nach 10 Min gestoppt — bitte /50-implement neu starten.' NEIN → ignorieren, Agent hat fertig gemeldet.")
 ```
 
 **Nach Rueckmeldung des Developer Agent:**
@@ -211,11 +215,6 @@ Task (implementation-validator, run_in_background: true): "Pruefe den aktuellen 
   - Mindestens 2 Runden Dialog
   - Fuehre Tests aus und speichere Output
   - Nutze das Structured Findings Schema (python3 .claude/hooks/adversary_dialog.py schema)"
-```
-
-**TIMEOUT-PFLICHT — sofort nach dem Spawn:**
-```
-ScheduleWakeup(300, "Adversary Validator Timeout [50-implement Step 8b]: TaskList → Agent noch aktiv? JA → TaskStop, dann User: 'Adversary-Agent nach 5 Min gestoppt — bitte Step 8b neu starten.' NEIN → ignorieren, fertig.")
 ```
 
 Der Dialog laeuft als Hin-und-Her. **Du als Orchestrator koordinierst:**

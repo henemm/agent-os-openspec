@@ -91,6 +91,20 @@ $WF status
 
 Lies die Analyse-Ergebnisse aus `docs/context/[workflow-name].md` und das Template aus `docs/specs/_template.md`.
 
+### Hängende Subagenten
+
+Primärer Schutz gegen einen hängenden Subagenten: Die Sitzung wird automatisch erneut aufgerufen,
+sobald der Hintergrund-Agent fertig ist. Liegt beim nächsten eigenen Zug noch kein Bericht vor,
+`TaskList` prüfen — ist der Agent dort noch als aktiv gelistet, ihn mit `TaskStop` beenden und
+mit präziserem Briefing neu starten. Kein endloses Warten.
+
+Nur falls dieser Befehl innerhalb eines `/loop`-Laufs (Selbsttaktung, dynamischer Modus) läuft,
+zusätzlich dieser Rückfall:
+
+```
+ScheduleWakeup(1200, "Spec-Schreiben Rückfall [30-write-spec], nur im /loop-Kontext: TaskList → noch aktiver Spec-Writer-/Validator-/PO-Briefer-Agent? JA → TaskStop, dann User: 'Agent hängt — bitte /30-write-spec neu starten.' NEIN → ignorieren, fertig.")
+```
+
 ### Step 2: Spec erstellen (general-purpose/Sonnet)
 
 Dispatche einen **general-purpose/Sonnet Subagenten** mit den spec-writer Instruktionen:
@@ -109,11 +123,6 @@ Task (general-purpose/sonnet, run_in_background: true): "Du bist der spec-writer
   nach dem spec-writer Workflow. Beachte alle Qualitaetsregeln."
 ```
 
-**TIMEOUT-PFLICHT — sofort nach dem Spawn:**
-```
-ScheduleWakeup(300, "Spec-Writer Timeout [30-write-spec Step 2]: TaskList → noch aktiv? JA → TaskStop, dann User: 'Spec-Writer nach 5 Min gestoppt — bitte /30-write-spec neu starten.' NEIN → ignorieren, fertig.")
-```
-
 ### Step 3: Spec validieren (spec-validator/Haiku)
 
 Dispatche den **spec-validator/Haiku** zur Validierung:
@@ -124,11 +133,6 @@ Task (general-purpose/haiku, run_in_background: true): "Du bist der spec-validat
   Validiere die Spec: docs/specs/[category]/[entity].md
   Pruefe alle Required Fields, Sections, Placeholders.
   Output: VALID oder INVALID mit Details."
-```
-
-**TIMEOUT-PFLICHT — sofort nach dem Spawn:**
-```
-ScheduleWakeup(180, "Spec-Validator Timeout [30-write-spec Step 3]: TaskList → noch aktiv? JA → TaskStop, dann User: 'Spec-Validator nach 3 Min gestoppt — bitte Step 3 neu starten.' NEIN → ignorieren, fertig.")
 ```
 
 **Bei INVALID:**
@@ -156,11 +160,6 @@ Task (general-purpose/sonnet, run_in_background: true): "Du bist der po-briefer 
   [workflow-name]
 
   Folge dem po-briefer Protokoll. Schreibe docs/briefings/[workflow-name].md."
-```
-
-**TIMEOUT-PFLICHT — sofort nach dem Spawn:**
-```
-ScheduleWakeup(240, "PO-Briefer Timeout [30-write-spec Step 3b]: TaskList → noch aktiv? JA → TaskStop, dann User: 'PO-Briefer nach 4 Min gestoppt — bitte Step 3b neu starten.' NEIN → ignorieren, fertig.")
 ```
 
 Danach registrieren — ohne diesen Schritt blockiert das Gate die Freigabe:
@@ -204,7 +203,7 @@ Die Ausgabe besteht aus genau diesen Teilen, in dieser Reihenfolge:
    insgesamt. Stimmst du allen Anmerkungen zu: nichts schreiben.
 3. **❗Du-Zeile + Marker-Zeile** — wörtlich, als letzte beiden Zeilen, `⚙` ganz zuletzt:
    `❗ Du: \`approved\` — Freigabe der Spec, danach beginnt die Umsetzung`
-   `⚙ PO-Briefing unabhängig erstellt · agent-os-openspec 3.31.1`
+   `⚙ PO-Briefing unabhängig erstellt · agent-os-openspec 3.32.0`
    Diese Freigabe verlangt *immer* eine PO-Entscheidung — anders als bei den generischen
    Pflicht-Markern in anderen Befehlen gibt es hier keine `ℹ️ Nichts-zu-tun`-Variante.
 
@@ -216,7 +215,7 @@ Vorlage:
 Meine Einschätzung: [nur bei Widerspruch zu einer Anmerkung — sonst weglassen]
 
 ❗ Du: `approved` — Freigabe der Spec, danach beginnt die Umsetzung
-⚙ PO-Briefing unabhängig erstellt · agent-os-openspec 3.31.1
+⚙ PO-Briefing unabhängig erstellt · agent-os-openspec 3.32.0
 
 ---
 

@@ -52,6 +52,20 @@ $WF status
 
 Das `status`-Kommando ist der eigentliche Wiedereinstiegs-Check: Es zeigt die Quelle (`[file]`) und bestätigt Phase/Verdict. Fasse dem User in 2 Sätzen den Stand zusammen (Phase, Verdict) und fahre dann mit den Prerequisites fort.
 
+### Hängende Subagenten
+
+Primärer Schutz gegen einen hängenden Subagenten: Die Sitzung wird automatisch erneut aufgerufen,
+sobald der Hintergrund-Agent fertig ist. Liegt beim nächsten eigenen Zug noch kein Bericht vor,
+`TaskList` prüfen — ist der Agent dort noch als aktiv gelistet, ihn mit `TaskStop` beenden und
+mit präziserem Briefing neu starten. Kein endloses Warten.
+
+Nur falls dieser Befehl innerhalb eines `/loop`-Laufs (Selbsttaktung, dynamischer Modus) läuft,
+zusätzlich dieser Rückfall:
+
+```
+ScheduleWakeup(1200, "Validierung Rückfall [60-validate], nur im /loop-Kontext: TaskList → noch aktiver Kontext-/Validierungs-/Auto-Fix-/Docs-Updater-Agent? JA → TaskStop, dann User: 'Agent hängt — bitte /60-validate neu starten.' NEIN → ignorieren, fertig.")
+```
+
 ### Kontext laden (nur bei Wiedereinstieg nach `/clear`)
 
 Bevor du mit den Prerequisites fortfährst, lade den vollständigen Validierungs-Kontext — damit die nachfolgenden Agenten konkrete Werte statt Platzhalter erhalten.
@@ -70,11 +84,6 @@ Task (Explore/haiku, run_in_background: true): "Lies folgende Ressourcen und ext
   - test_command: [konkreter Befehl]
   - Acceptance Criteria: [Liste aller AC-N]
   - adversary_verdict: [VERIFIED / BROKEN / AMBIGUOUS]"
-```
-
-**TIMEOUT-PFLICHT — sofort nach dem Spawn:**
-```
-ScheduleWakeup(180, "Kontext-Agent Timeout [60-validate Wiedereinstieg]: TaskList → noch aktiv? JA → TaskStop, dann User: 'Kontext-Agent nach 3 Min gestoppt — bitte /60-validate neu starten.' NEIN → ignorieren, fertig.")
 ```
 
 Ersetze alle `[...]`-Platzhalter in Step 1 und Step 3 mit den geladenen Werten — kein Agent darf mit Platzhaltern gestartet werden.
@@ -135,11 +144,6 @@ Task 4 (general-purpose/haiku, run_in_background: true) - SCOPE CHECK:
   Wurden mehr als 5 Dateien / 250 LoC geaendert?"
 ```
 
-**TIMEOUT-PFLICHT — sofort nach dem Spawn (für alle 4 gemeinsam):**
-```
-ScheduleWakeup(300, "Validierungs-Agents Timeout [60-validate Step 1]: TaskList → noch aktive Haiku-Agents? JA → alle TaskStop, dann User: 'Validierungs-Agents nach 5 Min gestoppt — bitte /60-validate neu starten.' NEIN → ignorieren, fertig.")
-```
-
 ### Step 2: Ergebnis-Auswertung
 
 Werte die 4 Reports aus:
@@ -161,11 +165,6 @@ Task (general-purpose/sonnet, run_in_background: true): "Folgende Validierungsfe
   - Tests nach dem Fix erneut ausfuehren"
 ```
 
-**TIMEOUT-PFLICHT — sofort nach dem Spawn:**
-```
-ScheduleWakeup(300, "Auto-Fix Timeout [60-validate Step 2b]: TaskList → noch aktiv? JA → TaskStop, dann User: 'Auto-Fix-Agent nach 5 Min gestoppt — bitte manuell prüfen.' NEIN → ignorieren, fertig.")
-```
-
 Nach dem Fix: Dispatche die relevanten Haiku-Checks erneut zur Verifikation.
 
 ### Step 3: Dokumentation aktualisieren (docs-updater/Sonnet)
@@ -181,11 +180,6 @@ Task (general-purpose/sonnet, run_in_background: true): "Du bist der docs-update
   - spec_file_path: [Pfad zur Spec]
 
   Aktualisiere alle betroffene Dokumentation."
-```
-
-**TIMEOUT-PFLICHT — sofort nach dem Spawn:**
-```
-ScheduleWakeup(300, "Docs-Updater Timeout [60-validate Step 3]: TaskList → noch aktiv? JA → TaskStop, dann User: 'Docs-Updater nach 5 Min gestoppt — Dokumentation ggf. manuell prüfen.' NEIN → ignorieren, fertig.")
 ```
 
 ### Step 4: Workflow State aktualisieren
@@ -277,7 +271,7 @@ Beende deine letzte Nachricht in diesem Befehl mit diesen Zeilen, in dieser Reih
 
 ❗ Du: `/<befehl> #<N>` — <ein Halbsatz, warum>
 ℹ️ Status: Workflow `<name>` · Phase `<x>` von 8
-⚙ /60-validate · agent-os-openspec 3.31.1
+⚙ /60-validate · agent-os-openspec 3.32.0
 
 Die erste Zeile sagt, wer am Zug ist — GENAU EINMAL, nur hier in der Fußzeile, nie zusätzlich als Vokabular mitten im Fließtext davor — und steht in genau einer von zwei Formen: `❗ Du: …`, wenn der PO den Schritt tippen oder eine Entscheidung treffen muss (bei Dringendem `‼️` statt `❗`). Das gilt AUCH, wenn du selbst gerade nichts mehr zu tun hast und nur auf den nächsten Befehl des PO wartest — das ist niemals „nichts zu tun“. Oder `ℹ️ Nichts zu tun: <du arbeitest gerade selbst / wartest auf ein Ergebnis, z. B. einen Hintergrund-Agenten> — danach: /<befehl> #<N>`, ausschließlich wenn du auf etwas ANDERES als den PO wartest. So muss der PO nie raten, ob etwas von ihm erwartet wird.
 
