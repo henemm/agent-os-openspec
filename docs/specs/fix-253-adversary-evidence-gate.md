@@ -13,7 +13,7 @@ test_targets: ["tests/test_adversary_evidence_gate_253.py"]
 
 ## Approval
 
-- [ ] Approved
+- [x] Approved
 
 ## GitHub Issue
 
@@ -174,74 +174,89 @@ Fertig ist diese Änderung, wenn:
   cargo test; Ausgabe über `tool_response` oder Legacy-`tool_input.stdout`) / Then bleibt
   `adversary_verdict` byte-gleich und `last_test_run` enthält `result: "passed"`, den
   Indikator als `runner` und einen ISO-Zeitstempel in `at`.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `test_ac1_green_run_records_last_test_run_keeps_verdict` (5 Runner × `tool_response`/Legacy ×
+    Start-Verdict null/`BROKEN`), `test_ac1_runner_is_indicator_not_command`
 
 - **AC-2:** Given ein aktiver Workflow / When `post_bash.py` einen Testlauf mit Fehler-Evidenz
   verarbeitet (z. B. `2 failed, 3 passed`) / Then ist `last_test_run.result == "failed"` und
   `adversary_verdict` unverändert; bei einem Nicht-Test-Befehl oder einer Testausgabe ohne
   erkennbares Ergebnis bleibt die State-Datei vollständig unverändert.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `test_ac2_failure_evidence_records_failed_run` (5 Runner),
+    `test_ac2_non_test_command_leaves_state_file_untouched`,
+    `test_ac2_undeterminable_test_output_leaves_state_file_untouched`
 
 - **AC-3:** Given ein `feature`-Workflow in `phase6_implement`, `phase6b_adversary` oder
   `phase7_validate` mit `adversary_verdict: "VERIFIED:pytest"`, ohne registriertes Artefakt und
   ohne Datei am Standardpfad / When `bash_gate.py` einen `git commit` prüft / Then Exit 2; die
   Meldung nennt den fehlenden Dialog-Nachweis, den Satz "Ein grüner Testlauf ersetzt den
   Adversary-Dialog nicht" und die Schritte `stamp` und `add-artifact adversary_dialog`.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `test_ac3_verified_without_artifact_blocks_commit` (alle drei Phasen)
 
 - **AC-4:** Given derselbe Workflow mit `VERIFIED` und einem per `add-artifact` registrierten
   Artefakt (alle Punkte `[x]`, ≥ 2 Runden, `VERDICT: VERIFIED`, per `stamp` gestempelt, alle
   gehashten Dateien unverändert) / When `git commit` geprüft wird / Then Exit 0.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `test_ac4_registered_valid_artifact_allows_commit` (alle drei Phasen),
+    `test_ac4_documented_dialog_path_opens_commit_and_phase8`
 
 - **AC-5:** Given `VERIFIED` im State und ein registriertes Artefakt, das (a) eine seit dem
   Stempeln geänderte Datei hasht, (b) keinen Hash-Block hat, (c) `VERDICT: BROKEN` trägt,
   (d) unter dem registrierten Pfad nicht existiert oder (e) gültig ist, aber nur `AMBIGUOUS`
   belegt / When `git commit` geprüft wird / Then Exit 2 mit dem jeweiligen Grund — bei (a)
   enthält die Meldung "Prüfling seit dem Dialog geändert" und den Dateinamen.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `test_ac5a_changed_file_since_stamp_blocks`, `test_ac5b_missing_hash_block_blocks`,
+    `test_ac5c_broken_artifact_blocks`, `test_ac5d_registered_path_missing_blocks_without_fallback`,
+    `test_ac5e_ambiguous_artifact_contradicts_verified_state_blocks`
 
 - **AC-6:** Given `adversary_verdict: "AMBIGUOUS…"` mit `adversary_ambiguous_override` / When
   `git commit` geprüft wird / Then Exit 0 nur mit gültigem Artefakt (Verdict VERIFIED oder
   AMBIGUOUS), ohne Artefakt Exit 2 mit Dialog-Nachweis-Grund; AMBIGUOUS ohne Override blockt
   wie bisher mit dem `override-ambiguous`-Hinweis.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `test_ac6_ambiguous_override_with_valid_artifact_allows` (Artefakt VERIFIED/AMBIGUOUS),
+    `test_ac6_ambiguous_override_without_artifact_blocks`,
+    `test_ac6_ambiguous_without_override_still_blocks`
 
 - **AC-7:** Given `VERIFIED` ohne Artefakt und ein gültiger User-Override-Token für den
   Workflow (bzw. ein Workflow vom Typ `bug` oder `feature-fast` ganz ohne Token) / When
   `git commit` geprüft wird / Then Exit 0 — Notbremse und Fast-Track-Ausnahme bleiben
   unverändert wirksam.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `test_ac7_override_token_lifts_evidence_block`,
+    `test_ac7_fast_track_types_exempt_without_token` (`bug`, `feature-fast`)
 
 - **AC-8:** Given zwei registrierte Dialog-Artefakte (älteres gültig, neueres BROKEN) bzw. kein
   registriertes, aber ein gültiges Artefakt am Standardpfad bzw. eine Sitzung in einem
   Git-Worktree mit relativ registriertem Artefakt, das nur im Worktree liegt / When
   `git commit` geprüft wird / Then zählt das neueste registrierte Artefakt (Block), greift der
   Standardpfad (Exit 0) und wird das Artefakt im Worktree gefunden (Exit 0).
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `test_ac8a_newest_registered_artifact_counts` (inkl. Spiegelfall),
+    `test_ac8b_default_path_used_when_nothing_registered`, `test_ac8c_worktree_relative_artifact_found`
 
 - **AC-9:** Given ein `feature`-Workflow in `phase7_validate` mit `VERIFIED` (bzw.
   AMBIGUOUS+Override) ohne gültiges Artefakt / When `workflow.py phase phase8_complete` oder
   `workflow.py complete` läuft / Then Exit ≠ 0 und stderr enthält "Adversary verdict" und den
   Dialog-Nachweis-Grund; mit gültigem Artefakt gelingt der Übergang wie bisher.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `test_ac9_phase8_blocked_without_valid_artifact`, `test_ac9_phase8_allowed_with_valid_artifact`
+    (je `phase`/`complete`/`finish` × VERIFIED/AMBIGUOUS+Override),
+    `test_ac9_changed_file_after_dialog_blocks_phase8`
 
 - **AC-10:** Given die Reproduktion aus Issue #253 — Workflow in `phase6_implement`,
   `adversary_verdict: null`, kein Dialog / When `post_bash.py` einen grünen `pytest`-Lauf
   verarbeitet und danach `bash_gate.py` einen `git commit` prüft / Then bleibt das Verdict null
   und der Commit wird mit Exit 2 blockiert.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `test_ac10_issue_253_reproduction_blocked_end_to_end`
 
 - **AC-11:** Given `qa_gate.py` ohne `--checklist` mit grüner Testausgabe / When es das Verdict
   setzt / Then enthält stdout NICHT "Commit is now allowed.", sondern den Hinweis auf das
   zusätzlich nötige gestempelte Dialog-Artefakt; mit gültigem `--checklist` bleibt die Meldung
   "Commit is now allowed." erhalten.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `test_ac11_qa_gate_without_checklist_promises_no_commit`,
+    `test_ac11_qa_gate_with_checklist_keeps_commit_message`
 
 ## Test Plan
 
 Automatische Tests (jeweils an eine AC oben gebunden):
-- `python3 -m pytest tests/test_adversary_evidence_gate_253.py -q` (AC-1 bis AC-11)
+- `python3 -m pytest tests/test_adversary_evidence_gate_253.py -q` (AC-1 bis AC-11; dazu die Fälle aus
+  „Error Handling": `test_err_missing_adversary_dialog_module_blocks_commit`,
+  `test_err_internal_error_is_fail_closed`)
 - Angepasste Bestandstests: `tests/test_verdict_pipeline_77.py`,
   `tests/test_gate_fixes_26_38_34.py`, `tests/test_workflow_name_validation.py`
 - Regressionslauf: `python3 -m pytest tests/ -q`
@@ -268,3 +283,4 @@ Automatische Tests (jeweils an eine AC oben gebunden):
 ## Changelog
 
 - 2026-09-26: Initial spec created
+- 2026-09-27: PO-Freigabe vermerkt; Test-Referenzen nach TDD RED eingetragen (inhaltlich unverändert)
