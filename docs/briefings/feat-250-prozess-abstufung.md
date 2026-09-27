@@ -1,6 +1,6 @@
 ---
 spec_file: docs/specs/feat-88-wakeup-blocks.md
-spec_sha256: e63f614d8b0171da983a9bf878a4270633ce1edc6ca24366df92878b164b09e9
+spec_sha256: 7b24030332d0e738103f064cb94ded6d048e8dcb0b84436e515ea4acdaff6d98
 ---
 
 # PO-Briefing: feat-250-prozess-abstufung

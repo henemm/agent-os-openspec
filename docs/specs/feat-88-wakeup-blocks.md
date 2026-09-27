@@ -208,24 +208,26 @@ Fertig ist diese Änderung, wenn:
 - **AC-1:** Given alle Dateien unter `core/commands/*.md` und `skills/*/SKILL.md` nach der
   Umsetzung / When `tests/test_wakeup_blocks.py` je Datei die Anzahl der Vorkommen von
   `ScheduleWakeup(` zählt / Then ist die Anzahl in jeder einzelnen Datei ≤ 1.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `tests/test_wakeup_blocks.py::test_at_most_one_wakeup_call_per_file`
 - **AC-2:** Given eine Datei mit genau einem `ScheduleWakeup(...)`-Vorkommen aus AC-1 / When die
   erste Zahl im Aufruf per Regex extrahiert wird / Then ist dieser Wert ≥ 1200.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `tests/test_wakeup_blocks.py::test_wakeup_interval_is_at_least_1200_seconds`
 - **AC-3:** Given alle Dateien unter `core/commands/*.md` und `skills/*/SKILL.md` nach der
   Umsetzung / When nach dem Literal `TIMEOUT-PFLICHT` gesucht wird / Then kommt es in keiner
   dieser Dateien mehr vor.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `tests/test_wakeup_blocks.py::test_timeout_pflicht_marker_removed`
 - **AC-4:** Given die vier Dateien `core/commands/{20-analyse,30-write-spec,50-implement,
   60-validate}.md` nach der Umsetzung / When ihr Inhalt gelesen wird / Then enthält jede der
   vier Dateien wortgleich den Ersatz-Absatz mit den Begriffen „automatisch erneut aufgerufen“,
   „`TaskList`“ und „`TaskStop`“ — der Beleg, dass die gestrichenen Pflichtblöcke nicht
   ersatzlos entfernt, sondern durch den primären Mechanismus ersetzt wurden.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `tests/test_wakeup_blocks.py::test_replacement_paragraph_mentions_automatic_recall`,
+    `::test_replacement_paragraph_mentions_task_list`,
+    `::test_replacement_paragraph_mentions_task_stop`
 - **AC-5:** Given die vier `core/commands/*.md`-Dateien wurden geändert und
   `python3 scripts/sync_skills.py` wurde danach ausgeführt / When
   `python3 scripts/sync_skills.py --check` läuft / Then meldet es keine Drift (Exit 0).
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `tests/test_wakeup_blocks.py::test_generated_skills_have_no_drift_from_commands`
 
 ## Test Plan
 
