@@ -1,6 +1,6 @@
 ---
 spec_file: docs/specs/fix-253-adversary-evidence-gate.md
-spec_sha256: 303321e63d96139f3aa9db0b91904ff1bac3dcdb3bfa44e31f63ce9ad8b0b446
+spec_sha256: 61f4f06d0c4c914184cff294216b46fc5894c483b3dee9c407d11ede3dc4f0de
 ---
 
 # PO-Briefing: fix-253-adversary-evidence-gate

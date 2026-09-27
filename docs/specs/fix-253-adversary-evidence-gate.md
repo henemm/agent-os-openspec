@@ -142,6 +142,11 @@ Dialog-Artefakt verlangen. Mit `--checklist` unverändert.
 - Ein bewusst gefälschtes Artefakt (selbst geschriebener Dialog, danach gestempelt) besteht die
   Prüfung weiterhin — geprüft werden Form und Hash-Bindung, nicht die Urheberschaft. Diese Spec
   schließt den beiläufigen Weg (grüner Testlauf, `set-field`), nicht den vorsätzlichen.
+- Ebenso besteht ein echtes, gültiges Protokoll, das die aktuelle Änderung gar nicht abdeckt, wenn
+  es bewusst registriert wird — etwa das eines anderen Workflows oder eines unter einem absoluten
+  Pfad außerhalb des Projekts (`add-artifact adversary_dialog <fremder Pfad>`). Es gibt keinen
+  Abgleich zwischen den gehashten Dateien und dem gestagten bzw. geänderten Code; ohne
+  ausdrückliche Registrierung greift nur der workflow-eigene Standardpfad. Folge-Issue: #259.
 - Hash-gebunden sind nur Dateien, die im Dialog per `Code reference:` zitiert wurden
   (vorbestehend aus #131). Ändert ein Auto-Fix in `/60-validate` eine zitierte Datei, blockt
   Phase 8 bis zu einem neuen Dialog — gewollt ("passend zur aktuellen Codebasis").
@@ -284,3 +289,5 @@ Automatische Tests (jeweils an eine AC oben gebunden):
 
 - 2026-09-26: Initial spec created
 - 2026-09-27: PO-Freigabe vermerkt; Test-Referenzen nach TDD RED eingetragen (inhaltlich unverändert)
+- 2026-09-27: Known Limitations nach Adversary-Befund F001/F002 präzisiert (User-Entscheidung zum
+  AMBIGUOUS-Verdict: klarstellen statt erweitern); Diff-Abdeckung als Folge-Issue #259

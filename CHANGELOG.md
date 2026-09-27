@@ -50,7 +50,9 @@ blocken nach dem Update bei Commit und Phase 8, bis ein echter Dialog registrier
 Dialog nachholen (`/50-implement` Step 8); für den Commit einmalig ein Override-Token (User
 tippt „override"); für einen Workflow ohne Prüfgegenstand `workflow.py abandon`. Bekannte Grenze:
 ein vorsätzlich selbst geschriebener und gestempelter Dialog besteht die Prüfung weiterhin —
-geprüft werden Form und Hash-Bindung, nicht die Urheberschaft.
+geprüft werden Form und Hash-Bindung, nicht die Urheberschaft. Ebenso ein bewusst registriertes
+fremdes Protokoll (anderer Workflow oder absoluter Pfad), das die aktuelle Änderung nicht zitiert:
+Ein Abgleich zwischen gehashten Dateien und geändertem Code fehlt noch (#259).
 
 ## [3.31.1] - 2026-09-26
 
