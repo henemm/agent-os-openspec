@@ -149,7 +149,7 @@ Sobald alle Artefakte registriert sind und Spec + RED-Testdateien committed sind
 $WF phase phase6_implement
 ```
 
-Danach folgt die Ausgabe an den User — dann **STOPP**.
+Danach folgt die Ausgabe an den User, danach rufst du `50-implement` selbst auf (siehe unten).
 
 ### Checkpoint prüfen (Anweisung an dich — nicht ausgeben)
 
@@ -201,7 +201,12 @@ Erst sichern, dann ist `/clear` gefahrlos.
 
 ---
 
-**NICHT** selbst mit der Implementierung beginnen. Warte bis der User `/50-implement` tippt.
+Ohne `/clear` in derselben Session: Rufe den Skill `50-implement` jetzt sofort selbst
+auf — warte nicht auf eine weitere User-Eingabe, die registrierten RED-Artefakte sind
+bereits die Voraussetzung, keine zusätzliche Entscheidung steht mehr aus.
+
+Mit `/clear` dazwischen: Der Checkpoint-Block oben zeigt den regulären Wiedereinstieg
+über den expliziten Befehl `/50-implement #<N>`.
 
 ## Common Mistakes
 
@@ -216,7 +221,7 @@ Beende deine letzte Nachricht in diesem Befehl mit diesen Zeilen, in dieser Reih
 
 ❗ Du: `/<befehl> #<N>` — <ein Halbsatz, warum>
 ℹ️ Status: Workflow `<name>` · Phase `<x>` von 8
-⚙ /40-tdd-red · agent-os-openspec 3.32.1
+⚙ /40-tdd-red · agent-os-openspec 3.33.0
 
 Die erste Zeile sagt, wer am Zug ist — GENAU EINMAL, nur hier in der Fußzeile, nie zusätzlich als Vokabular mitten im Fließtext davor — und steht in genau einer von zwei Formen: `❗ Du: …`, wenn der PO den Schritt tippen oder eine Entscheidung treffen muss (bei Dringendem `‼️` statt `❗`). Das gilt AUCH, wenn du selbst gerade nichts mehr zu tun hast und nur auf den nächsten Befehl des PO wartest — das ist niemals „nichts zu tun“. Oder `ℹ️ Nichts zu tun: <du arbeitest gerade selbst / wartest auf ein Ergebnis, z. B. einen Hintergrund-Agenten> — danach: /<befehl> #<N>`, ausschließlich wenn du auf etwas ANDERES als den PO wartest. So muss der PO nie raten, ob etwas von ihm erwartet wird.
 

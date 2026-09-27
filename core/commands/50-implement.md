@@ -295,7 +295,7 @@ Follow scoping limits:
 
 ## Next Step
 
-Wenn Adversary VERIFIED (oder AMBIGUOUS mit User-OK): Stelle sicher, dass alle geänderten Dateien committed sind und das Adversary-Verdict im State steht — der nächste Schritt setzt den Gesprächskontext zurück. Danach folgt die Ausgabe an den User — dann **STOPP**.
+Wenn Adversary VERIFIED (oder AMBIGUOUS mit User-OK): Stelle sicher, dass alle geänderten Dateien committed sind und das Adversary-Verdict im State steht — der nächste Schritt setzt den Gesprächskontext zurück. Danach folgt die Ausgabe an den User, danach rufst du `60-validate` selbst auf (siehe unten).
 
 ### Checkpoint prüfen (Anweisung an dich — nicht ausgeben)
 
@@ -346,7 +346,13 @@ Erst sichern, dann ist `/clear` gefahrlos.
 
 ---
 
-**NICHT** selbst mit der Validierung beginnen. Warte bis der User `/60-validate` tippt.
+Ohne `/clear` in derselben Session: Rufe den Skill `60-validate` jetzt sofort selbst
+auf — warte nicht auf eine weitere User-Eingabe, das VERIFIED-Verdict des Adversary und
+die GREEN-Freigabe `go` aus Step 6 sind bereits die Voraussetzung, keine zusätzliche
+Entscheidung steht mehr aus.
+
+Mit `/clear` dazwischen: Der Checkpoint-Block oben zeigt den regulären Wiedereinstieg
+über den expliziten Befehl `/60-validate #<N>`.
 
 ## Common Mistakes
 

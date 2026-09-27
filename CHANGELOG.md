@@ -5,6 +5,46 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.33.0] - 2026-09-27
+
+### Changed
+
+**Zwei PO-Tastendrücke nach der Freigabe abgeschafft (#147, Hälfte 1 von #250) — 3.33.0**
+
+Nach der Spec-Freigabe musste der Product Owner zweimal einen Slash-Befehl selbst eintippen
+(`/50-implement` nach der TDD-RED-Phase, `/60-validate` nach der Implementierung), obwohl an
+beiden Stellen keine neue Entscheidung fällt — sie ist mit `approved` bzw. mit `go` bereits
+getroffen (ADR-0147, siehe `docs/specs/fix-147-validierung-abstufen.md`).
+
+- `skills/50-implement/SKILL.md`, `skills/60-validate/SKILL.md`: `disable-model-invocation`
+  von `true` auf `false` — der Skill-Tool-Selbstaufruf ist damit freigeschaltet.
+- `core/commands/40-tdd-red.md`, `core/commands/50-implement.md`: Die STOPP-Sätze
+  („**NICHT** selbst … Warte bis der User … tippt.") sind durch dieselbe
+  Zwei-Fälle-Chaining-Anweisung ersetzt, die für den Übergang `approved` → `/40-tdd-red`
+  bereits produktiv ist: ohne `/clear` Selbstaufruf, mit `/clear` regulärer Wiedereinstieg
+  über den expliziten Befehl. Die Anweisungen stehen außerhalb der
+  `/clear`-Checkpoint-Blöcke.
+- `.claude/commands/50-implement.md`, `.claude/commands/60-validate.md`: Vollkopien werden
+  dadurch zu 6-Zeilen-Thin-Redirects (`setup.py . --refresh-aliases`, −655 Zeilen); die vier
+  weiterhin gesperrten Alias-Kopien bekommen den neuen Versions-Marker.
+- Doku: `docs/WORKFLOW_GUIDE.md`, `core/commands/00-intake.md`, `README.md` beschreiben die
+  Validierungsphase nicht mehr als „manuelle Validierung" bzw. als PO-Tastendruck — sie
+  besteht aus vier automatischen Prüfagenten und dem docs-updater.
+
+**Unverändert:** Kein Hook wird angefasst. `git commit` bleibt ohne VERIFIED-Verdict
+blockiert (`bash_gate.py`), Code-Edits bleiben ohne registrierte RED-Artefakte blockiert
+(`edit_gate.py`/`tdd_enforcement.py`), die GREEN-Freigabe `go` und der Adversary-Dialog
+bleiben Pflicht. Die Erkennung, ob eine Änderung überhaupt eine beobachtbare Oberfläche hat,
+ist Hälfte 2 (#260) und nicht Teil dieser Version.
+
+### Tests
+
+- `tests/test_skill_stop_instruction.py`: umgedreht — prüft jetzt Existenz und Position der
+  Chaining-Anweisungen statt der STOPP-Sätze (AC-3 bis AC-6).
+- `tests/test_repo_own_aliases_147.py` (neu): `alias_sync.find_stale_aliases()` gegen die
+  echten Repo-Dateien statt gegen `tmp_path` (AC-7) und Doku-Formulierungen (AC-9).
+- `tests/test_setup_command_aliases.py`: Beispiel für einen gesperrten Skill von
+  `50-implement` auf `70-deploy` umgestellt (AC-8).
 ## [3.32.1] - 2026-09-27
 
 ### Fixed

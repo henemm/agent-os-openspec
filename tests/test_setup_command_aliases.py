@@ -85,7 +85,7 @@ def test_updates_existing_marker_file_for_disabled_model_invocation_skill(tmp_pa
     """AC-3b: Gilt auch fuer Skills mit disable-model-invocation:true (voller Embed)."""
     commands_dir = tmp_path / ".claude" / "commands"
     commands_dir.mkdir(parents=True)
-    stale = commands_dir / "50-implement.md"
+    stale = commands_dir / "70-deploy.md"
     stale.write_text(MARKER + "\nveralteter inhalt der ueberschrieben werden muss\n")
 
     setup.generate_command_aliases(tmp_path)
@@ -93,7 +93,7 @@ def test_updates_existing_marker_file_for_disabled_model_invocation_skill(tmp_pa
     content = stale.read_text()
     assert content.splitlines()[0] == MARKER
     assert "veralteter inhalt" not in content
-    skill_text = (setup.FRAMEWORK_ROOT / "skills" / "50-implement" / "SKILL.md").read_text()
+    skill_text = (setup.FRAMEWORK_ROOT / "skills" / "70-deploy" / "SKILL.md").read_text()
     assert content == f"{MARKER}\n{skill_text}"
 
 

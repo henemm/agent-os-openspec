@@ -111,7 +111,7 @@ Modell wechseln: `/model` in der Claude-Code-Session oder beim Start `claude --m
 | User-Freigabe | ✅ immer | ✅ immer | ✅ immer |
 | TDD RED | ❌ inline | ✅ Separate Phase | ✅ Separate Phase |
 | Adversary | ❌ entfällt | ✅ 1 Runde | ✅ 2+ Runden |
-| Manuelle Validierung | ✅ immer | ✅ immer | ✅ immer |
+| Validierung | ✅ immer | ✅ immer | ✅ immer |
 
 ## Mini-Spec (Fast Track)
 
