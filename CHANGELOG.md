@@ -5,11 +5,11 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.32.1] - 2026-09-27
 
 ### Fixed
 
-**Commit-Gate und Phase 8 verlangen einen gültigen Adversary-Dialog-Nachweis (#253)**
+**Commit-Gate und Phase 8 verlangen einen gültigen Adversary-Dialog-Nachweis (#253) — 3.32.1**
 
 `post_bash.py` setzte nach JEDEM grünen Testkommando `adversary_verdict = "VERIFIED:<framework>"`
 — egal wer testete und in welcher Phase. Commit-Gate (`bash_gate.py` 5c) und der Übergang nach
