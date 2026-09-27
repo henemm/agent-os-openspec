@@ -85,7 +85,22 @@ allen 16 `skills/*/SKILL.md` und den vier verbleibenden gesperrten
 `.claude/commands/*.md`-Kopien (je eine Zeile, erzeugt durch `sync_skills.py` bzw.
 `setup.py --refresh-aliases`, kein Bestandteil des von Hand geschriebenen Deltas — im
 Review als ein 20-Dateien-Nebeneffekt-Diff erkennbar, nicht als 20 eigenständige
-Änderungen). Risiko **niedrig**: kein Hook-Code wird geändert, keine neue Logik
+Änderungen).
+
+**Tatsächlich** (gemessen mit `git diff --numstat 5c8b88c HEAD` nach dem Nachziehen auf
+Version 3.32.1 aus #253), 37 Dateien, +1307/−731:
+
+| Gruppe | Dateien | LoC |
+|---|---|---|
+| Anweisungen, Doku, Versionszeilen (fachliche Handarbeit) | 8 | +66/−11 |
+| Tests (neu und umgebaut) | 4 | +408/−44 |
+| Arbeitsdokumente (Spec, Analyse, PO-Briefing) | 3 | +781/−0 |
+| Generat (`skills/*/SKILL.md`, `.claude/commands/*.md`) | 22 | +52/−676 |
+
+Die Schätzung traf die fachliche Handarbeit samt Generat gut (+66/−687 gegen geschätzte
++90/−690); die gelöschten Vollkopien machen −647 davon aus (`50-implement.md` −369,
+`60-validate.md` −278) statt der geschätzten −655. Tests und Arbeitsdokumente waren in der
+Schätzung nicht enthalten. Risiko **niedrig**: kein Hook-Code wird geändert, keine neue Logik
 entsteht; Commit-Gate, RED-Artefakt-Pflicht, GREEN-Freigabe und Adversary-Dialog
 bleiben vollständig unangetastet (siehe Dependencies und ADR).
 
@@ -304,39 +319,58 @@ liefert — die Entscheidung, wie damit umgegangen wird. Konkret:
   der Umsetzung mit `disable-model-invocation: true` / When das Frontmatter beider
   Dateien nach Umsetzung gelesen wird / Then steht in beiden exakt
   `disable-model-invocation: false`.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `tests/test_repo_own_aliases_147.py::test_skill_allows_model_invocation_after_flip`
+    (parametrisiert über `50-implement`, `60-validate`).
 - **AC-2:** Given `core/commands/` und `skills/` nach Umsetzung / When
   `python3 scripts/sync_skills.py --check` bzw. `python3 scripts/release_check.py`
   ausgeführt wird / Then meldet keines der beiden Skripte Drift.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `tests/test_skills_sync.py::test_repo_skills_are_in_sync_with_commands`,
+    `tests/test_skills_sync.py::test_check_cli_exit_code_zero_when_in_sync` (deckt
+    `sync_skills.py --check` ab). Für `release_check.py` deckt keine Testfunktion den
+    Gesamtlauf gegen den echten Repo-Stand ab — Nachweis ist der Skript-Lauf
+    `python3 scripts/release_check.py` selbst (siehe Test Plan).
 - **AC-3:** Given `core/commands/40-tdd-red.md` und das daraus erzeugte
   `skills/40-tdd-red/SKILL.md` / When beide Dateien nach Umsetzung gelesen werden /
   Then enthalten beide die Chaining-Anweisung für den Übergang zu `/50-implement`, sie
   steht im Skill **nach** `$WF phase phase6_implement`, und der Satz „**NICHT** selbst
   mit der Implementierung beginnen. Warte bis der User `/50-implement` tippt." kommt in
   keiner der beiden Dateien mehr vor.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `tests/test_skill_stop_instruction.py::test_tdd_red_skill_no_longer_forbids_self_starting_implementation`,
+    `::test_tdd_red_command_no_longer_forbids_self_starting_implementation`,
+    `::test_tdd_red_skill_contains_chaining_instruction_to_50_implement`,
+    `::test_tdd_red_command_contains_chaining_instruction_to_50_implement`,
+    `::test_chaining_instruction_to_50_implement_follows_phase_transition`,
+    `::test_tdd_red_skill_and_command_chaining_are_identical`.
 - **AC-4:** Given `core/commands/50-implement.md` und das daraus erzeugte
   `skills/50-implement/SKILL.md` / When beide Dateien nach Umsetzung gelesen werden /
   Then enthalten beide die Chaining-Anweisung für den Übergang zu `/60-validate`, sie
   steht im Skill **nach** `$WF phase phase7_validate`, und der Satz „**NICHT** selbst
   mit der Validierung beginnen. Warte bis der User `/60-validate` tippt." kommt in
   keiner der beiden Dateien mehr vor.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `tests/test_skill_stop_instruction.py::test_fifty_implement_skill_no_longer_forbids_self_starting_validation`,
+    `::test_fifty_implement_command_no_longer_forbids_self_starting_validation`,
+    `::test_fifty_implement_skill_contains_chaining_instruction_to_60_validate`,
+    `::test_fifty_implement_command_contains_chaining_instruction_to_60_validate`,
+    `::test_chaining_instruction_to_60_validate_follows_phase_transition`,
+    `::test_fifty_implement_skill_and_command_chaining_are_identical`.
 - **AC-5:** Given `core/commands/50-implement.md` und `skills/50-implement/SKILL.md`
   nach Umsetzung / When die Reihenfolge der Abschnitte geprüft wird / Then steht die
   Vorbedingung „Adversary-Verdict VERIFIED (oder AMBIGUOUS mit User-Entscheidung) UND
   GREEN-Freigabe `go` durch den User" unverändert **vor** der neuen
   Chaining-Anweisung — der Selbstaufruf ersetzt nur den Tastendruck danach, keine der
   beiden Stationen.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `tests/test_skill_stop_instruction.py::test_fifty_implement_command_precondition_precedes_chaining_section`,
+    `::test_fifty_implement_skill_precondition_precedes_chaining_section`.
 - **AC-6:** Given die Chaining-Anweisungen aus AC-3/AC-4 in `core/commands/40-tdd-red.md`
   und `core/commands/50-implement.md` / When die Dateien nach Umsetzung gelesen werden /
   Then stehen beide Anweisungen außerhalb der Abschnitte „### Checkpoint prüfen
   (Anweisung an dich — nicht ausgeben)" bis „### Ausgabe B: Negativ-Block (mindestens
   eine Vorbedingung verletzt)" — die `/clear`-Checkpoint-Blöcke bleiben strukturell
   identisch zum Vorher-Stand.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `tests/test_skill_stop_instruction.py::test_tdd_red_chaining_instruction_is_outside_clear_checkpoint_block`,
+    `::test_fifty_implement_chaining_instruction_is_outside_clear_checkpoint_block`;
+    Regressionsschutz: `tests/test_clear_checkpoint_blocks.py` (voller Lauf,
+    parametrisiert u.a. über `40-tdd-red.md`/`50-implement.md`).
 - **AC-7:** Given `skills/` und `.claude/commands/` in diesem Repository nach
   Umsetzung (inkl. Versionsbump und `python3 setup.py . --refresh-aliases`) / When
   `alias_sync.find_stale_aliases(skills_dir, commands_dir, loaded_version=None)`
@@ -345,29 +379,42 @@ liefert — die Entscheidung, wie damit umgegangen wird. Konkret:
   insbesondere sind `50-implement.md` und `60-validate.md` jetzt Thin-Redirects und
   `70-deploy.md`/`80-workflow.md`/`81-add-artifact.md`/`99-reset.md` tragen den
   aktuellen Versions-Marker.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `tests/test_repo_own_aliases_147.py::test_no_stale_aliases_in_this_repository`.
 - **AC-8:** Given `tests/test_setup_command_aliases.py` nach Anpassung des
   hartcodierten Beispiels auf `70-deploy` / When
   `pytest tests/test_setup_command_aliases.py tests/test_setup_alias_sync_150.py`
   ausgeführt wird / Then laufen beide Dateien grün, ohne dass ihre generische
   Parametrisierungslogik verändert wurde.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `tests/test_setup_command_aliases.py::test_updates_existing_marker_file_for_disabled_model_invocation_skill`
+    (nutzt `70-deploy` als Beispiel); voller Lauf
+    `pytest tests/test_setup_command_aliases.py tests/test_setup_alias_sync_150.py`
+    grün als Regressionsschutz für die generische Parametrisierung.
 - **AC-9:** Given `README.md`, `docs/WORKFLOW_GUIDE.md` und `core/commands/00-intake.md`
   nach Umsetzung / When die Dateien nach den Formulierungen „User tippt /50-implement",
   „Manuelle Validierung" und „Manuelle Tests, Integration-Tests, UI-Checks" durchsucht
   werden / Then kommt keine dieser Formulierungen mehr vor.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `tests/test_repo_own_aliases_147.py::test_workflow_guide_no_longer_tells_po_to_type_50_implement`,
+    `::test_workflow_guide_no_longer_calls_validation_manual`,
+    `::test_intake_no_longer_calls_validation_manual`.
 - **AC-10:** Given `.claude-plugin/plugin.json`, `README.md`, `CLAUDE.md` und
   `CHANGELOG.md` nach Umsetzung / When `python3 scripts/release_check.py` ausgeführt
   wird / Then meldet es Version `3.33.0` konsistent zwischen `plugin.json` und
   `README.md` (`check_readme_version`) sowie einen datierten, mit `plugin.json`
   übereinstimmenden obersten CHANGELOG-Eintrag (`check_version_match`, kein
   `[Unreleased]`-Kopf), und `CLAUDE.md` Z. 5 nennt ebenfalls `3.33.0`.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `tests/test_readme_version_195.py::TestRepositoryState::test_readme_matches_plugin_manifest`,
+    `::test_claude_md_matches_plugin_manifest`,
+    `::test_release_check_actually_runs_the_readme_check`. Für die
+    CHANGELOG-Konsistenz (`check_version_match` gegen den echten Stand) deckt keine
+    Testfunktion den Repo-Stand ab (`tests/test_release_check_93.py::TestVersionMatch`
+    prüft nur mit synthetischen Werten) — Nachweis ist der Skript-Lauf
+    `python3 scripts/release_check.py` selbst.
 - **AC-11:** Given der volle Testlauf nach Umsetzung / When
   `pytest tests/ -q` ausgeführt wird / Then läuft die gesamte Suite grün, ohne dass
   ein bestehender Test außer den in dieser Spec genannten angepasst werden musste.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: kein einzelner Testfall belegt dies — Nachweis ist der Skript-Lauf
+    `pytest tests/ -q` selbst (voller Regressionslauf, siehe Test Plan; 1360 Tests
+    grün, unabhängig geprüft).
 
 ## Test Plan
 
