@@ -95,6 +95,13 @@ python3 .claude/hooks/adversary_dialog.py validate docs/artifacts/<workflow-name
 Wenn die Validierung fehlschlaegt: Zurueck zu `/50-implement` Step 8 (Adversary Dialog wiederholen).
 Akzeptierte Verdicts: **VERIFIED** oder **AMBIGUOUS** (mit User-OK).
 
+**Gate-Wirkung (#253):** Commit-Gate und Phase 8 (`phase phase8_complete`, `complete`, `finish`)
+akzeptieren das Verdict nur mit diesem registrierten (bzw. am Standardpfad liegenden), gestempelten
+Artefakt, dessen gehashte Dateien zum aktuellen Code passen. Ein gruener Testlauf aktualisiert nur
+`last_test_run` — er setzt kein Verdict. Aendert der Auto-Fix aus Step 2b eine im Dialog zitierte
+Datei (`Code reference:`), blockt Phase 8, bis ein neuer Dialog gefuehrt, gestempelt und registriert
+ist (`/50-implement` Step 8).
+
 ## Your Tasks
 
 ### Step 1: Parallele Validierung (4x Haiku)

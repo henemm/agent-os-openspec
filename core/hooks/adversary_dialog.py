@@ -673,6 +673,74 @@ def stamp_dialog_artifact(artifact_path: str) -> tuple[bool, str]:
     return True, msg
 
 
+# --- Dialog-Nachweis fuer Commit-Gate und Phase 8 (Issue #253) ---
+
+DEFAULT_DIALOG_ARTIFACT = "docs/artifacts/{name}/adversary-dialog.md"
+
+
+def _resolve_artifact_path(raw: str) -> Path:
+    """Relativ: Worktree-Root, falls die Datei dort liegt, sonst Projekt-Root.
+
+    Absolute Pfade bleiben unveraendert (Muster aus #80/#96/#131).
+    """
+    path = Path(raw)
+    if path.is_absolute():
+        return path
+    worktree = find_worktree_root()
+    if worktree is not None and (worktree / path).exists():
+        return worktree / path
+    return find_project_root() / path
+
+
+def find_dialog_artifact(wf: dict) -> "Path | None":
+    """Dialog-Artefakt eines Workflows, oder None wenn es keins gibt.
+
+    (a) das zuletzt registrierte `test_artifacts`-Element vom Typ
+        'adversary_dialog' (neuestes gewinnt) — auch wenn die Datei fehlt:
+        die ausdrueckliche Registrierung gewinnt, kein stiller Rueckfall;
+    (b) sonst der Standardpfad, falls er existiert.
+    """
+    registered = [
+        a for a in (wf.get("test_artifacts") or [])
+        if isinstance(a, dict) and a.get("type") == "adversary_dialog" and a.get("path")
+    ]
+    if registered:
+        return _resolve_artifact_path(str(registered[-1]["path"]))
+    default = _resolve_artifact_path(DEFAULT_DIALOG_ARTIFACT.format(name=wf.get("name", "")))
+    return default if default.exists() else None
+
+
+def check_dialog_evidence(wf: dict) -> "str | None":
+    """Die eine Regel fuer Commit-Gate (bash_gate.py 5c) und Phase 8 (workflow.py).
+
+    None: ein gueltiges, gestempeltes, zum Ist-Stand passendes Dialog-Artefakt
+    deckt das Verdict im State. Sonst der Grund als Text. Wirft nie — ein
+    interner Fehler wird zur Grund-Meldung (fail-closed).
+    """
+    try:
+        path = find_dialog_artifact(wf)
+        if path is None:
+            default = DEFAULT_DIALOG_ARTIFACT.format(name=wf.get("name", "<workflow>"))
+            return (
+                "kein Dialog-Artefakt registriert (workflow.py add-artifact "
+                f"adversary_dialog <pfad>) und keins am Standardpfad {default}"
+            )
+        if not path.exists():
+            return (
+                f"registriertes Dialog-Artefakt nicht gefunden: {path} "
+                "(die Registrierung gilt — kein Rückfall auf den Standardpfad)"
+            )
+        valid, message, _kind = validate_dialog_artifact_ex(str(path))
+        if not valid:
+            return f"{path}: {message}"
+        verdict = str(wf.get("adversary_verdict") or "")
+        if verdict.startswith("VERIFIED") and "AMBIGUOUS" in message:
+            return f"Widerspruch: der State behauptet VERIFIED, {path} belegt nur AMBIGUOUS"
+        return None
+    except Exception as exc:  # fail-closed
+        return f"Nachweis-Prüfung fehlgeschlagen ({type(exc).__name__}: {exc})"
+
+
 def print_finding_schema():
     """Gibt das Finding-Schema aus (fuer Referenz)."""
     print("Structured Finding Schema:")

@@ -233,7 +233,7 @@ Some phase transitions happen automatically:
 ## QA Gate (Adversary Validation)
 
 ```bash
-# Validate test output and set adversary verdict
+# Validate test output and set adversary verdict — needs --checklist for commit/phase 8 (#253)
 python3 .claude/hooks/qa_gate.py docs/artifacts/feature/test-output.txt
 python3 .claude/hooks/qa_gate.py docs/artifacts/feature/test-output.txt --screenshot screenshot.png
 python3 .claude/hooks/qa_gate.py docs/artifacts/feature/test-output.txt --infra --no-visual "pure infrastructure"

@@ -284,8 +284,14 @@ def main():
     print(f"Workflow: {wf_name}")
     if is_ambiguous:
         print("Pipeline NOT blocked — but user should review ambiguous findings.")
-    else:
+    elif checklist:
         print("Commit is now allowed.")
+    else:
+        # #253: ohne geprueftes Dialog-Artefakt ist das kein Freibrief.
+        print("Hinweis: Commit-Gate und Phase 8 verlangen zusätzlich ein gestempeltes, "
+              "registriertes Dialog-Artefakt (/50-implement Step 8: Dialog, "
+              "adversary_dialog.py stamp, workflow.py add-artifact adversary_dialog). "
+              "Ein grüner Testlauf allein öffnet den Commit nicht.")
     sys.exit(0)
 
 

@@ -7,8 +7,11 @@ Module hooks (e.g., iOS build_lock_release) extend this via config.
 
 Der Test-Output kommt im PostToolUse-Payload unter `tool_response`
 (stdout/stderr), NICHT unter `tool_input` — der fruehere Zugriff auf
-tool_input["stdout"] war immer leer, die dokumentierte automatische
-Verdict-Erkennung damit funktionslos (gefunden bei der Analyse zu #77/#82).
+tool_input["stdout"] war immer leer (gefunden bei der Analyse zu #77/#82).
+
+Beobachtung, kein Urteil (#253): ein erkannter Testlauf landet nur als
+Hinweis in `last_test_run`. `adversary_verdict` wird hier nie gelesen oder
+geschrieben — ein gruener Testlauf ersetzt den Adversary-Dialog nicht.
 
 Exit Codes: 0 always (never blocks)
 """
@@ -24,7 +27,7 @@ from pathlib import Path
 
 _root = find_project_root()
 
-# Fail-Guard: bei JEDER Fehler-Evidenz im Output wird NIE VERIFIED gesetzt.
+# Fail-Guard: JEDE Fehler-Evidenz im Output macht den Lauf zu 'failed'.
 # Ohne diesen Guard wuerde '2 failed, 3 passed' ueber das 'passed'-Muster
 # faelschlich als gruen gewertet (False-Pass-Richtung, ausgeschlossen).
 _FAILURE_EVIDENCE_RE = re.compile(
@@ -57,41 +60,46 @@ def _extract_stdout(payload: dict) -> str:
 
 
 def _detect_test_output(command: str, stdout: str) -> None:
-    """Detect test framework output and update adversary_verdict in active workflow."""
+    """Detect test framework output and record it as `last_test_run` (#253)."""
     # Only process test-like commands
     test_indicators = ["pytest", "jest", "xcodebuild", "go test", "cargo test",
                        "npm test", "yarn test", "vitest", "mocha"]
-    if not any(t in command for t in test_indicators):
+    hits = [t for t in test_indicators if t in command]
+    if not hits:
         return
+    # Laengster Treffer: 'cargo test' enthaelt 'go test' als Teilstring.
+    runner = max(hits, key=len)
 
     if not stdout:
         return
 
     if _FAILURE_EVIDENCE_RE.search(stdout):
-        return  # Fehler-Evidenz → niemals automatisch VERIFIED
+        _record_test_run("failed", runner)  # alter gruener Hinweis bleibt nicht stehen
+        return
 
-    # Check for framework-specific pass patterns
+    # Check for framework-specific pass patterns (pytest, jest, xcodebuild, go, cargo)
     pass_patterns = [
-        (r"\b\d+\s+passed\b", "pytest"),
-        (r"Tests:.*passed", "jest"),
-        (r"\*\* TEST SUCCEEDED \*\*", "xcodebuild"),
-        (r"^ok\s+", "go_test"),
-        (r"test result: ok", "cargo_test"),
+        r"\b\d+\s+passed\b",
+        r"Tests:.*passed",
+        r"\*\* TEST SUCCEEDED \*\*",
+        r"^ok\s+",
+        r"test result: ok",
     ]
 
-    for pattern, framework in pass_patterns:
-        if re.search(pattern, stdout, re.MULTILINE):
-            _set_adversary_verdict(f"VERIFIED:{framework}")
-            return
+    if any(re.search(pattern, stdout, re.MULTILINE) for pattern in pass_patterns):
+        _record_test_run("passed", runner)
+    # Unbestimmbare Ausgabe: State bleibt unberuehrt.
 
 
-def _set_adversary_verdict(verdict: str) -> None:
-    """Update adversary_verdict in the active workflow JSON.
+def _record_test_run(result: str, runner: str) -> None:
+    """Write `last_test_run` into the active workflow JSON — and nothing else.
 
-    Resolution is env/settings only (via get_active_workflow_name) — the
-    .active symlink is intentionally not used (single source of truth).
+    `runner` is the test indicator, deliberately not the command itself (it
+    can carry inline credentials). Resolution is env/settings only (via
+    get_active_workflow_name) — the .active symlink is intentionally not used.
     """
     import tempfile
+    from datetime import datetime
 
     def _atomic_write(wf_file: Path, data: dict) -> None:
         fd, tmp = tempfile.mkstemp(dir=str(wf_file.parent), suffix=".tmp")
@@ -112,14 +120,18 @@ def _set_adversary_verdict(verdict: str) -> None:
     if wf_file.exists():
         try:
             data = json.loads(wf_file.read_text())
-            data["adversary_verdict"] = verdict
+            data["last_test_run"] = {
+                "result": result,
+                "runner": runner,
+                "at": datetime.now().isoformat(timespec="seconds"),
+            }
             _atomic_write(wf_file, data)
         except (OSError, json.JSONDecodeError):
             pass
 
 
 def main():
-    # Adversary-Detection gehoert zum Workflow; ohne ihn gibt es keine Phase,
+    # Testlauf-Erkennung gehoert zum Workflow; ohne ihn gibt es keine Phase,
     # in die ein Test-Ergebnis gemeldet werden koennte (#132).
     if framework_disabled():
         sys.exit(0)

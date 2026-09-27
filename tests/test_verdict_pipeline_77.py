@@ -12,7 +12,9 @@ ein Formfehler ist kein inhaltliches Urteil.
 
 post_bash: stdout kommt im PostToolUse-Payload unter tool_response, nicht
 tool_input — der alte Zugriff war immer leer (tote Auto-Erkennung). Dazu
-Fail-Guard: Fehler-Evidenz im Output verhindert automatisches VERIFIED.
+Fail-Guard: Fehler-Evidenz im Output wird nie als grüner Lauf gewertet.
+Seit #253 setzt post_bash kein Verdict mehr, sondern vermerkt den Lauf nur
+in `last_test_run` — die Tests prüfen deshalb dieses Feld.
 
 Issue #131: jedes Artefakt, das hier `valid=True` erreichen soll, braucht seit
 diesem Fix zusaetzlich einen gueltigen '## Geprüfte Dateien'-Hash-Block statt
@@ -294,8 +296,13 @@ def _make_workflow(tmp_path: Path):
     }))
 
 
+def _last_run_of(tmp_path: Path, wf_name: str):
+    data = json.loads((tmp_path / ".claude" / "workflows" / f"{wf_name}.json").read_text())
+    return data.get("last_test_run")
+
+
 class TestPostBashStdoutSource:
-    def test_green_pytest_via_tool_response_sets_verified(self, tmp_path):
+    def test_green_pytest_via_tool_response_records_passed_run(self, tmp_path):
         _make_workflow(tmp_path)
         r = _run_post_bash(tmp_path, {
             "tool_name": "Bash",
@@ -303,7 +310,8 @@ class TestPostBashStdoutSource:
             "tool_response": {"stdout": "===== 5 passed in 1.2s =====\n", "stderr": ""},
         })
         assert r.returncode == 0, r.stderr
-        assert str(_verdict_of(tmp_path, "wf1")).startswith("VERIFIED")
+        assert (_last_run_of(tmp_path, "wf1") or {}).get("result") == "passed"
+        assert _verdict_of(tmp_path, "wf1") is None  # #253: kein Verdict aus Testläufen
 
     def test_red_pytest_does_not_set_verified(self, tmp_path):
         """Fail-Guard: '2 failed, 3 passed' enthält 'passed' — ohne Guard
@@ -315,6 +323,7 @@ class TestPostBashStdoutSource:
             "tool_response": {"stdout": "== 2 failed, 3 passed in 1.2s ==\n", "stderr": ""},
         })
         assert r.returncode == 0, r.stderr
+        assert (_last_run_of(tmp_path, "wf1") or {}).get("result") == "failed"
         assert _verdict_of(tmp_path, "wf1") is None
 
     def test_non_test_command_ignored(self, tmp_path):
@@ -325,6 +334,7 @@ class TestPostBashStdoutSource:
             "tool_response": {"stdout": "5 passed in 1.2s\n"},
         })
         assert r.returncode == 0
+        assert _last_run_of(tmp_path, "wf1") is None
         assert _verdict_of(tmp_path, "wf1") is None
 
     def test_legacy_stdout_in_tool_input_still_works(self, tmp_path):
@@ -334,4 +344,5 @@ class TestPostBashStdoutSource:
             "tool_input": {"command": "cargo test", "stdout": "test result: ok. 8 passed\n"},
         })
         assert r.returncode == 0, r.stderr
-        assert str(_verdict_of(tmp_path, "wf1")).startswith("VERIFIED")
+        assert (_last_run_of(tmp_path, "wf1") or {}).get("result") == "passed"
+        assert _verdict_of(tmp_path, "wf1") is None

@@ -5,6 +5,56 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+**Commit-Gate und Phase 8 verlangen einen gültigen Adversary-Dialog-Nachweis (#253)**
+
+`post_bash.py` setzte nach JEDEM grünen Testkommando `adversary_verdict = "VERIFIED:<framework>"`
+— egal wer testete und in welcher Phase. Commit-Gate (`bash_gate.py` 5c) und der Übergang nach
+`phase8_complete` prüften nur den String-Präfix: Der eigene GREEN-Lauf des Developer Agents
+öffnete den Commit, bevor der Pflicht-Dialog (`/50-implement` Step 8) überhaupt lief, und nach
+einem BROKEN überschrieb ein direkter `pytest`-Lauf das Urteil kommentarlos mit VERIFIED.
+Dieselbe Lücke bestand über `set-field adversary_verdict AMBIGUOUS` plus `override-ambiguous`.
+
+- `post_bash.py`: Beobachtung statt Urteil. `_set_adversary_verdict` entfällt, `_record_test_run`
+  schreibt nur `last_test_run = {result: passed|failed, runner, at}`. `runner` ist der
+  Test-Indikator (längster Treffer — `cargo test` enthält `go test`), nie der Befehl selbst
+  (Inline-Credentials). Fehler-Evidenz schreibt `failed`, damit kein grüner Hinweis veraltet
+  stehen bleibt. `adversary_verdict` wird hier nie mehr gelesen oder geschrieben.
+- `adversary_dialog.py`: neu `find_dialog_artifact` (zuletzt registriertes `adversary_dialog`,
+  sonst Standardpfad `docs/artifacts/<workflow>/adversary-dialog.md`; relative Pfade
+  worktree-first; ein registrierter, fehlender Pfad fällt nicht still auf den Standardpfad
+  zurück) und `check_dialog_evidence` — die eine Regel für beide Gates:
+  `validate_dialog_artifact_ex` unverändert (Checkliste, ≥ 2 Runden, Verdict, Hash-Bindung aus
+  #131) plus Widerspruch „State VERIFIED, Artefakt nur AMBIGUOUS". Wirft nie (fail-closed).
+- `bash_gate.py` 5c: VERIFIED sowie AMBIGUOUS+Override zählen nur mit gültigem Nachweis, sonst
+  Block mit Grund, „Ein grüner Testlauf ersetzt den Adversary-Dialog nicht" und dem Weg (Dialog,
+  `stamp`, `add-artifact adversary_dialog`). Der User-Override-Token hebt den Block auf; fehlt
+  das Modul, gilt der Nachweis als nicht erbracht. Fast-Track-Ausnahme und die Meldungen für
+  AMBIGUOUS ohne Override bzw. fehlendes Verdict bleiben unverändert.
+- `workflow.py` `_validate_transition`: dieselbe Regel für `phase phase8_complete`, `complete`
+  und `finish` („Adversary verdict ohne gültigen Dialog-Nachweis — <Grund>"), wie bisher ohne
+  Override-Pfad.
+- `qa_gate.py`: ohne `--checklist` weiterhin `VERIFIED:<Testergebnis>`, aber statt „Commit is
+  now allowed." der Hinweis auf das zusätzlich nötige Dialog-Artefakt; mit `--checklist`
+  unverändert.
+- Tests: `tests/test_adversary_evidence_gate_253.py` (neu); Fixtures in
+  `test_verdict_pipeline_77.py`, `test_gate_fixes_26_38_34.py` und
+  `test_workflow_name_validation.py` bekommen ein gültiges Artefakt bzw. prüfen `last_test_run`.
+  Doku: CLAUDE.md, README.md, `docs/WORKFLOW_GUIDE.md`, `/50-implement`, `/60-validate`,
+  `/80-workflow` (qa_gate-Beispiel) und die CLAUDE.md-Vorlage in `setup.py` für neue Projekte.
+
+**Migration:** Laufende Workflows, deren `VERIFIED:<framework>` aus `post_bash.py` stammt,
+blocken nach dem Update bei Commit und Phase 8, bis ein echter Dialog registriert ist. Auswege:
+Dialog nachholen (`/50-implement` Step 8); für den Commit einmalig ein Override-Token (User
+tippt „override"); für einen Workflow ohne Prüfgegenstand `workflow.py abandon`. Bekannte Grenze:
+ein vorsätzlich selbst geschriebener und gestempelter Dialog besteht die Prüfung weiterhin —
+geprüft werden Form und Hash-Bindung, nicht die Urheberschaft. Ebenso ein bewusst registriertes
+fremdes Protokoll (anderer Workflow oder absoluter Pfad), das die aktuelle Änderung nicht zitiert:
+Ein Abgleich zwischen gehashten Dateien und geändertem Code fehlt noch (#259).
+
 ## [3.32.0] - 2026-09-26
 
 ### Changed
