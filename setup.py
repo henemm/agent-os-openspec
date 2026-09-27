@@ -753,7 +753,7 @@ python3 .claude/hooks/workflow.py list
 | 4 — Approval | User: "approved" | **HUMAN GATE** — hooks detect keyword |
 | 5 — TDD RED | `/40-tdd-red` | Real failing test artifacts required |
 | 6 — Implement | `/50-implement` | Code edits blocked until RED artifacts exist + AC present |
-| 6b — Adversary | Auto after `/50-implement` | VERIFIED verdict required to commit |
+| 6b — Adversary | Auto after `/50-implement` | VERIFIED verdict + a valid, stamped dialog artifact required to commit |
 | 7 — Validate | `/60-validate` | AMBIGUOUS verdict blocks commit |
 | 8 — Complete | `workflow.py write-log && workflow.py finish` | Execution log required |
 
@@ -800,7 +800,7 @@ python3 .claude/hooks/workflow.py finish
 
 - **Code edits** blocked unless in phase6+ with RED artifacts and `## Acceptance Criteria` in spec
 - **LoC limit**: Max 250 lines changed per workflow (override: `workflow.py set-field loc_limit_override <N>`)
-- **git commit** blocked unless adversary verdict is VERIFIED
+- **git commit** blocked unless adversary verdict is VERIFIED and a valid, stamped dialog artifact matches the current code
 - **AMBIGUOUS** verdict blocks commit — requires: `workflow.py override-ambiguous "<reason>"`
 - **Stop-lock**: Say "stop" to freeze all edits; "resume" to unfreeze
 

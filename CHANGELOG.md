@@ -43,7 +43,8 @@ Dieselbe Lücke bestand über `set-field adversary_verdict AMBIGUOUS` plus `over
 - Tests: `tests/test_adversary_evidence_gate_253.py` (neu); Fixtures in
   `test_verdict_pipeline_77.py`, `test_gate_fixes_26_38_34.py` und
   `test_workflow_name_validation.py` bekommen ein gültiges Artefakt bzw. prüfen `last_test_run`.
-  Doku: CLAUDE.md, README.md, `docs/WORKFLOW_GUIDE.md`, `/50-implement`, `/60-validate`.
+  Doku: CLAUDE.md, README.md, `docs/WORKFLOW_GUIDE.md`, `/50-implement`, `/60-validate`,
+  `/80-workflow` (qa_gate-Beispiel) und die CLAUDE.md-Vorlage in `setup.py` für neue Projekte.
 
 **Migration:** Laufende Workflows, deren `VERIFIED:<framework>` aus `post_bash.py` stammt,
 blocken nach dem Update bei Commit und Phase 8, bis ein echter Dialog registriert ist. Auswege:

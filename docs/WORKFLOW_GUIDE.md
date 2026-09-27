@@ -144,7 +144,7 @@ Der User sagt `go`. Dann startet der Adversary-Dialog:
 3. Mindestens 2 Runden Dialog zwischen Fixer (Hauptkontext) und Adversary
 4. Ergebnis: **VERIFIED** / **BROKEN** / **AMBIGUOUS**
 
-- `VERIFIED` → Phase 7 freigegeben, git commit möglich
+- `VERIFIED` → Phase 7 freigegeben, git commit möglich (mit gültigem Dialog-Artefakt, #253)
 - `BROKEN` → Zurück zu Phase 6, Defekte müssen behoben werden
 - `AMBIGUOUS` → User-Review erforderlich, Commit blockiert bis Klärung
 
@@ -162,7 +162,7 @@ Manuelle Tests, Integration-Tests, UI-Checks. Claude dokumentiert den Validierun
 
 ### Phase 8 — Abgeschlossen
 
-`git commit` wird nur erlaubt, wenn ein VERIFIED-Adversary-Verdict vorliegt. Das bash_gate.py blockiert den Commit sonst.
+`git commit` wird nur erlaubt, wenn ein VERIFIED-Adversary-Verdict UND ein gültiges, gestempeltes Dialog-Artefakt vorliegen (#253). Das bash_gate.py blockiert den Commit sonst.
 
 ---
 
@@ -514,7 +514,7 @@ Das Framework wird über `openspec.yaml` im Projektverzeichnis konfiguriert. Wic
 | Code-Edit ohne Acceptance Criteria | edit_gate | Spec unvollständig |
 | Code-Edit > 250 LoC Delta (Produktiv) / > 500 (Test) | edit_gate | Scope zu groß |
 | Bash nach "stop" | bash_gate | Stop-Lock aktiv |
-| git commit ohne VERIFIED | bash_gate | Adversary-Check fehlt |
+| git commit ohne VERIFIED bzw. ohne gültiges Dialog-Artefakt | bash_gate | Adversary-Check fehlt |
 | git commit, Branch hinter main | bash_gate | Rebase-Pflicht |
 | Hardcoded API-Key im Befehl | bash_gate | Credentials-Schutz |
 | Direktes Schreiben in Workflow-JSON | bash_gate | State-Integrität |
