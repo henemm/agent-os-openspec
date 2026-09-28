@@ -6,6 +6,10 @@ Replaces 17 separate hooks with 1. Sequential short-circuit logic:
 
 1. Protected State Files → BLOCK
 1b. Orchestrator-Only Files (settings.json, settings.local.json, active_workflow) → BLOCK
+1c. Path Origin (ausserhalb Projekt/Worktree) → ALLOW
+1d. Spec-Freeze: spec_file eines Workflows in Phase >= phase4_approved → BLOCK
+    (ohne Override-Token; muss VOR Schritt 2 stehen, sonst winken die
+    Always-Allowed-Regeln "docs/" bzw. ".md" die Spec bedingungslos durch)
 2. Always-Allowed (docs, tests, scripts, .md, .json) → ALLOW
 3. Not code file → ALLOW
 4. Infrastructure (.claude/hooks/, Config-Ergaenzung, im Framework-Repo auch
@@ -196,6 +200,104 @@ def _find_workflow_for_file(file_path: str) -> dict | None:
             if rel == af or rel.endswith("/" + af) or af.endswith("/" + rel):
                 return data
     return None
+
+
+def _relative_to_roots(file_path: str) -> str:
+    """Strip the main-repo or worktree root prefix from an absolute path.
+
+    Both roots are tried because `_root` resolves a worktree to the main repo
+    (correct for shared STATE), while the edited file itself lives under the
+    worktree root (same reasoning as `_measurement_root`, #96).
+    """
+    rel = file_path
+    roots = [str(_root)]
+    worktree_root = hook_utils.find_worktree_root()
+    if worktree_root is not None:
+        roots.append(str(worktree_root))
+    for root_str in roots:
+        if rel.startswith(root_str):
+            return rel[len(root_str):].lstrip("/")
+    return rel
+
+
+def _matches_spec_file(data: dict, file_path: str) -> bool:
+    """True wenn `data["spec_file"]` auf dieselbe Datei zeigt wie `file_path`.
+
+    Pfad-Matching wie in `_find_workflow_for_file`: beide Seiten relativ zur
+    Projektwurzel vergleichen, plus Suffix-Vergleich in beide Richtungen.
+    """
+    spec = data.get("spec_file")
+    if not spec:
+        return False
+    rel = _relative_to_roots(file_path)
+    spec_rel = _relative_to_roots(spec)
+    return (
+        rel == spec_rel
+        or rel.endswith("/" + spec_rel)
+        or spec_rel.endswith("/" + rel)
+    )
+
+
+def _find_workflow_by_spec_file(file_path: str) -> dict | None:
+    """Findet den Workflow, dessen `spec_file` dem Zielpfad entspricht (#230).
+
+    Vorbild: `_find_workflow_for_file`, aber Matching-Feld ist `spec_file`
+    statt `affected_files`. Anders als dort wird `phase8_complete` NICHT
+    uebersprungen: genau dort trat der urspruengliche #230-Fall auf (der
+    docs-updater fasst die Spec kurz vor/bei Abschluss an). Der aktive
+    Workflow wird zuerst geprueft, damit die eigene Sitzung nicht von einem
+    fremden Workflow-JSON verdeckt wird.
+
+    Bewusst NICHT ueber `_read_active_workflow()`: die faellt auf
+    `_archive/<name>.json` zurueck. Nach `workflow.py finish` bleibt die
+    `OPENSPEC_ACTIVE_WORKFLOW`-Env-Var der aufrufenden Shell stehen (ein
+    Kindprozess kann sie nicht loeschen) und `resolve_active_workflow()`
+    prueft diese dritte Quelle nicht auf Existenz — der Archiv-Fallback
+    wuerde einen abgeschlossenen Workflow als aktiv ausgeben und seine Spec
+    fuer immer einfrieren. Hier zaehlt deshalb nur eine noch LIVE Datei
+    unter `.claude/workflows/`; `_archive/` ist kein Freeze-Ziel mehr
+    (auch der Scan unten erfasst es per `glob("*.json")` korrekt nicht).
+    `_read_active_workflow()` selbst bleibt unveraendert — andere Aufrufer
+    nutzen den Archiv-Fallback absichtlich.
+    """
+    name = get_active_workflow_name()
+    if name:
+        wf_file = _root / ".claude" / "workflows" / f"{name}.json"
+        if wf_file.exists():
+            try:
+                candidate = json.loads(wf_file.read_text())
+                if _matches_spec_file(candidate, file_path):
+                    return candidate
+            except (OSError, json.JSONDecodeError):
+                pass
+    wf_dir = _root / ".claude" / "workflows"
+    if not wf_dir.exists():
+        return None
+    for f in sorted(wf_dir.glob("*.json")):
+        try:
+            data = json.loads(f.read_text())
+        except (json.JSONDecodeError, OSError):
+            continue
+        if _matches_spec_file(data, file_path):
+            return data
+    return None
+
+
+def _approved_phases() -> list:
+    """PHASES aus workflow.py — dieselbe Quelle wie `_check_po_briefing`.
+
+    Lazy importiert, damit ein Importfehler das Gate nicht lahmlegt; der
+    Fallback haelt dieselbe Reihenfolge.
+    """
+    try:
+        from workflow import PHASES
+        return list(PHASES)
+    except ImportError:
+        return [
+            "phase0_idle", "phase1_context", "phase2_analyse", "phase3_spec",
+            "phase4_approved", "phase5_tdd_red", "phase6_implement",
+            "phase6b_adversary", "phase7_validate", "phase8_complete",
+        ]
 
 
 def _has_override_token(workflow_name: str = None) -> bool:
@@ -471,6 +573,31 @@ def main():
     # path, and BEFORE every other check below.
     if _is_outside_project(file_path):
         allow()
+
+    # 1d. Spec-Freeze nach Freigabe (#230): eine freigegebene Spec darf nicht
+    # mehr angefasst werden — jede Aenderung verschiebt spec_sha256() und
+    # blockt damit jede spaetere Transition >= phase4_approved ueber
+    # _check_po_briefing() ("PO-Briefing ist veraltet"), inklusive
+    # phase8_complete. Muss VOR Schritt 2/2b stehen: "docs/" und r"\.md$"
+    # wuerden die Spec sonst bedingungslos durchwinken.
+    spec_workflow = _find_workflow_by_spec_file(file_path)
+    if spec_workflow is not None:
+        _phases = _approved_phases()
+        _phase = spec_workflow.get("current_phase", "phase0_idle")
+        if _phase in _phases and _phases.index(_phase) >= _phases.index("phase4_approved"):
+            _wf_name = spec_workflow.get("name", "unknown")
+            if not (_has_override_token(_wf_name)
+                    or _has_override_token("__infra__")
+                    or _has_override_token()):
+                block(
+                    "BLOCKED: Freigegebene Spec darf nicht mehr geaendert werden "
+                    f"({Path(file_path).name}, Phase {_phase}).\n"
+                    "→ Jede Aenderung verschiebt den PO-Briefing-Hash und blockt "
+                    "phase8_complete (#230).\n"
+                    "→ Regulaerer Weg fuer eine gewollte Nachbesserung: User tippt "
+                    "'override' (gilt 1 h, protokolliert in "
+                    ".claude/user_override_token.json)."
+                )
 
     # 2. Always-allowed directories (component match — avoids false positives
     # when project folder names happen to contain "test/" etc.)
