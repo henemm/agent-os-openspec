@@ -1,32 +1,32 @@
 ---
 spec_file: docs/specs/feat-285-precondition-origins.md
-spec_sha256: d9e30a174557a09ff92430a46f8d614e8615b68fee54a676412800aa3be5a1df
+spec_sha256: 8556b94dfc5486de6296fb567d227e8a267fb4097538ce3b1948721c1e137aa3
 ---
 
 # PO-Briefing: feat-273-erreichbarkeitspruefung
 
 - **Spec:** docs/specs/feat-285-precondition-origins.md
-- **Issue:** #285 (Scheibe 1 von Epic #273)
+- **Issue:** #285 (Teilvorgang von Epic #273)
 - **Erstellt:** 2026-09-28
 
 ## Was gebaut wird
 
-Ein Werkzeug findet automatisch, welche Felder Tests nur künstlich vorgeben und wo der Betrieb sie wirklich setzt – als sortierte Verdachtsliste für Prüfer.
+Ein Hilfsprogramm listet automatisch auf, wie oft eine Testvorbedingung im Betrieb tatsächlich vorkommt — als Verdachtsliste für Prüfende, nicht als Eingriff.
 
 ## Definition of Done
 
-Jede Abnahmebedingung hat einen automatischen Nachweis; zusätzlich bestätigt ein einmaliger, dokumentierter Testlauf am echten Altfall aus einem anderen Projekt den Befund im vollen Rauschen.
+Fertig ist es, wenn es am dokumentierten echten Fehlerfall zuverlässig eine kurze Verdachtsgruppe zeigt und jede Prüfbedingung nachgewiesen ist.
 
 ## Wie geprüft wird
 
-Automatische Tests decken alle sieben Kernbedingungen ab, inklusive eines eingefrorenen echten Beispiels; die zusätzliche Vollprobe bleibt ein einmaliger, nicht wiederholbarer Handlauf.
+Automatische Prüfungen decken jeden Punkt ab; der Nachweis am vollständigen alten Projekt bleibt ein einmaliger, nicht wiederholbarer Handnachweis.
 
 ## Kritische Anmerkungen
 
-- Die Vollprobe ist Pflicht für „fertig", läuft aber nur einmal von Hand gegen einen Ordner, der nur auf einem Rechner liegt.
-- Umfang wächst auf rund 360 statt 250 Zeilen; meist unverändertes fremdes Beispielmaterial, kaum neuer eigener Code.
-- Das Werkzeug erkennt nur einfache Zuweisungen; Umwege wie Reflection oder Setter-Methoden bleiben unentdeckt – es ist ein Hinweis, kein Beweis.
+- Die ursprünglich verlangte Bedingung ('unter den ersten fünf Treffern') wurde nach Messung auf eine schwächere Gruppen-Zugehörigkeit abgeschwächt.
+- Ein zusätzlicher Nachweis am vollständigen alten Projekt wurde ergänzt, bleibt aber einmalig und unautomatisiert.
+- Der Umfang liegt mit rund 360 Zeilen deutlich über der üblichen Obergrenze von 250.
 
 ## Freigabe-Frage
 
-Reicht dieser Regelweg als Verdachtsliste für Prüfer, obwohl die abschließende Vollprobe nur einmalig und nicht von jedem wiederholbar ist?
+Genügt die abgeschwächte Erfolgsmessung als Nachweis, oder soll die ursprünglich verlangte Messlatte gehalten werden?
