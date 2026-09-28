@@ -2,7 +2,7 @@
 entity_id: fix-259-adversary-diff-binding
 type: bugfix
 created: 2026-09-27
-updated: 2026-09-27
+updated: 2026-09-28
 status: draft
 version: "1.0"
 workflow: fix-259-adversary-diff-binding
@@ -14,7 +14,7 @@ test_targets: ["tests/test_adversary_coverage_gate_259.py"]
 
 ## Approval
 
-- [ ] Approved
+- [x] Approved
 
 ## GitHub Issue
 
@@ -485,21 +485,21 @@ Fertig ist diese Änderung, wenn:
   während `src/module_b.py` gestaged ist / When `bash_gate.py` einen `git commit` über die
   echten Hook-Skripte prüft / Then Exit 2, und die Meldung nennt `src/module_b.py` als nicht
   zitierte und nicht gehashte Datei.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `test_ac1_foreign_dialog_does_not_cover_staged_file` — alle in `tests/test_adversary_coverage_gate_259.py`
 
 - **AC-2:** Given denselben Zustand wie in AC-1 in `phase7_validate`, ohne dass zuvor committet
   wurde / When
   `workflow.py phase phase8_complete`, `workflow.py complete` bzw. `workflow.py finish`
   ausgeführt wird / Then ist der Exit-Code in allen drei Fällen ungleich 0, und stderr nennt
   `src/module_b.py`.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `test_ac2_phase8_blocks_uncovered_change` (`phase phase8_complete`/`complete`/`finish`) — alle in `tests/test_adversary_coverage_gate_259.py`
 
 - **AC-3:** Given ein Dialog-Protokoll, das jede tatsächlich geänderte Code-Datei per
   `Code reference:` zitiert und im `## Geprüfte Dateien`-Block hasht / When derselbe `git commit`
   geprüft und anschließend `workflow.py phase phase8_complete` ausgeführt wird / Then ist der
   Commit Exit 0 und der Phasenübergang gelingt, ohne zusätzlichen Schritt gegenüber dem
   heutigen, dokumentierten #253-Ablauf.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `test_ac3_documented_path_with_required_files`; Regressionswächter `test_ac3_fully_cited_dialog_still_opens_commit_and_phase8` — alle in `tests/test_adversary_coverage_gate_259.py`
 
 - **AC-4:** Given ein `VERIFIED`-Verdict mit vollständig zitiertem und gehashtem Dialog / When
   ein `git commit` in Index-Form, mit `-a`/`-am`, mit expliziter Pfadangabe, mit leerem Index,
@@ -508,7 +508,7 @@ Fertig ist diese Änderung, wenn:
   Formen jede Code-Datei, die so committet würde (bei `-a`, Pfadangabe, leerem Index und
   `--amend` bewusst als Obermenge): Ist eine solche Datei nicht zitiert, endet die Prüfung mit
   Exit 2 und ihrem Namen in der Meldung; ist sie zitiert und gehasht, mit Exit 0.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `test_ac4_commit_set_covers_every_commit_form` (6 Commit-Formen × nicht zitiert/zitiert) — alle in `tests/test_adversary_coverage_gate_259.py`
 
 - **AC-5:** Given ein Dialog, der alle geänderten Code-Dateien bis auf eine gelöschte, eine
   umbenannte und eine Nicht-Code-Datei zitiert / When Commit-Gate bzw. Phase 8 die
@@ -516,13 +516,13 @@ Fertig ist diese Änderung, wenn:
   neuen Pfad, eine Nicht-Code-Datei (`docs/`, `tests/`, `scripts/`, `*.md`/`*.json`/`*.yaml`)
   zählt nicht, und eine per `strict_code_gate` erweiterte bzw. eingeschränkte Endungsliste wird
   entsprechend der Konfiguration angewendet.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `test_ac5_rename_delete_and_non_code` (Commit/Phase 8), `test_ac5_strict_code_gate_extension_list_applies` (erweitert/eingeschränkt) — alle in `tests/test_adversary_coverage_gate_259.py`
 
 - **AC-6:** Given eine Code-Datei, die teilweise gestagt ist (der gestagte Inhalt unterscheidet
   sich vom Arbeitsbaum-Inhalt) / When `git commit` ohne `-a`, ohne Pfadangabe und ohne
   begleitendes `git add` geprüft wird / Then Exit 2 mit dem Hinweis auf teilweises Staging und
   dem Dateinamen; bei `git commit -a` mit derselben Ausgangslage blockiert diese Prüfung nicht.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `test_ac6_partially_staged_file_blocks_index_commit` (Index/`-a`) — alle in `tests/test_adversary_coverage_gate_259.py`
 
 - **AC-7:** Given (a) ein frisch gestarteter Workflow, (b) ein Rebase auf einen neuen
   `origin/main` nach dem Start, (c) ein zweiter Workflow auf demselben Branch ohne Rebase nach
@@ -534,7 +534,7 @@ Fertig ist diese Änderung, wenn:
   gilt `base_commit`; in (e) zählen Index und untrackte Dateien; in (f) zählt nur
   Ungecommittetes, und die Meldung nennt den degradierten Rückfall; in (g) misst die Prüfung im
   Worktree, nicht im Hauptrepo.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `test_ac7_start_records_base_commit` (a: `feature`/`bug`/`feature-fast`/ohne HEAD; g: Worktree), `test_ac7_phase8_base_selection` (b–g × eigene Datei nicht zitiert/fremde Datei zählt nicht) — alle in `tests/test_adversary_coverage_gate_259.py`
 
 - **AC-8:** Given ein gültiger Git-Arbeitsbaum, in dem der Diff-Aufruf selbst unerwartet
   fehlschlägt (z. B. über einen `git`-Wrapper im `PATH`) / When Commit-Gate oder
@@ -542,13 +542,13 @@ Fertig ist diese Änderung, wenn:
   fehlgeschlagenen Befehl nennt; liegt dagegen gar kein Git-Repository bzw. nur ein leeres
   `.git`-Verzeichnis vor, entfällt die Abdeckungsprüfung ersatzlos, und beide Gates verhalten
   sich wie vor dieser Änderung.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `test_ac8_git_failure_in_valid_worktree_blocks` (Commit/Phase 8); Regressionswächter `test_ac8_without_git_worktree_coverage_is_skipped` — alle in `tests/test_adversary_coverage_gate_259.py`
 
 - **AC-9:** Given ein per `add-artifact` registriertes Dialog-Protokoll mit einem absoluten Pfad
   außerhalb von Projekt und Worktree bzw. mit einem Symlink, der nach außen zeigt / When das
   Protokoll als Nachweis geprüft wird / Then gilt der Nachweis als nicht erbracht; liegt
   dasselbe Protokoll dagegen im Worktree, wird es akzeptiert.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `test_ac9_artifact_outside_project_is_rejected` (absolut/Symlink × Commit/Phase 8); Regressionswächter `test_ac9_artifact_inside_worktree_is_accepted` — alle in `tests/test_adversary_coverage_gate_259.py`
 
 - **AC-10:** Given Meldungstext und tatsächliches Verdict eines gültigen Protokolls
   widersprechen sich im Wortlaut (Meldung von `validate_dialog_artifact_ex` per Test-Patch
@@ -558,21 +558,21 @@ Fertig ist diese Änderung, wenn:
   auswerten / Then entscheidet das geparste Verdict (`dialog_verdict`): Das
   `AMBIGUOUS`-Protokoll ergibt den Widerspruchs-Block bzw. ein `AMBIGUOUS`-Verdict im State, das
   `VERIFIED`-Protokoll weder Widerspruch noch `AMBIGUOUS`.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `test_ac10_check_dialog_evidence_uses_parsed_verdict`, `test_ac10_qa_gate_checklist_uses_parsed_verdict`, `test_ac10_dialog_verdict_parses_structured_value` — alle in `tests/test_adversary_coverage_gate_259.py`
 
 - **AC-11:** Given ein Workflow ohne Namen (leerer bzw. fehlender `name`-Wert) und eine Datei
   unter dem generischen Pfad `docs/artifacts/adversary-dialog.md` / When der Dialog-Nachweis
   gesucht wird / Then wird diese Datei nicht als Standardpfad akzeptiert, und die Meldung
   erklärt, dass ohne Workflow-Namen kein Standardpfad existiert, ohne dabei den literalen
   Platzhalter `<workflow>` zu enthalten.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `test_ac11_no_default_path_without_workflow_name`, `test_ac11_nameless_workflow_generic_file_blocks` (Commit/Phase 8) — alle in `tests/test_adversary_coverage_gate_259.py`
 
 - **AC-12:** Given `config.yaml` → `adversary_coverage_gate.enabled: false` und dieselbe
   F001-Ausgangslage wie in AC-1 / When Commit-Gate und Phase 8 geprüft werden / Then verhalten
   sich beide exakt wie vor dieser Änderung — der F001-Commit wird nicht wegen fehlender
   Abdeckung blockiert, die Teilstaging-Prüfung läuft nicht, während die #253-Hash-Prüfung sowie
   F002 bis F004 unverändert weiter wirken.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `test_ac12_coverage_gate_enabled_only_explicit_false`, `test_ac12_kill_switch_only_covers_new_coverage` — alle in `tests/test_adversary_coverage_gate_259.py`
 
 - **AC-13:** Given ein gültiger User-Override-Token für den Workflow bzw. ein Workflow vom Typ
   `bug` oder `feature-fast` / When das Commit-Gate wegen fehlender Abdeckung, Teilstaging oder
@@ -580,14 +580,14 @@ Fertig ist diese Änderung, wenn:
   Fast-Track-Ausnahme diesen Block auf; für den Phase-8-Übergang existiert dafür kein
   Override-Pfad, und außerhalb der Phasen 6 bis 7 prüft das Commit-Gate die Abdeckung gar nicht
   erst.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `test_ac13_commit_block_lifted_by_token_fast_track_or_phase`, `test_ac13_phase8_has_no_override_path` — alle in `tests/test_adversary_coverage_gate_259.py`
 
 - **AC-14:** Given ein aktiver Workflow mit einer bekannten Phase-8-Änderungsmenge / When
   `python3 adversary_dialog.py required-files` ausgeführt wird / Then listet stdout genau die
   Dateien, die auch der Phase-8-Übergang prüft — je Zeile relativ zu `_hash_root()` bzw. absolut,
   wenn die Datei außerhalb davon liegt — während Basis-Information und ein etwaiger
   Degradations-Hinweis auf stderr erscheinen.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `test_ac14_required_files_lists_exactly_the_phase8_set`, `test_ac14_required_files_reports_degraded_base_on_stderr`, `test_ac14_required_files_absolute_outside_hash_root`, `test_ac14_required_files_exit_codes` — alle in `tests/test_adversary_coverage_gate_259.py`
 
 - **AC-15:** Given die bestehende Test-Suite für `edit_gate.py` (Verzeichnis-Match,
   Endungs-Liste, `strict_code_gate`-Überschreibung) / When `hook_utils.is_gated_code_path` die
@@ -597,7 +597,7 @@ Fertig ist diese Änderung, wenn:
   dieselben Entscheidungen wie die bisherigen edit_gate-Regeln, alle bestehenden
   edit_gate-Tests bleiben unverändert grün, und `edit_gate.CODE_EXTENSIONS` bleibt unter
   demselben Namen auflösbar.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `test_ac15_is_gated_code_path_matches_edit_gate` (14 Pfade), `test_ac15_constants_have_single_source_in_hook_utils`; Regressionswächter `test_ac15_edit_gate_constants_keep_names_and_values` plus die bestehenden edit_gate-Tests — alle in `tests/test_adversary_coverage_gate_259.py`
 
 - **AC-16:** Given die für #259 vorgesehenen Dokumentationsstellen (`/50-implement` Step 8c,
   `implementation-validator` Step 3 und 6, `/60-validate` Step 2b, `CLAUDE.md`,
@@ -605,7 +605,7 @@ Fertig ist diese Änderung, wenn:
   beschreibt jede Stelle die Abdeckungsprüfung korrekt — darunter `required-files`, den
   BROKEN-Pfad für einen Code-Fix in `/60-validate` und den Migrationshinweis in
   `CHANGELOG.md` — und `python3 scripts/sync_skills.py --check` meldet keine Drift.
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: `test_ac16_docs_describe_coverage_gate` (7 Doku-Stellen), `test_ac16_changelog_has_migration_note_for_259` — alle in `tests/test_adversary_coverage_gate_259.py`
 
 ## Test Plan
 
@@ -661,3 +661,4 @@ Automatische Tests (jeweils an eine oder mehrere Acceptance Criteria oben gebund
 ## Changelog
 
 - 2026-09-27: Initial spec created
+- 2026-09-28: Vom PO freigegeben (`approved`); Testzeilen nach TDD RED eingetragen
