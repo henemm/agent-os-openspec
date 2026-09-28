@@ -291,6 +291,52 @@ po_briefing_gate:
 ci_spec_gate:
   enabled: true
 
+# Beobachtbare Oberflaeche (Issue #260) — steuert NUR, ob `/60-validate` die
+# Schlussfrage "Soll ich den Code committen?" stellt. Kein Gate: die Pruefung
+# unterdrueckt eine Rueckfrage, sie erlaubt nichts. Gelesen von
+# `hook_utils.has_observable_surface()`, ausgegeben von
+# `workflow.py observable-surface`. Fail-closed: nur wenn JEDE geaenderte Datei
+# nachweislich keine Oberflaeche beruehrt, entfaellt die Frage.
+#
+# ACHTUNG Modulprojekte (ios-swiftui, home-assistant): `config_loader` merged
+# Modul-Configs NICHT. Eigene Oberflaechen-Muster (weitere Dashboard-Pfade,
+# Storyboards, Asset-Ordner) muessen HIER in die Projekt-config.yaml — ein
+# Eintrag in `modules/<name>/config.yaml` wirkt fuer diese Pruefung nicht.
+observable_surface:
+  # false → die Pruefung ist aus und die Schlussfrage wird IMMER gestellt
+  # (streng, nicht locker): abgeschaltet heisst hier "im Zweifel fragen".
+  enabled: true
+  # Was der PO unmittelbar sehen und beurteilen kann. Ein Treffer genuegt,
+  # damit die Frage bleibt. Zu breit ist unkritisch — es macht nur strenger.
+  surface_patterns:
+    - '(^|/)core/commands/.*\.md$'
+    - '(^|/)\.claude/commands/.*\.md$'
+    - '(^|/)skills/[^/]+/SKILL\.md$'
+    - '(^|/)CLAUDE\.md$'
+    - '(^|/)lovelace/.*\.ya?ml$'
+    - '\.(strings|xcstrings)$'
+    - '\.xcassets/'
+  # Was der PO nachweislich nicht beurteilen kann. Die Frage entfaellt nur,
+  # wenn JEDE geaenderte Datei hier trifft. Bewusst kein pauschales `\.md$`
+  # und kein pauschales `^\.claude/`: was keine der beiden Listen trifft,
+  # gilt als unbekannt und damit als Oberflaeche.
+  non_surface_patterns:
+    - '^docs/'
+    - '^tests?/'
+    - '(^|/)test_[^/]+\.py$'
+    - '(^|/)[^/]+_test\.(py|go|js|ts)$'
+    - '(^|/)[^/]+Tests?\.swift$'
+    - '^core/hooks/'
+    - '^scripts/'
+    - '^\.github/'
+    - '(^|/)(CHANGELOG|README|CONTRIBUTING)\.md$'
+    - '(^|/)\.gitignore$'
+    - '(^|/)\.editorconfig$'
+  # Basis-Stand fuer den Vergleich. Leer = aus `origin/HEAD` ableiten; laesst
+  # sich der Stand so nicht ermitteln, lautet die Antwort "no-base" und die
+  # Frage bleibt. Es gibt KEINEN geratenen Rueckfall wie "origin/main".
+  base_branch: ""
+
 # Specs Configuration
 specs:
   base_path: "docs/specs"

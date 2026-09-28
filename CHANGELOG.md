@@ -5,6 +5,48 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+**Beobachtbare Oberfläche erkennen — Schlussfrage in `/60-validate` abgestuft (#260, Hälfte 2 von #147)**
+
+Die Schlussfrage „Soll ich den Code committen?" wurde bisher immer gestellt, auch wenn eine
+Änderung ausschließlich Hooks, Tests oder interne Doku betraf — dort gibt es nichts, was der
+Product Owner beurteilen könnte. Die neue Prüfung entscheidet das regelbasiert aus der
+tatsächlich geänderten Dateiliste von `git` (ADR-0260, siehe
+`docs/specs/fix-260-observable-surface.md`).
+
+- `core/hooks/hook_utils.py`: neue Funktion `has_observable_surface() -> (bool, str)` plus
+  `observable_surface_report()` (zählende Variante) und Helfer für Basis-Stand und Dateiliste.
+  Die Dateiliste ist die Vereinigung aus vier `git`-Quellen, inklusive
+  `ls-files --others --exclude-standard` — eine neu angelegte, noch nicht hinzugefügte Datei
+  zählt mit. Zwei Default-Musterlisten als Modul-Konstanten
+  (`OBSERVABLE_SURFACE_PATTERNS`, `OBSERVABLE_NON_SURFACE_PATTERNS`).
+- `core/hooks/workflow.py`: neuer Unterbefehl `observable-surface`. Fünf Zeilen auf stdout
+  (`OBSERVABLE_SURFACE`, `REASON`, `FILES`, `ROOT`, `CONFIG`), Rückgabecode immer 0 — eine
+  Auskunft, kein Gate. Braucht bewusst keinen aktiven Workflow. `ROOT=`/`CONFIG=` machen die
+  Diskrepanz aus #153 sichtbar: Config aus dem Hauptrepo, Messung im Worktree.
+- `config.yaml`: neuer Block `observable_surface` (`enabled`, `surface_patterns`,
+  `non_surface_patterns`, `base_branch`) mit dem Hinweis, dass Modulprojekte ihre eigenen
+  Oberflächen-Muster hier eintragen müssen — `config_loader` merged Modul-Configs nicht.
+- `core/commands/60-validate.md` (+ generiertes `skills/60-validate/SKILL.md`): Pflicht-Aufruf
+  vor der Zusammenfassung und die Vier-Kombinationen-Tabelle aus Oberfläche × dokumentierter
+  Autonomie. Der bestehende Abschnitt „Autonomen Weiterlauf prüfen" bleibt unverändert daneben.
+
+**Fail-closed:** Nur der positive Nachweis, dass jede geänderte Datei nachweislich keine
+Oberfläche berührt, lässt die Frage entfallen. Jede Unsicherheit — fehlerhaft geformter oder
+abgeschalteter Config-Block, kein auflösbarer Basis-Stand, `git`-Fehler, leere Dateiliste,
+unbekannte Dateiendung — führt zur Frage. Befehlstexte (`core/commands/*.md`,
+`.claude/commands/*.md`, `skills/*/SKILL.md`, `CLAUDE.md`) gelten dabei als Oberfläche, nicht
+als unsichtbare Doku (PO-Entscheidung E1).
+
+### Tests
+
+- `tests/test_observable_surface_260.py`: 14 Tests (AC-1 bis AC-14), jeder mit eigenem
+  Wegwerf-Git-Repo im Subprozess — `load_config()`/`find_project_root()` cachen, ein
+  In-Prozess-Test mit mehreren Config-Ständen wäre reihenfolgeabhängig.
+
 ## [3.33.0] - 2026-09-27
 
 ### Changed
