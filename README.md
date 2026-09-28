@@ -141,7 +141,7 @@ between.
 | Approval (phase3→4) | `## Architektur-Entscheidung (ADR)` section filled (ADR number or justified "none") | Approval blocked |
 | Edit in phase6+ | RED artifacts + `## Acceptance Criteria` in spec | Edit blocked |
 | LoC limit | `git diff HEAD` ≤ 250 lines | Edit blocked |
-| git commit / phase 8 | Adversary verdict = VERIFIED + registered, stamped dialog artifact matching the current code | Commit / completion blocked |
+| git commit / phase 8 | Adversary verdict = VERIFIED + registered, stamped dialog artifact that cites and hashes every changed code file, not just some (#259) | Commit / completion blocked |
 | AMBIGUOUS verdict | `override-ambiguous` not set | Commit blocked |
 | `complete` | Execution log exists | Archive blocked |
 
