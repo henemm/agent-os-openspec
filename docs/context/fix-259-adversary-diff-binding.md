@@ -281,3 +281,42 @@ Keine davon blockiert, alle werden in der Spec entschieden:
 - [ ] Exakte Namen und Orte der neuen Funktionen und Wortlaut der Meldungen
 - [ ] Soll `workflow.py status` `base_commit` anzeigen? (Nice-to-have, nicht vorgesehen)
 - [ ] Wie entsteht `.claude/commands/80-workflow.md`, und wird es mitgeändert?
+
+## TDD RED — Hinweise für die Implementierung (2026-09-28)
+
+RED-Stand: `tests/test_adversary_coverage_gate_259.py`, 122 Tests, davon 94 rot und 28 grüne
+Regressionswächter, 0 Collection-Fehler. Basis ist `36d0101`, also `main` nach
+[#271](https://github.com/henemm/agent-os-openspec/pull/271) und
+[#274](https://github.com/henemm/agent-os-openspec/pull/274). Die übrige Suite ist grün
+(1379 passed). Beleg: `docs/artifacts/fix-259-adversary-diff-binding/test-red-output.txt`.
+
+Klärungen des Test-Agenten, entschieden (Tech Lead):
+1. **F004 auch im Commit-Gate-Hinweis:** `bash_gate._require_dialog_evidence` baut seinen
+   Ausweg-Hinweis mit `wf.get("name", "<workflow>")`. Bei leerem Namen darf dieser Hinweis
+   keinen `docs/artifacts/<workflow>/…`-Pfad vorschlagen, sondern nur den `add-artifact`-Weg.
+   Das folgt der Absicht von F004, denselben Wert in der Meldung zu nennen. Die Tests prüfen
+   den Grund-Text von `check_dialog_evidence`.
+2. **`.claude/commands/` in `ALWAYS_ALLOWED_DIRS`:** Der Eintrag hat zwei Pfad-Komponenten und
+   trifft beim komponentenweisen Vergleich deshalb nie. `is_gated_code_path` bildet das
+   unverändert nach (§1: verhaltensgleich). Harmlos, weil `.md` ohnehin freigestellt ist. Eine
+   mögliche Folgebeobachtung, nicht Teil von #259.
+3. **CHANGELOG:** Der Eintrag gehört unter das oberste `## [Unreleased]` (Z. 8). Er braucht den
+   Migrationshinweis und nennt `required-files` bzw. `base_commit`. Weiter unten steht noch ein
+   veralteter `[Unreleased]`-Block, der wird nicht angefasst.
+4. **Meldungskerne werden wörtlich getestet**, wie sie im Abschnitt Error Handling der Spec
+   stehen: „nicht zitiert“, „teilweise gestagt“, „nicht ermittelbar“, „nur HEAD“,
+   „außerhalb“/„ausserhalb“, „Standardpfad“, „Widerspruch“.
+5. **`required-files`:** Ohne aktiven Workflow steht „workflow“ auf stderr, bei einem Git-Fehler
+   „diff“. In beiden Fällen ist der Exit-Code 1.
+6. **Doku-Stichworte (AC-16, case-sensitiv geprüft):**
+   - CLAUDE.md, Abschnitt `### Hooks`, und WORKFLOW_GUIDE: `#259`, `required-files` und
+     `Änderungsmenge`/`Abdeckungsprüfung`
+   - CLAUDE.md, Abschnitt `## Adversary-Limit`: `#259`, `60-validate`/Auto-Fix
+   - `implementation-validator`, Step 3 und Step 6: `required-files` bzw. „gelistet“/„listed“
+   - `/60-validate` Step 2b: `BROKEN` und `phase6_implement`, `/50-implement` oder Phase 6
+7. **Neu seit #271:** `hook_utils` enthält jetzt Helfer für Basis-Stand und Dateiliste
+   (`has_observable_surface`). Vor dem Neuschreiben ist zu prüfen, ob sie sich
+   wiederverwenden lassen, ohne die Semantik aus §2/§5 der Spec zu verändern (NUL-getrennt,
+   Toplevel als cwd, Basis-Wahl).
+8. **LoC-Budget:** Die Tests liegen als eigener Commit vor (`587ab18`, noch nicht gepusht).
+   Das Test-Delta der Implementierung zählt deshalb ab diesem Stand.
