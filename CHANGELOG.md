@@ -91,7 +91,7 @@ ist Hälfte 2 (#260) und nicht Teil dieser Version.
 
 ### Fixed
 
-**TDD-Gate hielt echte pytest-Ausgabe für gefälscht, sobald sie Framework-Doku zitiert (#262, Epic #199) — 3.33.1**
+**TDD-Gate hielt echte pytest-Ausgabe für gefälscht, sobald sie Framework-Doku zitiert (#262, Epic #199)**
 
 `tdd_enforcement._PLACEHOLDER_RE` lief über den kompletten Artefakt-Inhalt. Prüft ein RED-Test
 den Inhalt eines Framework-Dokuments (`skills/*/SKILL.md`, `core/commands/*.md`), schreibt

@@ -1,4 +1,4 @@
-# Fast Track: TDD-Gate blockt an seiner eigenen Platzhalter-Warnung (#262, 3.33.1)
+# Fast Track: TDD-Gate blockt an seiner eigenen Platzhalter-Warnung (#262)
 
 ## Problem
 
@@ -35,7 +35,10 @@ nicht #73 (TAP-Summenzeilen von `node --test`). Gleiche Familie wie Epic #199.
   `_CAPTURED_HEADER_RE`, `_SECTION_HEADER_RE`. Vorbild ist `_TAP_SUMMARY_RE` im selben Hook (#73).
 - Blockier-Meldung nennt Zeilennummer und Fundstelle. Im Livefall wies sie nur die Datei aus —
   das war der eigentliche Zeitfresser bei der Ursachensuche.
-- Version 3.33.1, `skills/` neu erzeugt (nur der Versions-Marker aendert sich), CHANGELOG.
+- CHANGELOG unter `[Unreleased] → Fixed`. Kein Versions-Bump: `plugin.json` bleibt bei 3.33.0,
+  `skills/` damit unveraendert. Ein Bump wuerde die Release-Bereitschaftspruefung ausloesen
+  (CHANGELOG-Release-Abschnitt, README- und CLAUDE.md-Marker) — das ist eine Release-Aufgabe,
+  nicht Teil dieser Korrektur. Vorbild: PR #271 (#260).
 - **Nicht enthalten:** Vorschlag (2) aus dem Vorgang — ein Artefakt mit erkennbarer
   Test-Zusammenfassung pauschal als echt durchwinken. Das haette das Gate geoeffnet: eine
   erfundene Datei mit gefaelschter Summenzeile waere trotz „TODO: echte Ausgabe einfuegen"
