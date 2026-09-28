@@ -91,6 +91,40 @@ ist Hälfte 2 (#260) und nicht Teil dieser Version.
 
 ### Fixed
 
+**TDD-Gate hielt echte pytest-Ausgabe für gefälscht, sobald sie Framework-Doku zitiert (#262, Epic #199)**
+
+`tdd_enforcement._PLACEHOLDER_RE` lief über den kompletten Artefakt-Inhalt. Prüft ein RED-Test
+den Inhalt eines Framework-Dokuments (`skills/*/SKILL.md`, `core/commands/*.md`), schreibt
+pytest bei gescheiterter Assertion das ganze Dokument in die Ausgabe — und
+`skills/40-tdd-red/SKILL.md` enthält die Zeile „❌ **Placeholder artifacts** → Hook will block
+implementation". Das Gate blockte damit jeden `Edit`/`Write` in `phase6_implement` an seiner
+eigenen Warnung vor gefälschten Artefakten. Live aufgetreten am 2026-09-27 im Vorgang
+`fix-147-validierung-abstufen`; die Blockade war nur über `_ALWAYS_ALLOWED`-Pfade und `Bash`
+zu umgehen, also gar nicht, sobald noch eine Code-Datei zu schreiben war.
+
+- `core/hooks/tdd_enforcement.py`: Die Platzhalter-Suche sieht nur noch den **Rahmen**, den der
+  Runner selbst erzeugt. Vom Runner **zitierter** Fremdinhalt ist ausgenommen — `E `-Zeilen
+  (Assertion-Detail/longrepr), `> `-Zeilen (ausgeführte Quellzeile) und aufgefangene
+  Ausgabeblöcke (`---- Captured stdout call ----` bis zum nächsten Abschnittskopf). Neue Helfer
+  `_iter_frame_lines()` und `_find_placeholder()`, neue Muster `_QUOTED_LINE_RE`,
+  `_CAPTURED_HEADER_RE`, `_SECTION_HEADER_RE`. Gleiches Vorgehen wie `_TAP_SUMMARY_RE` für
+  `node --test` (#73), nur allgemeiner; die Fehler-Evidenz-Prüfung (`_FAILURE_RE`) läuft
+  unverändert auf dem Originaltext.
+- Der Abschnittskopf verlangt mindestens zehn Füllzeichen plus Titel, damit eine `---`-Zeile aus
+  zitiertem Markdown (YAML-Frontmatter) einen aufgefangenen Block nicht vorzeitig beendet.
+- Die Blockier-Meldung nennt jetzt **Zeilennummer und Fundstelle**. Im Livefall wies sie nur die
+  Datei aus — das war der eigentliche Zeitfresser bei der Ursachensuche.
+
+**Bewusst nicht gemacht:** Ein Artefakt mit erkennbarer Test-Zusammenfassung pauschal als echt
+durchzuwinken (Vorschlag 2 im Vorgang). Das hätte das Gate geöffnet — eine erfundene Datei mit
+gefälschter Summenzeile wäre trotz `TODO: echte Ausgabe einfügen` durchgekommen. Der Fehlalarm
+verschwindet ohne diese Lockerung; Platzhalter im Artefakt-Rahmen blocken weiterhin.
+
+Abgrenzung: nicht #89 (Wort als Teilstring in einem Bezeichner, per `\b`-Grenzen gelöst) und
+nicht #73 (TAP-Summary von `node --test`). Regressionstests:
+`tests/test_tdd_enforcement_embedded_content_262.py` (8 Fälle, davon 3 zur Absicherung, dass
+das Gate seine Zähne behält).
+
 **Commit-Gate und Phase 8 verlangen einen gültigen Adversary-Dialog-Nachweis (#253) — 3.32.1**
 
 `post_bash.py` setzte nach JEDEM grünen Testkommando `adversary_verdict = "VERIFIED:<framework>"`
