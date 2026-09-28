@@ -184,6 +184,50 @@ def test_edit_with_override_allowed(tmp_path):
     )
 
 
+# --- Known Limitation der Spec ("archivierte Specs sind kein Freeze-Ziel"):
+#     abgeschlossener Workflow + stehengebliebene Env-Var (Finding F001) ---
+
+def test_archived_workflow_with_stale_env_var_allows_edit(tmp_path):
+    """Archivierter Workflow + stale OPENSPEC_ACTIVE_WORKFLOW → Exit 0.
+
+    Nach `workflow.py finish` wandert die Workflow-JSON nach `_archive/`, die
+    `active_workflow`-Datei und der settings.local.json-Eintrag verschwinden —
+    aber die Env-Var der aufrufenden Shell bleibt stehen (ein Kindprozess kann
+    sie nicht löschen), und `resolve_active_workflow()` prüft diese dritte
+    Quelle nicht auf Existenz. Griff der Freeze-Check über
+    `_read_active_workflow()` (mit dessen `_archive/`-Fallback), wäre die Spec
+    eines längst abgeschlossenen Workflows dauerhaft eingefroren.
+
+    Die Spec garantiert das Gegenteil (Implementation Details: "Archivierte
+    Workflows (`_archive/`) werden ausgeschlossen — eine archivierte Spec ist
+    kein Freeze-Ziel mehr").
+    """
+    proj = _make_project(tmp_path)
+    home = tmp_path / "home"
+    (home / ".claude").mkdir(parents=True)
+    spec = _make_spec(proj)
+
+    # Workflow NUR im Archiv — keine Live-Datei unter .claude/workflows/
+    archive = proj / ".claude" / "workflows" / "_archive"
+    archive.mkdir(parents=True)
+    (archive / "archived-wf.json").write_text(json.dumps({
+        "name": "archived-wf",
+        "current_phase": "phase8_complete",
+        "spec_file": "docs/specs/fix-230-test.md",
+        "affected_files": [],
+        "red_test_done": True,
+    }))
+
+    # Stale Env-Var zeigt weiter auf den archivierten Namen
+    result = _run_edit_gate(_env(proj, "archived-wf", home), str(spec), cwd=str(proj))
+
+    assert result.returncode == 0, (
+        f"Die Spec eines archivierten Workflows darf nicht eingefroren bleiben, "
+        f"auch wenn OPENSPEC_ACTIVE_WORKFLOW noch auf ihn zeigt, "
+        f"aber returncode={result.returncode}. stderr={result.stderr!r}"
+    )
+
+
 # --- AC-4: docs-updater.md verbietet das Anfassen freigegebener Specs (RED heute) ---
 
 def test_docs_updater_no_longer_promises_unconditional_spec_edit():
