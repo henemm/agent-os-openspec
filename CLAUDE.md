@@ -216,6 +216,7 @@ phase6_implement → User-Freigabe ("go") → phase6b_adversary → Dialog → V
 ### Hooks
 - `post_bash.py` erkennt Test-Framework-Output und vermerkt ihn nur als Hinweis `last_test_run` — es setzt kein Verdict (#253)
 - `bash_gate.py` (bei `git commit`) und der Uebergang nach Phase 8 akzeptieren VERIFIED (bzw. AMBIGUOUS+Override) nur mit gueltigem, gestempeltem Dialog-Artefakt (`adversary_dialog.check_dialog_evidence`)
+- Abdeckungsprüfung (#259): der Hash-Block muss jede Code-Datei der Änderungsmenge binden — beim Commit der entstehende Commit (teilweise gestagt blockt), in Phase 8 alles seit `base_commit` bzw. `merge-base(origin/main, HEAD)`; `adversary_dialog.py required-files` listet sie, Kill-Switch `adversary_coverage_gate.enabled`
 - `qa_gate.py` validiert Test-Output + optional Adversary-Dialog-Checklist (`--checklist`)
 
 ### Fresh Eyes Inspector
@@ -496,3 +497,4 @@ phase6_implement → Adversary → VERIFIED → workflow.py phase phase7_validat
 - Bei BROKEN: Gezielten Fix-Agenten spawnen, dann NUR EINE weitere Adversary-Runde
 - Zweites VERIFIED nach Fix: direkt zu phase7, kein dritter Lauf
 - Zweites BROKEN nach Fix: Eskalation an User, kein weiterer Agent
+- Ein durch `/60-validate` erzwungener Code-Fix zählt wie BROKEN (#259): zurück zu `phase6_implement`, Adversary-Runde aus demselben Kontingent

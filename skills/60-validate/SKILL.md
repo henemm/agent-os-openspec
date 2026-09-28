@@ -117,6 +117,10 @@ Artefakt, dessen gehashte Dateien zum aktuellen Code passen. Ein gruener Testlau
 Datei (`Code reference:`), blockt Phase 8, bis ein neuer Dialog gefuehrt, gestempelt und registriert
 ist (`/50-implement` Step 8).
 
+**Gate-Wirkung (#259):** Zusaetzlich muss der Hash-Block jede seit der Basis geaenderte Code-Datei
+binden — `adversary_dialog.py required-files` listet genau diese Aenderungsmenge. Eine nicht zitierte
+Code-Datei (etwa aus einem Fix nach dem Dialog) blockt Phase 8 ebenso wie eine geaenderte zitierte.
+
 ## Your Tasks
 
 ### Step 1: Parallele Validierung (4x Haiku)
@@ -151,9 +155,16 @@ Werte die 4 Reports aus:
 **Step 2a: Alle Checks bestanden**
 -> Weiter zu Step 3
 
-**Step 2b: Fehler gefunden -> Auto-Fix (general-purpose/Sonnet)**
+**Step 2b: Fehler gefunden -> Auto-Fix nur fuer Nicht-Code (general-purpose/Sonnet)**
 
-Bei Fehlern dispatche einen **general-purpose/Sonnet Subagenten**:
+Auto-Fix darf nur Nicht-Code aendern (Doku, Tests, Config — Code im Sinne des TDD-Gates,
+`is_gated_code_path`, ist tabu). **Braucht ein Fund eine Code-Aenderung, ist das kein Auto-Fix,
+sondern der BROKEN-Pfad (#259):** zurueck zu `phase6_implement`, gezielter Fix per Developer Agent
+(`/50-implement`), danach eine Adversary-Runde aus demselben Kontingent wie jedes BROKEN-Verdict
+(Adversary-Limit in `CLAUDE.md`). Phase 8 erzwingt das ohnehin: ein Code-Fix aendert eine zitierte
+Datei (Hash) oder eine nicht zitierte (Abdeckung).
+
+Bei Nicht-Code-Fehlern dispatche einen **general-purpose/Sonnet Subagenten**:
 
 ```
 Task (general-purpose/sonnet, run_in_background: true): "Folgende Validierungsfehler wurden gefunden:
@@ -161,6 +172,7 @@ Task (general-purpose/sonnet, run_in_background: true): "Folgende Validierungsfe
 
   Behebe die Fehler. Beachte:
   - Nur die gemeldeten Fehler fixen, keine anderen Aenderungen
+  - Keine Code-Dateien aendern (nur Doku, Tests, Config) — Code-Fix = BROKEN-Pfad
   - Scoping Limits einhalten
   - Tests nach dem Fix erneut ausfuehren"
 ```

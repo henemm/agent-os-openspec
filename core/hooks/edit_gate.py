@@ -34,20 +34,8 @@ from pathlib import Path
 
 # --- Defaults (overridable via config.yaml) ---
 
-CODE_EXTENSIONS = {
-    ".swift", ".kt", ".java", ".py", ".js", ".ts", ".tsx", ".jsx",
-    ".go", ".rs", ".cpp", ".c", ".h", ".hpp", ".rb", ".php", ".cs",
-}
-
-ALWAYS_ALLOWED_DIRS = [
-    "Tests/", "UITests/", "Test/", "test/", "__tests__/", "tests/",
-    "spec/", "docs/", ".claude/commands/", "scripts/", "tools/",
-]
-
-ALWAYS_ALLOWED_PATTERNS = [
-    r"\.md$", r"\.txt$", r"\.json$", r"\.yaml$", r"\.yml$",
-    r"\.toml$", r"\.gitignore$", r"README", r"CHANGELOG", r"LICENSE",
-]
+# Code-Klassifikation: eine Quelle fuer TDD-Gate und Nachweis-Gate (#259).
+from hook_utils import CODE_EXTENSIONS, ALWAYS_ALLOWED_DIRS, ALWAYS_ALLOWED_PATTERNS  # noqa: E402
 
 PROTECTED_STATE_FILES = [
     ".claude/workflows/", "workflow_state.json", "user_override_token.json",

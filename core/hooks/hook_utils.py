@@ -688,6 +688,51 @@ def is_code_file(file_path: str) -> bool:
     return any(file_path.endswith(ext) for ext in code_extensions)
 
 
+# --- Code-Klassifikation: TDD-Gate (edit_gate.py) und Nachweis-Gate (#259) ---
+# Eine Definition fuer beide Gates; per config.yaml → strict_code_gate
+# ueberschreibbar. edit_gate.py importiert die drei Listen unter denselben Namen.
+CODE_EXTENSIONS = {
+    ".swift", ".kt", ".java", ".py", ".js", ".ts", ".tsx", ".jsx",
+    ".go", ".rs", ".cpp", ".c", ".h", ".hpp", ".rb", ".php", ".cs",
+}
+
+ALWAYS_ALLOWED_DIRS = [
+    "Tests/", "UITests/", "Test/", "test/", "__tests__/", "tests/",
+    "spec/", "docs/", ".claude/commands/", "scripts/", "tools/",
+]
+
+ALWAYS_ALLOWED_PATTERNS = [
+    r"\.md$", r"\.txt$", r"\.json$", r"\.yaml$", r"\.yml$",
+    r"\.toml$", r"\.gitignore$", r"README", r"CHANGELOG", r"LICENSE",
+]
+
+
+def is_gated_code_path(file_path: str, config: "dict | None" = None) -> bool:
+    """Ist das eine Code-Datei nach der TDD-Gate-Definition (edit_gate.py 2/2b/3)?
+
+    Freigestellter Ordner (komponentenweise) oder Muster → nein; sonst zaehlt die
+    kleingeschriebene Endung. Ohne `config` wird config.yaml geladen. Ob der Pfad
+    im Projekt liegt, entscheidet diese Funktion bewusst nicht (#259 §1).
+    """
+    if config is None:
+        try:
+            from config_loader import load_config
+            config = load_config()
+        except Exception:
+            config = {}
+    section = config.get("strict_code_gate") if isinstance(config, dict) else None
+    section = section if isinstance(section, dict) else {}
+    code_ext = set(section.get("code_extensions", list(CODE_EXTENSIONS)))
+    allowed_dirs = section.get("always_allowed_dirs", ALWAYS_ALLOWED_DIRS)
+    allowed_patterns = section.get("always_allowed_patterns", ALWAYS_ALLOWED_PATTERNS)
+    parts = set(Path(file_path).parts)
+    if any(d.rstrip("/") in parts for d in allowed_dirs):
+        return False
+    if any(re.search(p, file_path, re.IGNORECASE) for p in allowed_patterns):
+        return False
+    return Path(file_path).suffix.lower() in code_ext
+
+
 def find_main_repo_from_worktree(start: Path) -> "Path | None":
     """If start is inside a git worktree, return the linked main repo root.
 

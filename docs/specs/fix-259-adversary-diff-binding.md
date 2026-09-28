@@ -176,11 +176,16 @@ Vier Fälle, je nach Aufrufform von `git commit` im geprüften Bash-Kommando:
 
 - **Index (Normalfall):** `git diff --cached -z --name-only --diff-filter=d`; ohne HEAD gegen den
   leeren Baum (git-Standardverhalten für `--cached` in einem Repo ohne Commit).
-- **`-a`/`--all` (auch gebündelt wie `-am`), leerer Index oder Pfadangabe:** `git diff -z
-  --name-only --diff-filter=d HEAD` (Arbeitsbaum gegen HEAD); ohne HEAD nur der Index.
-- **`--amend`:** gegen `HEAD~1` (Arbeitsbaum, Obermenge aus bisherigem Commit-Inhalt plus
-  Nachbesserung). Ohne `HEAD~1` (Amend des Wurzel-Commits) gilt dieselbe Menge wie ohne
-  `--amend`.
+- **`-a`/`--all` (auch gebündelt wie `-am`), leerer Index oder Pfadangabe:** zusätzlich zum
+  Index `git diff -z --name-only --diff-filter=d HEAD` (Arbeitsbaum gegen HEAD); ohne HEAD nur
+  der Index. Vereinigung, keine Ersetzung: Eine gestagte Änderung, deren Arbeitsbaum danach auf
+  den HEAD-Stand zurückgesetzt wurde, fehlt im Arbeitsbaum-Vergleich, wird mit `-i`/`--include`
+  oder begleitendem `git add` aber trotzdem committet.
+- **`--amend`:** zusätzlich (Vereinigung) Index und Arbeitsbaum gegen `HEAD~1`
+  (`git diff --cached … HEAD~1` und `git diff … HEAD~1`) — Obermenge aus bisherigem
+  Commit-Inhalt plus Nachbesserung, auch wenn der Arbeitsbaum eine Datei des bisherigen Commits
+  auf den `HEAD~1`-Stand zurücksetzt. Ohne `HEAD~1` (Amend des Wurzel-Commits) gilt dieselbe
+  Menge wie ohne `--amend`.
 - **`git add … && git commit …` im selben Bash-Aufruf** (erkannt über `"add" in
   hook_utils.git_subcommands(command)`): der Index spiegelt zum Hook-Zeitpunkt noch den Stand
   VOR dem `add`. Die Menge wird deshalb um `git ls-files -z --others --exclude-standard`
@@ -191,9 +196,12 @@ Vier Fälle, je nach Aufrufform von `git commit` im geprüften Bash-Kommando:
 Erkennung von `-a` und Pfadangabe per Token-Analyse der `commit`-Argumente: jedes
 Nicht-Options-Token, das nicht der Wert einer wertnehmenden Option ist (`-m`, `-F`, `-C`, `-c`,
 `-t`, `--author`, `--date`, `--cleanup`, `--fixup`, `--squash`, `--trailer`), gilt als Pfadangabe,
-ebenso alles nach `--`. Jede Unsicherheit führt zur größeren Menge; eine Fehlklassifikation
-vergrößert die Menge nur, sie verkleinert sie nie. Nach der Ermittlung: `--diff-filter=d`
-entfernt Löschungen, danach filtert `is_gated_code_path` auf Code-Dateien.
+ebenso alles nach `--`. `--amend` zählt nur als Options-Token der `commit`-Argumente (auch
+abgekürzt, etwa `--amen`, das git akzeptiert), nie als Teil eines Optionswerts wie der
+Commit-Nachricht. Jede Unsicherheit (Aufruf nicht zerlegbar, kein direkter `commit`-Aufruf) führt
+zur größeren Menge, einschließlich Amend-Modus; eine Fehlklassifikation vergrößert die Menge nur,
+sie verkleinert sie nie. Nach der Ermittlung: `--diff-filter=d` entfernt Löschungen, danach
+filtert `is_gated_code_path` auf Code-Dateien.
 
 ### 4. Teilweise gestagt (Commit-Gate, E11)
 
@@ -241,7 +249,13 @@ Dateien). Danach `is_gated_code_path`-Filter.
 ### 6. Git-Fehler (E3a) — fail-closed sobald ein gültiger Arbeitsbaum feststeht
 
 Strukturelles Fehlen (kein Repo, leeres `.git`, kein `origin/main`, kein `base_commit`, kein
-`HEAD`) degradiert nur durch die Rückfall-Kette oben — es blockt nie. Schlägt dagegen ein
+`HEAD`) degradiert nur durch die Rückfall-Kette oben — es blockt nie. Ob überhaupt ein Repository
+vorliegt, entscheidet bei gescheitertem `git rev-parse --show-toplevel` nicht die git-Ausgabe,
+sondern ein Befund im Dateisystem, von der Wurzel aufwärts: ein `.git`-Verzeichnis mit `HEAD`,
+eine `.git`-Datei, deren `gitdir:`-Ziel `HEAD` enthält (Worktree, Submodul), oder ein gesetztes
+`GIT_DIR`. Mit einem solchen Befund ist das Scheitern ein git-Fehler (fail-closed, s. u.), ohne
+ihn gibt es kein Repository. Sonst könnte ein vollständig scheiterndes git — etwa durch einen
+Wrapper oder durch „dubious ownership“ — als „kein Repository“ durchgehen. Schlägt dagegen ein
 git-Unterprozess in einem nachweislich gültigen Arbeitsbaum unerwartet fehl (Exit ungleich 0 oder
 Exception, z. B. durch einen fehlerhaften `git`-Wrapper im `PATH`), blockt sowohl das Commit-Gate
 als auch der Phase-8-Übergang mit einem Grund, der den fehlgeschlagenen Befehl nennt. Am
@@ -429,8 +443,10 @@ gar nicht erst an.
 
 - Ein selbst geschriebenes, danach selbst gestempeltes Protokoll besteht weiterhin — geprüft
   werden Form und jetzt zusätzlich Umfang, nicht die Urheberschaft (vorbestehend aus #253 KL 1).
-- Ein Commit mit expliziter Pfadangabe zählt konservativ den gesamten Arbeitsbaum gegen `HEAD`,
-  nicht nur die angegebenen Pfade.
+- Ein Commit mit expliziter Pfadangabe zählt konservativ den gesamten Arbeitsbaum gegen `HEAD`
+  plus den Index, nicht nur die angegebenen Pfade. Ebenso zählt bei `-a` oder reiner Pfadangabe
+  eine gestagte, im Arbeitsbaum wieder zurückgenommene Datei mit, obwohl git sie dann nicht
+  committet (Ausweg: die Datei vorher unstagen).
 - Nur Workflows ohne gültigen `base_commit` (alt, oder durch einen Rebase umgeschrieben) in
   einem Repo ohne `origin/main` fallen auf "nur Ungecommittetes" zurück — die Meldung nennt
   diesen degradierten Rückfall ausdrücklich.
@@ -460,6 +476,16 @@ gar nicht erst an.
 - Rest-Risiko der Teilstaging-Prüfung: eine andere, bereits vorher teilweise gestagte Datei bleibt
   ungeprüft, wenn derselbe Bash-Aufruf zusätzlich ein `git add` für eine andere Datei enthält —
   in diesem Fall entfällt die Teilstaging-Prüfung für den gesamten Aufruf (Abschnitt 4).
+- Vorsätzlich manipuliertes git ist über git-Aufrufe nicht erkennbar. Gemeint ist ein Wrapper, der
+  gezielt nur einzelne Prüfaufrufe (`rev-parse --verify`, `merge-base`) scheitern lässt, `diff`
+  und `commit` aber durchreicht, oder der Erfolg mit erfundener Ausgabe vortäuscht. Ein solcher
+  Wrapper kann die Menge verkleinern — derselbe vorsätzliche Weg wie ein selbst geschriebenes
+  Protokoll (KL 1). Realistische Ausfälle, bei denen git insgesamt scheitert (defekte
+  Installation, „dubious ownership“), erfasst der Repo-Befund aus Abschnitt 6.
+- Die Repo-Suche aus Abschnitt 6 ignoriert `GIT_CEILING_DIRECTORIES` und Dateisystemgrenzen, und
+  eine unlesbare `.git`-Datei zählt als Befund (fail-closed). In solchen Umgebungen blockt ein
+  gescheitertes `rev-parse`; am Commit-Gate hebt der Override-Token das auf, für Phase 8 bleibt
+  der Kill-Switch.
 
 ## Definition of Done
 
@@ -508,7 +534,7 @@ Fertig ist diese Änderung, wenn:
   Formen jede Code-Datei, die so committet würde (bei `-a`, Pfadangabe, leerem Index und
   `--amend` bewusst als Obermenge): Ist eine solche Datei nicht zitiert, endet die Prüfung mit
   Exit 2 und ihrem Namen in der Meldung; ist sie zitiert und gehasht, mit Exit 0.
-  - Test: `test_ac4_commit_set_covers_every_commit_form` (6 Commit-Formen × nicht zitiert/zitiert) — alle in `tests/test_adversary_coverage_gate_259.py`
+  - Test: `test_ac4_commit_set_covers_every_commit_form` (6 Commit-Formen plus die Varianten `amend-in-message`, `amend-boomerang`, `add-staged-reverted`, `include-staged-reverted`, `amend-index-at-head`, je × nicht zitiert/zitiert); `test_ac4_amend_only_as_real_commit_option` (`--amend` nur als Options-Token, nie im Nachrichtentext) — alle in `tests/test_adversary_coverage_gate_259.py`
 
 - **AC-5:** Given ein Dialog, der alle geänderten Code-Dateien bis auf eine gelöschte, eine
   umbenannte und eine Nicht-Code-Datei zitiert / When Commit-Gate bzw. Phase 8 die
@@ -536,13 +562,14 @@ Fertig ist diese Änderung, wenn:
   Worktree, nicht im Hauptrepo.
   - Test: `test_ac7_start_records_base_commit` (a: `feature`/`bug`/`feature-fast`/ohne HEAD; g: Worktree), `test_ac7_phase8_base_selection` (b–g × eigene Datei nicht zitiert/fremde Datei zählt nicht) — alle in `tests/test_adversary_coverage_gate_259.py`
 
-- **AC-8:** Given ein gültiger Git-Arbeitsbaum, in dem der Diff-Aufruf selbst unerwartet
-  fehlschlägt (z. B. über einen `git`-Wrapper im `PATH`) / When Commit-Gate oder
-  Phase-8-Übergang geprüft werden / Then blockieren beide mit einem Grund, der den
-  fehlgeschlagenen Befehl nennt; liegt dagegen gar kein Git-Repository bzw. nur ein leeres
-  `.git`-Verzeichnis vor, entfällt die Abdeckungsprüfung ersatzlos, und beide Gates verhalten
-  sich wie vor dieser Änderung.
-  - Test: `test_ac8_git_failure_in_valid_worktree_blocks` (Commit/Phase 8); Regressionswächter `test_ac8_without_git_worktree_coverage_is_skipped` — alle in `tests/test_adversary_coverage_gate_259.py`
+- **AC-8:** Given ein gültiger Git-Arbeitsbaum, in dem der Diff-Aufruf selbst oder jeder
+  git-Aufruf einschließlich `rev-parse --show-toplevel` unerwartet fehlschlägt (z. B. über einen
+  `git`-Wrapper im `PATH`, auch mit vorgetäuschter Meldung „not a git repository“) / When
+  Commit-Gate oder Phase-8-Übergang geprüft werden / Then blockieren beide mit einem Grund, der
+  den fehlgeschlagenen Befehl nennt; liegt dagegen gar kein Git-Repository bzw. nur ein leeres
+  `.git`-Verzeichnis vor (kein Repo-Befund nach Abschnitt 6), entfällt die Abdeckungsprüfung
+  ersatzlos, und beide Gates verhalten sich wie vor dieser Änderung.
+  - Test: `test_ac8_git_failure_in_valid_worktree_blocks` (Commit/Phase 8 × Diff scheitert, jeder Aufruf scheitert, vorgetäuschtes „not a git repository“); `test_ac8_repo_marker_decides_not_git_output` (sieben Repo-Layouts); Regressionswächter `test_ac8_without_git_worktree_coverage_is_skipped` — alle in `tests/test_adversary_coverage_gate_259.py`
 
 - **AC-9:** Given ein per `add-artifact` registriertes Dialog-Protokoll mit einem absoluten Pfad
   außerhalb von Projekt und Worktree bzw. mit einem Symlink, der nach außen zeigt / When das
@@ -662,3 +689,9 @@ Automatische Tests (jeweils an eine oder mehrere Acceptance Criteria oben gebund
 
 - 2026-09-27: Initial spec created
 - 2026-09-28: Vom PO freigegeben (`approved`); Testzeilen nach TDD RED eingetragen
+- 2026-09-28: Präzisierung nach Adversary-Runde 2 (BROKEN, F101/F102), ohne neue Anforderung.
+  §3: Die Commit-Menge vereinigt immer mit dem Index, statt ihn zu ersetzen. `--amend` zählt
+  zusätzlich Index und Arbeitsbaum gegen `HEAD~1` und nur als Options-Token. §6: Der Repo-Befund
+  im Dateisystem statt der git-Ausgabe entscheidet über „kein Repository“. AC-8 nennt den
+  Totalausfall ausdrücklich. Zwei Known Limitations ergänzt, eine präzisiert. Testzeilen von AC-4
+  und AC-8 nachgezogen.

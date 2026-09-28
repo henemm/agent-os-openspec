@@ -44,7 +44,13 @@ Common test commands:
 
 ### Step 3: Probe Edge Cases
 
-For each changed file, systematically check:
+Get the changed files first (#259) — every code file changed since the workflow's base, one per line:
+
+```bash
+python3 .claude/hooks/adversary_dialog.py required-files
+```
+
+For each listed file, systematically check:
 
 1. **Boundary values** — What happens at min/max/zero/empty?
 2. **Null/nil/undefined** — What if any input is missing?
@@ -175,6 +181,10 @@ validate` compares these hashes against the working tree instead of the
 artifact's age — an unstamped artifact, or one whose referenced files have
 since changed, is rejected regardless of how fresh it is. Skipping this step
 means your VERIFIED verdict cannot be accepted.
+
+**Coverage (#259):** Before stamping, cite EVERY file listed by `required-files`
+(Step 3) with its own `Code reference: <path>:<line>` line. Commit gate and
+Phase 8 reject the artifact if any listed file is missing from the hash block.
 
 ## Rules
 

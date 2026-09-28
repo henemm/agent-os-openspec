@@ -47,6 +47,48 @@ als unsichtbare Doku (PO-Entscheidung E1).
   Wegwerf-Git-Repo im Subprozess — `load_config()`/`find_project_root()` cachen, ein
   In-Prozess-Test mit mehreren Config-Ständen wäre reihenfolgeabhängig.
 
+### Fixed
+
+**Adversary-Nachweis an die tatsächliche Änderungsmenge gebunden (#259)**
+
+Commit-Gate und Phase 8 prüften das gestempelte Dialog-Artefakt nur auf Form, Runden und
+Hash-Frische der zitierten Dateien — ein fremdes Protokoll, das nur seine eigenen Dateien
+zitiert, öffnete beide Gates (F001, reproduziert). Spec: `docs/specs/fix-259-adversary-diff-binding.md`.
+
+- Abdeckungsprüfung: Jede Code-Datei der Änderungsmenge muss im letzten `## Geprüfte
+  Dateien`-Block stehen. Commit-Gate: der entstehende Commit, immer mindestens der Index. Bei
+  `-a`, Pfadangabe, leerem Index oder begleitendem `git add` kommt der Arbeitsbaum gegen HEAD
+  hinzu, bei `--amend` Index und Arbeitsbaum gegen `HEAD~1`. `--amend` zählt nur als echte
+  Option, nicht im Nachrichtentext. Teilweise gestagte Code-Dateien blocken zusätzlich.
+  Phase 8 (`phase`, `complete`, `finish`):
+  Arbeitsbaum plus untrackte Dateien gegen die Basis — das neue State-Feld `base_commit`
+  (von `workflow.py start` gesetzt) oder `merge-base(origin/main, HEAD)`, der jüngere gültige
+  Vorfahre von HEAD gewinnt; ohne beide nur HEAD (degradiert, die Meldung nennt es). Ein
+  git-Fehler im gültigen Arbeitsbaum blockt (fail-closed), ohne Git-Arbeitsbaum entfällt die
+  Prüfung. Ob ein Arbeitsbaum vorliegt, entscheidet das Dateisystem (`.git` mit `HEAD`,
+  Worktree-`gitdir:`, `GIT_DIR`), nicht die git-Ausgabe. Ein komplett scheiterndes git blockt
+  deshalb, statt als „kein Repository“ durchzugehen.
+- Neu: `adversary_dialog.py required-files` listet genau die Phase-8-Menge (stdout) samt Basis
+  (stderr). `hook_utils.is_gated_code_path` ist die gemeinsame Code-Definition von TDD- und
+  Nachweis-Gate; `edit_gate.py` bezieht seine drei Listen von dort (verhaltensgleich).
+- F002: ein Dialog-Artefakt außerhalb von Projekt und Worktree (auch per Symlink) zählt nicht.
+  F003: `check_dialog_evidence` und `qa_gate.py --checklist` werten das geparste Verdict
+  (`dialog_verdict`) statt einer Substring-Suche. F004: ohne Workflow-Namen gibt es keinen
+  Standardpfad mehr.
+- Kill-Switch `config.yaml` → `adversary_coverage_gate.enabled: false` (nur Abdeckung und
+  Teilstaging; #253 und F002–F004 wirken weiter). Doku: `/50-implement` 8c,
+  `implementation-validator` Step 3/6, `/60-validate` Step 2b (Code-Fix = BROKEN-Pfad),
+  `CLAUDE.md`, `docs/WORKFLOW_GUIDE.md`.
+
+**Migration für laufende Workflows:** Ein Workflow, dessen Dialog vor diesem Update
+gestempelt wurde, braucht einen neuen Dialog, der jede Datei aus `adversary_dialog.py
+required-files` per `Code reference:` zitiert, danach `stamp` und `add-artifact`. Workflows
+ohne `base_commit` messen gegen `merge-base(origin/main, HEAD)`. Ausweg beim Commit: der
+Override-Token; in Phase 8: der Kill-Switch oder `workflow.py abandon`.
+
+- `tests/test_adversary_coverage_gate_259.py`: 150 Tests (AC-1 bis AC-16), End-to-End über die
+  echten Hook-Skripte in Wegwerf-Repos (Bare-Repo als `origin`, `git worktree add`).
+
 ## [3.33.0] - 2026-09-27
 
 ### Changed

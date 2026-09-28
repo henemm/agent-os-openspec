@@ -243,6 +243,14 @@ Der Dialog laeuft als Hin-und-Her. **Du als Orchestrator koordinierst:**
 
 #### 8c. Dialog-Protokoll speichern
 
+**Pflicht-Liste zuerst (#259):**
+```bash
+python3 ${_H}/adversary_dialog.py required-files
+```
+Listet jede Code-Datei, die seit der Basis des Workflows geaendert ist — dieselbe Menge, die Phase 8
+prueft (Basis und ggf. Degradations-Hinweis auf stderr). Das Protokoll muss **jede gelistete Datei**
+per `Code reference: <pfad>:<zeile>` zitieren; nur so landet sie beim `stamp` im Hash-Block.
+
 Speichere das Protokoll als Artifact:
 ```
 docs/artifacts/<workflow-name>/adversary-dialog.md
@@ -271,6 +279,12 @@ Code passen. Es zaehlt das zuletzt registrierte `adversary_dialog`; ohne Registr
 Standardpfad oben. Ein gruener Testlauf aktualisiert nur `last_test_run` — er setzt kein Verdict und
 oeffnet keinen Commit. Aendert ein spaeterer Fix (auch ein Auto-Fix in `/60-validate`) eine zitierte
 Datei, braucht es einen neuen Dialog.
+
+**Gate-Wirkung (#259):** Der Hash-Block muss zudem die Aenderungsmenge abdecken — am Commit-Gate jede
+Code-Datei des entstehenden Commits, in Phase 8 jede seit der Basis (`base_commit` bzw.
+`merge-base(origin/main, HEAD)`) geaenderte Code-Datei, also genau die `required-files`-Liste. Eine
+nicht zitierte Datei blockt, am Commit-Gate auch eine teilweise gestagte. Commit-Ausweg: Override-Token;
+Kill-Switch: `config.yaml` → `adversary_coverage_gate.enabled: false`.
 
 #### 8d. QA-Gate mit Checklist-Validierung
 

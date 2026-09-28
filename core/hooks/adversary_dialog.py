@@ -16,16 +16,23 @@ Usage (CLI):
   python3 adversary_dialog.py parse <spec-path>
   python3 adversary_dialog.py validate <artifact-path>
   python3 adversary_dialog.py stamp <artifact-path>
+  python3 adversary_dialog.py required-files
   python3 adversary_dialog.py schema
 """
 
 import hashlib
+import json
+import os
 import re
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
 
-from hook_utils import extract_ac_entries, find_project_root, find_worktree_root
+from hook_utils import (
+    extract_ac_entries, find_project_root, find_worktree_root, is_gated_code_path,
+    resolve_active_workflow,
+)
 
 # Circuit Breaker: max iterations before escalation to user
 MAX_ITERATIONS = 3
@@ -488,34 +495,17 @@ def validate_dialog_artifact_ex(artifact_path: str) -> "tuple[bool, str, str | N
             f"Minimum sind {MIN_ROUNDS} Runden."
         ), "format"
 
-    # 4. Verdict — drei real vorkommende Formen (Issue #77); bei mehreren
-    #    Bloecken (Fix-Loop-Runden) zaehlt der LETZTE im Dokument:
-    #      a) '## Verdict' mit Fettschrift-Folgezeile (render_dialog_artifact)
-    #      b) einzeilig '## Verdict: X' bzw. '### VERDICT: X'
-    #      c) 'VERDICT: X' am Zeilenanfang — das dokumentierte Abschluss-
-    #         format des implementation-validator-Agenten
-    #    Alle Formen sind zeilenanfangs-verankert und laufen auf dem
-    #    fence-bereinigten Scan-Text (zitierte Verdicts zaehlen nicht).
-    verdict_res = [
-        re.compile(r"(?m)^## Verdict\s*\n\*\*(.+?)\*\*"),
-        re.compile(r"(?mi)^#{2,3}\s*Verdict\s*:\s*(.+?)\s*$"),
-        re.compile(r"(?m)^VERDICT:\s*(.+?)\s*$"),
-    ]
-    verdict_matches = [m for rx in verdict_res for m in rx.finditer(scan)]
-    if not verdict_matches:
+    # 4. Verdict — gemeinsamer Parser mit dialog_verdict() (#259 F003): drei
+    #    Formen (Issue #77), letztes Vorkommen gewinnt, HOLDS = VERIFIED.
+    verdict_text = _verdict_text(scan)
+    if verdict_text is None:
         return False, "Kein Verdict im Artifact gefunden.", "format"
-    verdict_match = max(verdict_matches, key=lambda m: m.start())
+    v = _normalize_verdict(verdict_text)
 
-    verdict_text = verdict_match.group(1).strip().strip("*").strip()
-    v = verdict_text.upper()
-
-    if v.startswith("BROKEN"):
+    if v == "BROKEN":
         return False, f"Verdict ist '{verdict_text}' — nicht VERIFIED.", "content"
 
-    if v.startswith("HOLDS"):
-        v = "VERIFIED"  # Validator-Vokabular — Synonym (Issue #77)
-
-    if not (v.startswith("VERIFIED") or v.startswith("AMBIGUOUS")):
+    if v is None:
         return False, f"Unbekanntes Verdict: '{verdict_text}'", "format"
 
     # 5. Datei-Identitaet (Issue #131): nur fuer Artefakte, die hier sonst
@@ -525,7 +515,7 @@ def validate_dialog_artifact_ex(artifact_path: str) -> "tuple[bool, str, str | N
     if not hashes_ok:
         return False, hashes_msg, "format"
 
-    if v.startswith("AMBIGUOUS"):
+    if v == "AMBIGUOUS":
         return True, (
             f"Dialog valid (AMBIGUOUS): {checked} Punkte bewiesen, "
             f"{rounds} Runden. User-Review empfohlen."
@@ -535,6 +525,47 @@ def validate_dialog_artifact_ex(artifact_path: str) -> "tuple[bool, str, str | N
         f"Dialog valid: {checked} Punkte bewiesen, "
         f"{rounds} Runden, Verdict VERIFIED."
     ), None
+
+
+# Verdict-Formen (Issue #77), zeilenanfangs-verankert, auf fence-bereinigtem Text:
+#   a) '## Verdict' mit Fettschrift-Folgezeile (render_dialog_artifact)
+#   b) einzeilig '## Verdict: X' bzw. '### VERDICT: X'
+#   c) 'VERDICT: X' am Zeilenanfang (Abschlussformat des implementation-validator)
+_VERDICT_RES = (
+    re.compile(r"(?m)^## Verdict\s*\n\*\*(.+?)\*\*"),
+    re.compile(r"(?mi)^#{2,3}\s*Verdict\s*:\s*(.+?)\s*$"),
+    re.compile(r"(?m)^VERDICT:\s*(.+?)\s*$"),
+)
+
+
+def _verdict_text(scan: str) -> "str | None":
+    """Roh-Text des LETZTEN Verdicts (Fix-Loop-Runden: last wins), oder None."""
+    matches = [m for rx in _VERDICT_RES for m in rx.finditer(scan)]
+    if not matches:
+        return None
+    return max(matches, key=lambda m: m.start()).group(1).strip().strip("*").strip()
+
+
+def _normalize_verdict(text: str) -> "str | None":
+    """'VERIFIED' | 'BROKEN' | 'AMBIGUOUS' oder None; HOLDS ist VERIFIED (Issue #77)."""
+    upper = text.upper()
+    if upper.startswith("HOLDS"):
+        return "VERIFIED"
+    return next((v for v in VERDICTS if upper.startswith(v)), None)
+
+
+def dialog_verdict(artifact_path: str) -> "str | None":
+    """Strukturiert geparstes Verdict eines Dialog-Artefakts (#259 F003).
+
+    Derselbe Parser wie validate_dialog_artifact_ex(); None, wenn die Datei
+    nicht lesbar ist oder kein Verdict enthaelt.
+    """
+    try:
+        content = Path(artifact_path).read_text(errors="replace")
+    except OSError:
+        return None
+    text = _verdict_text(_strip_fenced_code_blocks(content))
+    return None if text is None else _normalize_verdict(text)
 
 
 _CODE_REF_RE = re.compile(r"(?im)^\s*Code reference:\s*(\S+)")
@@ -698,7 +729,10 @@ def find_dialog_artifact(wf: dict) -> "Path | None":
     (a) das zuletzt registrierte `test_artifacts`-Element vom Typ
         'adversary_dialog' (neuestes gewinnt) — auch wenn die Datei fehlt:
         die ausdrueckliche Registrierung gewinnt, kein stiller Rueckfall;
-    (b) sonst der Standardpfad, falls er existiert.
+    (b) sonst der Standardpfad, falls er existiert — nur mit Workflow-Namen:
+        ohne Namen gibt es keinen Standardpfad (#259 F004).
+    Ob der Pfad innerhalb von Projekt/Worktree liegt (F002), prueft
+    check_dialog_evidence().
     """
     registered = [
         a for a in (wf.get("test_artifacts") or [])
@@ -706,25 +740,44 @@ def find_dialog_artifact(wf: dict) -> "Path | None":
     ]
     if registered:
         return _resolve_artifact_path(str(registered[-1]["path"]))
-    default = _resolve_artifact_path(DEFAULT_DIALOG_ARTIFACT.format(name=wf.get("name", "")))
+    if not wf.get("name"):
+        return None
+    default = _resolve_artifact_path(DEFAULT_DIALOG_ARTIFACT.format(name=wf["name"]))
     return default if default.exists() else None
 
 
-def check_dialog_evidence(wf: dict) -> "str | None":
+def _outside_roots(path: Path) -> bool:
+    """F002 (#259 §8): liegt der Pfad (Symlinks aufgeloest) ausserhalb von Worktree und Projekt?"""
+    resolved = path.resolve()
+    roots = [r.resolve() for r in (find_worktree_root(), find_project_root()) if r is not None]
+    return not any(r == resolved or r in resolved.parents for r in roots)
+
+
+def check_dialog_evidence(wf: dict, changed_files: "list[str] | None" = None) -> "str | None":
     """Die eine Regel fuer Commit-Gate (bash_gate.py 5c) und Phase 8 (workflow.py).
 
     None: ein gueltiges, gestempeltes, zum Ist-Stand passendes Dialog-Artefakt
-    deckt das Verdict im State. Sonst der Grund als Text. Wirft nie — ein
-    interner Fehler wird zur Grund-Meldung (fail-closed).
+    innerhalb von Projekt/Worktree deckt das Verdict im State — und bindet, falls
+    `changed_files` uebergeben ist (realpath-absolute Pfade, vom Aufrufer
+    ermittelt), jede dieser Dateien im letzten '## Geprüfte Dateien'-Block (#259).
+    Sonst der Grund als Text. Wirft nie — ein interner Fehler wird zur
+    Grund-Meldung (fail-closed).
     """
     try:
         path = find_dialog_artifact(wf)
         if path is None:
-            default = DEFAULT_DIALOG_ARTIFACT.format(name=wf.get("name", "<workflow>"))
+            if not wf.get("name"):
+                return (
+                    "kein Dialog-Artefakt registriert (workflow.py add-artifact "
+                    "adversary_dialog <pfad>) — ohne Workflow-Namen gibt es keinen Standardpfad"
+                )
+            default = DEFAULT_DIALOG_ARTIFACT.format(name=wf["name"])
             return (
                 "kein Dialog-Artefakt registriert (workflow.py add-artifact "
                 f"adversary_dialog <pfad>) und keins am Standardpfad {default}"
             )
+        if _outside_roots(path):
+            return f"Dialog-Artefakt liegt außerhalb von Projekt und Worktree: `{path}`"
         if not path.exists():
             return (
                 f"registriertes Dialog-Artefakt nicht gefunden: {path} "
@@ -733,12 +786,215 @@ def check_dialog_evidence(wf: dict) -> "str | None":
         valid, message, _kind = validate_dialog_artifact_ex(str(path))
         if not valid:
             return f"{path}: {message}"
+        if changed_files is not None:
+            missing = _uncovered_files(path, changed_files)
+            if missing:
+                return _uncovered_reason(missing)
         verdict = str(wf.get("adversary_verdict") or "")
-        if verdict.startswith("VERIFIED") and "AMBIGUOUS" in message:
+        if verdict.startswith("VERIFIED") and dialog_verdict(str(path)) == "AMBIGUOUS":
             return f"Widerspruch: der State behauptet VERIFIED, {path} belegt nur AMBIGUOUS"
         return None
     except Exception as exc:  # fail-closed
         return f"Nachweis-Prüfung fehlgeschlagen ({type(exc).__name__}: {exc})"
+
+
+# --- Abdeckung der Änderungsmenge (Issue #259) ---
+
+DEGRADED_BASE_NOTE = (
+    "Basis nur HEAD — kein `base_commit` und kein `origin/main`; "
+    "bereits committete Änderungen sind nicht erfasst"
+)
+_UNCOVERED_LIMIT = 10
+# Namensliste NUL-getrennt (Nicht-ASCII-Pfade kommen sonst C-gequotet), ohne Loeschungen.
+DIFF_NAMES = ("-z", "--name-only", "--diff-filter=d")
+
+
+class ChangeSetError(Exception):
+    """git-Fehler in einem gueltigen Arbeitsbaum — fail-closed (#259 §6)."""
+
+
+def coverage_gate_enabled() -> bool:
+    """Kill-Switch (#259 §11): nur ein ausdrueckliches `enabled: false` schaltet ab.
+
+    Fehlender Schluessel, Tippfehler oder kaputte Config lassen das Gate an.
+    Umschliesst nur Abdeckung und Teilstaging — nicht #253 und nicht F002–F004.
+    """
+    try:
+        from config_loader import load_config
+        section = load_config().get("adversary_coverage_gate", {})
+    except Exception:
+        return True
+    return not (isinstance(section, dict) and section.get("enabled") is False)
+
+
+def display_path(path: str) -> str:
+    """Form fuer 'Code reference:': relativ zu _hash_root(), wenn darunter, sonst absolut."""
+    rel = os.path.relpath(path, os.path.realpath(_hash_root()))
+    return path if rel == os.pardir or rel.startswith(os.pardir + os.sep) else Path(rel).as_posix()
+
+
+def _uncovered_files(artifact: Path, changed_files: "list[str]") -> "list[str]":
+    """Dateien der Änderungsmenge, die der letzte Hash-Block nicht bindet (#259 §7)."""
+    scan = _strip_fenced_code_blocks(artifact.read_text(errors="replace"))
+    entries = _parse_examined_files_section(scan) or []
+    covered = {os.path.realpath(_resolve_hash_path(rel)) for _hash, rel in entries}
+    return [f for f in changed_files if f not in covered]
+
+
+def _uncovered_reason(missing: "list[str]") -> str:
+    shown = ", ".join(f"`{display_path(f)}`" for f in missing[:_UNCOVERED_LIMIT])
+    extra = len(missing) - _UNCOVERED_LIMIT
+    more = f" (+{extra} weitere)" if extra > 0 else ""
+    return (
+        f"Dialog-Nachweis deckt die Änderung nicht ab — nicht zitiert und gehasht: {shown}{more}. "
+        "Weg: Dialog erneut führen, jede Datei aus `adversary_dialog.py required-files` "
+        "per `Code reference:` zitieren, danach `stamp`"
+    )
+
+
+def run_git(args: "list[str]", cwd, probe: bool = False) -> "str | None":
+    """`git <args>` in `cwd`. probe=True: Fehlschlag = strukturelles Fehlen → None.
+
+    Sonst ist jeder Fehlschlag ein ChangeSetError, der den Befehl nennt —
+    fail-closed, denn der Aufrufer hat den Arbeitsbaum bereits als gueltig erkannt.
+    """
+    cmd = " ".join(["git", *args])
+    try:
+        proc = subprocess.run(["git", *args], cwd=str(cwd), capture_output=True,
+                              encoding="utf-8", errors="surrogateescape", timeout=30)
+    except (OSError, subprocess.SubprocessError) as exc:
+        if probe:
+            return None
+        raise ChangeSetError(f"Änderungsmenge nicht ermittelbar (`{cmd}`: `{type(exc).__name__}: {exc}`)")
+    if proc.returncode == 0:
+        return proc.stdout
+    if probe:
+        return None
+    detail = (proc.stderr.strip().splitlines() or [f"Exit {proc.returncode}"])[-1]
+    raise ChangeSetError(f"Änderungsmenge nicht ermittelbar (`{cmd}`: `{detail}`)")
+
+
+def _has_repo_marker(root) -> bool:
+    """Liegt `root` in einem Git-Repository? Dateisystem-Befund statt git-Ausgabe (F102).
+
+    Auf `root` oder einem Vorfahren: Verzeichnis `.git` mit `HEAD` oder Datei `.git`
+    mit `gitdir: <pfad>` (relativ zu ihrem Ordner), dessen Ziel `HEAD` enthaelt
+    (Worktree, Submodul); ebenso ein gesetztes GIT_DIR.
+    """
+    if os.environ.get("GIT_DIR"):
+        return True
+    start = Path(root).resolve()
+    for d in (start, *start.parents):
+        dot = d / ".git"
+        try:
+            lines = dot.read_text(errors="replace").splitlines() if dot.is_file() else []
+            target = next((ln[7:].strip() for ln in lines if ln.startswith("gitdir:")), "")
+            if ((d / target) if target else dot).joinpath("HEAD").is_file():
+                return True
+        except OSError:
+            return True  # nicht pruefbar: fail-closed wie ein vorhandener Marker
+    return False
+
+
+def git_toplevel(root) -> "str | None":
+    """Physischer Toplevel des Arbeitsbaums um `root`; None ohne Git-Repository.
+
+    Alle Namenslisten laufen mit cwd = Toplevel: `git diff` liefert Pfade immer
+    toplevel-relativ, `git ls-files` dagegen cwd-relativ (#259 §2). Scheitert
+    `rev-parse`, entscheidet der Repo-Marker (F102): mit Marker ist es ein
+    git-Fehler (ChangeSetError, fail-closed), ohne Marker kein Repository.
+    """
+    try:
+        out = run_git(["rev-parse", "--show-toplevel"], root).strip()
+        if not out:
+            raise ChangeSetError(
+                "Änderungsmenge nicht ermittelbar (`git rev-parse --show-toplevel`: leere Ausgabe)")
+    except ChangeSetError:
+        if _has_repo_marker(root):
+            raise
+        return None
+    return os.path.realpath(out)
+
+
+def git_names(args: "list[str]", top: str) -> "list[str]":
+    """Rohe, NUL-getrennte git-Namensliste (toplevel-relativ); Fehler → ChangeSetError."""
+    return [n for n in run_git(args, top).split("\0") if n]
+
+
+def code_files(names: "list[str]", top: str) -> "list[str]":
+    """Code-Dateien (is_gated_code_path auf dem git-Pfad) als realpath-absolute Pfade."""
+    return [os.path.realpath(os.path.join(top, n)) for n in names if is_gated_code_path(n)]
+
+
+def git_code_files(args: "list[str]", top: str) -> "list[str]":
+    return code_files(git_names(args, top), top)
+
+
+def _phase8_base(wf: dict, top: str) -> "tuple[str | None, str]":
+    """Basis der Phase-8-Menge (#259 §5): der juengere gueltige Vorfahre von HEAD.
+
+    base_commit (S) gewinnt, wenn er Vorfahre von HEAD ist und merge-base(origin/main,
+    HEAD) (M) fehlt oder Vorfahre von S ist; sonst M. Rueckfall: nur HEAD (degradiert),
+    ohne HEAD None (Index plus untrackte Dateien).
+    """
+    def holds(*args: str) -> bool:
+        return run_git(list(args), top, probe=True) is not None
+
+    if not holds("rev-parse", "--verify", "-q", "HEAD"):
+        return None, "Basis: kein HEAD — Index und untrackte Dateien zählen"
+    m = (run_git(["merge-base", "origin/main", "HEAD"], top, probe=True) or "").strip()
+    s = str(wf.get("base_commit") or "").strip()
+    if (s and not s.startswith("-") and holds("merge-base", "--is-ancestor", s, "HEAD")
+            and (not m or holds("merge-base", "--is-ancestor", m, s))):
+        return s, f"Basis: base_commit {s}"
+    if m:
+        return m, f"Basis: merge-base(origin/main, HEAD) {m}"
+    return "HEAD", DEGRADED_BASE_NOTE
+
+
+def phase8_code_files(wf: dict) -> "tuple[list[str] | None, str]":
+    """Phase-8-Änderungsmenge (#259 §5): (Code-Dateien realpath-absolut, Basis-Info).
+
+    Arbeitsbaum gegen die Basis plus untrackte Dateien, ohne Loeschungen. None statt
+    Liste: kein Git-Arbeitsbaum — die Abdeckungspruefung entfaellt. Wirft
+    ChangeSetError bei einem git-Fehler im gueltigen Arbeitsbaum.
+    """
+    top = git_toplevel(_hash_root())
+    if top is None:
+        return None, "kein Git-Arbeitsbaum — Abdeckungsprüfung entfällt"
+    base, info = _phase8_base(wf, top)
+    untracked = ["ls-files", "-z", "--others", "--exclude-standard"]
+    if base is None:
+        files = git_code_files([*untracked, "--cached"], top)
+    else:
+        files = git_code_files(["diff", *DIFF_NAMES, base, "--"], top) + git_code_files(untracked, top)
+    return sorted(set(files)), info
+
+
+def _cmd_required_files() -> int:
+    """CLI `required-files` (#259 §12): Phase-8-Menge auf stdout, Basis auf stderr.
+
+    Rein lesend und unabhaengig vom Kill-Switch: zeigt, was Phase 8 bei aktivem
+    Gate prueft. Exit 1 ohne aktiven Workflow oder bei einem git-Fehler.
+    """
+    name = resolve_active_workflow()[0]
+    state = find_project_root() / ".claude" / "workflows" / f"{name}.json"
+    try:
+        wf = json.loads(state.read_text()) if name else None
+    except (OSError, ValueError):
+        wf = None
+    if not isinstance(wf, dict):
+        print("Kein aktiver Workflow mit lesbarem State (workflow.py start/switch).", file=sys.stderr)
+        return 1
+    try:
+        files, info = phase8_code_files(wf)
+    except ChangeSetError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    print(info, file=sys.stderr)
+    for path in files or []:
+        print(display_path(path))
+    return 0
 
 
 def print_finding_schema():
@@ -765,6 +1021,7 @@ def main():
         print("  python3 adversary_dialog.py parse <spec-path>")
         print("  python3 adversary_dialog.py validate <artifact-path>")
         print("  python3 adversary_dialog.py stamp <artifact-path>")
+        print("  python3 adversary_dialog.py required-files")
         print("  python3 adversary_dialog.py schema")
         sys.exit(1)
 
@@ -800,6 +1057,9 @@ def main():
         ok, message = stamp_dialog_artifact(artifact_path)
         print(message)
         sys.exit(0 if ok else 1)
+
+    elif cmd == "required-files":
+        sys.exit(_cmd_required_files())
 
     elif cmd == "schema":
         print_finding_schema()

@@ -1,6 +1,6 @@
 ---
 spec_file: docs/specs/fix-259-adversary-diff-binding.md
-spec_sha256: 4353059627830738f69c7d511eccc88bdac18dca02db48b210698274f14024c1
+spec_sha256: 89babfe508e3740ba85d22b35d12f9d0590e4066d934a2e625381571ccc9e007
 ---
 
 # PO-Briefing: fix-259-adversary-diff-binding

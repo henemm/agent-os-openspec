@@ -291,6 +291,14 @@ po_briefing_gate:
 ci_spec_gate:
   enabled: true
 
+# Abdeckungspruefung des Adversary-Nachweises (Issue #259)
+# Commit-Gate und Phase 8 verlangen, dass das Dialog-Protokoll jede Code-Datei
+# der Aenderungsmenge zitiert und hasht (`adversary_dialog.py required-files`).
+# Nur ein ausdrueckliches `false` schaltet ab — und nur Abdeckung und
+# Teilstaging-Pruefung, nicht die #253-Nachweispruefung und nicht F002–F004.
+adversary_coverage_gate:
+  enabled: true
+
 # Beobachtbare Oberflaeche (Issue #260) — steuert NUR, ob `/60-validate` die
 # Schlussfrage "Soll ich den Code committen?" stellt. Kein Gate: die Pruefung
 # unterdrueckt eine Rueckfrage, sie erlaubt nichts. Gelesen von

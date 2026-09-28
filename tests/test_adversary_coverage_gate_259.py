@@ -159,8 +159,10 @@ def _write_override_token(root: Path) -> None:
         WF: {"created": datetime.now().isoformat(), "granted_by": "user_prompt"}}}))
 
 
-def _failing_git_env(tmp_path: Path, proj: Path) -> dict:
-    """AC-8: `git`-Wrapper vorn im PATH — nur `git diff` scheitert, alles andere läuft echt."""
+def _failing_git_env(tmp_path: Path, proj: Path, fail="diff",
+                     msg="simulierter diff-Fehler (Test-Wrapper #259)") -> dict:
+    """AC-8: `git`-Wrapper vorn im PATH — der Unterbefehl `fail` scheitert (Standard: nur `git
+    diff`; `*`: jeder, F102), alles andere läuft echt."""
     real = shutil.which("git")
     assert real, "git nicht im PATH"
     wrapper = _write(tmp_path, "fakebin/git", f"""#!/bin/sh
@@ -169,7 +171,7 @@ for a in "$@"; do
   if [ "$skip" = 1 ]; then skip=0; continue; fi
   case "$a" in -C|-c|--git-dir|--work-tree) skip=1 ;; -*) ;; *) sub="$a"; break ;; esac
 done
-[ "$sub" = diff ] && {{ echo "fatal: simulierter diff-Fehler (Test-Wrapper #259)" >&2; exit 128; }}
+case "$sub" in {fail}) echo "fatal: {msg}" >&2; exit 128 ;; esac
 exec "{real}" "$@"
 """)
     wrapper.chmod(0o755)
@@ -273,14 +275,38 @@ def test_ac3_documented_path_with_required_files(tmp_path):
     ("index", "git commit -m wip"), ("tracked", "git commit -am wip"),
     ("tracked", f"git commit -m wip {MOD_B}"), ("tracked", "git commit -m wip"),
     ("amend", "git commit --amend -m wip"), ("untracked", f"git add {MOD_B} && git commit -m wip"),
-], ids=["index", "all-am", "pathspec", "empty-index", "amend", "add-and-commit"])
+    ("boomerang", 'git commit -m "fix --amend text"'),  # F101: --amend nur im Nachrichtentext
+    ("boomerang", "git commit --amend -m wip"),  # F101-Gegenprobe: echtes --amend, Vereinigung
+    # Die Menge wird nie kleiner als der Index (Vereinigung statt Ersetzung):
+    ("staged-reverted", "git add other.md && git commit -m msg"),
+    ("staged-reverted", "git commit -i other.py -m msg"),  # --include: Index plus Pfad
+    ("index-at-head", "git commit --amend -m wip"),  # Index = HEAD, Arbeitsbaum = HEAD~1-Stand
+], ids=["index", "all-am", "pathspec", "empty-index", "amend", "add-and-commit",
+        "amend-in-message", "amend-boomerang", "add-staged-reverted", "include-staged-reverted",
+        "amend-index-at-head"])
 def test_ac4_commit_set_covers_every_commit_form(tmp_path, setup, command, cited):
     """'cited' je Form = Regressionswächter (heute grün), 'uncited' = rote Gegenprobe."""
     proj = _make_repo(tmp_path)
-    if setup in ("tracked", "amend"):  # amend: MOD_B steckt im zu ändernden HEAD-Commit
+    if setup in ("tracked", "amend", "boomerang", "index-at-head"):  # MOD_B steckt im HEAD-Commit
         _new(proj, MOD_B, commit="B")
     if setup == "tracked":
         _write(proj, MOD_B, "B = 2  # geändert, nicht gestagt\n")
+    elif setup in ("boomerang", "index-at-head"):  # HEAD ändert MOD_B, zurück auf HEAD~1-Stand
+        v1 = (proj / MOD_B).read_text()
+        _write(proj, MOD_B, "B = 2\n")
+        _git(["commit", "-q", "-am", "B2"], proj)
+        _write(proj, MOD_B, v1)
+        if setup == "boomerang":  # F101: gestagt zurück
+            _git(["add", MOD_B], proj)
+        else:  # nur eine andere Datei gestagt, MOD_B bleibt im Index auf dem HEAD-Stand
+            _new(proj, "other.md", stage=True)
+    elif setup == "staged-reverted":  # MOD_B gestagt geändert, Arbeitsbaum ungestagt = HEAD
+        _new(proj, MOD_B, "other.py", commit="B")
+        v1 = (proj / MOD_B).read_text()
+        _write(proj, MOD_B, "B = 2\n")
+        _git(["add", MOD_B], proj)
+        _write(proj, MOD_B, v1)
+        _new(proj, "other.md")
     elif setup in ("index", "untracked"):
         _new(proj, MOD_B, stage=setup == "index")
     _make_dialog(proj, [MOD_A, MOD_B] if cited else [MOD_A])
@@ -291,6 +317,24 @@ def test_ac4_commit_set_covers_every_commit_form(tmp_path, setup, command, cited
     else:
         assert r.returncode == 2, f"'{command}': nicht zitierte Code-Datei übersehen: {r.stderr}"
         assert MOD_B in r.stderr and UNCOVERED in r.stderr, r.stderr
+
+
+@pytest.mark.parametrize("command,expected_rc", [
+    ('git commit -m "fix --amend text"', 0), ("git commit -m --amend", 0),
+    ("git commit --amend -m wip", 2), ("git commit --amen -m wip", 2),
+    ('bash -c "git commit --amend -m wip"', 2),
+], ids=["message-text", "message-value", "option", "abbreviated", "not-decomposable"])
+def test_ac4_amend_only_as_real_commit_option(tmp_path, command, expected_rc):
+    """F101 (b): MOD_B steckt nur im HEAD-Commit und zählt allein bei echtem `--amend`-Token
+    (auch als von git akzeptierte Abkürzung) bzw. bei nicht zerlegbarem Aufruf."""
+    proj = _make_repo(tmp_path)
+    _new(proj, MOD_B, commit="B")
+    _new(proj, MOD_C, stage=True)
+    _make_dialog(proj, [MOD_A, MOD_C])
+    _write_workflow(proj, phase="phase6_implement", artifacts=[DIALOG])
+    r = _gate(proj, command=command)
+    assert r.returncode == expected_rc, f"'{command}' (rc={r.returncode}): {r.stderr}"
+    assert expected_rc == 0 or MOD_B in r.stderr, r.stderr
 
 
 @pytest.mark.parametrize("gate", ["commit", "phase8"])
@@ -338,18 +382,23 @@ def test_ac6_partially_staged_file_blocks_index_commit(tmp_path, command, expect
     assert expected_rc == 0 or (PARTIAL in r.stderr and MOD_B in r.stderr), r.stderr
 
 
-@pytest.mark.parametrize("setup", ["feature", "bug", "feature-fast", "no-head", "worktree"],
-                         ids=["a-feature", "a-bug", "a-feature-fast", "a-no-head", "g-worktree"])
+@pytest.mark.parametrize("setup", ["feature", "bug", "feature-fast", "no-head", "worktree",
+                                   "git-failure"],
+                         ids=["a-feature", "a-bug", "a-feature-fast", "a-no-head", "g-worktree",
+                              "a-git-failure"])
 def test_ac7_start_records_base_commit(tmp_path, setup):
+    env = None
     if setup == "worktree":  # (g): Basis ist HEAD des Worktrees, nicht des Hauptrepos
         state_root, cwd = _make_worktree(tmp_path)
         expected = _new(cwd, MOD_B, commit="nur im Worktree")
         assert expected != _sha(state_root)
     else:
         state_root = cwd = _make_repo(tmp_path, commit=setup != "no-head")
-        expected = None if setup == "no-head" else _sha(cwd)
+        expected = None if setup in ("no-head", "git-failure") else _sha(cwd)
+    if setup == "git-failure":  # F102: start scheitert nie an git, base_commit = null
+        env = _failing_git_env(tmp_path, cwd, "*", NO_REPO_MSG)
     wf_type = setup if setup in ("bug", "feature-fast") else "feature"
-    r = _run("workflow.py", ["start", WF, "--type", wf_type], cwd)
+    r = _run("workflow.py", ["start", WF, "--type", wf_type], cwd, env)
     assert r.returncode == 0, r.stderr
     state = _state(state_root)
     assert "base_commit" in state and state["base_commit"] == expected, state
@@ -423,16 +472,56 @@ def test_ac7_phase8_base_selection(tmp_path, scenario, cite_all):
     assert note is None or note in r.stderr, f"({scenario}) Hinweis '{note}' fehlt: {r.stderr}"
 
 
+NO_REPO_MSG = "not a git repository (or any of the parent directories): .git"  # F102: gefälscht
+AC8_FAILURES = [pytest.param("diff", "simulierter diff-Fehler (Test-Wrapper #259)", "diff",
+                             id="diff-fails"),
+                pytest.param("*", "simulierter Totalausfall (Test-Wrapper #259)", "rev-parse",
+                             id="all-fail"),  # F102
+                pytest.param("*", NO_REPO_MSG, "rev-parse", id="forged-no-repo")]  # F102
+
+
+@pytest.mark.parametrize("fail,msg,failed", AC8_FAILURES)
 @pytest.mark.parametrize("gate", ["commit", "phase8"])
-def test_ac8_git_failure_in_valid_worktree_blocks(tmp_path, gate):
+def test_ac8_git_failure_in_valid_worktree_blocks(tmp_path, gate, fail, msg, failed):
     proj = _staged_b(tmp_path, **COVERED)
-    env = _failing_git_env(tmp_path, proj)
+    env = _failing_git_env(tmp_path, proj, fail, msg)
     probe = [subprocess.run(["git", *c], cwd=proj, env=env, capture_output=True).returncode
              for c in (["diff"], ["rev-parse", "HEAD"])]
-    assert probe[0] != 0 and probe[1] == 0, f"Wrapper wirkt nicht wie gedacht: {probe}"
+    assert probe[0] != 0 and (probe[1] != 0) == (fail == "*"), f"Wrapper wirkt anders: {probe}"
     r = _gate(proj, gate, env)
-    assert _blocked(r, gate), f"gescheiterter Diff ignoriert (rc={r.returncode}): {r.stderr}"
-    assert GIT_ERROR in r.stderr and "diff" in r.stderr, r.stderr
+    assert _blocked(r, gate), f"gescheiterter git-Aufruf ignoriert (rc={r.returncode}): {r.stderr}"
+    assert GIT_ERROR in r.stderr and failed in r.stderr, r.stderr
+
+
+@pytest.mark.parametrize("layout,is_repo", [
+    ("dot-git-dir", True), ("worktree-file", True), ("relative-gitdir", True), ("git-dir-env", True),
+    ("nothing", False), ("empty-dot-git", False), ("dangling-gitdir", False)])
+def test_ac8_repo_marker_decides_not_git_output(tmp_path, monkeypatch, layout, is_repo):
+    """F102: scheitert JEDER git-Aufruf (Meldung gefälscht), entscheidet der Dateisystem-Befund
+    oberhalb von `root`: gültiger Marker (.git/HEAD, `gitdir:`-Datei, GIT_DIR) → ChangeSetError,
+    sonst None."""
+    import adversary_dialog as ad
+    root, store = tmp_path / "root", tmp_path / "store" / "gitdir"
+    (root / "pkg").mkdir(parents=True)
+    _write(store, "HEAD", "ref: refs/heads/main\n")
+    dot = root / ".git"
+    if layout == "dot-git-dir":
+        _write(dot, "HEAD", "ref: refs/heads/main\n")
+    elif layout == "empty-dot-git":
+        dot.mkdir()
+    elif layout != "nothing" and layout != "git-dir-env":
+        target = {"worktree-file": store, "relative-gitdir": "../store/gitdir",
+                  "dangling-gitdir": tmp_path / "missing"}[layout]
+        dot.write_text(f"gitdir: {target}\n")
+    monkeypatch.setenv("PATH", _failing_git_env(tmp_path, root, "*", NO_REPO_MSG)["PATH"])
+    monkeypatch.delenv("GIT_DIR", raising=False)
+    if layout == "git-dir-env":
+        monkeypatch.setenv("GIT_DIR", str(store))
+    if is_repo:
+        with pytest.raises(ad.ChangeSetError, match="nicht ermittelbar.*rev-parse"):
+            ad.git_toplevel(root / "pkg")
+    else:
+        assert ad.git_toplevel(root / "pkg") is None
 
 
 @pytest.mark.parametrize("dot_git", [False, True], ids=["no-repo", "empty-dot-git"])
@@ -699,7 +788,7 @@ def test_ac14_required_files_absolute_outside_hash_root(tmp_path):
     assert lines == {MOD_B, os.path.realpath(shared)}, r.stdout
 
 
-@pytest.mark.parametrize("case", ["no-repo", "no-workflow", "git-error"])
+@pytest.mark.parametrize("case", ["no-repo", "no-workflow", "git-error", "git-total-failure"])
 def test_ac14_required_files_exit_codes(tmp_path, case):
     if case == "no-repo":  # Exit 0, keine stdout-Zeilen, erklärender Hinweis auf stderr
         proj, env = _plain_project(tmp_path)
@@ -710,10 +799,12 @@ def test_ac14_required_files_exit_codes(tmp_path, case):
         (proj / ".claude" / "active_workflow").unlink()
         r = _run("adversary_dialog.py", ["required-files"], proj)
         ok = r.returncode == 1 and re.search(r"(?i)workflow", r.stderr)
-    else:  # Git-Fehler → Exit 1, der Befehl wird genannt
-        proj = _staged_b(tmp_path, **COVERED)
-        r = _run("adversary_dialog.py", ["required-files"], proj, _failing_git_env(tmp_path, proj))
-        ok = r.returncode == 1 and not r.stdout.strip() and "diff" in r.stderr
+    else:  # Git-Fehler → Exit 1, der Befehl wird genannt (F102: auch bei Totalausfall)
+        proj, total = _staged_b(tmp_path, **COVERED), case == "git-total-failure"
+        env = _failing_git_env(tmp_path, proj, *(("*", NO_REPO_MSG) if total else ()))
+        r = _run("adversary_dialog.py", ["required-files"], proj, env)
+        failed = "rev-parse" if total else "diff"
+        ok = r.returncode == 1 and not r.stdout.strip() and failed in r.stderr
     assert ok, f"({case}) rc={r.returncode} stdout={r.stdout!r} stderr={r.stderr!r}"
 
 
