@@ -9,7 +9,10 @@ erlaubt werden. Ergänzt edit_gate.py's einfache Boolean-Prüfung durch:
 - Mindestgröße (kein Platzhalter/leere Datei)
 - Frische (<24h alt)
 - Fehlerkeywords im Inhalt (echte Fehlermeldungen, nicht nur "failed")
-- Keine Platzhalter-Patterns im Inhalt
+- Keine Platzhalter-Patterns im RAHMEN der Testausgabe. Vom Runner zitierter
+  Fremdinhalt (Assertion-Dumps, Quellzeilen, aufgefangenes stdout) ist davon
+  ausgenommen, sonst blockt ein RED-Test ueber Framework-Dokumente das Gate mit
+  dessen eigener Platzhalter-Warnung (Issue #262).
 
 Fail-safe: Bei Import-Fehlern oder Parse-Fehlern → exit(0), nie blockieren.
 """
@@ -78,6 +81,70 @@ _TAP_SUMMARY_RE = re.compile(
     r"(?m)^#\s*(tests|suites|pass|fail|cancelled|skipped|todo|duration_ms)\b.*$"
 )
 
+# --- Zitierter Fremdinhalt (Issue #262) ------------------------------------
+# Eine Testausgabe besteht aus zwei Sorten Zeilen: dem RAHMEN, den der Runner
+# selbst erzeugt, und ZITAT, das der Runner aus dem Pruefgegenstand uebernimmt
+# (Dateiinhalt einer gescheiterten Assertion, Quellzeile, aufgefangenes
+# stdout/stderr). Die Platzhalter-Suche darf nur den Rahmen sehen: Prueft ein
+# RED-Test den Inhalt eines Framework-Dokuments, steht in dessen Zitat
+# unvermeidlich das Wort "Placeholder" — skills/40-tdd-red/SKILL.md warnt genau
+# davor. Das Gate blockte dadurch an seiner eigenen Warnung.
+# Gleiches Vorgehen wie _TAP_SUMMARY_RE oben (Issue #73), nur allgemeiner.
+#
+# pytest markiert Zitat eindeutig pro Zeile:
+#   'E   ...'  Assertion-Detail / longrepr — JEDE Zeile davon traegt das 'E'.
+#   '>   ...'  die ausgefuehrte Quellzeile.
+# Das Zeichen muss von Whitespace oder Zeilenende gefolgt sein, damit echte
+# Woerter am Zeilenanfang ('Error: ...', 'ERROR') nicht als Zitat gelten.
+_QUOTED_LINE_RE = re.compile(r"^\s*[E>](?:\s.*)?$")
+
+# Kopf eines aufgefangenen Ausgabeblocks:
+# '----------------------------- Captured stdout call -----------------------------'
+# Auch 'Captured log call', 'Captured stderr setup', 'Captured stdout teardown'.
+_CAPTURED_HEADER_RE = re.compile(
+    r"^-{5,}\s*Captured \w+(?:\s+\w+)?\s*-{5,}\s*$"
+)
+
+# Beliebiger Runner-Abschnittskopf — beendet einen aufgefangenen Block.
+# Mindestens zehn Fuellzeichen plus Titel, damit eine '---'-Zeile aus zitiertem
+# Markdown (YAML-Frontmatter!) den Block NICHT vorzeitig beendet.
+_SECTION_HEADER_RE = re.compile(r"^([=\-_])\1{9,}\s+\S")
+
+
+def _iter_frame_lines(content: str):
+    """Liefert (Zeilennummer, Zeile) fuer alle Zeilen, die der Runner SELBST
+    erzeugt hat — Zitat-Bereiche werden uebersprungen (Issue #262).
+
+    Die Zeilennummern beziehen sich auf das Original, damit eine Fundstelle in
+    der Blockier-Meldung benannt werden kann.
+    """
+    in_captured = False
+    for lineno, line in enumerate(content.splitlines(), start=1):
+        if _CAPTURED_HEADER_RE.match(line):
+            in_captured = True
+            continue
+        if in_captured:
+            if _SECTION_HEADER_RE.match(line):
+                in_captured = False
+            else:
+                continue
+        if _QUOTED_LINE_RE.match(line):
+            continue
+        if _TAP_SUMMARY_RE.match(line):
+            continue
+        yield lineno, line
+
+
+def _find_placeholder(content: str) -> "tuple[int, str] | None":
+    """Sucht Platzhalter-Marker ausschliesslich im Runner-Rahmen.
+
+    Gibt (Zeilennummer, Zeileninhalt) der ersten Fundstelle zurueck, sonst None.
+    """
+    for lineno, line in _iter_frame_lines(content):
+        if _PLACEHOLDER_RE.search(line):
+            return lineno, line.strip()
+    return None
+
 
 def _resolve_artifact_path(path_str: str, project_root: Path) -> Path:
     """Löst einen Artefakt-Pfad auf (Issue #1478 Teil 1).
@@ -136,10 +203,16 @@ def _validate_artifact(art: dict, project_root: Path) -> "str | None":
         except OSError:
             return f"Artefakt-Datei nicht lesbar: {path_str}"
 
-        if _PLACEHOLDER_RE.search(_TAP_SUMMARY_RE.sub("", content)):
+        hit = _find_placeholder(content)
+        if hit is not None:
+            lineno, text = hit
+            snippet = text if len(text) <= 120 else text[:117] + "..."
             return (
                 f"Artefakt enthält Platzhalter-Text: {path_str}\n"
-                f"  → Echte Testausgabe eintragen, kein Copy-Paste-Beispiel."
+                f"  → Zeile {lineno}: {snippet}\n"
+                f"  → Echte Testausgabe eintragen, kein Copy-Paste-Beispiel.\n"
+                f"  → Zitierte Bereiche (E-/>-Zeilen, Captured-Abschnitte) sind "
+                f"ausgenommen — dieser Treffer steht im Artefakt selbst."
             )
 
         if not _FAILURE_RE.search(content):
