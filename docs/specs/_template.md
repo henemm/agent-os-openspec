@@ -61,7 +61,13 @@ Fertig ist diese Änderung, wenn:
 ## Acceptance Criteria
 
 - **AC-1:** Given <Vorbedingung> / When <Aktion> / Then <beobachtbares Ergebnis>
-  - Test: *(wird nach der TDD-RED-Phase eingetragen)*
+  - Test: <Datei::Testfunktion, die diese AC belegt — JETZT eintragen, nicht später>
+
+> Die Test-Zuordnung wird **bei der Spec-Erstellung** eingetragen, nicht nachträglich:
+> Nach der Freigabe ist diese Datei eingefroren (#230) — jede Änderung verschiebt den
+> PO-Briefing-Hash und blockt den Workflow-Abschluss. Stimmt der Testname später nicht
+> mehr, gehört die Korrektur in die TDD-RED-Artefakte (`workflow.py add-artifact`),
+> nicht in diese Datei.
 
 ## Test Plan
 

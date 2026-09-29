@@ -189,10 +189,20 @@ Task (general-purpose/sonnet, run_in_background: true): "Du bist der docs-update
   Input:
   - changed_files: [Liste der geaenderten Dateien]
   - feature_summary: [Kurzbeschreibung]
-  - spec_file_path: [Pfad zur Spec]
+  - spec_file_path: [Pfad zur Spec — NUR LESEN, kein Bearbeitungsziel]
 
-  Aktualisiere alle betroffene Dokumentation."
+  Aktualisiere alle betroffene Dokumentation.
+
+  Die Spec-Datei selbst NICHT bearbeiten — sie ist nach der Freigabe eingefroren
+  (#230): kein Status-Feld setzen, keine AC-Checkboxen abhaken."
 ```
+
+**Warum `spec_file_path` nur Lesekontext ist (#230):** Das PO-Briefing ist per SHA-256 an
+die gelesene Spec-Fassung gebunden. Fasst der docs-updater die Spec an, verschiebt sich der
+Hash und Step 4 (`phase phase8_complete`) bricht mit „PO-Briefing ist veraltet" ab. Deshalb
+gilt: Die Spec ist nach Freigabe eingefroren und darf nicht mehr bearbeitet werden —
+`edit_gate.py` (Schritt 1d) blockiert solche Schreibzugriffe technisch. Eine wirklich
+gewollte Nachbesserung braucht das Wort „override" vom User.
 
 ### Step 4: Workflow State aktualisieren
 

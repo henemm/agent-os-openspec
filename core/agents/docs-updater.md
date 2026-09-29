@@ -34,9 +34,19 @@ Dieser Agent erwartet folgende Informationen:
 | Solution attempts | `docs/project/solution_attempts.md` |
 | Lessons learned | `docs/reference/critical_lessons.md` |
 | Known issues | `docs/project/known_issues.md` |
-| Entity specs | `docs/specs/[type]/[entity_id].md` |
+| Entity specs | `docs/specs/[type]/[entity_id].md` — **nur vor der Freigabe** (siehe Regel unten) |
 | API reference | `docs/reference/api.md` |
 | Configuration | `docs/reference/config.md` |
+
+**Freigegebene Entity-Specs sind schreibgeschützt (#230):** Eine Spec, deren Workflow
+`phase4_approved` oder eine spätere Phase erreicht hat, darf **nicht mehr bearbeitet**
+werden — auch nicht, um das Status-Feld zu setzen oder AC-Checkboxen abzuhaken, und auch
+nicht nach erfolgreicher Validierung. Grund: Das PO-Briefing ist per SHA-256 an die
+gelesene Spec-Fassung gebunden. Jede nachträgliche Änderung verschiebt diesen Hash und
+blockt jede Transition ≥ `phase4_approved` (inklusive `phase8_complete`) mit
+„PO-Briefing ist veraltet". `edit_gate.py` (Schritt 1d) blockiert solche Schreibzugriffe
+technisch. `spec_file_path` ist für diesen Agenten deshalb ausschließlich **Lesekontext**
+— nutze sie, um Feature-Docs zu schreiben, nie als Bearbeitungsziel.
 
 ## CLAUDE.md Rules
 

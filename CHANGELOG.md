@@ -41,11 +41,51 @@ unbekannte Dateiendung — führt zur Frage. Befehlstexte (`core/commands/*.md`,
 `.claude/commands/*.md`, `skills/*/SKILL.md`, `CLAUDE.md`) gelten dabei als Oberfläche, nicht
 als unsichtbare Doku (PO-Entscheidung E1).
 
+### Fixed
+
+**Freigegebene Spec ist eingefroren — `/60-validate` blockiert nicht mehr am eigenen
+docs-updater (#230)**
+
+Der Übergang nach `phase8_complete` schlug mit „PO-Briefing ist veraltet" fehl, weil Step 3
+von `/60-validate` den docs-updater auf die bereits freigegebene Spec-Datei ansetzte
+(Status-Feld, AC-Checkboxen). Das verschob deren `spec_sha256()` — genau den Hash, an den
+`set-briefing` das PO-Briefing bindet und den `_check_po_briefing()` für **jede** Transition
+≥ `phase4_approved` prüft. Der Fix beseitigt die Ursache statt sie abzufedern.
+
+- `core/hooks/edit_gate.py`: neuer Schritt **1d. Spec-Freeze nach Freigabe**. Ist die
+  Zieldatei die `spec_file` eines Workflows in Phase ≥ `phase4_approved` (bis einschliesslich
+  `phase8_complete`), wird Edit/Write blockiert. Der Check steht bewusst **vor** Schritt 2/2b:
+  `ALWAYS_ALLOWED_DIRS` (`docs/`) und `ALWAYS_ALLOWED_PATTERNS` (`\.md$`) hätten die Spec
+  sonst bedingungslos durchgewunken. Neue Helfer `_find_workflow_by_spec_file()`,
+  `_matches_spec_file()`, `_relative_to_roots()`, `_approved_phases()` (PHASES aus
+  `workflow.py`, damit keine Doppel-Pflege entsteht).
+- **Archivierte Workflows friert der Guard nicht ein:** `_find_workflow_by_spec_file()` wertet
+  bewusst nur eine noch LIVE Datei unter `.claude/workflows/` aus, nicht
+  `_read_active_workflow()` — die fällt auf `_archive/<name>.json` zurück. Nach
+  `workflow.py finish` bleibt die `OPENSPEC_ACTIVE_WORKFLOW`-Var der Shell stehen (ein
+  Kindprozess kann sie nicht löschen) und `resolve_active_workflow()` prüft diese dritte
+  Quelle nicht auf Existenz; über den Archiv-Fallback wäre die Spec eines abgeschlossenen
+  Workflows dauerhaft gesperrt. `_read_active_workflow()` selbst bleibt unverändert — andere
+  Aufrufer nutzen den Archiv-Fallback absichtlich.
+- Fluchtweg unverändert: eine wirklich gewollte Nachbesserung braucht das Wort „override"
+  (Workflow-, `__infra__`- oder globales Token, 1 h TTL).
+- `core/commands/60-validate.md` + `skills/60-validate/SKILL.md`: Step 3 übergibt
+  `spec_file_path` nur noch als Lesekontext und weist ausdrücklich darauf hin, dass die Spec
+  eingefroren ist.
+- `core/agents/docs-updater.md`: „Documentation Locations" führt die Entity-Spec nur noch für
+  die Zeit vor der Freigabe als Ziel; danach ist sie schreibgeschützt.
+- `docs/specs/_template.md`: Platzhalter „wird nach der TDD-RED-Phase eingetragen" entfernt —
+  er versprach eine nachträgliche Änderung an einer eingefrorenen Datei. Die Test-Zuordnung
+  gehört jetzt bereits in die Spec-Erstellung.
+
 ### Tests
 
 - `tests/test_observable_surface_260.py`: 14 Tests (AC-1 bis AC-14), jeder mit eigenem
   Wegwerf-Git-Repo im Subprozess — `load_config()`/`find_project_root()` cachen, ein
   In-Prozess-Test mit mehreren Config-Ständen wäre reihenfolgeabhängig.
+- `tests/test_edit_gate_spec_freeze_230.py`: 8 Tests (AC-1 bis AC-6 plus ein Regressionstest
+  für den archivierten Workflow mit stehengebliebener Env-Var), hermetisches Fake-Projekt pro
+  Test, `edit_gate.py` im Subprozess mit JSON-Payload über stdin.
 
 ### Fixed
 
