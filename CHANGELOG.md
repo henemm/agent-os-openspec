@@ -5,7 +5,7 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.34.0] - 2026-09-29
+## [Unreleased]
 
 ### Added
 
@@ -32,6 +32,10 @@ kein Sprachmodell. Siehe `docs/specs/feat-285-precondition-origins.md`.
 Hand aufgerufen. Die Anbindung an das Prüfprotokoll folgt in #286. Die Textsuche ist eine
 Verdachtsliste, kein Beweis — Zuweisungen über Setter, Reflection oder Memberwise-Initializer
 erkennt sie nicht (siehe „Known Limitations" der Spec).
+
+## [3.34.0] - 2026-09-29
+
+### Added
 
 **Beobachtbare Oberfläche erkennen — Schlussfrage in `/60-validate` abgestuft (#260, Hälfte 2 von #147)**
 
