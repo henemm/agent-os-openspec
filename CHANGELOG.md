@@ -5,7 +5,7 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.34.0] - 2026-09-29
 
 ### Added
 
@@ -43,53 +43,7 @@ als unsichtbare Doku (PO-Entscheidung E1).
 
 ### Fixed
 
-**Freigegebene Spec ist eingefroren — `/60-validate` blockiert nicht mehr am eigenen
-docs-updater (#230)**
-
-Der Übergang nach `phase8_complete` schlug mit „PO-Briefing ist veraltet" fehl, weil Step 3
-von `/60-validate` den docs-updater auf die bereits freigegebene Spec-Datei ansetzte
-(Status-Feld, AC-Checkboxen). Das verschob deren `spec_sha256()` — genau den Hash, an den
-`set-briefing` das PO-Briefing bindet und den `_check_po_briefing()` für **jede** Transition
-≥ `phase4_approved` prüft. Der Fix beseitigt die Ursache statt sie abzufedern.
-
-- `core/hooks/edit_gate.py`: neuer Schritt **1d. Spec-Freeze nach Freigabe**. Ist die
-  Zieldatei die `spec_file` eines Workflows in Phase ≥ `phase4_approved` (bis einschliesslich
-  `phase8_complete`), wird Edit/Write blockiert. Der Check steht bewusst **vor** Schritt 2/2b:
-  `ALWAYS_ALLOWED_DIRS` (`docs/`) und `ALWAYS_ALLOWED_PATTERNS` (`\.md$`) hätten die Spec
-  sonst bedingungslos durchgewunken. Neue Helfer `_find_workflow_by_spec_file()`,
-  `_matches_spec_file()`, `_relative_to_roots()`, `_approved_phases()` (PHASES aus
-  `workflow.py`, damit keine Doppel-Pflege entsteht).
-- **Archivierte Workflows friert der Guard nicht ein:** `_find_workflow_by_spec_file()` wertet
-  bewusst nur eine noch LIVE Datei unter `.claude/workflows/` aus, nicht
-  `_read_active_workflow()` — die fällt auf `_archive/<name>.json` zurück. Nach
-  `workflow.py finish` bleibt die `OPENSPEC_ACTIVE_WORKFLOW`-Var der Shell stehen (ein
-  Kindprozess kann sie nicht löschen) und `resolve_active_workflow()` prüft diese dritte
-  Quelle nicht auf Existenz; über den Archiv-Fallback wäre die Spec eines abgeschlossenen
-  Workflows dauerhaft gesperrt. `_read_active_workflow()` selbst bleibt unverändert — andere
-  Aufrufer nutzen den Archiv-Fallback absichtlich.
-- Fluchtweg unverändert: eine wirklich gewollte Nachbesserung braucht das Wort „override"
-  (Workflow-, `__infra__`- oder globales Token, 1 h TTL).
-- `core/commands/60-validate.md` + `skills/60-validate/SKILL.md`: Step 3 übergibt
-  `spec_file_path` nur noch als Lesekontext und weist ausdrücklich darauf hin, dass die Spec
-  eingefroren ist.
-- `core/agents/docs-updater.md`: „Documentation Locations" führt die Entity-Spec nur noch für
-  die Zeit vor der Freigabe als Ziel; danach ist sie schreibgeschützt.
-- `docs/specs/_template.md`: Platzhalter „wird nach der TDD-RED-Phase eingetragen" entfernt —
-  er versprach eine nachträgliche Änderung an einer eingefrorenen Datei. Die Test-Zuordnung
-  gehört jetzt bereits in die Spec-Erstellung.
-
-### Tests
-
-- `tests/test_observable_surface_260.py`: 14 Tests (AC-1 bis AC-14), jeder mit eigenem
-  Wegwerf-Git-Repo im Subprozess — `load_config()`/`find_project_root()` cachen, ein
-  In-Prozess-Test mit mehreren Config-Ständen wäre reihenfolgeabhängig.
-- `tests/test_edit_gate_spec_freeze_230.py`: 8 Tests (AC-1 bis AC-6 plus ein Regressionstest
-  für den archivierten Workflow mit stehengebliebener Env-Var), hermetisches Fake-Projekt pro
-  Test, `edit_gate.py` im Subprozess mit JSON-Payload über stdin.
-
-### Fixed
-
-**Adversary-Nachweis an die tatsächliche Änderungsmenge gebunden (#259)**
+**Adversary-Nachweis an die tatsächliche Änderungsmenge gebunden (#259) — 3.34.0**
 
 Commit-Gate und Phase 8 prüften das gestempelte Dialog-Artefakt nur auf Form, Runden und
 Hash-Frische der zitierten Dateien — ein fremdes Protokoll, das nur seine eigenen Dateien
@@ -126,6 +80,83 @@ required-files` per `Code reference:` zitiert, danach `stamp` und `add-artifact`
 ohne `base_commit` messen gegen `merge-base(origin/main, HEAD)`. Ausweg beim Commit: der
 Override-Token; in Phase 8: der Kill-Switch oder `workflow.py abandon`.
 
+**Freigegebene Spec ist eingefroren — `/60-validate` blockiert nicht mehr am eigenen
+docs-updater (#230)**
+
+Der Übergang nach `phase8_complete` schlug mit „PO-Briefing ist veraltet" fehl, weil Step 3
+von `/60-validate` den docs-updater auf die bereits freigegebene Spec-Datei ansetzte
+(Status-Feld, AC-Checkboxen). Das verschob deren `spec_sha256()` — genau den Hash, an den
+`set-briefing` das PO-Briefing bindet und den `_check_po_briefing()` für **jede** Transition
+≥ `phase4_approved` prüft. Der Fix beseitigt die Ursache statt sie abzufedern.
+
+- `core/hooks/edit_gate.py`: neuer Schritt **1d. Spec-Freeze nach Freigabe**. Ist die
+  Zieldatei die `spec_file` eines Workflows in Phase ≥ `phase4_approved` (bis einschliesslich
+  `phase8_complete`), wird Edit/Write blockiert. Der Check steht bewusst **vor** Schritt 2/2b:
+  `ALWAYS_ALLOWED_DIRS` (`docs/`) und `ALWAYS_ALLOWED_PATTERNS` (`\.md$`) hätten die Spec
+  sonst bedingungslos durchgewunken. Neue Helfer `_find_workflow_by_spec_file()`,
+  `_matches_spec_file()`, `_relative_to_roots()`, `_approved_phases()` (PHASES aus
+  `workflow.py`, damit keine Doppel-Pflege entsteht).
+- **Archivierte Workflows friert der Guard nicht ein:** `_find_workflow_by_spec_file()` wertet
+  bewusst nur eine noch LIVE Datei unter `.claude/workflows/` aus, nicht
+  `_read_active_workflow()` — die fällt auf `_archive/<name>.json` zurück. Nach
+  `workflow.py finish` bleibt die `OPENSPEC_ACTIVE_WORKFLOW`-Var der Shell stehen (ein
+  Kindprozess kann sie nicht löschen) und `resolve_active_workflow()` prüft diese dritte
+  Quelle nicht auf Existenz; über den Archiv-Fallback wäre die Spec eines abgeschlossenen
+  Workflows dauerhaft gesperrt. `_read_active_workflow()` selbst bleibt unverändert — andere
+  Aufrufer nutzen den Archiv-Fallback absichtlich.
+- Fluchtweg unverändert: eine wirklich gewollte Nachbesserung braucht das Wort „override"
+  (Workflow-, `__infra__`- oder globales Token, 1 h TTL).
+- `core/commands/60-validate.md` + `skills/60-validate/SKILL.md`: Step 3 übergibt
+  `spec_file_path` nur noch als Lesekontext und weist ausdrücklich darauf hin, dass die Spec
+  eingefroren ist.
+- `core/agents/docs-updater.md`: „Documentation Locations" führt die Entity-Spec nur noch für
+  die Zeit vor der Freigabe als Ziel; danach ist sie schreibgeschützt.
+- `docs/specs/_template.md`: Platzhalter „wird nach der TDD-RED-Phase eingetragen" entfernt —
+  er versprach eine nachträgliche Änderung an einer eingefrorenen Datei. Die Test-Zuordnung
+  gehört jetzt bereits in die Spec-Erstellung.
+
+**TDD-Gate hielt echte pytest-Ausgabe für gefälscht, sobald sie Framework-Doku zitiert (#262, Epic #199)**
+
+`tdd_enforcement._PLACEHOLDER_RE` lief über den kompletten Artefakt-Inhalt. Prüft ein RED-Test
+den Inhalt eines Framework-Dokuments (`skills/*/SKILL.md`, `core/commands/*.md`), schreibt
+pytest bei gescheiterter Assertion das ganze Dokument in die Ausgabe — und
+`skills/40-tdd-red/SKILL.md` enthält die Zeile „❌ **Placeholder artifacts** → Hook will block
+implementation". Das Gate blockte damit jeden `Edit`/`Write` in `phase6_implement` an seiner
+eigenen Warnung vor gefälschten Artefakten. Live aufgetreten am 2026-09-27 im Vorgang
+`fix-147-validierung-abstufen`; die Blockade war nur über `_ALWAYS_ALLOWED`-Pfade und `Bash`
+zu umgehen, also gar nicht, sobald noch eine Code-Datei zu schreiben war.
+
+- `core/hooks/tdd_enforcement.py`: Die Platzhalter-Suche sieht nur noch den **Rahmen**, den der
+  Runner selbst erzeugt. Vom Runner **zitierter** Fremdinhalt ist ausgenommen — `E `-Zeilen
+  (Assertion-Detail/longrepr), `> `-Zeilen (ausgeführte Quellzeile) und aufgefangene
+  Ausgabeblöcke (`---- Captured stdout call ----` bis zum nächsten Abschnittskopf). Neue Helfer
+  `_iter_frame_lines()` und `_find_placeholder()`, neue Muster `_QUOTED_LINE_RE`,
+  `_CAPTURED_HEADER_RE`, `_SECTION_HEADER_RE`. Gleiches Vorgehen wie `_TAP_SUMMARY_RE` für
+  `node --test` (#73), nur allgemeiner; die Fehler-Evidenz-Prüfung (`_FAILURE_RE`) läuft
+  unverändert auf dem Originaltext.
+- Der Abschnittskopf verlangt mindestens zehn Füllzeichen plus Titel, damit eine `---`-Zeile aus
+  zitiertem Markdown (YAML-Frontmatter) einen aufgefangenen Block nicht vorzeitig beendet.
+- Die Blockier-Meldung nennt jetzt **Zeilennummer und Fundstelle**. Im Livefall wies sie nur die
+  Datei aus — das war der eigentliche Zeitfresser bei der Ursachensuche.
+
+**Bewusst nicht gemacht:** Ein Artefakt mit erkennbarer Test-Zusammenfassung pauschal als echt
+durchzuwinken (Vorschlag 2 im Vorgang). Das hätte das Gate geöffnet — eine erfundene Datei mit
+gefälschter Summenzeile wäre trotz `TODO: echte Ausgabe einfügen` durchgekommen. Der Fehlalarm
+verschwindet ohne diese Lockerung; Platzhalter im Artefakt-Rahmen blocken weiterhin.
+
+Abgrenzung: nicht #89 (Wort als Teilstring in einem Bezeichner, per `\b`-Grenzen gelöst) und
+nicht #73 (TAP-Summary von `node --test`). Regressionstests:
+`tests/test_tdd_enforcement_embedded_content_262.py` (8 Fälle, davon 3 zur Absicherung, dass
+das Gate seine Zähne behält).
+
+### Tests
+
+- `tests/test_observable_surface_260.py`: 14 Tests (AC-1 bis AC-14), jeder mit eigenem
+  Wegwerf-Git-Repo im Subprozess — `load_config()`/`find_project_root()` cachen, ein
+  In-Prozess-Test mit mehreren Config-Ständen wäre reihenfolgeabhängig.
+- `tests/test_edit_gate_spec_freeze_230.py`: 8 Tests (AC-1 bis AC-6 plus ein Regressionstest
+  für den archivierten Workflow mit stehengebliebener Env-Var), hermetisches Fake-Projekt pro
+  Test, `edit_gate.py` im Subprozess mit JSON-Payload über stdin.
 - `tests/test_adversary_coverage_gate_259.py`: 150 Tests (AC-1 bis AC-16), End-to-End über die
   echten Hook-Skripte in Wegwerf-Repos (Bare-Repo als `origin`, `git worktree add`).
 
@@ -169,43 +200,10 @@ ist Hälfte 2 (#260) und nicht Teil dieser Version.
   echten Repo-Dateien statt gegen `tmp_path` (AC-7) und Doku-Formulierungen (AC-9).
 - `tests/test_setup_command_aliases.py`: Beispiel für einen gesperrten Skill von
   `50-implement` auf `70-deploy` umgestellt (AC-8).
+
 ## [3.32.1] - 2026-09-27
 
 ### Fixed
-
-**TDD-Gate hielt echte pytest-Ausgabe für gefälscht, sobald sie Framework-Doku zitiert (#262, Epic #199)**
-
-`tdd_enforcement._PLACEHOLDER_RE` lief über den kompletten Artefakt-Inhalt. Prüft ein RED-Test
-den Inhalt eines Framework-Dokuments (`skills/*/SKILL.md`, `core/commands/*.md`), schreibt
-pytest bei gescheiterter Assertion das ganze Dokument in die Ausgabe — und
-`skills/40-tdd-red/SKILL.md` enthält die Zeile „❌ **Placeholder artifacts** → Hook will block
-implementation". Das Gate blockte damit jeden `Edit`/`Write` in `phase6_implement` an seiner
-eigenen Warnung vor gefälschten Artefakten. Live aufgetreten am 2026-09-27 im Vorgang
-`fix-147-validierung-abstufen`; die Blockade war nur über `_ALWAYS_ALLOWED`-Pfade und `Bash`
-zu umgehen, also gar nicht, sobald noch eine Code-Datei zu schreiben war.
-
-- `core/hooks/tdd_enforcement.py`: Die Platzhalter-Suche sieht nur noch den **Rahmen**, den der
-  Runner selbst erzeugt. Vom Runner **zitierter** Fremdinhalt ist ausgenommen — `E `-Zeilen
-  (Assertion-Detail/longrepr), `> `-Zeilen (ausgeführte Quellzeile) und aufgefangene
-  Ausgabeblöcke (`---- Captured stdout call ----` bis zum nächsten Abschnittskopf). Neue Helfer
-  `_iter_frame_lines()` und `_find_placeholder()`, neue Muster `_QUOTED_LINE_RE`,
-  `_CAPTURED_HEADER_RE`, `_SECTION_HEADER_RE`. Gleiches Vorgehen wie `_TAP_SUMMARY_RE` für
-  `node --test` (#73), nur allgemeiner; die Fehler-Evidenz-Prüfung (`_FAILURE_RE`) läuft
-  unverändert auf dem Originaltext.
-- Der Abschnittskopf verlangt mindestens zehn Füllzeichen plus Titel, damit eine `---`-Zeile aus
-  zitiertem Markdown (YAML-Frontmatter) einen aufgefangenen Block nicht vorzeitig beendet.
-- Die Blockier-Meldung nennt jetzt **Zeilennummer und Fundstelle**. Im Livefall wies sie nur die
-  Datei aus — das war der eigentliche Zeitfresser bei der Ursachensuche.
-
-**Bewusst nicht gemacht:** Ein Artefakt mit erkennbarer Test-Zusammenfassung pauschal als echt
-durchzuwinken (Vorschlag 2 im Vorgang). Das hätte das Gate geöffnet — eine erfundene Datei mit
-gefälschter Summenzeile wäre trotz `TODO: echte Ausgabe einfügen` durchgekommen. Der Fehlalarm
-verschwindet ohne diese Lockerung; Platzhalter im Artefakt-Rahmen blocken weiterhin.
-
-Abgrenzung: nicht #89 (Wort als Teilstring in einem Bezeichner, per `\b`-Grenzen gelöst) und
-nicht #73 (TAP-Summary von `node --test`). Regressionstests:
-`tests/test_tdd_enforcement_embedded_content_262.py` (8 Fälle, davon 3 zur Absicherung, dass
-das Gate seine Zähne behält).
 
 **Commit-Gate und Phase 8 verlangen einen gültigen Adversary-Dialog-Nachweis (#253) — 3.32.1**
 
