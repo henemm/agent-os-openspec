@@ -378,6 +378,7 @@ agent-os-openspec/
 │   │   ├── qa_gate.py                   # Test output validation
 │   │   ├── adversary_dialog.py          # Adversary dialog protocol
 │   │   ├── override_token.py            # Override token management
+│   │   ├── precondition_origins.py      # Standalone CLI tool (NOT a hook/gate): collects origin of test preconditions
 │   │   ├── hook_utils.py                # Shared bootstrap
 │   │   └── config_loader.py             # YAML config loader
 │   ├── agents/              # Agent definitions (Markdown)
