@@ -1013,15 +1013,35 @@ def _validate_transition(data: dict, target: str) -> str | None:
             return "Adversary verdict missing or not VERIFIED"
         # #253: das Verdict zaehlt nur mit gueltigem, gestempeltem Dialog-Artefakt —
         # dieselbe Regel wie im Commit-Gate (bash_gate.py 5c), kein Override-Pfad.
+        # #259: das Artefakt muss zudem jede seit der Basis geaenderte Code-Datei binden.
         try:
-            from adversary_dialog import check_dialog_evidence
-            reason = check_dialog_evidence(data)
+            import adversary_dialog as ad
+            files, info = None, ""
+            if ad.coverage_gate_enabled():
+                try:
+                    files, info = ad.phase8_code_files(data)
+                except ad.ChangeSetError as exc:
+                    return f"Adversary verdict ohne gültigen Dialog-Nachweis — {exc}"
+            reason = ad.check_dialog_evidence(data, changed_files=files)
+            if reason and info == ad.DEGRADED_BASE_NOTE:
+                reason = f"{reason} ({info})"
         except Exception as exc:
             reason = f"Nachweis-Prüfung nicht verfügbar ({type(exc).__name__}: {exc})"
         if reason:
             return f"Adversary verdict ohne gültigen Dialog-Nachweis — {reason}"
 
     return None
+
+
+def _start_base_commit() -> "str | None":
+    """HEAD des Mess-Roots bei `start` (#259 §14): Worktree vor Hauptrepo; None ohne HEAD."""
+    try:
+        from adversary_dialog import git_toplevel, run_git
+        top = git_toplevel(_worktree_root_if_any() or find_project_root())
+        head = run_git(["rev-parse", "--verify", "-q", "HEAD"], top, probe=True) if top else None
+    except Exception:
+        return None
+    return (head.strip() or None) if head else None
 
 
 # --- Commands ---
@@ -1051,6 +1071,7 @@ def cmd_start(args: list[str]) -> None:
         sys.exit(1)
     data = _new_workflow(name)
     data["workflow_type"] = workflow_type
+    data["base_commit"] = _start_base_commit()  # #259: Basis-Kandidat fuer Phase 8
     if workflow_type == "bug":
         # Fast-track: start at phase6, bypass spec and TDD gates
         data["current_phase"] = "phase6_implement"

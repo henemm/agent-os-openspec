@@ -162,7 +162,7 @@ Vier automatische Prüfagenten und der docs-updater prüfen die Implementierung 
 
 ### Phase 8 — Abgeschlossen
 
-`git commit` wird nur erlaubt, wenn ein VERIFIED-Adversary-Verdict UND ein gültiges, gestempeltes Dialog-Artefakt vorliegen (#253). Das bash_gate.py blockiert den Commit sonst.
+`git commit` wird nur erlaubt, wenn ein VERIFIED-Adversary-Verdict UND ein gültiges, gestempeltes Dialog-Artefakt vorliegen (#253), das jede Code-Datei der Änderungsmenge zitiert und hasht (Abdeckungsprüfung, #259). Das bash_gate.py blockiert den Commit sonst.
 
 ---
 
@@ -220,11 +220,24 @@ Läuft **bevor Claude einen Shell-Befehl ausführt**. Besonders relevant bei `gi
    c. Kein VERIFIED-Verdict (bzw. AMBIGUOUS + Override)? → BLOCK
    d. Kein registriertes, gestempeltes, zum Ist-Stand passendes
       Dialog-Artefakt? → BLOCK (Notbremse: User-Override-Token)
+   e. Code-Datei des Commits nicht zitiert und gehasht, teilweise
+      gestagt oder Änderungsmenge nicht ermittelbar? → BLOCK
+      (Abdeckungsprüfung #259, Notbremse: User-Override-Token)
 → ALLOW
 ```
 
 Dieselbe Nachweis-Regel (`adversary_dialog.check_dialog_evidence`) gilt beim
 Übergang nach `phase8_complete` (`phase`, `complete`, `finish`) — dort ohne Override.
+
+Abdeckungsprüfung (#259): Beim Commit zählt die Änderungsmenge des entstehenden
+Commits. Das ist immer mindestens der Index. Bei `-a`, Pfadangabe oder begleitendem
+`git add` kommt der Arbeitsbaum gegen HEAD hinzu, bei `--amend` Index und Arbeitsbaum gegen
+`HEAD~1`. In Phase 8 zählt jede Code-Datei, die seit der
+Basis geändert ist — `base_commit` (bei `workflow.py start` gesetzt) oder
+`merge-base(origin/main, HEAD)`, der jüngere gültige Vorfahre von HEAD gewinnt; ohne
+beide nur HEAD (degradiert, die Meldung sagt es). `adversary_dialog.py required-files`
+listet genau diese Phase-8-Menge. Kill-Switch: `config.yaml` →
+`adversary_coverage_gate.enabled: false`.
 
 ### `post_bash.py` — Test-Detektor (PostToolUse Bash)
 

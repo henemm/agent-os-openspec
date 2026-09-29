@@ -480,19 +480,119 @@ def _write_e2e_scope(wf: dict, scope: str) -> None:
         pass
 
 
-def _require_dialog_evidence(wf: dict, verdict: str) -> None:
-    """VERIFIED bzw. AMBIGUOUS+Override zaehlen nur mit gueltigem Dialog-Artefakt (#253).
+# Wertnehmende Optionen von `git commit` (#259 §3): ihr Wert ist keine Pfadangabe.
+_COMMIT_VALUE_OPTS = {
+    "-m", "-F", "-C", "-c", "-t", "--author", "--date", "--cleanup", "--fixup",
+    "--squash", "--trailer", "--message", "--file", "--reuse-message",
+    "--reedit-message", "--template",
+}
 
-    Dieselbe Regel wie der Phase-8-Uebergang (adversary_dialog.check_dialog_evidence).
+
+def _commit_form(command: str) -> "tuple[bool, bool, bool, bool]":
+    """(-a/--all, Pfadangabe, begleitendes `git add`, --amend) des Commit-Aufrufs (#259 §3).
+
+    Jedes Nicht-Options-Token der commit-Argumente, das kein Wert einer
+    wertnehmenden Option ist, gilt als Pfadangabe, ebenso alles nach `--`.
+    `--amend` zaehlt nur als Options-Token (auch abgekuerzt wie `--amen`, das
+    git akzeptiert), nie im Wert von `-m` & Co. (F101). Unsicherheit (nicht
+    zerlegbar, kein direkter commit-Aufruf) ergibt (True, True, True, True) —
+    die groessere Menge, nie die kleinere.
+    """
+    from hook_utils import _git_segments, _looks_like_git
+    commits = [seg[seg.index("commit") + 1:] for seg in (_git_segments(command) or [])
+               if "commit" in seg and any(_looks_like_git(t) for t in seg[:seg.index("commit")])]
+    if not commits:
+        return True, True, True, True
+    all_files = pathspec = amend = False
+    for args in commits:
+        skip = False
+        for i, tok in enumerate(args):
+            if skip:
+                skip = False
+            elif tok == "--":
+                pathspec |= i + 1 < len(args)
+                break
+            elif tok.startswith("--"):
+                all_files |= tok == "--all"
+                amend |= "--amend".startswith(tok)
+                pathspec |= tok.startswith("--pathspec-from-file")
+                skip = tok in _COMMIT_VALUE_OPTS
+            elif tok.startswith("-") and len(tok) > 1:
+                for j, ch in enumerate(tok[1:]):  # gebuendelt: -am <msg>
+                    all_files |= ch == "a"
+                    if ch in "mFCct":
+                        skip = j + 2 == len(tok)  # Wert folgt als eigenes Token
+                        break
+            else:
+                pathspec = True
+    return all_files, pathspec, "add" in git_subcommands(command), amend
+
+
+def _commit_change_set(command: str) -> "tuple[list | None, list, str | None]":
+    """(Commit-Menge, teilweise gestagte Dateien, git-Fehler) — Code-Dateien, realpath-absolut.
+
+    Commit-Menge (#259 §3), immer als Vereinigung mit dem Index (nie kleiner als er):
+    bei -a, Pfadangabe, leerem Index oder begleitendem `git add` plus Arbeitsbaum gegen
+    HEAD (mit `add` plus untrackte Dateien); bei --amend plus Index und Arbeitsbaum
+    gegen HEAD~1 (F101). Teilstaging (§4) nur, wenn der Commit aus dem Index kommt.
+    Menge None: kein Git-Repository, die Pruefung entfaellt; git-Fehler trotz
+    Repository (F102) → Fehlertext.
+    """
+    from adversary_dialog import (
+        DIFF_NAMES, ChangeSetError, code_files, git_code_files, git_names, git_toplevel, run_git,
+    )
+    all_files, pathspec, with_add, amend = _commit_form(command)
+
+    def has(rev: str) -> bool:
+        return run_git(["rev-parse", "--verify", "-q", rev], top, probe=True) is not None
+
+    try:
+        top = git_toplevel(_measurement_root())
+        if top is None:
+            return None, [], None
+        staged = git_names(["diff", "--cached", *DIFF_NAMES], top)  # leer = leerer Index
+        files = index = code_files(staged, top)
+        if (all_files or pathspec or with_add or not staged) and has("HEAD"):
+            files = files + git_code_files(["diff", *DIFF_NAMES, "HEAD", "--"], top)
+        if amend and has("HEAD~1"):  # Vereinigung: --amend vergroessert die Menge nur
+            files = files + git_code_files(["diff", *DIFF_NAMES, "HEAD~1", "--"], top) \
+                + git_code_files(["diff", "--cached", *DIFF_NAMES, "HEAD~1", "--"], top)
+        if with_add:
+            files = files + git_code_files(["ls-files", "-z", "--others", "--exclude-standard"], top)
+        partial = []
+        if not (all_files or pathspec or with_add):
+            unstaged = set(git_code_files(["diff", "-z", "--name-only"], top))
+            partial = [f for f in index if f in unstaged]
+    except ChangeSetError as exc:
+        return None, [], str(exc)
+    return sorted(set(files)), partial, None
+
+
+def _require_dialog_evidence(wf: dict, verdict: str, command: str) -> None:
+    """VERIFIED bzw. AMBIGUOUS+Override zaehlen nur mit gueltigem Dialog-Artefakt (#253),
+    das jede Code-Datei des entstehenden Commits bindet (#259).
+
+    Dieselbe Regel wie der Phase-8-Uebergang (adversary_dialog.check_dialog_evidence);
+    Commit-Menge und Teilstaging nur bei aktivem Kill-Switch adversary_coverage_gate.
     Scheitert der Import, gilt der Nachweis als nicht erbracht. Ein gueltiger
-    User-Override-Token hebt den Block auf — dieselbe Notbremse wie beim
+    User-Override-Token hebt jeden dieser Blocks auf — dieselbe Notbremse wie beim
     fehlenden Verdict.
     """
+    reasons = []
     try:
-        from adversary_dialog import check_dialog_evidence
-        reason = check_dialog_evidence(wf)
+        from adversary_dialog import check_dialog_evidence, coverage_gate_enabled, display_path
+        changed, partial, git_error = None, [], None
+        if coverage_gate_enabled():
+            changed, partial, git_error = _commit_change_set(command)
+        reasons.append(git_error or check_dialog_evidence(wf, changed_files=changed))
+        reasons += [
+            f"teilweise gestagt: `{display_path(f)}` — geprüft wurde der Arbeitsbaum, committet "
+            f"würde der Index-Stand (Ausweg: `git add {display_path(f)}` oder `git commit -a`)"
+            for f in partial
+        ]
     except Exception as exc:
-        reason = f"Nachweis-Prüfung nicht verfügbar ({type(exc).__name__}: {exc})"
+        reasons.append(f"Nachweis-Prüfung nicht verfügbar ({type(exc).__name__}: {exc})")
+    reason = "; ".join(r for r in reasons if r)
     if not reason:
         return
     try:
@@ -501,12 +601,14 @@ def _require_dialog_evidence(wf: dict, verdict: str) -> None:
             return
     except ImportError:
         pass
-    name = wf.get("name", "<workflow>")
+    name = wf.get("name")
+    where = (f"Protokoll unter\n  docs/artifacts/{name}/adversary-dialog.md speichern, dann\n"
+             if name else "Protokoll speichern (ohne Workflow-Namen\n"
+             "  gibt es keinen Standardpfad), dann\n")
     block(
         f"BLOCKED: Adversary verdict ohne gültigen Dialog-Nachweis — {reason}\n"
         "  Ein grüner Testlauf ersetzt den Adversary-Dialog nicht.\n"
-        "  Weg (/50-implement Step 8): Adversary-Dialog führen, Protokoll unter\n"
-        f"  docs/artifacts/{name}/adversary-dialog.md speichern, dann\n"
+        f"  Weg (/50-implement Step 8): Adversary-Dialog führen, {where}"
         "    adversary_dialog.py stamp <pfad>\n"
         "    workflow.py add-artifact adversary_dialog <pfad> \"Adversary Dialog Protokoll\" phase6b_adversary\n"
         "  " + gate_diagnostics(wf, verdict=verdict)
@@ -676,13 +778,13 @@ def main():
                 else:
                     verdict = str(wf.get("adversary_verdict", "") or "")
                     if verdict.startswith("VERIFIED"):
-                        _require_dialog_evidence(wf, verdict)  # #253
+                        _require_dialog_evidence(wf, verdict, command)  # #253, #259
                     elif verdict.startswith("AMBIGUOUS"):
                         if not wf.get("adversary_ambiguous_override"):
                             block("BLOCKED: Adversary verdict is AMBIGUOUS. "
                                   "Review findings, then: workflow.py override-ambiguous '<reason>' "
                                   + gate_diagnostics(wf, verdict="AMBIGUOUS"))
-                        _require_dialog_evidence(wf, verdict)  # #253
+                        _require_dialog_evidence(wf, verdict, command)  # #253, #259
                     else:
                         has_override = False
                         try:

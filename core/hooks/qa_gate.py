@@ -251,7 +251,7 @@ def main():
     is_ambiguous = False
     if checklist:
         try:
-            from adversary_dialog import validate_dialog_artifact_ex
+            from adversary_dialog import dialog_verdict, validate_dialog_artifact_ex
             cl_valid, cl_message, cl_kind = validate_dialog_artifact_ex(checklist)
             if not cl_valid:
                 print(f"\nCHECKLIST FAILED — {cl_message}")
@@ -268,7 +268,7 @@ def main():
                     print("Formfehler im Artefakt — adversary_verdict bleibt unveraendert.")
                 sys.exit(1)
             print(f"Checklist: {cl_message}")
-            if "AMBIGUOUS" in cl_message:
+            if dialog_verdict(checklist) == "AMBIGUOUS":  # geparst statt Substring (#259 F003)
                 is_ambiguous = True
         except ImportError:
             print("Warning: adversary_dialog module not found, skipping checklist validation")
