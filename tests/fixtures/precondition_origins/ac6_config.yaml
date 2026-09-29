@@ -1,0 +1,13 @@
+# Test-Fixture fuer AC-6: ein drittes Sprachprofil ("kotlin"), rein per
+# Config ergaenzt. Beweist, dass precondition_origins.py fuer ein neues
+# Profil keine Codeaenderung braucht — dieselben sechs Schluessel wie
+# swift/python in config.yaml, nur an anderer Config-Quelle.
+precondition_origins:
+  profiles:
+    kotlin:
+      model_globs: ["**/models/*.kt"]
+      field_pattern: 'val\s+(\w+)\s*:'
+      test_globs: ["**/*Test.kt"]
+      production_globs: ["**/*.kt"]
+      production_exclude_globs: ["**/*Test.kt"]
+      assignment_pattern: '\.{field}\s*=\s*(?!=)'

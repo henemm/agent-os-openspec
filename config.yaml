@@ -392,6 +392,27 @@ agents:
     model: "sonnet"
     enabled: true
 
+# Herkunft von Testvorbedingungen (core/hooks/precondition_origins.py, Issue #285)
+# Sprachprofile fuer den Regelweg: welche Dateien Modelle/Tests/Produktivcode sind
+# und mit welchen Mustern Feldnamen bzw. Punkt-Zuweisungen erkannt werden.
+# Ein drittes Profil ist ein weiterer Eintrag hier — ohne Codeaenderung.
+precondition_origins:
+  profiles:
+    swift:
+      model_globs: ["**/Models/*.swift", "**/Shared/Models/*.swift"]
+      field_pattern: '(?:var|let)\s+(\w+)\s*:'
+      test_globs: ["**/*Tests/**/*.swift", "**/*Tests.swift"]
+      production_globs: ["**/*.swift"]
+      production_exclude_globs: ["**/*Tests/**", "**/*Tests.swift"]
+      assignment_pattern: '\.{field}\s*=\s*(?!=)'
+    python:
+      model_globs: ["**/models/*.py", "**/models.py"]
+      field_pattern: '^\s*(\w+)\s*:\s*[A-Za-z_].*$'
+      test_globs: ["tests/**/*.py", "**/test_*.py", "**/*_test.py"]
+      production_globs: ["**/*.py"]
+      production_exclude_globs: ["tests/**", "**/test_*.py", "**/*_test.py"]
+      assignment_pattern: '\.{field}\s*=\s*(?!=)'
+
 # Domain-specific modules (installed via setup.py --module)
 modules:
   ios_swiftui:
