@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+**Herkunft von Testvorbedingungen maschinell einsammeln (#285, Scheibe 1 von #273)**
+
+Ein Test, der seine Ausgangslage per Zuweisung herstellt (`objekt.feld = wert`), prüft nur das
+Verhalten ab dieser Lage — nicht, ob der Betrieb je dorthin gelangt. Das neue Werkzeug sammelt die
+drei dafür nötigen Tatsachen maschinell ein: welche Felder ein Test zuweist, wo im Produktivcode
+dasselbe Feld geschrieben wird, und wie oft. Reiner Regelweg (Dateisuche + reguläre Ausdrücke),
+kein Sprachmodell. Siehe `docs/specs/feat-285-precondition-origins.md`.
+
+- `core/hooks/precondition_origins.py` (neu): eigenständiges CLI-Programm
+  (`--lang`, `--root`, `--config`, `--out`). Liest **alle** Feldnamen aus den Modelldateien, listet
+  in der Markdown-Tabelle aber nur die Felder mit mindestens einer Test-Zuweisung — aufsteigend
+  nach Zahl der Produktions-Schreibstellen sortiert, Felder ohne Schreibstelle oben und markiert.
+  Die Spalten *Bedingung davor* und *Test für diesen Weg* bleiben leer: die füllt der menschliche
+  Prüfer, nicht das Werkzeug.
+- `config.yaml`: neuer Block `precondition_origins.profiles` mit den Sprachprofilen `swift` und
+  `python` (je sechs Schlüssel: `model_globs`, `field_pattern`, `test_globs`, `production_globs`,
+  `production_exclude_globs`, `assignment_pattern`). Ein drittes Sprachprofil ist ein weiterer
+  Eintrag hier — ohne Codeänderung.
+
+**Kein Gate, keine Pflicht.** Das Werkzeug hängt an keinem Hook und blockiert nichts; es wird von
+Hand aufgerufen. Die Anbindung an das Prüfprotokoll folgt in #286. Die Textsuche ist eine
+Verdachtsliste, kein Beweis — Zuweisungen über Setter, Reflection oder Memberwise-Initializer
+erkennt sie nicht (siehe „Known Limitations" der Spec).
+
 **Beobachtbare Oberfläche erkennen — Schlussfrage in `/60-validate` abgestuft (#260, Hälfte 2 von #147)**
 
 Die Schlussfrage „Soll ich den Code committen?" wurde bisher immer gestellt, auch wenn eine

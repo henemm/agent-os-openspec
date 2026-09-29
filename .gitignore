@@ -45,7 +45,14 @@ timebox-ios/
 .claude/user_approved_validation_*
 # Gate-Event-Log (Issue #181) — Laufzeit-Beobachtungsdaten, kein Quellinhalt.
 .claude/gate-events.jsonl
-docs/artifacts/
+docs/artifacts/*
+# Ausnahme: dauerhafter Wirksamkeitsnachweis zu #285 (AC-8/DoD verlangen ihn
+# "als Artefakt im Repo"). Kein Wegwerf-Protokoll wie Testausgaben oder
+# Screenshots — die bleiben sitzungslokal und ungetrackt. Das Verzeichnis muss
+# erst wieder geoeffnet werden, sonst steigt git gar nicht hinein.
+!docs/artifacts/feat-285/
+docs/artifacts/feat-285/*
+!docs/artifacts/feat-285/gegenprobe-c36fec6.md
 # `workflow.py start` schreibt OPENSPEC_ACTIVE_WORKFLOW hierhin (Sitzungs-
 # lokaler Zustand, wie .claude/active_workflow) — nie zuvor versioniert,
 # gehoert in dieselbe Kategorie wie der Rest dieses Abschnitts.

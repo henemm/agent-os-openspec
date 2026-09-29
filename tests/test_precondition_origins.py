@@ -33,6 +33,7 @@ PYTHON_ROOT = FIXTURES_DIR / "python"
 REFERENCE_ROOT = FIXTURES_DIR / "reference-c36fec6"
 AC6_ROOT = FIXTURES_DIR / "ac6_extra_lang"
 AC6_CONFIG = FIXTURES_DIR / "ac6_config.yaml"
+REAL_CONFIG = REPO_ROOT / "config.yaml"
 
 sys.path.insert(0, str(HOOKS_DIR))
 
@@ -49,15 +50,24 @@ def _import_tool():
 
 
 def _real_config():
-    """Laedt die ECHTE config.yaml dieses Repos ueber config_loader.
+    """Laedt die ECHTE config.yaml DIESES Arbeitsstands (REPO_ROOT).
 
     Bewusst NICHT ueber eine eigene Test-Fixture-Config fuer AC-1 bis AC-5 und
-    AC-7: Solange `precondition_origins.profiles` dort fehlt (Phase 6 fuegt
-    den Block hinzu), schlaegt `load_profile()` fuer diese Tests aus genau
-    diesem Grund fehl -- gewollt, siehe Spec-Auftrag.
+    AC-7: Solange `precondition_origins.profiles` dort fehlt, schlaegt
+    `load_profile()` fuer diese Tests aus genau diesem Grund fehl -- gewollt,
+    siehe Spec-Auftrag.
+
+    Warum direkt ueber REPO_ROOT statt ueber `config_loader.load_config()`:
+    `config_loader.find_project_root()` loest in einem git-Worktree bewusst
+    auf den HAUPT-Ordner des Repos auf (Workflow-State soll immer an einer
+    Stelle liegen). Es laese damit die config.yaml eines fremden
+    Arbeitsstands lesen statt der hier gepruefte -- der Test wuerde nicht
+    mehr das messen, was in diesem Stand steht. Geprueft wird deshalb
+    dieselbe Datei, die diese Aenderung liefert. Jede Zusicherung der Tests
+    bleibt davon unberuehrt.
     """
-    from config_loader import load_config
-    return load_config()
+    import yaml
+    return yaml.safe_load(REAL_CONFIG.read_text())
 
 
 def _data_rows(table: str) -> list:
@@ -109,6 +119,7 @@ def test_ac1_untested_field_extracted_but_not_listed(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "argv", [
         "precondition_origins.py", "--lang", "swift",
         "--root", str(SWIFT_ROOT), "--out", str(swift_out),
+        "--config", str(REAL_CONFIG),
     ])
     po.main()
     swift_table = swift_out.read_text()
@@ -121,6 +132,7 @@ def test_ac1_untested_field_extracted_but_not_listed(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "argv", [
         "precondition_origins.py", "--lang", "python",
         "--root", str(PYTHON_ROOT), "--out", str(python_out),
+        "--config", str(REAL_CONFIG),
     ])
     po.main()
     python_table = python_out.read_text()
@@ -433,7 +445,8 @@ def test_ac7_fixture_missing_fails_not_skips(monkeypatch, capsys):
 
     monkeypatch.setattr(
         sys, "argv",
-        ["precondition_origins.py", "--lang", "swift", "--root", str(missing_root)],
+        ["precondition_origins.py", "--lang", "swift", "--root", str(missing_root),
+         "--config", str(REAL_CONFIG)],
     )
     with pytest.raises(SystemExit) as exc_info:
         po.main()
