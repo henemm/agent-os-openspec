@@ -1,6 +1,6 @@
 ---
 spec_file: docs/specs/infra/fix-280-worktree-config-isolation.md
-spec_sha256: 7f9c6d492e87580a6794f38c12d43f33de27a90e725c08dcb147d6069d18b13d
+spec_sha256: ccce1a02595a5f663902b96213b7c000d6dcc9f233973022a59d7ee47abded77
 ---
 
 # PO-Briefing: fix-280-worktree-config-isolation
@@ -23,7 +23,7 @@ Automatisierte Tests mit einem echten Nebenzweig belegen beide Fälle; ob andere
 
 ## Kritische Anmerkungen
 
-- Das ursprüngliche Ziel "null Spuren im gesamten Testlauf" gilt jetzt nur für drei Testdateien; der Rest läuft separat als #295.
+- Das ursprüngliche Ziel „null Spuren im gesamten Testlauf" gilt jetzt nur für drei Testdateien; der Rest läuft separat als #295.
 - Der Testumfang wuchs nachträglich von zwei auf drei Dateien, weil ein echter Lauf sechs zusätzliche Fehlschläge zeigte.
 - Befund 1 aus #280 (Konfigurationsdatei im Nebenzweig) bleibt unangetastet und läuft separat als #292.
 
