@@ -35,6 +35,23 @@ erkennt sie nicht (siehe „Known Limitations" der Spec).
 
 ### Fixed
 
+**Adversary-Protokollformat hat eine Quelle, Kennzahlen werden geschrieben (#278, fasst #263 + #247)**
+
+Das Rundenformat (`### Runde N`) stand in keiner Anweisung — ein inhaltlich vollständiges
+Protokoll mit `## Runde N` wurde am 2026-09-27 grundlos abgewiesen. `adversary_findings_total`
+und `scope_files_changed` blieben strukturell immer 0, weil sie nie geschrieben wurden.
+Spec: `docs/specs/fix-278-adversary-protokoll-format.md`.
+
+- `core/hooks/adversary_dialog.py`: Rundenzählung akzeptiert `##` und `###`; neuer Subcommand
+  `scaffold <workflow> <spec>` gibt das Protokoll-Gerüst aus (Checkliste, `MIN_ROUNDS`
+  Rundenköpfe, `## Verdict`); `stamp` schreibt nach dem Hash-Block best-effort
+  `adversary_findings_total` (eindeutige `ID: F…` außerhalb von Codeblöcken) und
+  `affected_files` (Phase-8-Änderungsmenge) in den aktiven Workflow.
+- `core/hooks/workflow.py`: `write-log` schreibt `unbekannt` statt `0`, wenn die Kennzahlen nie
+  persistiert wurden; `set-field adversary_findings_total` speichert eine Zahl.
+- `core/agents/implementation-validator.md`, `core/commands/50-implement.md`: verweisen auf
+  `scaffold` statt das Format in Prosa zu beschreiben.
+
 **Gate-Event-Log respektiert Worktree-Wurzel (#280, Befund 2 von #265)**
 
 `log_gate_event()` löste ihren Schreibort bisher immer über `find_project_root()` auf — richtig

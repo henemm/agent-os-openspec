@@ -1214,6 +1214,8 @@ def cmd_set_field(args: list[str]) -> None:
         value = True
     elif value.lower() in ("false", "no"):
         value = False
+    elif key == "adversary_findings_total" and value.isdigit():
+        value = int(value)  # Kennzahl als Zahl, nicht als String (#278)
     data, name = _read_active()
     data[key] = value
     _save_active(data)
@@ -1364,6 +1366,10 @@ def cmd_write_log(args: list[str]) -> None:
     expected = PHASES[1:impl_idx + 1]
     phases_skipped = [p for p in expected if p not in phases_visited]
     outcome = args[0] if args else "success"
+    # "nie gesetzt" != "explizit 0" (#278): beide Kennzahlen schreibt erst `stamp`.
+    persisted = "adversary_findings_total" in data
+    findings_total = data["adversary_findings_total"] if persisted else "unbekannt"
+    files_changed = len(data.get("affected_files", [])) if persisted else "unbekannt"
     lines = [
         f"workflow_id: {name}",
         f"project: {find_project_root().name}",
@@ -1375,9 +1381,9 @@ def cmd_write_log(args: list[str]) -> None:
         f"override_used: {bool(data.get('adversary_ambiguous_override'))}",
         f"tdd_red_confirmed: {bool(data.get('red_test_done') or data.get('ui_test_red_done'))}",
         f"adversary_verdict: {data.get('adversary_verdict') or 'none'}",
-        f"adversary_findings_total: {data.get('adversary_findings_total', 0)}",
+        f"adversary_findings_total: {findings_total}",
         f"adversary_fix_loop_iterations: {data.get('fix_loop_iterations', 0)}",
-        f"scope_files_changed: {len(data.get('affected_files', []))}",
+        f"scope_files_changed: {files_changed}",
         f"scope_loc_delta: {data.get('loc_delta_current', '+0')}",
         f"outcome: {outcome}",
     ]

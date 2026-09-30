@@ -199,6 +199,13 @@ python3 .claude/hooks/adversary_dialog.py parse <spec-pfad>
 
 Das zeigt dir die zu beweisenden Punkte — geparst aus `## Expected Behavior` und/oder `## Acceptance Criteria` (`- **AC-N:** ...`) der Spec, je nachdem welche Section(s) vorhanden sind.
 
+Danach das Protokoll-Geruest erzeugen (#278) — es ist die einzige Quelle des Formats (Checkliste, `### Runde N`-Koepfe, `## Verdict`); der Adversary-Agent befuellt es, statt das Format zu erraten:
+
+```bash
+python3 .claude/hooks/adversary_dialog.py scaffold <workflow-name> <spec-pfad> \
+    > docs/artifacts/<workflow-name>/adversary-dialog.md
+```
+
 #### 8b. Adversary-Dialog fuehren
 
 Starte den `implementation-validator` Agent mit der Checkliste:

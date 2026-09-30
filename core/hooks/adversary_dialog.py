@@ -14,6 +14,7 @@ Best Practices implementiert:
 
 Usage (CLI):
   python3 adversary_dialog.py parse <spec-path>
+  python3 adversary_dialog.py scaffold <workflow-name> <spec-path>
   python3 adversary_dialog.py validate <artifact-path>
   python3 adversary_dialog.py stamp <artifact-path>
   python3 adversary_dialog.py required-files
@@ -488,7 +489,8 @@ def validate_dialog_artifact_ex(artifact_path: str) -> "tuple[bool, str, str | N
             return False, "Keine Checklisten-Punkte gefunden.", "format"
 
     # 3. Mindestens MIN_ROUNDS Runden
-    rounds = len(re.findall(r"(?m)^### Runde \d+", scan))
+    # H2 und H3 zaehlen (#278): '## Runde N' ist der real geratene Fall vom 2026-09-27.
+    rounds = len(re.findall(r"(?m)^#{2,3} Runde \d+", scan))
     if rounds < MIN_ROUNDS:
         return False, (
             f"Nur {rounds} Dialog-Runde(n) dokumentiert. "
@@ -701,7 +703,54 @@ def stamp_dialog_artifact(artifact_path: str) -> tuple[bool, str]:
     msg = f"{len(hashes)} Datei(en) gehasht und in {artifact_path} gespeichert."
     if skipped:
         msg += f" Uebersprungen (nicht lesbar): {', '.join(skipped)}"
-    return True, msg
+    # Best-effort NACH dem Hash-Block (#278): ein Fehler hier entwertet den Stempel nicht.
+    return True, msg + " " + _persist_adversary_metrics(scan)
+
+
+def _count_findings(scan: str) -> int:
+    """Eindeutige Finding-IDs (`ID: F\\d+`) im fence-bereinigten Text (#278)."""
+    return len(set(re.findall(r"(?m)^\s*(?:-\s*)?ID:\s*(F\d+)\b", scan)))
+
+
+def _persist_adversary_metrics(scan: str) -> str:
+    """Schreibt adversary_findings_total und affected_files in den aktiven State (#278).
+
+    Best-effort: liefert eine Meldung (auch bei Warnungen), wirft nie.
+    """
+    name = resolve_active_workflow()[0]
+    if not name:
+        return "WARNUNG: Kein aktiver Workflow — Kennzahlen nicht persistiert."
+    state = find_project_root() / ".claude" / "workflows" / f"{name}.json"
+    try:
+        wf = json.loads(state.read_text())
+    except (OSError, ValueError):
+        wf = None
+    if not isinstance(wf, dict):
+        return f"WARNUNG: State von {name} nicht lesbar — Kennzahlen nicht persistiert."
+
+    workflow_py = Path(__file__).parent / "workflow.py"
+    n = _count_findings(scan)
+    calls = [["set-field", "adversary_findings_total", str(n)]]
+    try:
+        files, _info = phase8_code_files(wf)
+    except ChangeSetError:
+        files = None
+    if files is not None:
+        calls.append(["set-affected-files", "--replace", *files])
+
+    warnings = []
+    for args in calls:
+        try:
+            r = subprocess.run([sys.executable, str(workflow_py), *args],
+                               capture_output=True, text=True)
+            if r.returncode != 0:
+                warnings.append(f"{args[0]}: {r.stderr.strip() or r.stdout.strip()}")
+        except OSError as exc:
+            warnings.append(f"{args[0]}: {exc}")
+    if warnings:
+        return "WARNUNG: Kennzahlen nicht vollständig persistiert — " + "; ".join(warnings)
+    count = "unverändert" if files is None else str(len(files))
+    return f"Kennzahlen persistiert: {n} Finding(s), affected_files {count}."
 
 
 # --- Dialog-Nachweis fuer Commit-Gate und Phase 8 (Issue #253) ---
@@ -997,6 +1046,26 @@ def _cmd_required_files() -> int:
     return 0
 
 
+def scaffold_dialog_artifact(workflow_name: str, spec_path: str) -> str:
+    """Formal korrektes, inhaltlich leeres Dialog-Geruest (#278) — Quelle des Formats."""
+    checklist = create_checklist(parse_spec_expected_behavior(spec_path))
+    lines = [
+        f"# Adversary Dialog — {workflow_name}",
+        f"Spec: {spec_path}",
+        f"Datum: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        "",
+        "## Checkliste",
+        *[f"- [ ] {item['description']}" for item in checklist],
+        "",
+        "## Dialog",
+        "",
+    ]
+    for i in range(1, MIN_ROUNDS + 1):
+        lines += [f"### Runde {i}", "**Adversary:**", "**Implementierer:**", ""]
+    lines += ["## Verdict", ""]
+    return "\n".join(lines)
+
+
 def print_finding_schema():
     """Gibt das Finding-Schema aus (fuer Referenz)."""
     print("Structured Finding Schema:")
@@ -1019,6 +1088,7 @@ def main():
     if len(sys.argv) < 2:
         print("Usage:")
         print("  python3 adversary_dialog.py parse <spec-path>")
+        print("  python3 adversary_dialog.py scaffold <workflow-name> <spec-path>")
         print("  python3 adversary_dialog.py validate <artifact-path>")
         print("  python3 adversary_dialog.py stamp <artifact-path>")
         print("  python3 adversary_dialog.py required-files")
@@ -1039,6 +1109,12 @@ def main():
         print(f"{len(points)} Expected-Behavior-Punkte gefunden:")
         for i, p in enumerate(points, 1):
             print(f"  {i}. {p}")
+
+    elif cmd == "scaffold":
+        if len(sys.argv) < 4:
+            print("Error: workflow-name and spec-path required")
+            sys.exit(1)
+        print(scaffold_dialog_artifact(sys.argv[2], sys.argv[3]), end="")
 
     elif cmd == "validate":
         if len(sys.argv) < 3:
