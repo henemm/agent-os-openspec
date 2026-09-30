@@ -534,7 +534,7 @@ def log_gate_event(hook: str, tool: str, reason: str, command_excerpt: str = "")
     nicht ermittelbar).
     """
     try:
-        root = find_project_root()
+        root = find_worktree_root() or find_project_root()
         path = root / GATE_EVENTS_RELATIVE_PATH
         reason_line = (reason or "").strip().splitlines()[0] if reason else ""
         event = {

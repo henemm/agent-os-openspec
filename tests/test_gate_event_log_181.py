@@ -109,6 +109,12 @@ class TestMaskAndTruncateExcerpt:
 
 
 class TestLogGateEvent:
+    @pytest.fixture(autouse=True)
+    def _no_worktree_root(self, monkeypatch):
+        # #280: log_gate_event bevorzugt die Worktree-Wurzel (cwd) — pinnen,
+        # damit CLAUDE_PROJECT_DIR die Isolation auch aus einem Worktree traegt.
+        monkeypatch.setattr(hook_utils, "find_worktree_root", lambda: None)
+
     def test_writes_one_jsonl_line_with_expected_fields(self, tmp_path, monkeypatch):
         monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))
         monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
@@ -165,6 +171,11 @@ class TestBlockAutoLogs:
     """block() muss automatisch loggen, ohne dass bestehende Aufrufer sich
     aendern — Kompatibilitaet mit den vier Kern-Gates, die block(message)
     bereits mit genau einem Argument aufrufen."""
+
+    @pytest.fixture(autouse=True)
+    def _no_worktree_root(self, monkeypatch):
+        # #280: siehe TestLogGateEvent._no_worktree_root.
+        monkeypatch.setattr(hook_utils, "find_worktree_root", lambda: None)
 
     def test_block_with_only_message_still_logs(self, tmp_path, monkeypatch):
         monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))
