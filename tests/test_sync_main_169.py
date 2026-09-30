@@ -11,6 +11,7 @@ import pytest
 HOOKS_DIR = Path(__file__).resolve().parent.parent / "core" / "hooks"
 sys.path.insert(0, str(HOOKS_DIR))
 
+import hook_utils
 import session_singleton_guard as ssg
 
 GUARD = str(HOOKS_DIR / "session_singleton_guard.py")
@@ -20,6 +21,11 @@ GUARD = str(HOOKS_DIR / "session_singleton_guard.py")
 def _isolate(tmp_path, monkeypatch):
     monkeypatch.setattr(ssg, "_has_override_token", lambda: False)
     monkeypatch.setattr(ssg, "_locks_dir", lambda: tmp_path / "locks")
+    # Gate-Event-Log (#280): Blockaden duerfen nie ins echte Repo-Log schreiben.
+    monkeypatch.setattr(hook_utils, "find_project_root", lambda: tmp_path)
+    monkeypatch.setattr(ssg, "find_project_root", lambda: tmp_path, raising=False)
+    monkeypatch.setattr(hook_utils, "find_worktree_root", lambda: None)
+    monkeypatch.setattr(ssg, "find_worktree_root", lambda: None, raising=False)
 
 
 def _git(cwd, *args):

@@ -33,6 +33,47 @@ Hand aufgerufen. Die Anbindung an das Prüfprotokoll folgt in #286. Die Textsuch
 Verdachtsliste, kein Beweis — Zuweisungen über Setter, Reflection oder Memberwise-Initializer
 erkennt sie nicht (siehe „Known Limitations" der Spec).
 
+### Fixed
+
+**Gate-Event-Log respektiert Worktree-Wurzel (#280, Befund 2 von #265)**
+
+`log_gate_event()` löste ihren Schreibort bisher immer über `find_project_root()` auf — richtig
+für geteilten Zustand (Workflow-JSONs), aber falsch für dieses reine Beobachtungs-Log: eine
+Blockade in einer Worktree-Sitzung landete im `.claude/gate-events.jsonl` des Haupt-Ordners statt
+im eigenen. Spec: `docs/specs/infra/fix-280-worktree-config-isolation.md`.
+
+- `core/hooks/hook_utils.py`: `log_gate_event()` löst die Wurzel jetzt per
+  `find_worktree_root() or find_project_root()` auf — dasselbe, bereits produktiv genutzte Muster
+  wie in `observable_surface_report()` (#96). Haupt-Ordner-Sitzungen verhalten sich bit-identisch
+  zum bisherigen Stand.
+- `tests/test_sync_main_169.py`, `tests/test_session_singleton_guard.py`: Autouse-Fixtures pinnen
+  `find_worktree_root` zusätzlich, damit In-Process-Aufrufe der Guards nicht mehr reale Zeilen ins
+  echte `.claude/gate-events.jsonl` dieses Repositories schreiben.
+- `tests/test_gate_event_log_181.py`: gleiche Pinnung nachgezogen, nachdem ein echter Lauf zeigte,
+  dass `find_worktree_root()` gegen die dort gesetzte `CLAUDE_PROJECT_DIR`-Isolation gewinnt, sobald
+  `pytest` selbst in einem Worktree läuft.
+- `tests/test_gate_event_log_worktree_280.py` (neu): Regressionstest mit echtem Haupt-Repo und
+  echtem `git worktree add` (Muster aus #96) — belegt AC-1 bis AC-3.
+
+Aus Scope ausgekoppelt: `config_loader.load_config()` löst im Worktree weiterhin die
+Haupt-Ordner-`config.yaml` auf (Befund 1 / #241) — eigener Vorgang unter #292. Ein Rest-Leck aus
+anderen, hier nicht behandelten Testdateien (`bash_gate`-, `secret_egress_guard`-Aufrufe) ist in
+#295 dokumentiert.
+
+**Freigabe-Marker an den aktuellen Prüflauf gebunden statt nur an den Workflow-Namen (#134)**
+
+Ein Freigabe-Marker `user_approved_validation_<name>`, der seinen Workflow überlebte, entsperrte
+jeden späteren Workflow gleichen Namens beim ersten Code-Edit. Spec:
+`docs/specs/fix-134-approval-marker-binding.md`.
+
+- `core/hooks/phase_listener.py`: GREEN-Freigabe schreibt den `created`-Wert des lebenden Locks
+  in den Marker; ohne Lock entsteht kein Marker.
+- `core/hooks/post_implementation_gate.py`: Marker entsperrt nur, wenn sein Inhalt zum Lock passt;
+  der Lock trägt `workflow_created` und wird verworfen, wenn er zu einer früheren Lebensdauer eines
+  gleichnamigen Workflows gehört. Verworfene Marker/Locks landen im Gate-Event-Log.
+- `tests/test_post_implementation_gate_marker_binding.py` (neu): AC-1 bis AC-7 plus AC-4b
+  (verwaistes Lock+Marker-Paar eines wiederverwendeten Namens).
+
 ## [3.34.0] - 2026-09-29
 
 ### Added

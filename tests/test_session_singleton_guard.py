@@ -32,6 +32,14 @@ def _isolate_lock_dir(tmp_path, monkeypatch):
     (_heartbeat_env, _hermetic_guard) ueberschreiben diesen Default regulaer.
     """
     monkeypatch.setattr(ssg, "_locks_dir", lambda: tmp_path / "autouse-locks")
+    # Gate-Event-Log (#280): in-process-Blockaden duerfen nie ins echte
+    # .claude/gate-events.jsonl schreiben. Tests mit eigener Root
+    # (_patch_project_root) ueberschreiben diesen Default regulaer.
+    import hook_utils as _hu
+    monkeypatch.setattr(_hu, "find_project_root", lambda: tmp_path)
+    monkeypatch.setattr(ssg, "find_project_root", lambda: tmp_path, raising=False)
+    monkeypatch.setattr(_hu, "find_worktree_root", lambda: None)
+    monkeypatch.setattr(ssg, "find_worktree_root", lambda: None, raising=False)
 
 
 # ---------------------------------------------------------------------------
