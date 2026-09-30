@@ -278,11 +278,11 @@ Es entsteht nur bei `unresolved`, also in seltenen Fällen, und hat einen dokume
 | `docs/WORKFLOW_GUIDE.md` | MODIFY | Zeile „2. Reiner git-Befehl (kein commit)? → ALLOW (Fast Path)“ um die Alias-Auflösung ergänzen |
 | `CLAUDE.md` | MODIFY | Neues Hilfsmodul im Architektur-Baum und in „Wichtige Dateien“, je eine Zeile |
 | `CHANGELOG.md` | MODIFY | Eintrag unter `[Unreleased]`, inklusive der neuen Blocks |
-| `README.md` | CHECK | Gate-Übersicht; voraussichtlich keine Änderung |
+| `README.md` | MODIFY | Architektur-Baum unter `core/hooks/`: eine Zeile für `git_alias.py` als Hilfsmodul (kein Hook), analog zu `precondition_origins.py` seit #285 |
 
 ### Scope Assessment
 
-- **Dateien:** 2 produktiv (1 neu), 1 neue Testdatei, 3 Doku-Dateien.
+- **Dateien:** 2 produktiv (1 neu), 1 neue Testdatei, 4 Doku-Dateien.
 - **Geschätzte LoC:**
   - Produktiv etwa +225 bis +260: `git_alias.py` etwa 170–200, `bash_gate.py` etwa +35/−8.
   - Tests etwa +450 bis +550.
