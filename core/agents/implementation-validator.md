@@ -25,6 +25,14 @@ Read the spec/ticket to understand what was supposedly fixed or implemented.
 Parse the checklist — either from `## Expected Behavior` or `## Acceptance Criteria`
 (`- **AC-N:** ...`) bullets, whichever section(s) the spec uses — every point must be proven.
 
+Write the dialog artifact into the generated skeleton, never freehand (#278) — it carries the
+checklist and the round headings the gate counts:
+
+```bash
+python3 .claude/hooks/adversary_dialog.py scaffold <workflow-name> <spec-path> \
+    > docs/artifacts/<workflow-name>/adversary-dialog.md
+```
+
 ### Step 2: Run the Test Suite
 
 Execute the project's test suite:
