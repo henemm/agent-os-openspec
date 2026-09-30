@@ -256,15 +256,16 @@ Das schließt `git config alias.ci commit && git ci -m x`; `git config user.name
 | git fehlt, OSError, Timeout, rc ∉ {0,1} | `unresolved`, also prüfen |
 | Unzerlegbarer Wert, Schleife, > 8 Schritte, > 3 Kontexte, Taint, `$`-Wert | `unresolved`, also prüfen |
 | Unzerlegbarer Shell-Rumpf | Fall 3 auf dem Rumpf; der Befehl gilt nicht als rein |
-| Unzerlegbarer Gesamtbefehl | Unverändert: nichts aufgelöst, Known Limitation |
+| Unzerlegbarer Gesamtbefehl | Naive Zerlegung; Nicht-Builtin-Unterbefehl → `unresolved`, Builtins wie bisher (präzisiert in der Spec-Phase) |
 | Ausnahme im Resolver | Intern gefangen; `unresolved`, falls ein Nicht-Builtin-Kandidat gesehen wurde, sonst leere Sicht |
 | `ImportError` des Moduls | Altes Verhalten plus Hinweis auf stderr; Bash wird nie lahmgelegt |
 
-Ein fälschliches „prüfen“ wirkt nur, wenn ein Workflow aktiv ist:
-- in Phase 6–7 über 5c (VERIFIED-Pflicht);
-- in jeder Phase über 5a, 5b und 5d.
+Ein fälschliches „prüfen“ wirkt so, wie Schritt 5 heute für ein wörtliches `git commit` wirkt:
+- 5c (VERIFIED-Pflicht) nur mit aktivem Workflow in Phase 6–7, nicht für `bug` und `feature-fast`;
+- 5b (Rebase-Pflicht) und 5d mit jedem aktiven Workflow, auch `bug`;
+- 5a nur, wenn `pre_commit.required_staged_files` konfiguriert ist, auch ohne Workflow.
 
-Es entsteht nur bei `unresolved`, also in seltenen Fällen, und hat einen dokumentierten Ausweg. Bug-, feature-fast- und workflowlose Sitzungen bleiben unberührt.
+Es entsteht nur bei `unresolved`, also in seltenen Fällen, und hat einen dokumentierten Ausweg. (Präzisiert in der Spec, Abschnitt zur Fehlerrichtung.)
 
 ### Affected Files (with changes)
 
