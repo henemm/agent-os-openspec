@@ -15,6 +15,7 @@ Exit Codes: 0 always (never blocks, only updates state)
 """
 
 from hook_utils import setup_path, find_project_root, get_user_message, get_active_workflow_name, gate_diagnostics, resolve_active_workflow, framework_disabled
+from hook_utils import pending_validation_lock_path, read_pending_validation_lock, approval_marker_path
 setup_path()
 
 import json
@@ -489,12 +490,18 @@ def main():
             changed = True
             green_took_effect = True
             print(f"GREEN approved {_trigger(message)}.", file=sys.stderr)
-            # Post-Implementation-Gate: Approval-Marker setzen damit post_implementation_gate entsperrt
+            # Post-Implementation-Gate: Marker an den aktuellen Prüflauf binden (#134) —
+            # Inhalt = `created`-Wert des lebenden Locks.
             try:
-                approval_path = _root / ".claude" / f"user_approved_validation_{wf_data['name']}"
-                approval_path.parent.mkdir(parents=True, exist_ok=True)
-                approval_path.touch()
-                print(f"Post-implementation gate entsperrt für '{wf_data['name']}'.", file=sys.stderr)
+                lock_path = pending_validation_lock_path(_root, wf_data['name'])
+                lock = read_pending_validation_lock(lock_path)
+                if lock is not None and "created" in lock:
+                    approval_path = approval_marker_path(_root, wf_data['name'])
+                    approval_path.parent.mkdir(parents=True, exist_ok=True)
+                    approval_path.write_text(str(lock["created"]))
+                    print(f"Post-implementation gate entsperrt für '{wf_data['name']}'.", file=sys.stderr)
+                # Kein Lock vorhanden (Freigabe vor dem ersten Edit) → bewusst KEIN Marker,
+                # fail-closed statt Sonderfall auf der Lese-Seite.
             except OSError:
                 pass
         elif not wf_data.get("green_approved"):

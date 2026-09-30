@@ -20,7 +20,8 @@ Bypasses:
 
 Lock-Dateien:
   .claude/pending_validation_<workflow>.json
-  .claude/user_approved_validation_<workflow>   (Marker, leer)
+  .claude/user_approved_validation_<workflow>   (Marker, Inhalt = `created`-Zeitstempel
+                                                 des Locks zum Zeitpunkt der Freigabe, #134)
 """
 
 import json
@@ -40,6 +41,12 @@ def _setup():
 _setup()
 
 from hook_utils import get_tool_input, find_project_root, block, allow, get_active_workflow_name, framework_disabled  # noqa: E402
+from hook_utils import (  # noqa: E402
+    pending_validation_lock_path as _lock_path,
+    read_pending_validation_lock as _read_lock,
+    approval_marker_path as _approval_path,
+    log_gate_event,
+)
 
 # Batch-Fenster: innerhalb dieser Zeit nach dem ersten Edit kein Gate
 _BATCH_WINDOW_S = 15 * 60  # 15 Minuten
@@ -57,27 +64,12 @@ _ALWAYS_ALLOWED = re.compile(
 )
 
 
-def _lock_path(project_root: Path, wf_name: str) -> Path:
-    return project_root / ".claude" / f"pending_validation_{wf_name}.json"
-
-
-def _approval_path(project_root: Path, wf_name: str) -> Path:
-    return project_root / ".claude" / f"user_approved_validation_{wf_name}"
-
-
-def _read_lock(lock_path: Path) -> "dict | None":
-    if not lock_path.exists():
-        return None
-    try:
-        return json.loads(lock_path.read_text())
-    except (OSError, json.JSONDecodeError):
-        return None
-
-
-def _write_lock(lock_path: Path, wf_name: str) -> None:
+def _write_lock(lock_path: Path, wf_name: str, workflow_created) -> None:
+    # workflow_created bindet den Lock an die Lauf-Instanz, nicht nur an den Namen (#134)
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     lock_path.write_text(json.dumps({
         "workflow": wf_name,
+        "workflow_created": workflow_created,
         "created": time.time(),
         "created_iso": __import__("datetime").datetime.now().isoformat(),
     }, indent=2))
@@ -133,16 +125,50 @@ def main() -> None:
     lock_path = _lock_path(project_root, wf_name)
     approval_path = _approval_path(project_root, wf_name)
 
-    # User-Freigabe vorhanden → entsperren + Locks löschen
-    if approval_path.exists():
-        _clear_lock(lock_path, approval_path)
-        allow()
-
+    # Lock VOR der Marker-Prüfung lesen: der Marker gilt nur für genau diesen Lauf (#134)
     lock = _read_lock(lock_path)
+
+    # Lock einer frueheren Lebensdauer eines gleichnamigen Workflows zaehlt nicht (#134)
+    if lock is not None and lock.get("workflow_created") != workflow.get("created"):
+        lock = None
+        lock_path.unlink(missing_ok=True)
+        log_gate_event(
+            "post_implementation_gate", "Edit",
+            f"Verworfener Lock einer fremden Workflow-Instanz "
+            f"(Workflow-Name wiederverwendet: {wf_name}).",
+        )
+
+    if approval_path.exists():
+        try:
+            marker_content = approval_path.read_text().strip()
+        except OSError:
+            marker_content = None
+
+        if lock is not None and marker_content == str(lock.get("created")):
+            # Freigabe passt exakt zum aktuell lebenden Prüflauf
+            _clear_lock(lock_path, approval_path)
+            allow()
+        elif lock is None:
+            # Marker überlebte seinen Workflow — verwerfen, NICHT als Freigabe werten.
+            # Fällt unten in den "kein Lock"-Zweig.
+            approval_path.unlink(missing_ok=True)
+            log_gate_event(
+                "post_implementation_gate", "Edit",
+                f"Verworfener Freigabe-Marker ohne aktiven Pruflauf-Lock (Workflow: {wf_name}).",
+            )
+        else:
+            # Marker existiert, passt aber zu einem anderen (älteren) Lauf
+            approval_path.unlink(missing_ok=True)
+            block(
+                f"BLOCKED [post_implementation_gate]: Freigabe-Marker passt nicht zum aktuellen "
+                f"Pruflauf (Workflow: {wf_name}).\n"
+                f"  Der Marker stammt von einem frueheren Lauf und gilt nicht mehr.\n"
+                f"  Neue Freigabe noetig: User tippt 'go', 'freigabe' oder 'approved'."
+            )
 
     if lock is None:
         # Erster Code-Edit in dieser Phase → Lock anlegen, Batch-Fenster starten
-        _write_lock(lock_path, wf_name)
+        _write_lock(lock_path, wf_name, workflow.get("created"))
         allow()
 
     # Lock existiert → prüfen ob Batch-Fenster noch offen

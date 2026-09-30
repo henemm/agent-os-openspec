@@ -60,6 +60,20 @@ Haupt-Ordner-`config.yaml` auf (Befund 1 / #241) — eigener Vorgang unter #292.
 anderen, hier nicht behandelten Testdateien (`bash_gate`-, `secret_egress_guard`-Aufrufe) ist in
 #295 dokumentiert.
 
+**Freigabe-Marker an den aktuellen Prüflauf gebunden statt nur an den Workflow-Namen (#134)**
+
+Ein Freigabe-Marker `user_approved_validation_<name>`, der seinen Workflow überlebte, entsperrte
+jeden späteren Workflow gleichen Namens beim ersten Code-Edit. Spec:
+`docs/specs/fix-134-approval-marker-binding.md`.
+
+- `core/hooks/phase_listener.py`: GREEN-Freigabe schreibt den `created`-Wert des lebenden Locks
+  in den Marker; ohne Lock entsteht kein Marker.
+- `core/hooks/post_implementation_gate.py`: Marker entsperrt nur, wenn sein Inhalt zum Lock passt;
+  der Lock trägt `workflow_created` und wird verworfen, wenn er zu einer früheren Lebensdauer eines
+  gleichnamigen Workflows gehört. Verworfene Marker/Locks landen im Gate-Event-Log.
+- `tests/test_post_implementation_gate_marker_binding.py` (neu): AC-1 bis AC-7 plus AC-4b
+  (verwaistes Lock+Marker-Paar eines wiederverwendeten Namens).
+
 ## [3.34.0] - 2026-09-29
 
 ### Added

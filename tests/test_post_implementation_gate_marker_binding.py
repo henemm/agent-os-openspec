@@ -31,8 +31,12 @@ def _make_project(tmp_path: Path, phase: str = "phase6_implement",
         "name": wf_name,
         "workflow_type": "feature",
         "current_phase": phase,
+        "created": _WF_CREATED,
     }))
     return tmp_path, wf_name
+
+
+_WF_CREATED = "2026-09-30T10:00:00.000000"
 
 
 def _lock_path(project: Path, wf_name: str) -> Path:
@@ -43,10 +47,12 @@ def _marker_path(project: Path, wf_name: str) -> Path:
     return project / ".claude" / f"user_approved_validation_{wf_name}"
 
 
-def _write_lock(project: Path, wf_name: str, created: float) -> Path:
+def _write_lock(project: Path, wf_name: str, created: float,
+                workflow_created: str = _WF_CREATED) -> Path:
     path = _lock_path(project, wf_name)
     path.write_text(json.dumps({
-        "workflow": wf_name, "created": created, "created_iso": "irrelevant",
+        "workflow": wf_name, "workflow_created": workflow_created,
+        "created": created, "created_iso": "irrelevant",
     }))
     return path
 
@@ -146,6 +152,24 @@ class TestAC4ReusedWorkflowNameDoesNotAutoUnlock:
         assert new_lock_path.exists()
         new_lock = json.loads(new_lock_path.read_text())
         assert new_lock["created"] != 111111.0, "Frischer Lock, nicht der alte Zeitstempel"
+
+
+class TestAC4bStaleLockMarkerPairAcrossWorkflowLifetimes:
+    def test_ac4b_stale_lock_marker_pair_from_reused_name_does_not_unlock(self, tmp_path):
+        project, wf = _make_project(tmp_path)
+        # Zueinander passendes Lock+Marker-Paar aus einem FRUEHEREN Lauf gleichen Namens
+        lock_path = _write_lock(project, wf, created=222222.0,
+                                workflow_created="2026-01-01T00:00:00.000000")
+        marker_path = _write_marker(project, wf, "222222.0")
+
+        result = _run_gate(project, wf, file_path="src/new_feature.py")
+
+        assert result.returncode == 0, "Erster Edit des neuen Laufs bleibt erlaubt"
+        assert not marker_path.exists(), "Alter Marker darf den neuen Lauf nicht entsperren"
+        assert lock_path.exists(), "Frischer Lock fuer den neuen Lauf statt Entsperren"
+        new_lock = json.loads(lock_path.read_text())
+        assert new_lock["created"] != 222222.0, "Alter Lock wurde verworfen, nicht wiederverwendet"
+        assert new_lock["workflow_created"] == _WF_CREATED
 
 
 class TestAC5RejectedMarkerIsLogged:

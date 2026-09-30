@@ -220,15 +220,29 @@ def test_ac2_e2e_plain_go_still_approves_green(tmp_path):
     GIVEN ein Workflow in phase6_implement
     WHEN der User `go` sendet
     THEN ist `green_approved` true und der Marker existiert.
+
+    Seit #134 bindet der Marker an den offenen Pruef-Lock
+    (`pending_validation_<wf>.json`, Feld `created`). Ohne Lock entsteht
+    bewusst kein Marker — der Test legt deshalb einen echten Lock an.
     """
     project, wf = _make_project(tmp_path, "phase6_implement")
+    lock_created = 1759219200.5
+    (project / ".claude" / f"pending_validation_{wf}.json").write_text(json.dumps({
+        "workflow": wf,
+        "created": lock_created,
+        "created_iso": "irrelevant",
+    }))
     res = _run_listener(project, wf, "go")
 
     assert res.returncode == 0
     assert _wf_state(project, wf).get("green_approved") is True, (
         f"Echte Freigabe muss wirken — stderr: {res.stderr!r}"
     )
-    assert _marker_path(project, wf).exists()
+    marker = _marker_path(project, wf)
+    assert marker.exists(), f"Marker fehlt — stderr: {res.stderr!r}"
+    assert marker.read_text().strip() == str(lock_created), (
+        f"Marker muss an den Lock gebunden sein — Inhalt: {marker.read_text()!r}"
+    )
 
 
 # --------------------------------------------------------------------------

@@ -789,6 +789,26 @@ def find_project_root() -> Path:
     return cwd
 
 
+def pending_validation_lock_path(project_root: Path, wf_name: str) -> Path:
+    """Lock-Datei des post_implementation_gate fuer einen Workflow (#134)."""
+    return project_root / ".claude" / f"pending_validation_{wf_name}.json"
+
+
+def read_pending_validation_lock(lock_path: Path) -> "dict | None":
+    """Lock lesen; fehlend oder kaputt → None."""
+    if not lock_path.exists():
+        return None
+    try:
+        return json.loads(lock_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def approval_marker_path(project_root: Path, wf_name: str) -> Path:
+    """Freigabe-Marker; Inhalt = `created`-Wert des Locks bei Freigabe (#134)."""
+    return project_root / ".claude" / f"user_approved_validation_{wf_name}"
+
+
 def _workflow_file_exists(root: Path, name: str) -> bool:
     """Return True if workflows/<name>.json exists under the project root."""
     try:
