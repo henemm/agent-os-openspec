@@ -23,8 +23,9 @@ test_targets: ["tests/test_git_alias_commit_gate_281.py"]
   (`docs/specs/fix-259-adversary-diff-binding.md`) als Nebenbefund; der Fehler bestand schon
   vorher. Reproduktion (git 2.43): `git config alias.ci commit`, dann `git ci -m x` → Exit 0 ohne
   Dialog-Artefakt; ebenso inline `git -c alias.ci=commit ci -m x`. Abgegrenzt sind die
-  Folge-Issues #296 (Whitelist-Gefälle in Schritt 3b) und #297 (externe `git-<name>`, weitere
-  Code-Ausführung in „reinem git“, Commits ohne `commit`) — siehe Known Limitations.
+  Folge-Issues #296 (Whitelist-Gefälle in Schritt 3b), #297 (externe `git-<name>`, weitere
+  Code-Ausführung in „reinem git“, Commits ohne `commit`) und #298 (verschachtelte Shells mit
+  Optionsbündel wie `bash -lc`) — siehe Known Limitations.
 
 ## Purpose
 
@@ -75,15 +76,15 @@ git-Aufruf“ die Marker-Sperre umging, und dass die Argumente aus einer Alias-D
 
 | File | Change Type | Description |
 |------|-------------|-------------|
-| `core/hooks/git_alias.py` | CREATE | Resolver, `GIT_BUILTINS`, Kontext-Nachspielen, Env-Freigabeliste, Taint, Ketten, Shell-Rümpfe; Modul-Docstring mit den Rest-Grenzen |
-| `core/hooks/bash_gate.py` | MODIFY | `main()`: Sicht nach Schritt 1, `git_only`, `committing`, `scan_cmd`, Meldungen; `_commit_form(command, view)` samt Weitergabe über `_commit_change_set` und `_require_dialog_evidence` |
+| `core/hooks/git_alias.py` | CREATE | Resolver, `GIT_BUILTINS`, Kontext-Nachspielen, Env-Freigabeliste, im Befehl benannte Konfigurationsquellen, Taint, Ketten, Shell-Rümpfe; Modul-Docstring mit den Rest-Grenzen |
+| `core/hooks/bash_gate.py` | MODIFY | `main()`: Sicht nach Schritt 1, `git_only`, `committing`, `scan_cmd`, Meldungen; `_commit_form(command, view)` (zählt auch `stage` als begleitendes `add`) samt Weitergabe über `_commit_change_set` und `_require_dialog_evidence` |
 | `core/hooks/hook_utils.py` | — | Keine Änderung; der Resolver nutzt die bestehenden Zerlegungs-Helfer |
 | `tests/test_git_alias_commit_gate_281.py` | CREATE | E2E gegen das echte `bash_gate.py` in hermetischen echten Repos, Unit-Tests mit injiziertem Runner, Drift- und Doku-Test |
 | `tests/test_git_invocation_detection.py`, `tests/test_adversary_coverage_gate_259.py`, `tests/test_adversary_evidence_gate_253.py`, `tests/test_bash_gate_*.py`, `tests/test_gate_fixes_26_38_34.py`, `tests/test_selfexplaining_gates.py` | CHECK | Regressionswächter, bleiben unverändert grün |
 | `docs/WORKFLOW_GUIDE.md` | MODIFY | Fast-Path-Zeile der `bash_gate.py`-Übersicht nennt die Alias-Auflösung |
 | `CLAUDE.md` | MODIFY | `git_alias.py` als Hilfsmodul im Architektur-Baum und in „Wichtige Dateien“, je eine Zeile |
 | `README.md` | MODIFY | Architektur-Baum unter `core/hooks/`: eine Zeile für `git_alias.py` als Hilfsmodul (kein Hook), analog zu `precondition_origins.py` |
-| `CHANGELOG.md` | MODIFY | Eintrag unter `[Unreleased]` mit den neuen Block-Fällen |
+| `CHANGELOG.md` | MODIFY | Eintrag unter `[Unreleased]` mit den neuen Block-Fällen und dem `git stage`-Nebeneffekt |
 | `docs/specs/fix-281-git-alias-commit-gate.md` | CREATE | Diese Spec |
 
 **Bewusst unverändert:**
@@ -99,22 +100,23 @@ git-Aufruf“ die Marker-Sperre umging, und dass die Argumente aus einer Alias-D
 ### Estimated Changes
 
 - **Files:** 2 Produktivdateien (davon 1 neu), 1 neue Testdatei, 4 Doku-Dateien, plus diese Spec.
-- **LoC:** Produktiv ca. +300 bis +330 (`git_alias.py` ca. 270–290, `bash_gate.py` ca. +35/−8),
-  Tests ca. +650 bis +750, Doku ca. +30 bis +45 (überwiegend der CHANGELOG-Eintrag).
+- **LoC:** Produktiv ca. +325 bis +355 (`git_alias.py` ca. 290–315, `bash_gate.py` ca. +37/−8),
+  Tests ca. +700 bis +800, Doku ca. +30 bis +50 (überwiegend der CHANGELOG-Eintrag).
 
 **Budget-Überschreitung begründet:** Das Standardlimit (250 LoC Produktiv / 500 LoC Tests) reicht
 nicht, weil jeder der folgenden Bausteine einen eigenen Weg schließt, auf dem ein Alias sonst am
 Gate vorbeiliefe: das Nachspielen des Aufruf-Kontexts (Verzeichnis, Optionen, Umgebungs-
-Freigabeliste), die Taint-Regeln für Änderungen im selben Aufruf, das `cd`-Modell, die Auflösung von
-Ketten und Optionen im Alias-Wert sowie die Shell-Rümpfe samt Anbindung an Marker-Schutz und
-Commit-Menge. Eine Aufteilung entlang dieser Bausteine wurde verworfen: Jedes Teilstück allein ließe
-einen der Bypass-Wege offen (etwa `cd B && git ci` oder `git config alias.ci commit && git ci`) und
-wäre damit nur halb gelöst — die Ursache ist die Zahl der Wege, keine Aufblähung. Bei der
-Implementierung zu setzen, mit dieser Begründung im Commit-Bezug:
+Freigabeliste, im Befehl benannte Konfigurationsquellen), die Taint-Regeln für Änderungen im selben
+Aufruf, das `cd`-Modell, die Auflösung von Ketten und Optionen im Alias-Wert sowie die Shell-Rümpfe
+samt Anbindung an Marker-Schutz und Commit-Menge. Eine Aufteilung entlang dieser Bausteine wurde
+verworfen: Jedes Teilstück allein ließe einen der Bypass-Wege offen (etwa `cd B && git ci` oder
+`git config alias.ci commit && git ci`) und wäre damit nur halb gelöst — die Ursache ist die Zahl
+der Wege, keine Aufblähung. Bei der Implementierung zu setzen, mit dieser Begründung im
+Commit-Bezug:
 
 ```bash
-python3 .claude/hooks/workflow.py set-field loc_limit_override 350
-python3 .claude/hooks/workflow.py set-field test_loc_limit_override 800
+python3 .claude/hooks/workflow.py set-field loc_limit_override 380
+python3 .claude/hooks/workflow.py set-field test_loc_limit_override 850
 ```
 
 ## Implementation Details
@@ -177,6 +179,14 @@ Das Modul-Docstring führt die Rest-Grenzen aus den Known Limitations auf.
 - **Schatten-Regel wie git.** Ein Alias mit Builtin-Namen wirkt nicht (`alias.status=commit` und
   `git status` bleibt `status`) — auch mitten in einer Kette: Erreicht sie einen Builtin, ist sie
   zu Ende.
+- **Nicht bestimmbarer Unterbefehl.** Enthält das Unterbefehl-Token Shell-Syntax (`$`, Backtick,
+  `*`, `?`, `[`, `{`), steht sein tatsächlicher Name erst zur Laufzeit fest (`git $CMD -m x`,
+  `git com* -m x`): `unresolved`, ohne Abfrage. Eine Abfrage nach dem wörtlichen Token fände nie
+  einen Alias und meldete fälschlich „sicher“ — das ist ein Korrektheitsanspruch des Resolvers
+  selbst, deshalb gehört die Regel zu #281. Weil der Lexer einen Backtick als eigenen Trenner
+  abspaltet, zählt auch ein Backtick-Trenner unmittelbar hinter einem am Segmentkopf stehenden
+  `git` samt Optionen (`` git `echo commit` -m x ``): Das Segment endet dort ohne Unterbefehl-Token.
+  Dieselbe Regel gilt für Unterbefehle in Alias-Werten und Shell-Rümpfen.
 - **Externe `git-<name>`** im `PATH` haben bei git Vorrang vor Aliasen und werden nicht befragt
   (siehe #297). Den Alias trotzdem aufzulösen führt höchstens zu Über-Erkennung, also in die
   sichere Richtung.
@@ -243,6 +253,25 @@ Kontext aufgelöst:
   der Wert einer Freigabe-Zuweisung Shell-Syntax (`$`, Backtick, `*`, `?`, `[`, `]`, `{`, `}`), ist
   er nach der Shell-Expansion unbekannt: `unresolved`. Ein führendes `~` wird mit `HOME` der
   Hook-Umgebung expandiert.
+- **Im Befehl benannte Konfigurationsquellen:** Nennt der nachgespielte Kontext eine
+  Konfigurationsdatei — den Wert einer Präfix- oder `env`-Zuweisung von `GIT_CONFIG_GLOBAL` oder
+  `GIT_CONFIG_SYSTEM`, oder einen Eintrag `include.path` bzw. `includeIf.<bedingung>.path` aus
+  `-c`, aus `--config-env` (Wert aus einer Präfix-Zuweisung) oder aus `GIT_CONFIG_KEY_n` und
+  `GIT_CONFIG_VALUE_n` —, ist jeder Nicht-Builtin-Unterbefehl dieses Aufrufs `unresolved` (ohne
+  Abfrage), wenn die Datei zur Hook-Zeit nicht existiert oder ihr Pfad oder Dateiname in einem
+  anderen Token desselben Befehls noch einmal vorkommt. Typisch ist das Schreibziel im selben
+  Aufruf: `printf '[alias]\n\tci = commit\n' > /tmp/f && GIT_CONFIG_GLOBAL=/tmp/f git ci -m x`.
+  Eine Präfix- oder `env`-Zuweisung von `GIT_CONFIG_PARAMETERS`, deren Wert (kleingeschrieben)
+  `include` enthält, macht die Nicht-Builtins dieses Aufrufs ohne weitere Prüfung `unresolved` —
+  das interne Quoting dieses Werts wird bewusst nicht nachgebaut.
+- **Grund und Grenzen dieser Prüfung:** Die Abfrage sieht den Stand vor dem Befehl; eine Datei, die
+  der Befehl erst anlegt oder beschreibt, ist für sie leer oder fehlt. Werte aus der Hook-Umgebung
+  selbst sind ausgenommen, denn eine fehlende globale Konfiguration ist dort legitim. Relative
+  Pfade gelten gegen das Verzeichnis des Aufrufs (cwd, `cd`-Kette und `-C`; ist es unbekannt, ist
+  der Aufruf ohnehin `unresolved`), ein führendes `~` wird wie oben expandiert. Als „noch einmal
+  vorkommen“ zählt eine Teilzeichenfolge in einem Token des Befehls, einschließlich der Tokens
+  verschachtelter Shell-Texte; nicht mitgezählt werden die Tokens, die selbst eine
+  Konfigurationsquelle benennen, und ein verschachtelter Shell-Text als Ganzes.
 
 ### 5. Änderungen im selben Aufruf: Taint (E5)
 
@@ -254,13 +283,16 @@ Bash-Befehls (in Textreihenfolge, auch über verschachtelte Shells hinweg) wird 
   oder `include` enthält — das deckt `include.path` und `includeIf.*` ab, denn Abschnittsnamen sind
   case-insensitiv;
 - **(b)** ein Token, das (kleingeschrieben) `.gitconfig`, `git/config` (deckt `.git/config` und
-  `~/.config/git/config`) oder `config.worktree` enthält;
+  `~/.config/git/config`) oder `config.worktree` enthält, oder das eine Konfigurations-Variable
+  referenziert (`$GIT_CONFIG…` bzw. `${GIT_CONFIG…`, etwa ein Schreibziel `> "$GIT_CONFIG_GLOBAL"`);
 - **(c)** eine Zuweisung, `export`, `declare`, `typeset`, `readonly`, `local` oder `unset` eines
   Namens der Freigabeliste (Abschnitt 4), die nicht unmittelbar Präfix des ausgewerteten
   git-Segments ist.
 
 Damit ist `git config alias.ci commit && git ci -m x` geprüft, während
-`git config user.name x && git st` unberührt bleibt (AC-7).
+`git config user.name x && git st` unberührt bleibt (AC-7). Eine Datei, die ein Aufruf selbst als
+Konfigurationsquelle nennt (`GIT_CONFIG_GLOBAL=/tmp/f`), prüft Abschnitt 4 unabhängig von ihrem
+Namen; (b) deckt die üblichen Namen auch dann ab, wenn der Befehl sie nur beschreibt.
 
 ### 6. Arbeitsverzeichnis: `cd`-Modell (E5)
 
@@ -280,9 +312,13 @@ der Befehl irgendwo ein Subshell-, Pipeline- oder Hintergrund-Token enthält (`(
 zugleich ein `cd`, `pushd` oder `popd` vorkommt — dann ist die Reichweite des Verzeichniswechsels
 aus den Segmenten nicht bestimmbar.
 
-Verschachtelte Shells (`sh -c`, `bash -c`, `eval`, Tiefe höchstens 2 wie in
-`_git_nested_subcommands`) werden aufgelöst; ihr Kontext startet beim Modell-Stand an dieser Stelle
-(Verzeichnis, Taint), ein `cd` darin wirkt nicht nach außen.
+Verschachtelte Shells (`sh -c`, `bash -c`, `eval`, Tiefe höchstens 2) erkennt der Resolver nach
+denselben Merkmalen wie `_git_nested_subcommands` und löst sie auf (deren Grenze steht in den Known
+Limitations, #298); ihr Kontext startet beim Modell-Stand an dieser Stelle (Verzeichnis, Taint),
+ein `cd` darin wirkt nicht nach außen. Shell-Alias-Rümpfe (Abschnitt 8) führt git dagegen im
+Wurzelverzeichnis des Arbeitsbaums aus, nicht im Aufrufverzeichnis: Ein relatives `cd` oder
+`pushd` in einem Rumpf macht das Verzeichnis deshalb unbekannt (absolute Pfade und `~` bleiben
+modellierbar).
 
 ### 7. Ketten und Optionen im Alias-Wert (E6)
 
@@ -291,9 +327,9 @@ Argumente des Aufrufs. Bei jedem Schritt wird geprüft, ob ein Builtin erreicht 
 case-sensitiv); dann ist die Kette zu Ende. Endet sie bei einem Namen, der weder Builtin noch
 Alias ist (ein externes `git-<name>`), ist sie ebenfalls zu Ende, ohne `unresolved`. Die Schleife
 führt eine Besucht-Menge (kleingeschriebene Namen) und bricht nach höchstens 8 Schritten ab. Eine
-Schleife, ein leerer oder nicht zerlegbarer Wert und das Überschreiten der Obergrenze ergeben
-`unresolved`; git selbst bricht bei einer Schleife ab, ohne etwas auszuführen, unser Verhalten ist
-also die Obermenge.
+Schleife, ein leerer oder nicht zerlegbarer Wert, ein Unterbefehl mit Shell-Syntax (Abschnitt 2)
+und das Überschreiten der Obergrenze ergeben `unresolved`; git selbst bricht bei einer Schleife
+ab, ohne etwas auszuführen, unser Verhalten ist also die Obermenge.
 
 **Optionen im Alias-Wert:** git erlaubt globale Optionen vor dem Unterbefehl eines Alias-Werts
 (`alias.cx = "-c user.name=zz commit"` committet; `-C .` und `--no-pager` lehnt git mit „changes
@@ -313,8 +349,10 @@ Auflösungszeile wie `git c2 → git ci → git commit`.
 Ein Wert mit führendem `!` ist ein Shell-Alias: beliebiger Shell-Code, an den git die Argumente des
 Aufrufs anhängt (`"$@"`). Der Rumpf bleibt Text, weil die Shell ihn parst:
 `rumpf + " " + shlex.join(args)`. Er landet in `shell_bodies` und wird rekursiv aufgelöst
-(git-Aufrufe im Rumpf, Tiefe höchstens 2 wie bei `sh -c`). Rümpfe erben die Optionen des Elternaufrufs (git exportiert
-dafür `GIT_CONFIG_PARAMETERS`), teilen also seinen Kontext und die gecachte Tabelle.
+(git-Aufrufe im Rumpf, Tiefe höchstens 2 wie bei `sh -c`), mit denselben Regeln wie im äußeren
+Aufruf — auch der Regel für Unterbefehle mit Shell-Syntax aus Abschnitt 2. Rümpfe erben die
+Optionen des Elternaufrufs (git exportiert dafür `GIT_CONFIG_PARAMETERS`), teilen also seinen
+Kontext und die gecachte Tabelle.
 
 Folgen in `bash_gate.py`:
 - Ein Shell-Alias gilt nicht mehr als „reiner git-Aufruf“: kein Schnellpfad und keine
@@ -328,17 +366,21 @@ Folgen in `bash_gate.py`:
 ### 9. Commit-Menge #259 (E8)
 
 Die #259-Commit-Menge hängt an der Aufrufform von `commit` (`-a`, Pfadangabe, `--amend`,
-begleitendes `add`). Bei einem Alias steht sie teils in der Alias-Definition (`cam = commit -a -m`),
-teils im Aufruf; ohne Kenntnis der Definition griffe die Unsicherheitsregel (größte Menge).
-Deshalb bekommt `_commit_form(command, view=None)` die Sicht:
+begleitendes `add` oder `stage`). Bei einem Alias steht sie teils in der Alias-Definition
+(`cam = commit -a -m`), teils im Aufruf; ohne Kenntnis der Definition griffe die Unsicherheitsregel
+(größte Menge). Deshalb bekommt `_commit_form(command, view=None)` die Sicht:
 
 - Die Segmentliste ist `_git_segments(command)`, dazu die Token-Listen aus `view.expansions`
   direkt (sie beginnen mit `git`, die bisherige `commit`-Suche bleibt unverändert) und die Segmente
   der Shell-Rümpfe. Aus `cam = commit -a -m` wird so `-a` sichtbar.
 - Ein begleitendes `add` zählt auch, wenn der Unterbefehl einer Expansion `add` ist oder ein Rumpf
-  `add` enthält. Das schließt nebenbei eine heute offene #259-Lücke: Mit `a = add` liefert
-  `git a neu.py && git commit -m x` heute `(False, False, False, False)`, und die neue, untrackte
-  Datei fehlt in der Menge.
+  `add` enthält. `stage`, das Builtin-Synonym für `add`, zählt in allen drei Quellen — Befehlstext,
+  Expansionen, Rümpfe — wie `add`; sonst verkleinerte ein Alias auf `stage` (`alias.s=stage`) die
+  Commit-Menge, ein Alias-Bypass. Das schließt nebenbei heute offene #259-Lücken: Mit `a = add`
+  liefert `git a neu.py && git commit -m x` heute `(False, False, False, False)`, und die neue,
+  untrackte Datei fehlt in der Menge; dasselbe gilt für das wörtliche
+  `git stage neu.py && git commit -m x`, das ab jetzt korrekt erfasst wird (Hinweis im CHANGELOG,
+  Abschnitt 16).
 - Unsicherheit — `view.unresolved` oder kein zerlegbarer Commit — ergibt wie bisher
   `(True, True, True, True)`, die größere Menge.
 - `view` wird über `_commit_change_set(command, view=None)` und
@@ -400,7 +442,7 @@ auf stderr:
 
 ```
 Commit erkannt über Alias: git ci → git commit
-Alias nicht auflösbar (<Grund>): git <sub> — wird wie ein Commit geprüft. Ausweg: Unterbefehl ausschreiben (z. B. git commit statt git ci) oder den Aufruf auftrennen.
+Unterbefehl nicht auflösbar (<Grund>): git <sub> — wird wie ein Commit geprüft. Ausweg: Unterbefehl ausschreiben (z. B. git commit statt git ci) oder den Aufruf auftrennen.
 ```
 
 Die erste Form nennt die Auflösungszeile(n) der Sicht, deren Ziel `commit` enthält (Kette:
@@ -421,6 +463,8 @@ aus 3a) bleiben unverändert.
 | Schleife, mehr als 8 Schritte, leerer oder nicht zerlegbarer Alias-Wert, `-c` oder `--config-env` mit `alias.`/`include` im Alias-Wert | `unresolved` |
 | Shell-Syntax in einem nachgespielten Wert, unbekannte `--config-env`-Variable, `env` mit Optionen oder `sudo`, Zuweisung mit nicht bestimmbarer Reichweite | `unresolved` |
 | Mehr als 3 Kontexte, Taint, unbekanntes Arbeitsverzeichnis | `unresolved` |
+| Im Befehl benannte Konfigurationsdatei fehlt zur Hook-Zeit oder kommt in einem anderen Token des Befehls noch einmal vor; `GIT_CONFIG_PARAMETERS` mit `include` | `unresolved`, ohne Abfrage (Abschnitt 4) |
+| Unterbefehl mit Shell-Syntax, auch in Alias-Wert oder Rumpf | `unresolved`, ohne Abfrage (Abschnitt 2) |
 | Shell-Alias | Kein reiner git-Aufruf; Rumpf wird auf Commit, Marker und Secrets geprüft; nicht zerlegbarer Rumpf: Fall 3 auf dem Rumpf |
 | Gesamtbefehl nicht zerlegbar | Nicht-Builtin-Kandidat: `unresolved` (Abschnitt 15); sonst unverändert |
 | Ausnahme im Resolver | Intern gefangen: `unresolved`, falls die naive Kandidatensuche aus Abschnitt 15 ein Nicht-Builtin findet, sonst leere Sicht |
@@ -463,8 +507,9 @@ plus stderr-Hinweis. Anker für AC-16:
   Hilfsmodul ohne Hook (Anker: `git_alias.py` und `KEIN Hook` in derselben Zeile).
 - `README.md`: eine Zeile im Architektur-Baum unter `core/hooks/`, analog zu
   `precondition_origins.py` (Anker: `git_alias.py` und `NOT a hook` in derselben Zeile).
-- `CHANGELOG.md`, Abschnitt `[Unreleased]`: Eintrag zu #281 mit den neuen Block-Fällen (Anker:
-  `#281`, `Alias` und `nicht auflösbar`).
+- `CHANGELOG.md`, Abschnitt `[Unreleased]`: Eintrag zu #281 mit den neuen Block-Fällen und dem
+  Nebeneffekt, dass auch ein wörtliches `git stage neu.py && git commit` jetzt in der Commit-Menge
+  erfasst wird (Anker: `#281`, `Alias`, `nicht auflösbar` und `stage`).
 
 ## Expected Behavior
 
@@ -472,9 +517,10 @@ plus stderr-Hinweis. Anker für AC-16:
 - **Output:** `bash_gate.py` endet mit Exit 0 oder 2; bei einem nur über die Sicht erkannten Commit steht zusätzlich eine Zeile auf stderr, die Block-Meldungen bleiben unverändert; `resolve_git_aliases` liefert eine `GitAliasView`.
 - **Side effects:** Höchstens drei lesende `git config`-Abfragen je Bash-Befehl und nur für Nicht-Builtin-Unterbefehle; die Abfrage schreibt nichts und führt nie Code aus dem Befehlstext aus; sonst keine.
 - **Builtins:** Ein Builtin-Unterbefehl löst nie eine Abfrage aus und wird nie von einem Alias überschattet; Alias-Namen gelten case-insensitiv, Builtin-Namen exakt.
-- **Alias auf `commit`:** Er gilt wie `commit` (lokal, global, `include.path`, `-c`, `--config-env`, Umgebung, Ketten, Optionen im Alias-Wert), und seine Argumente bestimmen die #259-Commit-Menge.
+- **Unterbefehl:** Ein Unterbefehl, dessen Name erst zur Laufzeit feststeht (`git $CMD`), wird ohne Abfrage als `unresolved` geprüft — auch in Alias-Werten und Shell-Rümpfen.
+- **Alias auf `commit`:** Er gilt wie `commit` (lokal, global, `include.path`, `-c`, `--config-env`, Umgebung, Ketten, Optionen im Alias-Wert), seine Argumente bestimmen die #259-Commit-Menge, und ein begleitendes `add` oder `stage` zählt auch über Alias und Rumpf.
 - **Shell-Aliase:** Ein Shell-Alias ist kein reiner git-Aufruf; sein Rumpf wird auf Commit, Marker-Schreiben und Secrets geprüft.
-- **Kontext:** Nachgespielt wird der Kontext des echten Aufrufs (cwd, `-C`, `cd`, `-c`, freigegebene Präfix-Zuweisungen); eine Alias-Änderung im selben Befehl oder ein unbestimmbarer Kontext macht spätere Nicht-Builtins `unresolved`.
+- **Kontext:** Nachgespielt wird der Kontext des echten Aufrufs (cwd, `-C`, `cd`, `-c`, freigegebene Präfix-Zuweisungen); eine Alias-Änderung im selben Befehl, eine im Befehl benannte Konfigurationsdatei, die es noch nicht gibt oder die derselbe Befehl schreibt, oder ein unbestimmbarer Kontext macht spätere Nicht-Builtins `unresolved`.
 - **Fehlerrichtung:** Was sich nicht sicher auflösen lässt, wird wie ein Commit geprüft (kein Schnellpfad, Schritt 5 läuft), mit Wirkung nur dort, wo auch ein wörtlicher Commit geprüft würde.
 - **Invarianz:** Bei leerer Sicht verhält sich `bash_gate.py` exakt wie vor dieser Änderung, und `_is_whitelisted` sieht keine Aliase.
 
@@ -484,21 +530,24 @@ plus stderr-Hinweis. Anker für AC-16:
   (Kette: `git c2 → git ci → git commit`), danach die bestehenden Block-Meldungen unverändert,
   etwa die 5c-Meldung „Adversary verdict missing or not VERIFIED“. Weg wie bei jedem Commit:
   Adversary-Dialog und VERIFIED; Notbremse: Override-Token (Commit-Gate, wie bisher).
-- **Alias nicht auflösbar:** die zweite stderr-Zeile aus Abschnitt 12
-  (`Alias nicht auflösbar (<Grund>): git <sub> — wird wie ein Commit geprüft. Ausweg: …`) mit dem
+- **Unterbefehl nicht auflösbar:** die zweite stderr-Zeile aus Abschnitt 12
+  (`Unterbefehl nicht auflösbar (<Grund>): git <sub> — wird wie ein Commit geprüft. Ausweg: …`) mit dem
   Ausweg „Unterbefehl ausschreiben (z. B. git commit statt git ci) oder den Aufruf auftrennen“.
   Gründe: Abfrage gescheitert (rc, Timeout, git fehlt), Schleife, mehr als 8 Schritte, leerer oder
-  nicht zerlegbarer Wert, Taint, Shell-Syntax im nachgespielten Wert, unbekanntes
-  Arbeitsverzeichnis, `env` mit Optionen oder `sudo`, Budget, Gesamtbefehl nicht zerlegbar,
-  interner Fehler.
+  nicht zerlegbarer Wert, Taint, Shell-Syntax im nachgespielten Wert oder im Unterbefehl,
+  im Befehl benannte Konfigurationsdatei, die es noch nicht gibt oder die derselbe Befehl erneut
+  nennt, unbekanntes Arbeitsverzeichnis, `env` mit Optionen oder `sudo`, Budget, Gesamtbefehl nicht
+  zerlegbar, interner Fehler.
 - **Modul fehlt:** `git_alias.py` nicht importierbar — eine stderr-Zeile nennt `git_alias`, die
   Sicht bleibt leer, `bash_gate.py` läuft mit dem alten Verhalten weiter.
 - **Marker über Shell-Alias:** Der Rumpf eines Shell-Alias, der einen Freigabe-Marker schreibt,
   löst die unveränderte Marker-Meldung aus Schritt 3a aus; die Datei entsteht nicht.
-- **Preis der Vorsicht:** Ein nachgespielter Wert mit Shell-Syntax (`git -C "$REPO" st`) und ein
-  Aufruf über `sudo` oder `env -i` machen Nicht-Builtin-Unterbefehle `unresolved` — geprüft statt
-  durchgelassen. Ausweg: den Wert literal angeben, den Unterbefehl ausschreiben oder den Aufruf
-  auftrennen.
+- **Preis der Vorsicht:** Ein nachgespielter Wert mit Shell-Syntax (`git -C "$REPO" st`), ein
+  Unterbefehl mit Shell-Syntax (`git $CMD`), eine im Befehl benannte Konfigurationsdatei, die es
+  noch nicht gibt (`GIT_CONFIG_GLOBAL=/tmp/neu git st`), und ein Aufruf über `sudo` oder `env -i`
+  machen Nicht-Builtin-Unterbefehle `unresolved` — geprüft statt durchgelassen. Ausweg: den Wert
+  literal angeben, die Datei vorher in einem eigenen Aufruf anlegen, den Unterbefehl ausschreiben
+  oder den Aufruf auftrennen.
 
 ## Known Limitations
 
@@ -509,15 +558,21 @@ plus stderr-Hinweis. Anker für AC-16:
   `difftool -x`, `mergetool`, `filter-branch`; git-Hooks. Siehe #297.
 - **Commits ohne `commit`:** `merge`, `cherry-pick`, `revert`, `am` und `pull` erzeugen Commits
   ohne Gate. Das ist eine Produktentscheidung, siehe #297.
+- **Verschleierte Config-Schreibzugriffe im selben Aufruf:** Erfasst sind nur Wege, die eine im
+  Befehl benannte Konfigurationsquelle (Abschnitt 4) oder einen üblichen Dateinamen (Abschnitt 5)
+  nennen. Nicht erfasst sind wirklich verschleierte Wege: zusammengesetzte Pfade (`$d/$f`),
+  Schreiben per Skript ohne Nennung des Pfads und das Überschreiben einer Datei, die die bestehende
+  Konfiguration schon per `include.path` einbindet (`printf … > inc.cfg && git ci`).
 - **Nicht aufgelöste Ausweichwege:** vorsätzlich manipuliertes git (wie in der #259-Spec);
-  verschleierte Config-Schreibzugriffe im selben Aufruf (per Skript, zusammengesetztem Pfad oder
-  beliebig benannter Datei hinter `GIT_CONFIG_GLOBAL`/`include.path` — die Taint-Regeln erfassen
-  nur die erkennbaren Formen); `source` und eine Shell-Funktion namens `git`; ein Unterbefehl aus
-  Shell-Expansion oder stdin (`git $CMD`, `xargs git`); Schachtelung tiefer als 2 und
-  Shell-Aufrufe mit zusammengesetzten Flags (`bash -lc`), die `_git_nested_subcommands` auch heute
-  nicht erkennt; ein bedingt ausgeführtes `cd` (`[ -d B ] && cd B; git ci`), das das Modell als
-  ausgeführt unterstellt; Race-Condition bei parallel ausgeführten Tool-Aufrufen. Die Sicht ist
-  eine Momentaufnahme vor dem Befehl.
+  `source` und eine Shell-Funktion namens `git`; ein Unterbefehl aus stdin (`… | xargs git`);
+  Schachtelung tiefer als 2; ein bedingt ausgeführtes `cd` (`[ -d B ] && cd B; git ci`), das das
+  Modell als ausgeführt unterstellt; Race-Condition bei parallel ausgeführten Tool-Aufrufen. Die
+  Sicht ist eine Momentaufnahme vor dem Befehl.
+- **Shell-Aufrufe mit zusammengesetzten oder weiteren Flags** (`bash -lc`, `sh -ec`,
+  `bash --login -c`): `_git_nested_subcommands` erkennt nur ein `-c` unmittelbar hinter dem
+  Shell-Namen. Das ist eine vorbestehende Lücke (Issue #298), bewusst nicht Teil von #281. Der
+  Resolver folgt derselben Verschachtelungs-Erkennung und hat dieselbe Lücke; beim Fix von #298 ist
+  er mit anzugleichen.
 - **Nicht zerlegbare Gesamtbefehle:** Mit Nicht-Builtin-Kandidat werden sie jetzt geprüft; ohne
   Kandidaten bleibt der Fail-open-Durchlass aus #1431 unverändert.
 - **`cd`-Modell:** Es kennt nur literale Pfade auf oberster Ebene. `cd` ohne Argument, `cd -`,
@@ -536,8 +591,6 @@ plus stderr-Hinweis. Anker für AC-16:
 - **Umgebung:** Die Abfrage sieht die Hook-Umgebung; die Shell des Bash-Tools kann abweichen
   (Profil- und Shell-Snapshot-Exporte, `CLAUDE_ENV_FILE`). Dann kann die Abfrage eine andere
   globale Konfiguration sehen als der echte Aufruf.
-- **Staging-Synonyme:** `git stage` (Builtin-Synonym für `add`) und `git mv` zählt `_commit_form`
-  wie schon in der #259-Spec nicht als begleitendes `add`; Phase 8 fängt die Menge ab.
 - **Ablösung einer #259-Grenze:** Der Satz in den Known Limitations von
   `fix-259-adversary-diff-binding.md`, git-Aliase (z. B. `git ci`) würden von der
   `git add`-Erkennung „nicht gezielt erfasst“, war zu eng: Tatsächlich umging ein Alias das ganze
@@ -577,7 +630,8 @@ endet darin schon heute mit Exit 2 (Schritt 5c).
   (c) inline `git -c alias.ci=commit ci -m x` (zweite Reproduktionsform aus #281); (d) Präfix
   `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.ci GIT_CONFIG_VALUE_0=commit git ci -m x`;
   (e) `ZZ=commit git --config-env=alias.ci=ZZ ci -m x`;
-  (f) `env GIT_CONFIG_GLOBAL=<datei> git ci -m x`; (g) eine Hook-Umgebung mit
+  (f) `env GIT_CONFIG_GLOBAL=<datei> git ci -m x` mit vorhandener Datei, die den Alias trägt;
+  (g) eine Hook-Umgebung mit
   `GIT_CONFIG=<datei ohne Aliase>` bei lokalem `alias.ci=commit` (die Abfrage ignoriert
   `GIT_CONFIG`, wie es `git ci` tut); (h) ein lokal auf `log` gesetztes `alias.dup`, das der
   Inline-`-c` desselben Aufrufs überschreibt (der zuletzt gelistete Wert gilt, hier die
@@ -613,10 +667,13 @@ endet darin schon heute mit Exit 2 (Schritt 5c).
   - Test: test_ac6_shell_aliases — in tests/test_git_alias_commit_gate_281.py
 
 - **AC-7:** Given der gesperrte Zustand / When (a) `git config alias.ci commit && git ci -m x`,
-  (b) `export GIT_CONFIG_GLOBAL=<datei mit ci=commit>; git ci -m x` und (c)
-  `git config user.name y && git st` (mit `alias.st=status`) geprüft werden / Then Exit 2 für (a)
-  und (b) — die Abfrage sähe den Stand vor dem Befehl, die Änderung im selben Aufruf macht den
-  späteren Nicht-Builtin `unresolved` — und Exit 0 für (c) (keine Alias-Änderung, kein Taint).
+  (b) `export GIT_CONFIG_GLOBAL=<datei mit ci=commit>; git ci -m x`, (c)
+  `git config user.name y && git st` (mit `alias.st=status`) und (d)
+  `printf '[alias]\n\tci = commit\n' > <tmp>/f && GIT_CONFIG_GLOBAL=<tmp>/f git ci -m x` (die Datei
+  `<tmp>/f` gibt es zur Hook-Zeit noch nicht) geprüft werden / Then Exit 2 für (a), (b) und (d) —
+  die Abfrage sähe den Stand vor dem Befehl, die Änderung im selben Aufruf und eine im Befehl
+  benannte, noch nicht vorhandene Konfigurationsdatei machen den späteren Nicht-Builtin
+  `unresolved` — und Exit 0 für (c) (keine Alias-Änderung, kein Taint).
   - Test: test_ac7_same_call_changes_taint — in tests/test_git_alias_commit_gate_281.py
 
 - **AC-8:** Given der gesperrte Zustand mit `alias.st=status`, `alias.lg="log --graph --oneline"`
@@ -651,11 +708,12 @@ endet darin schon heute mit Exit 2 (Schritt 5c).
 
 - **AC-12:** Given Phase 7, Verdict VERIFIED und ein gestempeltes Dialog-Artefakt, das nur B
   zitiert und hasht; B ist gestagt, C ist getrackt geändert, nicht gestagt und nicht zitiert /
-  When `git ci -m x` (mit `alias.ci=commit`), `git cam msg` (mit `alias.cam="commit -a -m"`) und
-  `git a NEU.py && git ci -m x` (mit `alias.a=add`, NEU.py untrackt und nicht zitiert) geprüft
-  werden / Then Exit 0 für `git ci` (Index-Form, C gehört nicht zum Commit), Exit 2 für
-  `git cam` (die Argumente aus dem Alias-Wert machen daraus die Arbeitsbaum-Form, stderr nennt C)
-  und Exit 2 für `git a NEU.py && git ci` (stderr nennt NEU.py).
+  When `git ci -m x` (mit `alias.ci=commit`), `git cam msg` (mit `alias.cam="commit -a -m"`),
+  `git a NEU.py && git ci -m x` (mit `alias.a=add`) und `git s NEU.py && git ci -m x` (mit
+  `alias.s=stage`) geprüft werden, NEU.py untrackt und nicht zitiert / Then Exit 0 für `git ci`
+  (Index-Form, C gehört nicht zum Commit), Exit 2 für `git cam` (die Argumente aus dem Alias-Wert
+  machen daraus die Arbeitsbaum-Form, stderr nennt C) und Exit 2 für die beiden Fälle mit `add`-
+  bzw. `stage`-Alias (stderr nennt NEU.py).
   - Test: test_ac12_commit_set_follows_alias_arguments — in tests/test_git_alias_commit_gate_281.py
 
 - **AC-13:** Given `alias.ci=commit` in der Konfiguration / When
@@ -672,18 +730,21 @@ endet darin schon heute mit Exit 2 (Schritt 5c).
   das Ergebnis Exit 0 wie bisher, mit einem stderr-Hinweis auf die fehlende Datei.
   - Test: test_ac14_resolver_failure_modes — in tests/test_git_alias_commit_gate_281.py
 
-- **AC-15:** Given der gesperrte Zustand und ein in Bash gültiger, für `shlex` aber unzerlegbarer
-  Befehl / When `git ci -m $'it\'s'` bzw. `git status $'it\'s'` geprüft wird / Then Exit 2 für den
-  Alias-Befehl (bisher Fail-open-Durchlass, jetzt geprüft) und Exit 0 für den Builtin-Befehl wie
-  bisher.
-  - Test: test_ac15_undecomposable_alias_command_is_checked — in tests/test_git_alias_commit_gate_281.py
+- **AC-15:** Given der gesperrte Zustand und ein Befehl, dessen Unterbefehl nicht bestimmbar ist —
+  für `shlex` unzerlegbar oder erst zur Laufzeit bekannt / When `git ci -m $'it\'s'`,
+  `git status $'it\'s'` bzw. `CMD=commit; git $CMD -m x` geprüft wird / Then Exit 2 für den
+  Alias-Befehl (bisher Fail-open-Durchlass, jetzt geprüft), Exit 0 für den Builtin-Befehl wie
+  bisher und Exit 2 für `git $CMD` (der Name des Unterbefehls steht erst zur Laufzeit fest:
+  `unresolved`, ohne Abfrage).
+  - Test: test_ac15_undeterminable_subcommand_is_checked — in tests/test_git_alias_commit_gate_281.py
 
 - **AC-16:** Given die für #281 vorgesehenen Doku-Stellen (`docs/WORKFLOW_GUIDE.md`, `CLAUDE.md`,
   `README.md`, `CHANGELOG.md`) / When die Implementierung abgeschlossen ist / Then nennt die
   Fast-Path-Zeile der `bash_gate.py`-Übersicht in `docs/WORKFLOW_GUIDE.md` die Alias-Auflösung,
   `CLAUDE.md` (Architektur-Baum und „Wichtige Dateien“) und `README.md` (Baum) listen
-  `git_alias.py` als Hilfsmodul ohne Hook, und `CHANGELOG.md` nennt unter `[Unreleased]` #281 und
-  die neuen Block-Fälle.
+  `git_alias.py` als Hilfsmodul ohne Hook, und `CHANGELOG.md` nennt unter `[Unreleased]` #281, die
+  neuen Block-Fälle und den Nebeneffekt, dass ein begleitendes `git stage` jetzt in der
+  Commit-Menge zählt.
   - Test: test_ac16_docs_mention_alias_resolution — in tests/test_git_alias_commit_gate_281.py
 
 - **AC-17:** Given eine installierte git-Version ab 2.43 / When `GIT_BUILTINS` mit
@@ -710,10 +771,18 @@ neuen Datei `tests/test_git_alias_commit_gate_281.py`:
   bzw. ein `environ`-Objekt aus, das etwas anderes als `OSError` oder `TimeoutExpired` wirft —
   einmal mit `git st` (Nicht-Builtin), einmal mit `git status` (nur Builtin). Dazu Matrizen für
   die Einzelregeln aus den Abschnitten 2 bis 9: Vorrang (zuletzt gelisteter Wert), Nachspielen
-  von `-C` und `-c`, Übersetzung von `--config-env`, Env-Freigabeliste, Taint (a) bis (c),
-  `cd`-Modell (literal, unbekannt, Subshell, Kontrollwort), `env` mit Optionen und `sudo`, Kette,
-  Schleife, Obergrenze, Schatten-Regel, Groß- und Kleinschreibung, leere und nicht zerlegbare
-  Werte, `-z` mit Zeilenumbruch im Wert, Rumpf-Aufbau und `_commit_form`-Faltung.
+  von `-C` und `-c`, Übersetzung von `--config-env`, Env-Freigabeliste, im Befehl benannte
+  Konfigurationsquellen (Datei fehlt; Datei existiert und wird erneut genannt; Datei existiert
+  ohne weitere Nennung und bleibt auflösbar; Wert aus der Hook-Umgebung ausgenommen; relativer
+  Pfad gegen `cd`-Kette und `-C`; `-c include.path`, `--config-env` und
+  `GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n`; `GIT_CONFIG_PARAMETERS` mit `include`; verschachtelte
+  Shell), Taint (a) bis (c) einschließlich eines Schreibziels `> "$GIT_CONFIG_GLOBAL"`, Unterbefehl
+  mit Shell-Syntax (`$CMD`, `$(…)`, Glob, Klammer-Expansion, Backtick-Trenner; im Alias-Wert; im
+  Rumpf), `cd`-Modell (literal, unbekannt, Subshell, Kontrollwort, relatives `cd` im
+  Shell-Alias-Rumpf), `env` mit Optionen und
+  `sudo`, Kette, Schleife, Obergrenze, Schatten-Regel, Groß- und Kleinschreibung, leere und nicht
+  zerlegbare Werte, `-z` mit Zeilenumbruch im Wert, Rumpf-Aufbau und `_commit_form`-Faltung
+  (einschließlich `stage` in Befehlstext, Expansion und Rumpf).
 - **In-process und Text** (AC-13, AC-16, AC-17): `_is_whitelisted` mit gepatchtem Resolver, die
   Doku-Anker aus Abschnitt 16, der Drift-Test der Builtin-Liste.
 - **Testaufbau als GIVEN/WHEN/THEN:**
@@ -723,6 +792,8 @@ neuen Datei `tests/test_git_alias_commit_gate_281.py`:
     `config -z --get-regexp` und ohne `GIT_TRACE*`/`GIT_CONFIG` in der Umgebung (AC-9, AC-11).
   - GIVEN ein `git`-Wrapper, der `config` scheitern lässt WHEN `git st` im gesperrten Zustand
     geprüft wird THEN Exit 2, für `git status` Exit 0 (AC-10).
+  - GIVEN eine Konfigurationsdatei `f`, die es zur Hook-Zeit nicht gibt WHEN
+    `GIT_CONFIG_GLOBAL=f git st` aufgelöst wird THEN `unresolved`, ohne Abfrage (AC-7).
 - **Regressionswächter, unverändert grün:** `tests/test_git_invocation_detection.py`,
   `tests/test_adversary_coverage_gate_259.py`, `tests/test_adversary_evidence_gate_253.py`,
   `tests/test_bash_gate_false_positives.py`, `tests/test_bash_gate_freetext_fixes_64_75.py`,
@@ -747,11 +818,16 @@ neuen Datei `tests/test_git_alias_commit_gate_281.py`:
   3. **Kontext-Nachspielen mit Env-Freigabeliste.** Die Abfrage läuft mit derselben Konfiguration
      wie der echte Aufruf (cwd, `-C` und `cd`, `-c`, `--config-env`, freigegebene
      Präfix-Zuweisungen), aber ohne jede Nebenwirkung: Nur Namen der Freigabeliste kommen durch,
-     `GIT_TRACE*` und `GIT_CONFIG` nie, und `argv[0]` ist nie ein Pfad aus dem Befehlstext.
-  4. **Fehlerrichtung „prüfen“, wirksam nur bei aktivem Workflow; die Whitelist bleibt streng.**
-     Was sich nicht sicher auflösen lässt, verliert Schnellpfad und 3a-Ausnahme und läuft durch
-     die Commit-Gates — mit Wirkung nur dort, wo auch ein wörtlicher Commit geprüft würde. Die
-     Whitelist sieht keine Aliase, weil Über-Erkennung dort die gefährliche Richtung ist.
+     `GIT_TRACE*` und `GIT_CONFIG` nie, und `argv[0]` ist nie ein Pfad aus dem Befehlstext. Weil
+     die Abfrage nur den Stand vor dem Befehl sieht, macht eine im Befehl benannte
+     Konfigurationsdatei, die es noch nicht gibt oder die derselbe Befehl schreibt, den Aufruf
+     `unresolved`.
+  4. **Fehlerrichtung „prüfen“, wirksam nur dort, wo auch ein wörtlicher Commit geprüft würde; die
+     Whitelist bleibt streng.**
+     Was sich nicht sicher auflösen lässt — auch ein Unterbefehl, dessen Name erst zur Laufzeit
+     feststeht —, verliert Schnellpfad und 3a-Ausnahme und läuft durch die Commit-Gates, mit
+     Wirkung nur dort, wo auch ein wörtlicher Commit geprüft würde. Die Whitelist sieht keine
+     Aliase, weil Über-Erkennung dort die gefährliche Richtung ist.
 
 ## Changelog
 
