@@ -137,3 +137,244 @@ Weitere Werkzeuge: `git --list-cmds=builtins` (140 Einträge), `git --list-cmds=
 10. **Konsumenten:** Die Änderung erreicht alle Projekte per `setup.py --update` bzw. per Plugin. Es
     braucht keine Migration; dokumentiert werden müssen die neuen Blocks, etwa wenn ein Alias
     committet.
+
+## Analysis
+
+Stand 2026-09-30.
+
+- **Grundlage:**
+  - drei parallele Explore-Agenten: betroffene Dateien, bindende Vorentscheidungen, Laufzeit-Abhängigkeiten mit Messungen;
+  - eine strategische Bewertung (Plan/Sonnet), die den Kern als In-Memory-Prototyp gegen echtes git 2.43 geprüft hat;
+  - eigene Nachprüfung der Befunde.
+- **Designentscheidungen:** Sie trifft der Tech Lead (Delegation durch den PO).
+
+### Type
+
+Bug, genauer eine Sicherheitslücke im Commit-Gate: Eine Umgehung ist ohne Manipulation möglich.
+
+### Designentscheidungen
+
+**E1 — Eigener Resolver statt Umbau der Text-Parser.**
+
+- **Das Modul:** Neu ist `core/hooks/git_alias.py` mit
+  `resolve_git_aliases(command, cwd=None, environ=None, run=None) -> GitAliasView(expansions, shell_bodies, unresolved)`.
+  - Der Resolver wirft nie und blockt nie; er liefert nur eine Sicht.
+  - Bei `"git" not in command` gibt er sofort eine leere Sicht zurück.
+  - Die Text-Parser in `hook_utils` (`git_subcommands`, `is_pure_git_command`, `git_head_subcommands` …) bleiben rein und unverändert; der Resolver nutzt `_git_segments` und `_git_subcommand_after`.
+- **Anbindung:** `bash_gate.main()` ruft den Resolver genau einmal auf, direkt nach dem Stop-Lock (Schritt 1). Das Ergebnis gibt es an die Entscheidungsstellen weiter.
+- **Warum nicht in die Parser:**
+  - Die Parser sind `(command) -> …`-Funktionen ohne cwd und env und werden pro Aufruf 6–8-mal gerufen.
+  - Die Bestandstests rufen sie nicht hermetisch; eine `~/.gitconfig` des Entwicklers würde durchschlagen.
+  - Shell-Aliase brauchen Seitenkanäle (Rumpf-Text, Reinheit), die eine `list[str]` nicht trägt.
+- **Verpackung:** `setup.py` kopiert `core/hooks/*.py` per Glob, der Plugin-Modus nutzt den ganzen Ordner. Eine Registrierung ist nicht nötig, denn es ist kein Hook, sondern ein Hilfsmodul wie `adversary_dialog.py`.
+
+**E2 — Wann nachgeschlagen wird.**
+
+- **Builtins nie:** Nur ein Unterbefehl, der **kein** Builtin ist, löst eine Abfrage aus.
+  - Builtins stehen als statisches `GIT_BUILTINS` (die 140 Namen von git 2.43) im Modul.
+  - Ein Drift-Test prüft `GIT_BUILTINS ⊆ git --list-cmds=builtins` und wird übersprungen, wenn git älter ist oder fehlt.
+  - Damit kostet der heiße Pfad (`git status`, `git add`, `git commit` …) keinen einzigen zusätzlichen Prozess und bekommt keinen neuen Fehlermodus.
+- **Schatten-Regel wie git:** Ein Alias mit Builtin-Namen wird ignoriert.
+- **Externe `git-<name>`-Kommandos** werden nicht befragt. Den Alias trotzdem aufzulösen, führt höchstens zu Über-Erkennung, also in die sichere Richtung. Weiteres in #297.
+
+**E3 — Die Abfrage.**
+
+- **Befehl:** `git <nachgespielte Optionen> config -z --get-regexp ^alias\.`
+- **argv[0]** ist immer `git` aus dem `PATH` des Hooks, nie ein Pfad aus dem Befehlstext (`./git ci` wird nicht ausgeführt).
+- **Laufparameter:** cwd `os.getcwd()`, also derselbe Ort, an dem der Befehl startet; Timeout 2 s; `stdin=DEVNULL`.
+- **`-z`** ist nötig, weil Alias-Werte Zeilenumbrüche enthalten dürfen.
+- **Rückgabecodes:**
+  - rc 0 oder 1 liefert die Tabelle; rc 1 tritt auch außerhalb eines Repos auf und ist kein Fehler.
+  - Jeder andere rc, ein Timeout oder ein OSError ergibt `unresolved`.
+- **Cache und Budget:**
+  - Das Ergebnis wird je Kontext gecacht.
+  - Höchstens 3 Abfragen pro Bash-Befehl; darüber wird der Rest `unresolved`.
+- **Groß- und Kleinschreibung:** Namen werden kleingeschrieben verglichen, denn git behandelt Alias-Schlüssel case-insensitiv.
+
+**E4 — Dieselbe Konfiguration wie der echte Aufruf.**
+
+- **Nachgespielt:** `-C`, `-c`, `--git-dir` und `--work-tree` unverändert. `--config-env=K=E` wird zu `-c K=<Wert>`, mit dem Wert aus der Präfix-Zuweisung oder der Hook-Umgebung; das ist verifiziert identisch zu git.
+- **Umgebung:** Die eigene Hook-Umgebung plus Präfix-Zuweisungen aus dem Befehl (`VAR=x git …`, `env VAR=x git …`), aber **nur** aus dieser Freigabeliste:
+  - `GIT_CONFIG_GLOBAL|SYSTEM|NOSYSTEM|COUNT|PARAMETERS`
+  - `GIT_CONFIG_KEY_n`, `GIT_CONFIG_VALUE_n`
+  - `GIT_DIR`, `GIT_WORK_TREE`, `GIT_COMMON_DIR`, `GIT_CEILING_DIRECTORIES`
+  - `HOME`, `XDG_CONFIG_HOME`
+- **Warum die Liste Pflicht ist:** Nachgewiesen ist, dass `GIT_TRACE=<pfad>` und `GIT_TRACE2=<pfad>` selbst ein `git config` in diese Datei schreiben lassen. Die Abfrage des Hooks könnte so einen Freigabe-Marker erzeugen. Aus demselben Grund sind `LD_*`, `PATH`, `GIT_EXEC_PATH` sowie Pager- und Editor-Variablen ausgeschlossen.
+- **Unsichere Werte:** Enthält ein Wert Shell-Syntax (`$`, Backtick, `*`, `?`, `[`, `]`, `{`, `}`), wird er `unresolved`. Ein führendes `~` wird expandiert.
+
+**E5 — Änderungen im selben Aufruf („Taint“).** Die Abfrage sieht den Stand **vor** dem Befehl. Deshalb wird ein späterer Nicht-Builtin-Unterbefehl `unresolved`, wenn im selben Befehl davor eines davon vorkommt:
+
+- eine Zuweisung, `export`, `declare` oder `unset` eines freigegebenen Env-Namens;
+- ein `git config`- oder `git clone`-Segment, das `alias.` oder `include.` nennt;
+- ein Token, das `.gitconfig` oder `.git/config` enthält.
+
+Das schließt `git config alias.ci commit && git ci -m x`; `git config user.name x && git st` bleibt unberührt, beides im Prototyp verifiziert.
+
+**`cd`/`pushd`** mit literalem Pfad wird als implizites `-C <pfad>` für die folgenden Segmente modelliert. Ein Pfad mit Variable, `cd` ohne Argument, `cd -` und `popd` machen dagegen `unresolved`. So bleibt das häufige `cd x && git <alias>` präzise.
+
+**E6 — Ketten.**
+
+- Aufgelöst wird in einer Schleife: Unterbefehl → Alias-Wert (`shlex.split`) plus angehängte Argumente.
+- Bei jedem Schritt wird geprüft, ob ein Builtin erreicht ist.
+- Die Schleife führt eine Besucht-Menge und bricht nach höchstens 8 Schritten ab.
+- Eine Schleife, ein nicht zerlegbarer Wert oder das Überschreiten der Obergrenze ergeben `unresolved`. git selbst bricht bei einer Schleife ab, ohne etwas auszuführen; unser Verhalten ist also die Obermenge.
+
+**E7 — Shell-Aliase (`!…`).**
+
+- **Rumpf:** Text ist `rumpf + " " + shlex.join(args)`, denn git hängt `"$@"` an. Er landet in `shell_bodies` und `expansions` und wird rekursiv aufgelöst, höchstens bis Tiefe 2, wie bei `sh -c`. Rümpfe erben die Optionen des Elternaufrufs; git exportiert dafür `GIT_CONFIG_PARAMETERS`.
+- **In `bash_gate`:**
+  - `git_only = is_pure_git_command(command) and not (view.shell_bodies or view.unresolved)`. Ein Shell-Alias verliert damit Schnellpfad und 3a-Ausnahme.
+  - `scan_cmd` bekommt die Rümpfe angehängt, für 3a (Marker), 3b und 4 (Secrets). Die 4b-Credential-Prüfung bekommt sie nicht, denn Rümpfe sind Nutzer-Konfiguration, kein Text des Agenten.
+- **Commit-Erkennung im Rumpf:** über `is_git_subcommand(rumpf, "commit")`, einschließlich Fall 3 der Drei-Fälle-Regel für nicht zerlegbare Rümpfe.
+
+**E8 — Commit-Menge (#259).**
+
+- **Signatur:** `_commit_form(command, view=None)` faltet über `[command, *view.expansions]`. Aus einem `cam = commit -a -m` wird so `-a` sichtbar. Ein `add` in einem der Texte zählt als begleitendes `git add`.
+- **Nebeneffekt:** Das schließt nebenbei eine heute offene #259-Lücke. Mit `a = add` liefert `git a neu.py && git commit -m x` heute `(F, F, F, F)`, und die neue Datei fehlt in der Menge.
+- **Unsicherheit:** `view.unresolved` oder kein zerlegbarer Commit ergeben wie bisher `(True, True, True, True)`.
+- **Weitergabe:** `view` wird über `_commit_change_set` und `_require_dialog_evidence` gereicht.
+
+**E9 — Entscheidungsstellen in `main()`.**
+
+- `committing = is_git_subcommand(command, "commit") or view.unresolved or any(is_git_subcommand(t, "commit") for t in view.expansions)`.
+- Schritt 2 wird zu `if git_only and not committing: allow()`.
+- Schritt 5 prüft `committing` statt `is_git_subcommand(command, "commit")`.
+
+**E10 — Whitelist bleibt unverändert.** `_is_whitelisted` sieht weiter nur den Originaltext mit dem strengen `git_head_subcommands`; ein Alias ist nie ein Whitelist-Treffer. Die davon unabhängige Lücke in 3b steht in #296 und bleibt außerhalb dieses Umfangs.
+
+**E11 — Meldungen.**
+
+- Erkennt das Gate einen Commit über einen Alias, nennt die Block-Meldung die Auflösung, etwa „`git ci` → `git commit`“.
+- Bei `unresolved` nennt sie Grund und Ausweg: den Unterbefehl ausschreiben oder den Aufruf trennen.
+
+**E12 — Fehlerrichtungen.** „Prüfen“ heißt: kein Schnellpfad, keine 3a-Ausnahme, Schritt 5 läuft.
+
+| Situation | Ergebnis |
+|---|---|
+| Builtin-Unterbefehl | Keine Abfrage, Verhalten wie bisher |
+| Abfrage ok, kein Alias (auch ohne Repo) | Durchlassen wie bisher |
+| git fehlt, OSError, Timeout, rc ∉ {0,1} | `unresolved`, also prüfen |
+| Unzerlegbarer Wert, Schleife, > 8 Schritte, > 3 Kontexte, Taint, `$`-Wert | `unresolved`, also prüfen |
+| Unzerlegbarer Shell-Rumpf | Fall 3 auf dem Rumpf; der Befehl gilt nicht als rein |
+| Unzerlegbarer Gesamtbefehl | Unverändert: nichts aufgelöst, Known Limitation |
+| Ausnahme im Resolver | Intern gefangen; `unresolved`, falls ein Nicht-Builtin-Kandidat gesehen wurde, sonst leere Sicht |
+| `ImportError` des Moduls | Altes Verhalten plus Hinweis auf stderr; Bash wird nie lahmgelegt |
+
+Ein fälschliches „prüfen“ wirkt nur, wenn ein Workflow aktiv ist:
+- in Phase 6–7 über 5c (VERIFIED-Pflicht);
+- in jeder Phase über 5a, 5b und 5d.
+
+Es entsteht nur bei `unresolved`, also in seltenen Fällen, und hat einen dokumentierten Ausweg. Bug-, feature-fast- und workflowlose Sitzungen bleiben unberührt.
+
+### Affected Files (with changes)
+
+| File | Change Type | Description |
+|------|-------------|-------------|
+| `core/hooks/git_alias.py` | CREATE | Resolver, `GIT_BUILTINS`, Kontext-Nachspielen, Env-Freigabeliste, Taint, Ketten, Shell-Rümpfe; Docstring mit den Rest-Grenzen |
+| `core/hooks/bash_gate.py` | MODIFY | `main()`: Sicht nach Schritt 1, `git_only`, `committing`, `scan_cmd`; `_commit_form(command, view)` samt Weitergabe über `_commit_change_set` und `_require_dialog_evidence`; Meldungen (E11) |
+| `core/hooks/hook_utils.py` | — | Keine Änderung; der Resolver nutzt die bestehenden Zerlegungs-Helfer |
+| `tests/test_git_alias_commit_gate_281.py` | CREATE | E2E gegen das echte `bash_gate.py` in hermetischen echten Repos, Unit-Tests mit injiziertem Runner, Drift-Test |
+| `tests/test_git_invocation_detection.py`, `tests/test_adversary_coverage_gate_259.py`, `tests/test_bash_gate_*.py` | CHECK | Regressionswächter, sollen unverändert grün bleiben |
+| `docs/WORKFLOW_GUIDE.md` | MODIFY | Zeile „2. Reiner git-Befehl (kein commit)? → ALLOW (Fast Path)“ um die Alias-Auflösung ergänzen |
+| `CLAUDE.md` | MODIFY | Neues Hilfsmodul im Architektur-Baum und in „Wichtige Dateien“, je eine Zeile |
+| `CHANGELOG.md` | MODIFY | Eintrag unter `[Unreleased]`, inklusive der neuen Blocks |
+| `README.md` | CHECK | Gate-Übersicht; voraussichtlich keine Änderung |
+
+### Scope Assessment
+
+- **Dateien:** 2 produktiv (1 neu), 1 neue Testdatei, 3 Doku-Dateien.
+- **Geschätzte LoC:**
+  - Produktiv etwa +225 bis +260: `git_alias.py` etwa 170–200, `bash_gate.py` etwa +35/−8.
+  - Tests etwa +450 bis +550.
+- **LoC-Budget:** Das liegt am bzw. über dem Standardlimit von 250 Produktiv- und 500 Testzeilen. In der Spec begründet: `loc_limit_override` 320, `test_loc_limit_override` 700.
+- **Risiko: HOCH beim Blast Radius.** Jeder Bash-Aufruf in jedem Projekt, das das Framework nutzt, läuft durch den Code. Gemildert wird das so:
+  - Builtins verursachen keinen zusätzlichen Prozess.
+  - `"git" not in command` beendet den Resolver sofort.
+  - Der Resolver wirft nie.
+  - Unsicherheit wirkt nur, wenn ein Workflow aktiv ist.
+- **Laufzeit:**
+  - `bash_gate.py` braucht gemessen etwa 61 ms für `git status` wie für `ls`.
+  - Eine Abfrage kostet etwa 2,3 ms (etwa +4 %) und nur bei Nicht-Builtins.
+- **Bestandstests:** Die Suite ruft `bash_gate` nirgends mit einem Nicht-Builtin-Unterbefehl auf, ein Regressionsrisiko für sie ist also kaum vorhanden.
+
+### Technical Approach
+
+Wie E1–E12. Die Test-Strategie hat drei Teile.
+
+**E2E** gegen das echte `bash_gate.py` als Subprozess:
+- **Umgebung:** echte, hermetische Repos, Scrub wie in `_env()` aus #259, globale Aliase über `GIT_CONFIG_GLOBAL=<tmpdatei>`, Phase 6 ohne Verdict.
+- **Muss blocken (rc 2):**
+  - Aliase lokal, global, per `include.path`, inline `-c`, per `GIT_CONFIG_COUNT`-Präfix und per `env` mit `--config-env`;
+  - `-C anderes-repo`, eine Kette, ein Shell-Alias mit Commit, verschachteltes `bash -c`;
+  - `git config alias… && git ci` im selben Aufruf, `cd anderes && git ci` und `git CI`.
+- **Muss durchlassen (rc 0):**
+  - `git st` und `git lg`;
+  - `alias.status=commit` mit anschließendem `git status`;
+  - ein harmloses `!echo hi`.
+- **Marker:** Ein Shell-Alias `!touch .claude/user_approved_…` löst den 3a-Block aus.
+- **Fehlerrichtung:**
+  - Ein `PATH`-Wrapper lässt `config` scheitern: `git st` ergibt rc 2, `git status` rc 0, und für Builtins gibt es null Abfragen.
+  - Ein Schleifen-Alias ergibt rc 2.
+  - Zwei Nicht-Builtins im selben Kontext kosten eine Abfrage; der vierte Kontext ist `unresolved`.
+- **Sicherheit:**
+  - `GIT_TRACE=<marker> git -c alias.ci=commit ci` darf die Marker-Datei nicht erzeugen.
+  - `./git ci` wird nie ausgeführt.
+
+**#259-Präzision:**
+- Mit `ci = commit` ergeben gestagtes B (zitiert) und getrackt geändertes C (nicht zitiert) rc 0.
+- `cam = commit -a -m` ergibt rc 2 und nennt C.
+- `a = add` plus `git a NEU && git ci` ergibt rc 2 und nennt NEU.
+
+**Unit** mit injiziertem Runner, ohne git:
+- Nachspielen von `-C` und `-c`, Übersetzung von `--config-env`;
+- ein Recorder für die Env-Freigabeliste: kein `GIT_TRACE*`, kein `LD_*`, kein `PATH`;
+- Kette, Schleife, Obergrenze, Schatten-Regel, Groß- und Kleinschreibung, leere und unzerlegbare Werte, `-z` mit Zeilenumbruch;
+- die Taint-Matrix, Cache und Budget, Rumpf-Aufbau, Ausnahme-Fallback;
+- `_commit_form`-Faltung, Drift-Test;
+- Whitelist: Ist der Resolver auf „wirft“ gepatcht, bleibt `_is_whitelisted("git ci -m x")` False.
+
+### Dependencies
+
+- **Upstream:**
+  - git-CLI (`config -z --get-regexp`), in `bash_gate` nur als Nutzer der Sicht;
+  - `hook_utils._git_segments`, `_git_subcommand_after` und `_looks_like_git`;
+  - `shlex`.
+- **Downstream:**
+  - `bash_gate.main()` (Schritte 2, 3a, 3b, 4, 5) und `_commit_form` / `_commit_change_set` / `_require_dialog_evidence` (#259);
+  - alle Konsumenten-Projekte über `setup.py --update` bzw. das Plugin, ohne Migration.
+
+### Verworfene Optionen
+
+- **A — Auflösung in `git_subcommands` / `is_pure_git_command`:** Es gibt keinen cwd- und env-Kontext, der Test-Kontext wäre nicht hermetisch, und Shell-Aliase lassen sich nicht darstellen. Siehe E1.
+- **C — Befehlstext umschreiben und die alte Pipeline füttern:** Die Rück-Serialisierung ist verlustbehaftet, und die Regex-Scans sähen synthetischen Text. Die nützliche Idee daraus, kanonische Expansions-Texte für die bestehenden Parser, steckt in E7 und E8.
+- **D — Jeder unbekannte Unterbefehl gilt als Commit, ohne Abfrage:** Das blockt `git st`, `git lg`, `git lfs` und Projekt-Aliase. Übrig bleibt davon nur die Semantik von `unresolved`.
+- **Builtin-Liste zur Laufzeit (`--list-cmds=builtins`):** Das kostet einen Prozess bei **jedem** git-Befehl. Ersetzt wird es durch die statische Liste plus Drift-Test.
+- **Durchsetzung an git's eigenem Engpass** (`pre-commit` / `reference-transaction`-Hook): Das wäre unabhängig von der Schreibweise, braucht aber eine Installation pro Konsument und kollidiert mit husky/pre-commit. Siehe #297.
+
+### Known Limitations (Kandidaten für die Spec)
+
+- **Externe `git-<name>`** im `PATH` haben bei git Vorrang vor Aliasen. Nicht befragt, siehe #297.
+- **Weitere Code-Ausführung in „reinem git“:**
+  - `-c core.pager|editor|sshCommand`, `diff.external`, `credential.helper=!…`;
+  - `rebase --exec`, `bisect run`, `submodule foreach`, `difftool -x`, `mergetool`, `filter-branch`;
+  - git-Hooks.
+
+  Siehe #297.
+- **Commits ohne `commit`:** `merge`, `cherry-pick`, `revert`, `am` und `pull` erzeugen Commits ohne Gate. Das ist eine Produktentscheidung, siehe #297.
+- **Nicht aufgelöste Ausweichwege:**
+  - vorsätzlich manipuliertes git (wie Known Limitation aus #259);
+  - verschleierte Config-Schreibzugriffe im selben Aufruf (per Skript oder zusammengesetztem Pfad);
+  - `source` und eine Shell-Funktion namens `git`;
+  - Schachtelung tiefer als 2;
+  - nicht zerlegbare Gesamtbefehle (Verhalten unverändert);
+  - Race-Condition bei parallel ausgeführten Tool-Aufrufen.
+- **Andere Hooks:** Alias-Rümpfe sind für `secrets_guard.py` und `secret_egress_guard.py` unsichtbar, denn beide lesen nur den Befehlstext.
+- **Whitelist-Wechselwirkung:** Solange #296 offen ist, wird `git ci … .claude/settings.json` geprüft, das wörtliche `git commit …` dagegen nicht. Dieses Gefälle bleibt bewusst stehen: Die Whitelist darf nicht aufgeweicht werden.
+- **Ablösung einer #259-Grenze:** Der Satz zu Aliasen in der Known Limitation der #259-Spec war zu eng. Diese Spec löst ihn ab; die archivierte #259-Spec bleibt unverändert.
+
+### Open Questions
+
+- [x] Modul, Budget, Env-Freigabeliste, Taint und `cd`-Modellierung sind als Tech-Lead-Entscheidung E1–E12 festgelegt.
+- [ ] Keine blockierende PO-Frage. Zur Kenntnis:
+  1. Bei `unresolved` wird im Zweifel geprüft; ein harmloser Nicht-Builtin-Unterbefehl kann in seltenen Fällen blocken. Ausweg: Unterbefehl ausschreiben.
+  2. Ob die Adversary-Pflicht auch für `merge`/`cherry-pick`/`revert`/`am`/`pull` gilt, ist eine Produktfrage in #297, nicht in #281.
