@@ -88,3 +88,69 @@ einen Zustand, den das vorherige Vormerken ausschließt. Henning will die Epics 
 - PR #291 muss am Ende geschlossen oder verwertet werden (Tests sind wiederverwendbar).
 - Scoping-Limit ±250 LoC: Richtung 3 oder 4 sprengt es sicher; Richtung 1+2 voraussichtlich nicht.
 - `core/hooks/` ist Infrastruktur: Implementierung braucht Override-Token.
+
+## Analysis
+
+### Type
+Bug (Gate-Umgehungen), Sammel-Vorgang. Alle Fälle am echten `bash_gate.py` reproduziert (Wegwerf-Repo,
+Workflow phase6 ohne Verdict; Skripte `repro299.py`, `repro299b.py`, `repro284.py` im Sitzungs-Scratchpad):
+
+| Befehl | rc heute | Soll | Issue |
+|---|---|---|---|
+| `git commit -m x` / `git -C . commit` / `bash -c "git commit"` | 2 | 2 | Kontrolle |
+| `git commit -m x -- .claude/workflows/<wf>.json` | 0 | 2 | #296 |
+| `git add .claude/settings.json && git commit -m x` | 0 | 2 | #296 |
+| `git status && sed -i … .claude/workflows/<wf>.json` | 0 | 2 | Nebenbefund (Whitelist „irgendein Segment“, `bash_gate.py:_whitelist_matches`) |
+| `git add x && sed -i … .claude/workflows/<wf>.json` | 0 | 2 | dto. |
+| `bash -lc` / `sh -ec` / `bash --login -c "git commit -m x"` | 0 | 2 | #298 |
+| `git >/dev/null commit -m x`, `git --attr-source HEAD commit -m x` | 0 | 2 | #304 |
+| `git 2>&1 commit -m x` (`is_git_subcommand` → False) | 0 | 2 | Nebenbefund (`&`-Umleitungen als Trenner) |
+| `git status 2>&1` (`is_pure_git_command` → False, Über-Erkennung) | – | rein git | Nebenbefund |
+| `git -c alias.ci=commit ci -m x` | 0 | 2 | #281 (Teil B) |
+| `git merge`, `git cherry-pick`, `git -c core.pager='sh -c …' log` | 0 | s. Teil B | #297 (Teil B) |
+| #284: Rückstand + vorgemerkte Datei → Gate rät `git rebase origin/main` → „index contains uncommitted changes“; `git rebase --autostash origin/main` gelingt, Vormerkung bleibt | | | #284 |
+
+### Entscheidung Tech Lead: Schnitt in zwei Teile (Scope-Limit ±250 LoC)
+
+Gesamt ca. 185 Prod + 320 Test LoC → über dem Limit. Deshalb:
+
+- **Teil A = dieser Workflow:** #296 inkl. Whitelist-Nebenbefund, #298, #304 inkl. `&`-Umleitungen, #284.
+  Reine Struktur-/Zerlegungs-Fixes, kein neuer Subprozess. Ca. 75 Prod + 170 Test.
+- **Teil B = nächster Workflow unter #299:** #281 schlank (eine `git config --get-regexp '^alias\.'`-Abfrage,
+  nur im Fast-Path-Fall, fail-open, Kette mit Tiefenlimit, `!`-Alias = nicht rein git) und #297
+  (merge/cherry-pick/revert/am/pull zählen NICHT als Commit — merge ist der legitime Weg aus der
+  Rebase-Pflicht, Phase 8 fängt Code ab; gefährliche `-c`-Schlüssel und Kommando-Argument-Unterbefehle
+  nehmen den Status „rein git“). PR #291 wird dort geschlossen, RED-Tests ggf. verwertet.
+
+### Bedrohungsmodell (gilt für A und B)
+Das Gate verhindert, dass der Agent die Pflichtprüfung **versehentlich** umgeht (gängige
+Schreibweisen). Vorsätzliche Verschleierung (Config im selben Befehl schreiben, Env-Variablen wie
+`GIT_PAGER`, `eval`, `| bash`, Here-Strings) ist Known Limitation; Backstop ist der Phase-8-Übergang,
+der Verdict und Abdeckung unabhängig vom Commit-Weg gegen die Basis prüft.
+
+### Affected Files (Teil A)
+| File | Change Type | Description |
+|------|-------------|-------------|
+| `core/hooks/bash_gate.py` | MODIFY | 3b: Whitelist-Treffer überspringt nur 3b, kein `allow()`; `_is_whitelisted` nur wenn JEDES Segment whitelisted (wirkt auch auf 4b); 5b-Meldung nennt `git rebase --autostash origin/main`; 5b-cwd prüfen (`measure_root` statt `os.getcwd()`, #155-Konsistenz) |
+| `core/hooks/hook_utils.py` | MODIFY | `_git_nested_subcommands`: Shell-Optionen überspringen (Bündel mit `c`, `--login/--noprofile/--norc`, `-o/-O/--rcfile/--init-file <wert>`); Umleitungen samt Ziel und Ziffern-Präfix vor/nach `git` überspringen (`>`, `>>`, `<`, `N>`, `>&`, `&>`, `N>&M`), `&`-Umleitungen nicht als Trenner; `_GIT_OPTS_WITH_VALUE`: `--attr-source` ergänzen, `--exec-path` raus |
+| `tests/test_bash_gate_erkennung_299.py` | CREATE | Tabelle oben als Subprozess-Tests (beide Fehlerrichtungen), #284 mit echtem Origin-Repo inkl. Index-Wiederherstellung |
+| `CHANGELOG.md` | MODIFY | [Unreleased] |
+
+### Scope Assessment
+- Files: 4 · Estimated LoC: ca. +245/−15 · Risk Level: HIGH (Kern-Gate aller Konsumenten), abgefedert durch Regressionssuite (`test_git_invocation_detection.py`, `test_bash_gate_*`).
+
+### Technical Approach
+Regelweg, kein Modell: Ohne Modell geht es, weil Shell-Tokenisierung und Optionslisten deterministisch
+sind. Alternativen bewertet und nicht gewählt:
+- (a) Git-Hook `reference-transaction`/`pre-commit` per Plugin: deckt Commit-Wege unabhängig von der
+  Schreibweise, aber nicht 3b/Marker (Bash-Text), braucht Installer pro Projekt, kollidiert mit husky,
+  `-c core.hooksPath` überschreibt, Plugin-Modus ohne Installationspunkt. Später als Spike möglich.
+- (b) CI-Gate für gestempeltes `adversary-dialog.md` analog `ci_spec_gate.py`: lokal nicht abschaltbar,
+  ergänzt den Backstop; kein Ersatz für A. Wird in Teil B als Option bewertet.
+- (c) Resolver aus PR #291 fortführen: zweimal BROKEN, nach oben offen — verworfen.
+
+### Dependencies
+`hook_utils`-Zerlegung wird von `bash_gate` (Fast-Path, 3a, 5), `adversary_dialog` (`_commit_change_set`) genutzt; Teil B baut auf der überarbeiteten `_git_subcommand_after` auf.
+
+### Open Questions
+- Keine PO-Fragen. Produktentscheidung #297 (merge zählt nicht als Commit) fällt in Teil B und wird dort in der Spec begründet.
