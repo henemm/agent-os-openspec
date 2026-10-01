@@ -1,0 +1,18 @@
+[1m============================= test session starts ==============================[0m
+platform darwin -- Python 3.14.6, pytest-9.1.1, pluggy-1.6.0
+rootdir: /private/tmp/claude-501/-Users-hem-Developer-agent-os-openspec--claude-worktrees-sprightly-snacking-thacker/82241e35-cd06-4d0c-b132-399632c043c5/scratchpad/pyfix
+collected 2 items
+
+test_wegwerf_fail.py [32m.[0m[31mF[0m[31m                                                  [100%][0m
+
+=================================== FAILURES ===================================
+[31m[1m_______________________ test_rechnet_absichtlich_falsch ________________________[0m
+
+    [0m[94mdef[39;49;00m[90m [39;49;00m[92mtest_rechnet_absichtlich_falsch[39;49;00m():[90m[39;49;00m
+>       [94massert[39;49;00m [94m2[39;49;00m + [94m2[39;49;00m == [94m5[39;49;00m[90m[39;49;00m
+[1m[31mE       assert (2 + 2) == 5[0m
+
+[1m[31mtest_wegwerf_fail.py[0m:6: AssertionError
+[36m[1m=========================== short test summary info ============================[0m
+[31mFAILED[0m test_wegwerf_fail.py::[1mtest_rechnet_absichtlich_falsch[0m - assert (2 + 2) == 5
+[31m========================= [31m[1m1 failed[0m, [32m1 passed[0m[31m in 0.02s[0m[31m ==========================[0m

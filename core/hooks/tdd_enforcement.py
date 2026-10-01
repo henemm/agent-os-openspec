@@ -55,7 +55,14 @@ _FAILURE_RE = re.compile(
     r"\b(FAILED|ERROR|error|failed|FAIL|assert|AssertionError"
     r"|ImportError|ModuleNotFoundError|SyntaxError|TypeError"
     r"|AttributeError|NameError|NotImplementedError"
-    r"|raise|Traceback|Exception|stderr)\b",
+    r"|raise|Traceback|Exception|stderr)\b"
+    # #275: xcbeautify-/Runner-Marker, Swift Testing, Zaehler und Exit-Code.
+    # Zahlen beginnen mit 1-9: '0 failures' und 'EXIT=0' sind keine Evidenz.
+    r"|[❌✖✘]"
+    r"|\bTEST FAILED\b"
+    r"|\bTest run with .* failed\b"
+    r"|\b[1-9]\d*\s+failures?\b"
+    r"|\bEXIT=[1-9]\d*\b",
     re.MULTILINE,
 )
 
@@ -215,7 +222,7 @@ def _validate_artifact(art: dict, project_root: Path) -> "str | None":
                 f"ausgenommen — dieser Treffer steht im Artefakt selbst."
             )
 
-        if not _FAILURE_RE.search(content):
+        if not _FAILURE_RE.search(hook_utils.strip_ansi(content)):
             return (
                 f"RED-Artefakt zeigt keine Fehler-Evidenz: {path_str}\n"
                 f"  → Datei muss echte Fehlermeldungen enthalten (FAILED, ERROR, etc.).\n"

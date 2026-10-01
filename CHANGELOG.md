@@ -51,6 +51,30 @@ erkennt sie nicht (siehe „Known Limitations" der Spec).
 
 ### Fixed
 
+**Testausgaben richtig erkennen: ANSI, xcbeautify, „übersprungen" (#275, fasst #201 + #202 + #256①)**
+
+Mit ANSI-Farbcodes ummantelte Fehlerzeilen, xcbeautify-Marker („❌"/„✖") und die
+xcodebuild-Summary `Executed … with N tests skipped and M failures` wurden nicht oder falsch
+erkannt — echte RED-Artefakte wurden abgewiesen, `qa_gate` meldete „Could not determine test
+result." statt einer Zahl, und ein Lauf, in dem nichts bestanden hat und alles übersprungen wurde,
+galt als grün. Spec: `docs/specs/fix-275-testausgabe-erkennung.md`. Scope: bewusst über dem
+Scoping-Limit (PO-Entscheidung 2026-10-01), zwei Commits — Erkennung, dann skipped-Regel.
+
+- `core/hooks/hook_utils.py`: neu `strip_ansi()`, die einzige ANSI-Entfernung im Framework.
+- `core/hooks/tdd_enforcement.py`: Fehler-Evidenz auf bereinigtem Text; neu `❌`, `✖`, `✘`,
+  `TEST FAILED`, `Test run with … failed`, `N≥1 failures`, `EXIT≥1` (`0 failures`/`EXIT=0` öffnen
+  nichts). Ein Artefakt nur mit Übersprungenem bleibt abgewiesen.
+- `core/hooks/qa_gate.py`: eigenes ANSI-Muster entfällt; `Executed`-Zeile auch mit `skipped`, nur
+  die letzte (Gesamt-)Zeile liefert die Zahlen, Fehlschlag meldet `M/N` — bei mehreren
+  `Executed`-Zeilen macht jede rote Zeile den Lauf rot, auch vor einer grünen. pytest-Summary mit
+  `N error(s)` oder `0 passed` ist nie grün. Neue Regel: 0 bestanden + ≥ 1
+  übersprungen bzw. `Executed 0 tests` ist nicht grün — auch nicht über `** TEST SUCCEEDED **`
+  oder eine pytest-Summary `0 passed, 5 skipped`. Gemischte Läufe bleiben grün und nennen die Zahl.
+- `core/hooks/post_bash.py`: Fail-Guard auf bereinigtem Text, erkennt `✖`/`❌`/`N≥1 failures`;
+  Lauf ohne Bestandenes mit Übersprungenem wird als Hinweis `skipped` statt `passed` vermerkt.
+- Report-Vorlagen (`60-validate`, `82-test`, `implementation-validator`, `test-runner`): Feld
+  „übersprungen" und der Satz, dass 0 bestanden + ≥ 1 übersprungen nicht grün ist.
+
 **Adversary-Protokollformat hat eine Quelle, Kennzahlen werden geschrieben (#278, fasst #263 + #247)**
 
 Das Rundenformat (`### Runde N`) stand in keiner Anweisung — ein inhaltlich vollständiges

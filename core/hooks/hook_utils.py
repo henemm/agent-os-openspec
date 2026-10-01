@@ -404,6 +404,18 @@ def extract_ac_entries(content: str) -> "list[tuple[str, str, str]]":
     return [(label, desc, raw) for label, desc, raw in entries]
 
 
+_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+
+
+def strip_ansi(text: str) -> str:
+    """Entfernt ANSI-Steuercodes (Farben, Cursor) aus einer Testausgabe (#275).
+
+    Einzige ANSI-Entfernung im Framework: Gates wenden ihre Textmuster erst
+    auf den bereinigten Text an, sonst verdeckt z.B. '\\x1b[31mFAIL' das Wort.
+    """
+    return _ANSI_RE.sub("", text)
+
+
 def setup_path():
     """Add the hooks directory to sys.path for same-directory imports.
     Call this BEFORE importing config_loader or other hook modules."""

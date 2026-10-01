@@ -1,0 +1,34 @@
+
+----- xcbeautify -----
+Version: 3.2.1
+----------------------
+
+[36;1mResolving Package Graph[0m
+[32;1mResolved source packages[0m
+[36;1mnote: [0mBuilding targets in dependency order
+[36;1mnote: [0mTarget dependency graph (2 targets)
+[[36mDemo[0m] [1mCompiling[0m Demo.swift
+[[36mDemo[0m] [1mCopy[0m arm64-apple-macos.swiftsourceinfo -> Demo.swiftsourceinfo
+[[36mDemo[0m] [1mCopy[0m arm64-apple-macos.swiftmodule -> Demo.swiftmodule
+[[36mDemo[0m] [1mCopy[0m arm64-apple-macos.abi.json -> Demo.abi.json
+[[36mDemo[0m] [1mLinking[0m Demo.o
+[[36mDemo[0m] [1mExtract App Intents Metadata[0m
+[[36mDemoTests-product[0m] [1mCompiling[0m DemoTests.swift
+[[36mDemoTests-product[0m] [1mCopy[0m arm64-apple-macos.swiftsourceinfo -> DemoTests.swiftsourceinfo
+[[36mDemoTests-product[0m] [1mCopy[0m arm64-apple-macos.abi.json -> DemoTests.abi.json
+[[36mDemoTests-product[0m] [1mLinking[0m DemoTests
+[[36mDemoTests-product[0m] [1mExtract App Intents Metadata[0m
+[[36mDemoTests-product[0m] [1mRegisterExecutionPolicyException[0m DemoTests.xctest
+[[36mDemoTests-product[0m] [1mTouching[0m DemoTests.xctest
+Test Suite 'All tests' started at 2026-10-01 12:48:14.152.
+Test Suite 'DemoTests.xctest' started at 2026-10-01 12:48:14.152.
+Test Suite 'DemoTests' started at 2026-10-01 12:48:14.152.
+    [31m✖[0m testAddFailsOnPurpose, XCTAssertEqual failed: ("4") is not equal to ("5")
+    [32m✔[0m testAddPasses (0.000 seconds)
+Executed 2 tests, with 1 failure (0 unexpected) in 0.397 (0.397) seconds
+Test Suite 'DemoTests.xctest' failed at 2026-10-01 12:48:14.550.
+Executed 2 tests, with 1 failure (0 unexpected) in 0.397 (0.398) seconds
+Test Suite 'All tests' failed at 2026-10-01 12:48:14.550.
+Executed 2 tests, with 1 failure (0 unexpected) in 0.397 (0.398) seconds
+[1mTest session results:[0m /tmp/claude-501/-Users-hem-Developer-agent-os-openspec--claude-worktrees-sprightly-snacking-thacker/82241e35-cd06-4d0c-b132-399632c043c5/scratchpad/dd_fail/Logs/Test/Test-Demo-Package-2026.10.01_12-48-12-+0200.xcresult
+[36;1mTesting started[0m
