@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+**Herkunft der Vorbedingungen als Pflichtsektion des Prüfprotokolls (#286, Scheibe 2 von #273)**
+
+Die Tabelle aus `precondition_origins.py` (#285) wird zur Pflichtsektion
+`## Herkunft der Vorbedingungen` im Adversary-Prüfprotokoll. Für jede Verdachtszeile (höchstens
+eine Produktions-Schreibstelle) muss der Prüfer *Bedingung davor* und *Test für diesen Weg*
+ausfüllen. Siehe `docs/specs/feat-286-herkunft-vorbedingungen.md`.
+
+- `core/hooks/adversary_dialog.py`: `validate_dialog_artifact_ex()` prüft die Sektion als letzten
+  Schritt (fehlt → `format`, unvollständige Verdachtszeile → `content`); `scaffold` rendert einen
+  Platzhalter vor `## Verdict`. Commit-Gate und Phase-8-Übergang erben die Prüfung.
+- `config.yaml`: neuer Block `precondition_section_gate` (`enabled`, `mode: warn|block`,
+  `skip_fast_track`). Default `mode: warn` — fehlt der Block, wird gewarnt, nicht geblockt.
+  Neues optionales Feld `precondition_origins.default_lang`.
+- `/50-implement` Step 8a ruft `precondition_origins.py` auf, wenn `default_lang` gesetzt ist;
+  `implementation-validator.md` beschreibt den neuen Pflichtabschnitt.
+
 **Herkunft von Testvorbedingungen maschinell einsammeln (#285, Scheibe 1 von #273)**
 
 Ein Test, der seine Ausgangslage per Zuweisung herstellt (`objekt.feld = wert`), prüft nur das

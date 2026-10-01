@@ -299,6 +299,15 @@ ci_spec_gate:
 adversary_coverage_gate:
   enabled: true
 
+# Pflichtsektion "## Herkunft der Vorbedingungen" im Adversary-Pruefprotokoll (Issue #286).
+precondition_section_gate:
+  enabled: true
+  # warn: Sektion fehlt/unvollstaendig -> Warnung (stderr), Gate blockt NICHT.
+  # block: wie jede andere Format-/Content-Pruefung -> blockt Commit/Phase 8.
+  # Ungueltige Werte gelten als warn.
+  mode: warn
+  skip_fast_track: true   # Fast Track (bug, feature-fast) wird nicht geprueft
+
 # Beobachtbare Oberflaeche (Issue #260) — steuert NUR, ob `/60-validate` die
 # Schlussfrage "Soll ich den Code committen?" stellt. Kein Gate: die Pruefung
 # unterdrueckt eine Rueckfrage, sie erlaubt nichts. Gelesen von
@@ -397,6 +406,10 @@ agents:
 # und mit welchen Mustern Feldnamen bzw. Punkt-Zuweisungen erkannt werden.
 # Ein drittes Profil ist ein weiterer Eintrag hier — ohne Codeaenderung.
 precondition_origins:
+  # default_lang (optional, Issue #286): Sprachprofil, mit dem /50-implement Step 8a
+  # precondition_origins.py fuer den Adversary-Auftrag aufruft. Fehlt es, entfaellt der
+  # Aufruf und das Pruefprotokoll traegt den Hinweistext statt der Tabelle.
+  # default_lang: swift
   profiles:
     swift:
       model_globs: ["**/Models/*.swift", "**/Shared/Models/*.swift"]

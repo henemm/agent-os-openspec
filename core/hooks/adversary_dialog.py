@@ -517,6 +517,16 @@ def validate_dialog_artifact_ex(artifact_path: str) -> "tuple[bool, str, str | N
     if not hashes_ok:
         return False, hashes_msg, "format"
 
+    # 6. Herkunft der Vorbedingungen (Issue #286): als LETZTER Schritt, damit
+    # Inhaltsfehler weiter vor Formfehlern gewinnen (#77). mode=warn blockt nicht.
+    gate = _precondition_gate_config()
+    if gate["enabled"] and not (gate["skip_fast_track"] and _active_workflow_is_fast_track()):
+        p_ok, p_msg, p_kind = _verify_precondition_section(scan)
+        if not p_ok:
+            if gate["mode"] == "block":
+                return False, p_msg, p_kind
+            print(f"WARNUNG (precondition_section_gate, mode=warn): {p_msg}", file=sys.stderr)
+
     if v == "AMBIGUOUS":
         return True, (
             f"Dialog valid (AMBIGUOUS): {checked} Punkte bewiesen, "
@@ -659,6 +669,116 @@ def _verify_examined_file_hashes(scan: str) -> tuple[bool, str]:
         if actual_hash != expected_hash:
             return False, f"Prüfling seit dem Dialog geändert: {rel_path}. Re-run dialog."
     return True, ""
+
+
+# --- Herkunft der Vorbedingungen (Issue #286) ---
+
+PRECONDITION_SECTION = "## Herkunft der Vorbedingungen"
+_PRECONDITION_HEADER_RE = re.compile(r"(?m)^## Herkunft der Vorbedingungen\s*$")
+_FAST_TRACK_TYPES = ("bug", "feature-fast")
+# Gueltige "nichts zu pruefen"-Inhalte: Hinweis ohne Sprachprofil (50-implement.md
+# Step 8a) und die drei Leer-Ausgaben von precondition_origins.py (EMPTY_TABLE_HINT
+# sowie die Praefixe der Meldungen ohne Modelldateien bzw. ohne Feldnamen; der
+# dynamische Rest — Glob-Liste, Dateizahl, Muster — bleibt bewusst ungeprueft).
+_PRECONDITION_EMPTY_HINTS = (
+    "kein Sprachprofil konfiguriert (`precondition_origins.default_lang`)",
+    "Kein Feld mit Test-Zuweisung gefunden — nichts zu pruefen.",
+    "Keine Modelldateien gefunden unter",
+    "Keine Feldnamen extrahierbar aus",
+)
+
+
+def _parse_precondition_section(scan: str) -> "list[dict] | None":
+    """Zeilen der LETZTEN '## Herkunft der Vorbedingungen'-Sektion, oder None.
+
+    Je Tabellenzeile ein dict {field, test_refs, prod_refs, condition,
+    test_for_path}; Kopf-, Trenn- und Zeilen mit falscher Spaltenzahl werden
+    uebersprungen. Ohne Tabellenzeile -> [] nur mit einem der Hinweistexte
+    (_PRECONDITION_EMPTY_HINTS), sonst None (unausgefuellt = fehlend).
+    """
+    headers = list(_PRECONDITION_HEADER_RE.finditer(scan))
+    if not headers:
+        return None
+    rest = scan[headers[-1].end():]
+    next_heading = re.search(r"(?m)^##\s", rest)
+    body = rest[:next_heading.start()] if next_heading else rest
+    rows = []
+    for line in body.splitlines():
+        line = line.strip()
+        if not (line.startswith("|") and line.endswith("|")):
+            continue
+        cells = [c.strip() for c in line[1:-1].split("|")]
+        if len(cells) != 5 or cells[0] == "Feld" or set(cells[0]) <= set("-: "):
+            continue
+        rows.append(dict(zip(("field", "test_refs", "prod_refs", "condition",
+                              "test_for_path"), cells)))
+    if not rows and not any(h in body for h in _PRECONDITION_EMPTY_HINTS):
+        return None
+    return rows
+
+
+def _is_suspect_row(row: dict) -> bool:
+    """Verdachtsgruppe: hoechstens 1 Produktions-Schreibstelle (#285 AC-7).
+
+    Liest die fuehrende Anzahl ('1 — ...', '**0 — keine Schreibstelle ...**');
+    fehlt sie, zaehlen die <br>-getrennten Fundstellen.
+    """
+    prod = row.get("prod_refs", "").strip()
+    m = re.match(r"^\**\s*(\d+)\s*—", prod)
+    if m:
+        return int(m.group(1)) <= 1
+    return len([p for p in prod.split("<br>") if p.strip()]) <= 1
+
+
+def _verify_precondition_section(scan: str) -> "tuple[bool, str, str | None]":
+    """Fehlt -> (False, msg, 'format'); Verdachtszeile ohne 'Bedingung davor'
+    oder 'Test für diesen Weg' -> (False, msg, 'content'); sonst (True, msg, None)."""
+    rows = _parse_precondition_section(scan)
+    if rows is None:
+        return False, (
+            f"Sektion '{PRECONDITION_SECTION}' fehlt im Artifact "
+            "(Tabelle aus precondition_origins.py oder Hinweistext)."
+        ), "format"
+    incomplete = [r["field"] for r in rows
+                  if _is_suspect_row(r) and not (r["condition"] and r["test_for_path"])]
+    if incomplete:
+        return False, (
+            f"'{PRECONDITION_SECTION}': Verdachtszeile(n) ohne 'Bedingung davor' oder "
+            f"'Test für diesen Weg': {', '.join(incomplete)}"
+        ), "content"
+    return True, f"'{PRECONDITION_SECTION}' vollständig ({len(rows)} Zeile(n)).", None
+
+
+def _precondition_gate_config() -> dict:
+    """`precondition_section_gate` mit Defaults; ungueltiger mode zaehlt als 'warn'."""
+    gate = {"enabled": True, "mode": "warn", "skip_fast_track": True}
+    try:
+        from config_loader import load_config
+        section = load_config().get("precondition_section_gate", {})
+    except Exception:
+        section = {}
+    if isinstance(section, dict):
+        gate.update({k: section[k] for k in gate if k in section})
+    if gate["mode"] != "block":
+        gate["mode"] = "warn"
+    gate["enabled"] = gate["enabled"] is not False
+    return gate
+
+
+def _active_workflow_is_fast_track() -> bool:
+    """workflow_type des aktiven Workflows in ('bug', 'feature-fast').
+
+    Kein aktiver Workflow oder State nicht lesbar -> False (die Pruefung laeuft).
+    """
+    try:
+        name = resolve_active_workflow()[0]
+        if not name:
+            return False
+        state = find_project_root() / ".claude" / "workflows" / f"{name}.json"
+        wf = json.loads(state.read_text())
+    except (OSError, ValueError):
+        return False
+    return isinstance(wf, dict) and wf.get("workflow_type") in _FAST_TRACK_TYPES
 
 
 def stamp_dialog_artifact(artifact_path: str) -> tuple[bool, str]:
@@ -1062,6 +1182,10 @@ def scaffold_dialog_artifact(workflow_name: str, spec_path: str) -> str:
     ]
     for i in range(1, MIN_ROUNDS + 1):
         lines += [f"### Runde {i}", "**Adversary:**", "**Implementierer:**", ""]
+    lines += [
+        PRECONDITION_SECTION, "",
+        "<!-- vom Prüfer auszufüllen, siehe `precondition_origins.py` -->", "",
+    ]
     lines += ["## Verdict", ""]
     return "\n".join(lines)
 

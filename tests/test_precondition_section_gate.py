@@ -228,7 +228,24 @@ def test_ac1_missing_section_is_format_failure(tmp_path):
     assert res["kind"] == "format", res
 
 
-# --- AC-2 -----------------------------------------------------------------------------------
+SCAFFOLD_PLACEHOLDER = "<!-- vom Prüfer auszufüllen, siehe `precondition_origins.py` -->"
+
+
+def test_ac1b_unfilled_scaffold_placeholder_is_format_failure_not_complete(tmp_path):
+    """AC-1 — Überschrift vorhanden, darunter NUR der unveränderte Scaffold-Platzhalter
+    (weder Tabelle noch Hinweistext) → wie fehlende Sektion: 'format', nicht vollständig."""
+    from adversary_dialog import scaffold_dialog_artifact
+    spec = _write(tmp_path, "docs/specs/s.md", (
+        "# Spec\n\n## Acceptance Criteria\n\n- **AC-1:** Given X / When Y / Then Z\n"
+        "  - Test: `test_x`\n\n## Changelog\n\n- init\n"))
+    assert SCAFFOLD_PLACEHOLDER in scaffold_dialog_artifact(WF, str(spec)), \
+        "Fixture-Kontrolle: Platzhalter weicht vom Scaffold ab"
+    res, err = _case(tmp_path, _section(SCAFFOLD_PLACEHOLDER), mode="block")
+    assert (res["valid"], res["kind"]) == (False, "format"), \
+        f"unausgefüllte Sektion als vollständig akzeptiert: {res} / {err}"
+
+
+# --- AC-2-----------------------------------------------------------------------------------
 
 def test_ac2_complete_suspect_rows_pass(tmp_path):
     """AC-2 — Regressionswächter (heute trivial grün): vollständig ausgefüllte
@@ -299,6 +316,23 @@ def test_ac7_hint_text_without_default_lang_counts_as_complete(tmp_path):
     vollständig (0 Verdachtszeilen)."""
     res, err = _case(tmp_path, _section(HINT_TEXT), mode="block")
     assert res["valid"] is True, f"Hinweistext abgewiesen: {res} / {err}"
+
+
+def test_ac7b_no_model_files_hint_counts_as_complete(tmp_path):
+    """AC-7 / Known Limitations — ECHTE Ausgabe von precondition_origins.py über einen
+    modellfreien Baum („Keine Modelldateien gefunden unter [...]") zählt unter mode=block als
+    vollständig (0 Zeilen), nicht als fehlende Sektion."""
+    empty_root = tmp_path / "no-models"
+    empty_root.mkdir()
+    r = _run("precondition_origins.py", ["--lang", "swift", "--root", str(empty_root),
+                                         "--config", str(REPO_ROOT / "config.yaml")], REPO_ROOT,
+             env=_env())
+    assert r.returncode == 0, f"precondition_origins.py scheitert: {r.stdout}{r.stderr}"
+    assert r.stdout.startswith("Keine Modelldateien gefunden unter"), \
+        f"Fixture-Kontrolle: unerwartete Werkzeug-Ausgabe {r.stdout!r}"
+    res, err = _case(tmp_path, _section(r.stdout.strip()), mode="block")
+    assert (res["valid"], res["kind"]) == (True, None), \
+        f"echte Leer-Ausgabe als fehlende Sektion gewertet: {res} / {err}"
 
 
 # --- AC-8 -----------------------------------------------------------------------------------
