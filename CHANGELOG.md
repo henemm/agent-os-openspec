@@ -51,6 +51,21 @@ erkennt sie nicht (siehe „Known Limitations" der Spec).
 
 ### Fixed
 
+**Freigabe: Einschränkungen in Folgezeilen und Bedingungswörter (#311, Befunde F001/F006/F007/F008 aus #277)**
+
+`go⏎erst die Doku` setzte eine GREEN-Freigabe, `approved⏎später` die Spec-Freigabe, und
+`go, falls Henning zustimmt` galt ebenfalls als Freigabe. Spec: `docs/specs/fix-311-freigabe-folgezeilen.md`.
+
+- `core/hooks/phase_listener.py`: Fragezeichen und Einschränkungswörter heben die Freigabe auch in
+  Folgezeilen auf (ganze Nachricht, Klammer-Einschübe ausgenommen); Phrase, Füllwort und
+  Zusatzwörter gelten weiter nur in Zeile 1. Override verlangt leere Folgezeilen. `NEGATION_WORDS`
+  um falls, sobald, bevor, solange, sofern, unless, until, once erweitert. Der Verworfen-Hinweis
+  nennt die Folgezeile als Grund.
+- `core/hooks/bash_gate.py`: Kommentar verweist auf die konfigurierten Freigabe-Phrasen statt fest
+  „go"/„freigabe"/„approved".
+- `docs/specs/fix-170-go-freigabe-phrase.md`: Schritt 6, Known Limitations und Beispieltabelle an
+  die Folgezeilen-Regel und die aktuelle Wortliste angeglichen.
+
 **Freigabe-Wörter: Sperrmeldung aus Config, Einschränkungen heben auf, Rückmeldung sichtbar (#277, fasst #268 + #175, dazu #310)**
 
 Das Post-Implementation-Gate forderte „tippe 'go', 'freigabe' oder 'approved'", obwohl in phase6

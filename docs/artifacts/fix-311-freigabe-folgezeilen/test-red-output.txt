@@ -1,0 +1,873 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.14, pytest-9.1.1, pluggy-1.6.0 -- /private/tmp/claude-501/-Users-hem-Developer-agent-os-openspec--claude-worktrees-sprightly-snacking-thacker/bb6db48a-3fe2-4a5a-a529-7c40789a28a3/scratchpad/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/hem/Developer/agent-os-openspec/.claude/worktrees/sprightly-snacking-thacker
+collecting ... collected 34 items
+
+tests/test_phase_listener_followlines_311.py::test_folgezeile_einschraenkung_setzt_keine_green_freigabe[go\nerst die Doku] FAILED [  2%]
+tests/test_phase_listener_followlines_311.py::test_folgezeile_einschraenkung_setzt_keine_green_freigabe[go\nnein, sp\xe4ter] FAILED [  5%]
+tests/test_phase_listener_followlines_311.py::test_folgezeile_einschraenkung_setzt_keine_spec_freigabe[Approved\nsp\xe4ter] FAILED [  8%]
+tests/test_phase_listener_followlines_311.py::test_folgezeile_einschraenkung_setzt_keine_spec_freigabe[approved\nerst noch die Doku] FAILED [ 11%]
+tests/test_phase_listener_followlines_311.py::test_frage_in_folgezeile_verwirft_freigabe[go\nwarum ist das so?-phase6_implement] FAILED [ 14%]
+tests/test_phase_listener_followlines_311.py::test_frage_in_folgezeile_verwirft_freigabe[approved\nist das so richtig?-phase3_spec] FAILED [ 17%]
+tests/test_phase_listener_followlines_311.py::test_bedingungswoerter_f007_heben_freigabe_auf[go, falls Henning zustimmt] FAILED [ 20%]
+tests/test_phase_listener_followlines_311.py::test_bedingungswoerter_f007_heben_freigabe_auf[go, sobald CI gruen] FAILED [ 23%]
+tests/test_phase_listener_followlines_311.py::test_bedingungswoerter_f007_heben_freigabe_auf[go, bevor wir mergen] FAILED [ 26%]
+tests/test_phase_listener_followlines_311.py::test_bedingungswoerter_f007_heben_freigabe_auf[go, solange Tests laufen] FAILED [ 29%]
+tests/test_phase_listener_followlines_311.py::test_bedingungswoerter_f007_heben_freigabe_auf[go, sofern m\xf6glich] FAILED [ 32%]
+tests/test_phase_listener_followlines_311.py::test_bedingungswoerter_f007_heben_freigabe_auf[go, unless broken] FAILED [ 35%]
+tests/test_phase_listener_followlines_311.py::test_bedingungswoerter_f007_heben_freigabe_auf[go, until Friday] FAILED [ 38%]
+tests/test_phase_listener_followlines_311.py::test_bedingungswoerter_f007_heben_freigabe_auf[go, once CI is green] FAILED [ 41%]
+tests/test_phase_listener_followlines_311.py::test_bedingungswoerter_f007_heben_freigabe_auf[go\nfalls Henning zustimmt] FAILED [ 44%]
+tests/test_phase_listener_followlines_311.py::test_bedingungswoerter_f007_heben_freigabe_auf[go\nsobald CI gruen] FAILED [ 47%]
+tests/test_phase_listener_followlines_311.py::test_bedingungswoerter_f007_heben_freigabe_auf[go\nbevor wir mergen] FAILED [ 50%]
+tests/test_phase_listener_followlines_311.py::test_bedingungswoerter_f007_heben_freigabe_auf[go\nsolange Tests laufen] FAILED [ 52%]
+tests/test_phase_listener_followlines_311.py::test_bedingungswoerter_f007_heben_freigabe_auf[go\nsofern m\xf6glich] FAILED [ 55%]
+tests/test_phase_listener_followlines_311.py::test_bedingungswoerter_f007_heben_freigabe_auf[go\nunless broken] FAILED [ 58%]
+tests/test_phase_listener_followlines_311.py::test_bedingungswoerter_f007_heben_freigabe_auf[go\nuntil Friday] FAILED [ 61%]
+tests/test_phase_listener_followlines_311.py::test_bedingungswoerter_f007_heben_freigabe_auf[go\nonce CI is green] FAILED [ 64%]
+tests/test_phase_listener_followlines_311.py::test_listenwort_als_wortteil_in_folgezeile_hebt_nicht_auf[go, bevorzugt Variante A] PASSED [ 67%]
+tests/test_phase_listener_followlines_311.py::test_listenwort_als_wortteil_in_folgezeile_hebt_nicht_auf[go\noncology] PASSED [ 70%]
+tests/test_phase_listener_followlines_311.py::test_listenwort_als_wortteil_in_folgezeile_hebt_nicht_auf[go\nerste Version] PASSED [ 73%]
+tests/test_phase_listener_followlines_311.py::test_klammer_in_folgezeile_bleibt_ausnahme[approved\n(oder sp\xe4ter?)] PASSED [ 76%]
+tests/test_phase_listener_followlines_311.py::test_klammer_in_folgezeile_bleibt_ausnahme[approved\n(oder sp\xe4ter?] PASSED [ 79%]
+tests/test_phase_listener_followlines_311.py::test_leerzeile_und_zusatztext_bleibt_freigabe PASSED [ 82%]
+tests/test_phase_listener_followlines_311.py::test_override_verlangt_leere_folgezeilen FAILED [ 85%]
+tests/test_phase_listener_followlines_311.py::test_verworfen_hinweis_nennt_folgezeile_als_systemmessage FAILED [ 88%]
+tests/test_phase_listener_followlines_311.py::test_notification_turn_und_stop_lock_unveraendert PASSED [ 91%]
+tests/test_phase_listener_followlines_311.py::test_spec_170_konsistenz_folgezeilen_tabelle_schritt6 FAILED [ 94%]
+tests/test_phase_listener_followlines_311.py::test_bestehende_freigabe_tests_bleiben_gruen PASSED [ 97%]
+tests/test_phase_listener_followlines_311.py::test_bash_gate_kommentar_nennt_keine_festen_phrasen FAILED [100%]
+
+=================================== FAILURES ===================================
+_ test_folgezeile_einschraenkung_setzt_keine_green_freigabe[go\nerst die Doku] _
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_folgezeile_einschraenkung0')
+message = 'go\nerst die Doku'
+
+    @pytest.mark.parametrize("message", ["go\nerst die Doku", "go\nnein, später"])
+    def test_folgezeile_einschraenkung_setzt_keine_green_freigabe(tmp_path, message):
+        """AC-1: Einschraenkung in Folgezeile -> kein green_approved, kein Marker."""
+>       _assert_no_green(tmp_path, message)
+
+tests/test_phase_listener_followlines_311.py:172: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_folgezeile_einschraenkung0')
+message = 'go\nerst die Doku'
+
+    def _assert_no_green(tmp_path: Path, message: str) -> None:
+        project = _make_project(tmp_path, "phase6_implement", lock_age_s=60)
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+>       assert _state(project).get("green_approved") is False, (
+            f"{message!r} setzte green_approved (stderr={res.stderr!r})"
+        )
+E       AssertionError: 'go\nerst die Doku' setzte green_approved (stderr="GREEN approved (durch: 'go erst die Doku').\nPost-implementation gate entsperrt für 'wf-311'.\n")
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x10a1a1ec0>('green_approved')
+E        +    where <built-in method get of dict object at 0x10a1a1ec0> = {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...}.get
+E        +      where {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...} = _state(PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_folgezeile_einschraenkung0'))
+
+tests/test_phase_listener_followlines_311.py:148: AssertionError
+_ test_folgezeile_einschraenkung_setzt_keine_green_freigabe[go\nnein, sp\xe4ter] _
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_folgezeile_einschraenkung1')
+message = 'go\nnein, später'
+
+    @pytest.mark.parametrize("message", ["go\nerst die Doku", "go\nnein, später"])
+    def test_folgezeile_einschraenkung_setzt_keine_green_freigabe(tmp_path, message):
+        """AC-1: Einschraenkung in Folgezeile -> kein green_approved, kein Marker."""
+>       _assert_no_green(tmp_path, message)
+
+tests/test_phase_listener_followlines_311.py:172: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_folgezeile_einschraenkung1')
+message = 'go\nnein, später'
+
+    def _assert_no_green(tmp_path: Path, message: str) -> None:
+        project = _make_project(tmp_path, "phase6_implement", lock_age_s=60)
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+>       assert _state(project).get("green_approved") is False, (
+            f"{message!r} setzte green_approved (stderr={res.stderr!r})"
+        )
+E       AssertionError: 'go\nnein, später' setzte green_approved (stderr="GREEN approved (durch: 'go nein, später').\nPost-implementation gate entsperrt für 'wf-311'.\n")
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x10a1a3a80>('green_approved')
+E        +    where <built-in method get of dict object at 0x10a1a3a80> = {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...}.get
+E        +      where {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...} = _state(PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_folgezeile_einschraenkung1'))
+
+tests/test_phase_listener_followlines_311.py:148: AssertionError
+_ test_folgezeile_einschraenkung_setzt_keine_spec_freigabe[Approved\nsp\xe4ter] _
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_folgezeile_einschraenkung2')
+message = 'Approved\nspäter'
+
+    @pytest.mark.parametrize("message", ["Approved\nspäter", "approved\nerst noch die Doku"])
+    def test_folgezeile_einschraenkung_setzt_keine_spec_freigabe(tmp_path, message):
+        """AC-2: Einschraenkung in Folgezeile -> kein spec_approved, Phase bleibt."""
+>       _assert_no_spec(tmp_path, message)
+
+tests/test_phase_listener_followlines_311.py:178: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_folgezeile_einschraenkung2')
+message = 'Approved\nspäter'
+
+    def _assert_no_spec(tmp_path: Path, message: str) -> None:
+        project = _make_project(tmp_path, "phase3_spec")
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+        state = _state(project)
+>       assert state.get("spec_approved") is False, (
+            f"{message!r} setzte spec_approved (stderr={res.stderr!r})"
+        )
+E       AssertionError: 'Approved\nspäter' setzte spec_approved (stderr="Spec approved for 'wf-311' (durch: 'Approved später')! You may now run /tdd-red\n")
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x10a13bc80>('spec_approved')
+E        +    where <built-in method get of dict object at 0x10a13bc80> = {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase4_approved', 'spec_approved': True, ...}.get
+
+tests/test_phase_listener_followlines_311.py:159: AssertionError
+_ test_folgezeile_einschraenkung_setzt_keine_spec_freigabe[approved\nerst noch die Doku] _
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_folgezeile_einschraenkung3')
+message = 'approved\nerst noch die Doku'
+
+    @pytest.mark.parametrize("message", ["Approved\nspäter", "approved\nerst noch die Doku"])
+    def test_folgezeile_einschraenkung_setzt_keine_spec_freigabe(tmp_path, message):
+        """AC-2: Einschraenkung in Folgezeile -> kein spec_approved, Phase bleibt."""
+>       _assert_no_spec(tmp_path, message)
+
+tests/test_phase_listener_followlines_311.py:178: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_folgezeile_einschraenkung3')
+message = 'approved\nerst noch die Doku'
+
+    def _assert_no_spec(tmp_path: Path, message: str) -> None:
+        project = _make_project(tmp_path, "phase3_spec")
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+        state = _state(project)
+>       assert state.get("spec_approved") is False, (
+            f"{message!r} setzte spec_approved (stderr={res.stderr!r})"
+        )
+E       AssertionError: 'approved\nerst noch die Doku' setzte spec_approved (stderr="Spec approved for 'wf-311' (durch: 'approved erst noch die Doku')! You may now run /tdd-red\n")
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x10a1953c0>('spec_approved')
+E        +    where <built-in method get of dict object at 0x10a1953c0> = {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase4_approved', 'spec_approved': True, ...}.get
+
+tests/test_phase_listener_followlines_311.py:159: AssertionError
+_ test_frage_in_folgezeile_verwirft_freigabe[go\nwarum ist das so?-phase6_implement] _
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_frage_in_folgezeile_verwi0')
+message = 'go\nwarum ist das so?', phase = 'phase6_implement'
+
+    @pytest.mark.parametrize("message,phase", [
+        ("go\nwarum ist das so?", "phase6_implement"),
+        ("approved\nist das so richtig?", "phase3_spec"),
+    ])
+    def test_frage_in_folgezeile_verwirft_freigabe(tmp_path, message, phase):
+        """AC-3: Fragezeichen in Folgezeile -> keine Freigabe."""
+        if phase == "phase6_implement":
+>           _assert_no_green(tmp_path, message)
+
+tests/test_phase_listener_followlines_311.py:188: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_frage_in_folgezeile_verwi0')
+message = 'go\nwarum ist das so?'
+
+    def _assert_no_green(tmp_path: Path, message: str) -> None:
+        project = _make_project(tmp_path, "phase6_implement", lock_age_s=60)
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+>       assert _state(project).get("green_approved") is False, (
+            f"{message!r} setzte green_approved (stderr={res.stderr!r})"
+        )
+E       AssertionError: 'go\nwarum ist das so?' setzte green_approved (stderr="GREEN approved (durch: 'go warum ist das so?').\nPost-implementation gate entsperrt für 'wf-311'.\n")
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x109f93900>('green_approved')
+E        +    where <built-in method get of dict object at 0x109f93900> = {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...}.get
+E        +      where {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...} = _state(PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_frage_in_folgezeile_verwi0'))
+
+tests/test_phase_listener_followlines_311.py:148: AssertionError
+_ test_frage_in_folgezeile_verwirft_freigabe[approved\nist das so richtig?-phase3_spec] _
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_frage_in_folgezeile_verwi1')
+message = 'approved\nist das so richtig?', phase = 'phase3_spec'
+
+    @pytest.mark.parametrize("message,phase", [
+        ("go\nwarum ist das so?", "phase6_implement"),
+        ("approved\nist das so richtig?", "phase3_spec"),
+    ])
+    def test_frage_in_folgezeile_verwirft_freigabe(tmp_path, message, phase):
+        """AC-3: Fragezeichen in Folgezeile -> keine Freigabe."""
+        if phase == "phase6_implement":
+            _assert_no_green(tmp_path, message)
+        else:
+>           _assert_no_spec(tmp_path, message)
+
+tests/test_phase_listener_followlines_311.py:190: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_frage_in_folgezeile_verwi1')
+message = 'approved\nist das so richtig?'
+
+    def _assert_no_spec(tmp_path: Path, message: str) -> None:
+        project = _make_project(tmp_path, "phase3_spec")
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+        state = _state(project)
+>       assert state.get("spec_approved") is False, (
+            f"{message!r} setzte spec_approved (stderr={res.stderr!r})"
+        )
+E       AssertionError: 'approved\nist das so richtig?' setzte spec_approved (stderr="Spec approved for 'wf-311' (durch: 'approved ist das so richtig?')! You may now run /tdd-red\n")
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x10a1139c0>('spec_approved')
+E        +    where <built-in method get of dict object at 0x10a1139c0> = {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase4_approved', 'spec_approved': True, ...}.get
+
+tests/test_phase_listener_followlines_311.py:159: AssertionError
+__ test_bedingungswoerter_f007_heben_freigabe_auf[go, falls Henning zustimmt] __
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he0')
+message = 'go, falls Henning zustimmt'
+
+    @pytest.mark.parametrize("message",
+                             F007_MESSAGES + [m.replace(", ", "\n", 1) for m in F007_MESSAGES])
+    def test_bedingungswoerter_f007_heben_freigabe_auf(tmp_path, message):
+        """AC-4: Bedingungs-/Zeitwoerter heben die Freigabe auf (Zeile 1 und
+        Folgezeile)."""
+>       _assert_no_green(tmp_path, message)
+
+tests/test_phase_listener_followlines_311.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he0')
+message = 'go, falls Henning zustimmt'
+
+    def _assert_no_green(tmp_path: Path, message: str) -> None:
+        project = _make_project(tmp_path, "phase6_implement", lock_age_s=60)
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+>       assert _state(project).get("green_approved") is False, (
+            f"{message!r} setzte green_approved (stderr={res.stderr!r})"
+        )
+E       AssertionError: 'go, falls Henning zustimmt' setzte green_approved (stderr="GREEN approved (durch: 'go, falls Henning zustimmt').\nPost-implementation gate entsperrt für 'wf-311'.\n")
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x10a151c00>('green_approved')
+E        +    where <built-in method get of dict object at 0x10a151c00> = {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...}.get
+E        +      where {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...} = _state(PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he0'))
+
+tests/test_phase_listener_followlines_311.py:148: AssertionError
+_____ test_bedingungswoerter_f007_heben_freigabe_auf[go, sobald CI gruen] ______
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he1')
+message = 'go, sobald CI gruen'
+
+    @pytest.mark.parametrize("message",
+                             F007_MESSAGES + [m.replace(", ", "\n", 1) for m in F007_MESSAGES])
+    def test_bedingungswoerter_f007_heben_freigabe_auf(tmp_path, message):
+        """AC-4: Bedingungs-/Zeitwoerter heben die Freigabe auf (Zeile 1 und
+        Folgezeile)."""
+>       _assert_no_green(tmp_path, message)
+
+tests/test_phase_listener_followlines_311.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he1')
+message = 'go, sobald CI gruen'
+
+    def _assert_no_green(tmp_path: Path, message: str) -> None:
+        project = _make_project(tmp_path, "phase6_implement", lock_age_s=60)
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+>       assert _state(project).get("green_approved") is False, (
+            f"{message!r} setzte green_approved (stderr={res.stderr!r})"
+        )
+E       AssertionError: 'go, sobald CI gruen' setzte green_approved (stderr="GREEN approved (durch: 'go, sobald CI gruen').\nPost-implementation gate entsperrt für 'wf-311'.\n")
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x10a17a580>('green_approved')
+E        +    where <built-in method get of dict object at 0x10a17a580> = {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...}.get
+E        +      where {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...} = _state(PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he1'))
+
+tests/test_phase_listener_followlines_311.py:148: AssertionError
+_____ test_bedingungswoerter_f007_heben_freigabe_auf[go, bevor wir mergen] _____
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he2')
+message = 'go, bevor wir mergen'
+
+    @pytest.mark.parametrize("message",
+                             F007_MESSAGES + [m.replace(", ", "\n", 1) for m in F007_MESSAGES])
+    def test_bedingungswoerter_f007_heben_freigabe_auf(tmp_path, message):
+        """AC-4: Bedingungs-/Zeitwoerter heben die Freigabe auf (Zeile 1 und
+        Folgezeile)."""
+>       _assert_no_green(tmp_path, message)
+
+tests/test_phase_listener_followlines_311.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he2')
+message = 'go, bevor wir mergen'
+
+    def _assert_no_green(tmp_path: Path, message: str) -> None:
+        project = _make_project(tmp_path, "phase6_implement", lock_age_s=60)
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+>       assert _state(project).get("green_approved") is False, (
+            f"{message!r} setzte green_approved (stderr={res.stderr!r})"
+        )
+E       AssertionError: 'go, bevor wir mergen' setzte green_approved (stderr="GREEN approved (durch: 'go, bevor wir mergen').\nPost-implementation gate entsperrt für 'wf-311'.\n")
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x10a151900>('green_approved')
+E        +    where <built-in method get of dict object at 0x10a151900> = {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...}.get
+E        +      where {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...} = _state(PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he2'))
+
+tests/test_phase_listener_followlines_311.py:148: AssertionError
+___ test_bedingungswoerter_f007_heben_freigabe_auf[go, solange Tests laufen] ___
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he3')
+message = 'go, solange Tests laufen'
+
+    @pytest.mark.parametrize("message",
+                             F007_MESSAGES + [m.replace(", ", "\n", 1) for m in F007_MESSAGES])
+    def test_bedingungswoerter_f007_heben_freigabe_auf(tmp_path, message):
+        """AC-4: Bedingungs-/Zeitwoerter heben die Freigabe auf (Zeile 1 und
+        Folgezeile)."""
+>       _assert_no_green(tmp_path, message)
+
+tests/test_phase_listener_followlines_311.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he3')
+message = 'go, solange Tests laufen'
+
+    def _assert_no_green(tmp_path: Path, message: str) -> None:
+        project = _make_project(tmp_path, "phase6_implement", lock_age_s=60)
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+>       assert _state(project).get("green_approved") is False, (
+            f"{message!r} setzte green_approved (stderr={res.stderr!r})"
+        )
+E       AssertionError: 'go, solange Tests laufen' setzte green_approved (stderr="GREEN approved (durch: 'go, solange Tests laufen').\nPost-implementation gate entsperrt für 'wf-311'.\n")
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x10a1949c0>('green_approved')
+E        +    where <built-in method get of dict object at 0x10a1949c0> = {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...}.get
+E        +      where {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...} = _state(PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he3'))
+
+tests/test_phase_listener_followlines_311.py:148: AssertionError
+____ test_bedingungswoerter_f007_heben_freigabe_auf[go, sofern m\xf6glich] _____
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he4')
+message = 'go, sofern möglich'
+
+    @pytest.mark.parametrize("message",
+                             F007_MESSAGES + [m.replace(", ", "\n", 1) for m in F007_MESSAGES])
+    def test_bedingungswoerter_f007_heben_freigabe_auf(tmp_path, message):
+        """AC-4: Bedingungs-/Zeitwoerter heben die Freigabe auf (Zeile 1 und
+        Folgezeile)."""
+>       _assert_no_green(tmp_path, message)
+
+tests/test_phase_listener_followlines_311.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he4')
+message = 'go, sofern möglich'
+
+    def _assert_no_green(tmp_path: Path, message: str) -> None:
+        project = _make_project(tmp_path, "phase6_implement", lock_age_s=60)
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+>       assert _state(project).get("green_approved") is False, (
+            f"{message!r} setzte green_approved (stderr={res.stderr!r})"
+        )
+E       AssertionError: 'go, sofern möglich' setzte green_approved (stderr="GREEN approved (durch: 'go, sofern möglich').\nPost-implementation gate entsperrt für 'wf-311'.\n")
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x10a1a1ec0>('green_approved')
+E        +    where <built-in method get of dict object at 0x10a1a1ec0> = {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...}.get
+E        +      where {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...} = _state(PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he4'))
+
+tests/test_phase_listener_followlines_311.py:148: AssertionError
+______ test_bedingungswoerter_f007_heben_freigabe_auf[go, unless broken] _______
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he5')
+message = 'go, unless broken'
+
+    @pytest.mark.parametrize("message",
+                             F007_MESSAGES + [m.replace(", ", "\n", 1) for m in F007_MESSAGES])
+    def test_bedingungswoerter_f007_heben_freigabe_auf(tmp_path, message):
+        """AC-4: Bedingungs-/Zeitwoerter heben die Freigabe auf (Zeile 1 und
+        Folgezeile)."""
+>       _assert_no_green(tmp_path, message)
+
+tests/test_phase_listener_followlines_311.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he5')
+message = 'go, unless broken'
+
+    def _assert_no_green(tmp_path: Path, message: str) -> None:
+        project = _make_project(tmp_path, "phase6_implement", lock_age_s=60)
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+>       assert _state(project).get("green_approved") is False, (
+            f"{message!r} setzte green_approved (stderr={res.stderr!r})"
+        )
+E       AssertionError: 'go, unless broken' setzte green_approved (stderr="GREEN approved (durch: 'go, unless broken').\nPost-implementation gate entsperrt für 'wf-311'.\n")
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x10a197d80>('green_approved')
+E        +    where <built-in method get of dict object at 0x10a197d80> = {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...}.get
+E        +      where {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...} = _state(PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he5'))
+
+tests/test_phase_listener_followlines_311.py:148: AssertionError
+_______ test_bedingungswoerter_f007_heben_freigabe_auf[go, until Friday] _______
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he6')
+message = 'go, until Friday'
+
+    @pytest.mark.parametrize("message",
+                             F007_MESSAGES + [m.replace(", ", "\n", 1) for m in F007_MESSAGES])
+    def test_bedingungswoerter_f007_heben_freigabe_auf(tmp_path, message):
+        """AC-4: Bedingungs-/Zeitwoerter heben die Freigabe auf (Zeile 1 und
+        Folgezeile)."""
+>       _assert_no_green(tmp_path, message)
+
+tests/test_phase_listener_followlines_311.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he6')
+message = 'go, until Friday'
+
+    def _assert_no_green(tmp_path: Path, message: str) -> None:
+        project = _make_project(tmp_path, "phase6_implement", lock_age_s=60)
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+>       assert _state(project).get("green_approved") is False, (
+            f"{message!r} setzte green_approved (stderr={res.stderr!r})"
+        )
+E       AssertionError: 'go, until Friday' setzte green_approved (stderr="GREEN approved (durch: 'go, until Friday').\nPost-implementation gate entsperrt für 'wf-311'.\n")
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x10a1514c0>('green_approved')
+E        +    where <built-in method get of dict object at 0x10a1514c0> = {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...}.get
+E        +      where {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...} = _state(PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he6'))
+
+tests/test_phase_listener_followlines_311.py:148: AssertionError
+_____ test_bedingungswoerter_f007_heben_freigabe_auf[go, once CI is green] _____
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he7')
+message = 'go, once CI is green'
+
+    @pytest.mark.parametrize("message",
+                             F007_MESSAGES + [m.replace(", ", "\n", 1) for m in F007_MESSAGES])
+    def test_bedingungswoerter_f007_heben_freigabe_auf(tmp_path, message):
+        """AC-4: Bedingungs-/Zeitwoerter heben die Freigabe auf (Zeile 1 und
+        Folgezeile)."""
+>       _assert_no_green(tmp_path, message)
+
+tests/test_phase_listener_followlines_311.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he7')
+message = 'go, once CI is green'
+
+    def _assert_no_green(tmp_path: Path, message: str) -> None:
+        project = _make_project(tmp_path, "phase6_implement", lock_age_s=60)
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+>       assert _state(project).get("green_approved") is False, (
+            f"{message!r} setzte green_approved (stderr={res.stderr!r})"
+        )
+E       AssertionError: 'go, once CI is green' setzte green_approved (stderr="GREEN approved (durch: 'go, once CI is green').\nPost-implementation gate entsperrt für 'wf-311'.\n")
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x10a148e80>('green_approved')
+E        +    where <built-in method get of dict object at 0x10a148e80> = {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...}.get
+E        +      where {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...} = _state(PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he7'))
+
+tests/test_phase_listener_followlines_311.py:148: AssertionError
+__ test_bedingungswoerter_f007_heben_freigabe_auf[go\nfalls Henning zustimmt] __
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he8')
+message = 'go\nfalls Henning zustimmt'
+
+    @pytest.mark.parametrize("message",
+                             F007_MESSAGES + [m.replace(", ", "\n", 1) for m in F007_MESSAGES])
+    def test_bedingungswoerter_f007_heben_freigabe_auf(tmp_path, message):
+        """AC-4: Bedingungs-/Zeitwoerter heben die Freigabe auf (Zeile 1 und
+        Folgezeile)."""
+>       _assert_no_green(tmp_path, message)
+
+tests/test_phase_listener_followlines_311.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he8')
+message = 'go\nfalls Henning zustimmt'
+
+    def _assert_no_green(tmp_path: Path, message: str) -> None:
+        project = _make_project(tmp_path, "phase6_implement", lock_age_s=60)
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+>       assert _state(project).get("green_approved") is False, (
+            f"{message!r} setzte green_approved (stderr={res.stderr!r})"
+        )
+E       AssertionError: 'go\nfalls Henning zustimmt' setzte green_approved (stderr="GREEN approved (durch: 'go falls Henning zustimmt').\nPost-implementation gate entsperrt für 'wf-311'.\n")
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x10a15ce80>('green_approved')
+E        +    where <built-in method get of dict object at 0x10a15ce80> = {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...}.get
+E        +      where {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...} = _state(PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he8'))
+
+tests/test_phase_listener_followlines_311.py:148: AssertionError
+_____ test_bedingungswoerter_f007_heben_freigabe_auf[go\nsobald CI gruen] ______
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he9')
+message = 'go\nsobald CI gruen'
+
+    @pytest.mark.parametrize("message",
+                             F007_MESSAGES + [m.replace(", ", "\n", 1) for m in F007_MESSAGES])
+    def test_bedingungswoerter_f007_heben_freigabe_auf(tmp_path, message):
+        """AC-4: Bedingungs-/Zeitwoerter heben die Freigabe auf (Zeile 1 und
+        Folgezeile)."""
+>       _assert_no_green(tmp_path, message)
+
+tests/test_phase_listener_followlines_311.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he9')
+message = 'go\nsobald CI gruen'
+
+    def _assert_no_green(tmp_path: Path, message: str) -> None:
+        project = _make_project(tmp_path, "phase6_implement", lock_age_s=60)
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+>       assert _state(project).get("green_approved") is False, (
+            f"{message!r} setzte green_approved (stderr={res.stderr!r})"
+        )
+E       AssertionError: 'go\nsobald CI gruen' setzte green_approved (stderr="GREEN approved (durch: 'go sobald CI gruen').\nPost-implementation gate entsperrt für 'wf-311'.\n")
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x10a18b880>('green_approved')
+E        +    where <built-in method get of dict object at 0x10a18b880> = {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...}.get
+E        +      where {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...} = _state(PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he9'))
+
+tests/test_phase_listener_followlines_311.py:148: AssertionError
+_____ test_bedingungswoerter_f007_heben_freigabe_auf[go\nbevor wir mergen] _____
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he10')
+message = 'go\nbevor wir mergen'
+
+    @pytest.mark.parametrize("message",
+                             F007_MESSAGES + [m.replace(", ", "\n", 1) for m in F007_MESSAGES])
+    def test_bedingungswoerter_f007_heben_freigabe_auf(tmp_path, message):
+        """AC-4: Bedingungs-/Zeitwoerter heben die Freigabe auf (Zeile 1 und
+        Folgezeile)."""
+>       _assert_no_green(tmp_path, message)
+
+tests/test_phase_listener_followlines_311.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he10')
+message = 'go\nbevor wir mergen'
+
+    def _assert_no_green(tmp_path: Path, message: str) -> None:
+        project = _make_project(tmp_path, "phase6_implement", lock_age_s=60)
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+>       assert _state(project).get("green_approved") is False, (
+            f"{message!r} setzte green_approved (stderr={res.stderr!r})"
+        )
+E       AssertionError: 'go\nbevor wir mergen' setzte green_approved (stderr="GREEN approved (durch: 'go bevor wir mergen').\nPost-implementation gate entsperrt für 'wf-311'.\n")
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x10a195400>('green_approved')
+E        +    where <built-in method get of dict object at 0x10a195400> = {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...}.get
+E        +      where {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...} = _state(PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he10'))
+
+tests/test_phase_listener_followlines_311.py:148: AssertionError
+___ test_bedingungswoerter_f007_heben_freigabe_auf[go\nsolange Tests laufen] ___
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he11')
+message = 'go\nsolange Tests laufen'
+
+    @pytest.mark.parametrize("message",
+                             F007_MESSAGES + [m.replace(", ", "\n", 1) for m in F007_MESSAGES])
+    def test_bedingungswoerter_f007_heben_freigabe_auf(tmp_path, message):
+        """AC-4: Bedingungs-/Zeitwoerter heben die Freigabe auf (Zeile 1 und
+        Folgezeile)."""
+>       _assert_no_green(tmp_path, message)
+
+tests/test_phase_listener_followlines_311.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he11')
+message = 'go\nsolange Tests laufen'
+
+    def _assert_no_green(tmp_path: Path, message: str) -> None:
+        project = _make_project(tmp_path, "phase6_implement", lock_age_s=60)
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+>       assert _state(project).get("green_approved") is False, (
+            f"{message!r} setzte green_approved (stderr={res.stderr!r})"
+        )
+E       AssertionError: 'go\nsolange Tests laufen' setzte green_approved (stderr="GREEN approved (durch: 'go solange Tests laufen').\nPost-implementation gate entsperrt für 'wf-311'.\n")
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x109f90d00>('green_approved')
+E        +    where <built-in method get of dict object at 0x109f90d00> = {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...}.get
+E        +      where {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...} = _state(PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he11'))
+
+tests/test_phase_listener_followlines_311.py:148: AssertionError
+____ test_bedingungswoerter_f007_heben_freigabe_auf[go\nsofern m\xf6glich] _____
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he12')
+message = 'go\nsofern möglich'
+
+    @pytest.mark.parametrize("message",
+                             F007_MESSAGES + [m.replace(", ", "\n", 1) for m in F007_MESSAGES])
+    def test_bedingungswoerter_f007_heben_freigabe_auf(tmp_path, message):
+        """AC-4: Bedingungs-/Zeitwoerter heben die Freigabe auf (Zeile 1 und
+        Folgezeile)."""
+>       _assert_no_green(tmp_path, message)
+
+tests/test_phase_listener_followlines_311.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he12')
+message = 'go\nsofern möglich'
+
+    def _assert_no_green(tmp_path: Path, message: str) -> None:
+        project = _make_project(tmp_path, "phase6_implement", lock_age_s=60)
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+>       assert _state(project).get("green_approved") is False, (
+            f"{message!r} setzte green_approved (stderr={res.stderr!r})"
+        )
+E       AssertionError: 'go\nsofern möglich' setzte green_approved (stderr="GREEN approved (durch: 'go sofern möglich').\nPost-implementation gate entsperrt für 'wf-311'.\n")
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x10a181a80>('green_approved')
+E        +    where <built-in method get of dict object at 0x10a181a80> = {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...}.get
+E        +      where {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...} = _state(PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he12'))
+
+tests/test_phase_listener_followlines_311.py:148: AssertionError
+______ test_bedingungswoerter_f007_heben_freigabe_auf[go\nunless broken] _______
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he13')
+message = 'go\nunless broken'
+
+    @pytest.mark.parametrize("message",
+                             F007_MESSAGES + [m.replace(", ", "\n", 1) for m in F007_MESSAGES])
+    def test_bedingungswoerter_f007_heben_freigabe_auf(tmp_path, message):
+        """AC-4: Bedingungs-/Zeitwoerter heben die Freigabe auf (Zeile 1 und
+        Folgezeile)."""
+>       _assert_no_green(tmp_path, message)
+
+tests/test_phase_listener_followlines_311.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he13')
+message = 'go\nunless broken'
+
+    def _assert_no_green(tmp_path: Path, message: str) -> None:
+        project = _make_project(tmp_path, "phase6_implement", lock_age_s=60)
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+>       assert _state(project).get("green_approved") is False, (
+            f"{message!r} setzte green_approved (stderr={res.stderr!r})"
+        )
+E       AssertionError: 'go\nunless broken' setzte green_approved (stderr="GREEN approved (durch: 'go unless broken').\nPost-implementation gate entsperrt für 'wf-311'.\n")
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x109fb54c0>('green_approved')
+E        +    where <built-in method get of dict object at 0x109fb54c0> = {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...}.get
+E        +      where {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...} = _state(PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he13'))
+
+tests/test_phase_listener_followlines_311.py:148: AssertionError
+_______ test_bedingungswoerter_f007_heben_freigabe_auf[go\nuntil Friday] _______
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he14')
+message = 'go\nuntil Friday'
+
+    @pytest.mark.parametrize("message",
+                             F007_MESSAGES + [m.replace(", ", "\n", 1) for m in F007_MESSAGES])
+    def test_bedingungswoerter_f007_heben_freigabe_auf(tmp_path, message):
+        """AC-4: Bedingungs-/Zeitwoerter heben die Freigabe auf (Zeile 1 und
+        Folgezeile)."""
+>       _assert_no_green(tmp_path, message)
+
+tests/test_phase_listener_followlines_311.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he14')
+message = 'go\nuntil Friday'
+
+    def _assert_no_green(tmp_path: Path, message: str) -> None:
+        project = _make_project(tmp_path, "phase6_implement", lock_age_s=60)
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+>       assert _state(project).get("green_approved") is False, (
+            f"{message!r} setzte green_approved (stderr={res.stderr!r})"
+        )
+E       AssertionError: 'go\nuntil Friday' setzte green_approved (stderr="GREEN approved (durch: 'go until Friday').\nPost-implementation gate entsperrt für 'wf-311'.\n")
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x10a14db00>('green_approved')
+E        +    where <built-in method get of dict object at 0x10a14db00> = {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...}.get
+E        +      where {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...} = _state(PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he14'))
+
+tests/test_phase_listener_followlines_311.py:148: AssertionError
+_____ test_bedingungswoerter_f007_heben_freigabe_auf[go\nonce CI is green] _____
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he15')
+message = 'go\nonce CI is green'
+
+    @pytest.mark.parametrize("message",
+                             F007_MESSAGES + [m.replace(", ", "\n", 1) for m in F007_MESSAGES])
+    def test_bedingungswoerter_f007_heben_freigabe_auf(tmp_path, message):
+        """AC-4: Bedingungs-/Zeitwoerter heben die Freigabe auf (Zeile 1 und
+        Folgezeile)."""
+>       _assert_no_green(tmp_path, message)
+
+tests/test_phase_listener_followlines_311.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he15')
+message = 'go\nonce CI is green'
+
+    def _assert_no_green(tmp_path: Path, message: str) -> None:
+        project = _make_project(tmp_path, "phase6_implement", lock_age_s=60)
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+>       assert _state(project).get("green_approved") is False, (
+            f"{message!r} setzte green_approved (stderr={res.stderr!r})"
+        )
+E       AssertionError: 'go\nonce CI is green' setzte green_approved (stderr="GREEN approved (durch: 'go once CI is green').\nPost-implementation gate entsperrt für 'wf-311'.\n")
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x109fb47c0>('green_approved')
+E        +    where <built-in method get of dict object at 0x109fb47c0> = {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...}.get
+E        +      where {'name': 'wf-311', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...} = _state(PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_bedingungswoerter_f007_he15'))
+
+tests/test_phase_listener_followlines_311.py:148: AssertionError
+___________________ test_override_verlangt_leere_folgezeilen ___________________
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_override_verlangt_leere_f0')
+
+    def test_override_verlangt_leere_folgezeilen(tmp_path):
+        """AC-7: override⏎irgendwas -> kein Token; override⏎⏎ und
+        override⏎(danach weiter) -> Token."""
+        # Gegenprobe: 'override' allein legt den Token im erwarteten Pfad an,
+        # sonst waere der Negativfall aus falschem Grund gruen.
+        probe = _make_project(tmp_path / "probe", "phase6_implement")
+        res = _run_listener(probe, "override")
+        assert res.returncode == 0
+        assert _has_token(probe), (
+            f"Gegenprobe: 'override' allein legte keinen Token an "
+            f"({_token_file(probe)}; stderr={res.stderr!r})"
+        )
+    
+        neg = _make_project(tmp_path / "neg", "phase6_implement")
+        res = _run_listener(neg, "override\nirgendwas")
+        assert res.returncode == 0
+>       assert not _has_token(neg), (
+            f"'override⏎irgendwas' legte einen Override-Token an (stderr={res.stderr!r})"
+        )
+E       AssertionError: 'override⏎irgendwas' legte einen Override-Token an (stderr="Override token created for workflow: wf-311 (durch: 'override irgendwas')\n")
+E       assert not True
+E        +  where True = _has_token(PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_override_verlangt_leere_f0/neg'))
+
+tests/test_phase_listener_followlines_311.py:261: AssertionError
+__________ test_verworfen_hinweis_nennt_folgezeile_als_systemmessage ___________
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-37/test_verworfen_hinweis_nennt_f0')
+
+    def test_verworfen_hinweis_nennt_folgezeile_als_systemmessage(tmp_path):
+        """AC-8: stdout = ein JSON-Objekt, systemMessage nennt 'go' und die
+        Folgezeile; stderr bleibt als Spiegel gefuellt."""
+        project = _make_project(tmp_path, "phase6_implement")
+        res = _run_listener(project, "go\nerst die Doku")
+        assert res.returncode == 0
+        msg = _system_message(res).lower()
+        assert "go" in msg, f"Hinweis nennt das Stichwort 'go' nicht: {msg!r}"
+>       assert "folgezeile" in msg, f"Hinweis nennt die Folgezeile nicht als Grund: {msg!r}"
+E       AssertionError: Hinweis nennt die Folgezeile nicht als Grund: "green approved (durch: 'go erst die doku')."
+E       assert 'folgezeile' in "green approved (durch: 'go erst die doku')."
+
+tests/test_phase_listener_followlines_311.py:286: AssertionError
+____________ test_spec_170_konsistenz_folgezeilen_tabelle_schritt6 _____________
+
+    def test_spec_170_konsistenz_folgezeilen_tabelle_schritt6():
+        """AC-11: Known Limitations ohne 'Nur die erste Zeile zaehlt (unveraendert)',
+        Tabelle mit beiden Folgezeilen-Faellen, Schritt 6 mit den F007-Woertern."""
+        text = SPEC_170.read_text()
+    
+>       assert not re.search(r"Nur die erste Zeile zählt\**\s*\(unverändert\)", text), (
+            "Known Limitations sagt noch 'Nur die erste Zeile zählt (unverändert)'"
+        )
+E       AssertionError: Known Limitations sagt noch 'Nur die erste Zeile zählt (unverändert)'
+E       assert not <re.Match object; span=(6692, 6733), match='Nur die erste Zeile zählt** (unverändert)'>
+E        +  where <re.Match object; span=(6692, 6733), match='Nur die erste Zeile zählt** (unverändert)'> = <function search at 0x109384900>('Nur die erste Zeile zählt\\**\\s*\\(unverändert\\)', '---\nentity_id: fix-170-go-freigabe-phrase\ntype: bugfix\ncreated: 2026-09-21\nupdated: 2026-09-21\nstatus: draft\nversion: "1.0"\ntags: [phase-listener, approval-gate, green-approval, override]\n---\n\n# fix-170-go-freigabe-phrase\n\n## Approval\n\n- [ ] Approved\n\n## Purpose\n\nEin beiläufiges Freigabe-Wort ("go", "approved", "passt" …) in einer Diskussionsnachricht wird als echte Freigabe gewertet (Issue #170). Am 2026-09-21 setzte die Nachricht „die mischung aus go, approved und der eingabe von slash-commands ist unglücklich" die GREEN-Freigabe und entsperrte damit das Post-Implementation-Gate, obwohl der User nichts freigeben wollte. Die Freigabe ist der Selbstzertifizierungs-Schutz des Frameworks (#147); sie darf nur durch eine echte Entscheidung entstehen. Diese Spec ersetzt die reine Positions-Prüfung ("Wort steht irgendwo in den ersten 120 Zeichen") durch eine Satzbau-Prüfung ("die Nachricht *ist* eine Freigabe") und macht verworfene wie wirkende Freigaben sichtbar.\n\n## Source\n\n- **File:** `core/hooks/phase_listener.py`\n- **Identifier:** `_matches()` (Modus `leading_only=True`), Aufrufer für override, approval und GREEN im Hook-Hauptteil\n\n## Dependencies\n\n| En...proval_90.py tests/test_phase_listener_agent_handback_141.py` — bestehende Tests als Regressionsschutz (AC-2, AC-7)\n- `pytest tests` — Gesamtlauf (AC-7)\n\n## Architektur-Entscheidung (ADR)\n\n- **ADR-Nr.:** keine\n- **Rationale:** Verschärfung einer bestehenden Prüfung innerhalb einer Funktion, ohne neue Komponente, Schnittstelle oder Konfigurationsoption. Die Abwägung (Satzbau-Regel statt Wortzahl-Grenze oder Rückfrage) ist in dieser Spec und im Kontext-Dokument festgehalten.\n\n## Entscheidungen des Tech Leads (für den PO)\n\n- **Zwei Zusatzwörter statt einem:** natürliche deutsche Freigaben ("Go bitte umsetzen", "Passt für mich") sollen nicht verworfen werden. Fragezeichen und Negationswörter sind ohnehin getrennt gesperrt, das Restrisiko ist dadurch klein.\n- **Override strenger als Freigabe:** ein Override-Token entsperrt eine Stunde lang alle Gates, deshalb zählt nur die Phrase allein.\n- **Keine Rückfrage "Wirklich freigeben?":** würde jede echte Freigabe verlangsamen (#140); stattdessen sichtbare Meldung bei Wirkung und bei Verwerfung.\n\n## Changelog\n\n- 2026-09-21: Initial spec created\n- 2026-09-21: AC-6 um die Override-Meldung ergänzt (Befund aus dem PO-Briefing)\n')
+E        +    where <function search at 0x109384900> = re.search
+
+tests/test_phase_listener_followlines_311.py:324: AssertionError
+_____________ test_bash_gate_kommentar_nennt_keine_festen_phrasen ______________
+
+    def test_bash_gate_kommentar_nennt_keine_festen_phrasen():
+        """AC-13 (F008): Kommentarblock um 'legitime Erzeuger' verweist auf die
+        konfigurierten Freigabe-Phrasen statt fest "go"/"freigabe"/"approved"."""
+        lines = BASH_GATE.read_text().splitlines()
+        idx = next((i for i, ln in enumerate(lines) if "legitime Erzeuger" in ln), None)
+        assert idx is not None, "Kommentar 'legitime Erzeuger' in bash_gate.py nicht gefunden"
+        start = idx
+        while start > 0 and lines[start - 1].lstrip().startswith("#"):
+            start -= 1
+        end = idx
+        while end + 1 < len(lines) and lines[end + 1].lstrip().startswith("#"):
+            end += 1
+        block = "\n".join(lines[start:end + 1])
+>       assert '"go"/"freigabe"/"approved"' not in block, (
+            f'Kommentar nennt noch fest "go"/"freigabe"/"approved":\n{block}'
+        )
+E       AssertionError: Kommentar nennt noch fest "go"/"freigabe"/"approved":
+E         # Approval-/Erfolgs-Marker: Dateien, deren blosse Existenz einen Freigabe-
+E         # oder Erfolgszustand BEHAUPTET. Diese darf der Agent NIEMALS selbst per Bash
+E         # erzeugen/aendern/loeschen — das waere "specification gaming" (der Agent
+E         # manipuliert den Verifier statt die Bedingung echt zu erfuellen). Der einzige
+E         # legitime Erzeuger ist phase_listener.py (UserPromptSubmit-Hook), der nur
+E         # feuert, wenn der echte User "go"/"freigabe"/"approved" tippt. Deny by default.
+E         # Tier 1: Feldnamen mit hohem Freitext-Risiko (Issue #30) — nur blocken, wenn
+E         # zusaetzlich ein echter Protected-Pfad im selben Kommando referenziert wird.
+E         # Diese Feldnamen tauchen plausibel in Bug-Reports/PR-Texten/Doku auf.
+E       assert '"go"/"freigabe"/"approved"' not in '# Approval-...en/Doku auf.'
+E         
+E         '"go"/"freigabe"/"approved"' is contained here:
+E           # Approval-/Erfolgs-Marker: Dateien, deren blosse Existenz einen Freigabe-
+E           # oder Erfolgszustand BEHAUPTET. Diese darf der Agent NIEMALS selbst per Bash
+E           # erzeugen/aendern/loeschen — das waere "specification gaming" (der Agent
+E           # manipuliert den Verifier statt die Bedingung echt zu erfuellen). Der einzige
+E           # legitime Erzeuger ist phase_listener.py (UserPromptSubmit-Hook), der nur...
+E         
+E         ...Full output truncated (5 lines hidden), use '-vv' to show
+
+tests/test_phase_listener_followlines_311.py:387: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_phase_listener_followlines_311.py::test_folgezeile_einschraenkung_setzt_keine_green_freigabe[go\nerst die Doku]
+FAILED tests/test_phase_listener_followlines_311.py::test_folgezeile_einschraenkung_setzt_keine_green_freigabe[go\nnein, sp\xe4ter]
+FAILED tests/test_phase_listener_followlines_311.py::test_folgezeile_einschraenkung_setzt_keine_spec_freigabe[Approved\nsp\xe4ter]
+FAILED tests/test_phase_listener_followlines_311.py::test_folgezeile_einschraenkung_setzt_keine_spec_freigabe[approved\nerst noch die Doku]
+FAILED tests/test_phase_listener_followlines_311.py::test_frage_in_folgezeile_verwirft_freigabe[go\nwarum ist das so?-phase6_implement]
+FAILED tests/test_phase_listener_followlines_311.py::test_frage_in_folgezeile_verwirft_freigabe[approved\nist das so richtig?-phase3_spec]
+FAILED tests/test_phase_listener_followlines_311.py::test_bedingungswoerter_f007_heben_freigabe_auf[go, falls Henning zustimmt]
+FAILED tests/test_phase_listener_followlines_311.py::test_bedingungswoerter_f007_heben_freigabe_auf[go, sobald CI gruen]
+FAILED tests/test_phase_listener_followlines_311.py::test_bedingungswoerter_f007_heben_freigabe_auf[go, bevor wir mergen]
+FAILED tests/test_phase_listener_followlines_311.py::test_bedingungswoerter_f007_heben_freigabe_auf[go, solange Tests laufen]
+FAILED tests/test_phase_listener_followlines_311.py::test_bedingungswoerter_f007_heben_freigabe_auf[go, sofern m\xf6glich]
+FAILED tests/test_phase_listener_followlines_311.py::test_bedingungswoerter_f007_heben_freigabe_auf[go, unless broken]
+FAILED tests/test_phase_listener_followlines_311.py::test_bedingungswoerter_f007_heben_freigabe_auf[go, until Friday]
+FAILED tests/test_phase_listener_followlines_311.py::test_bedingungswoerter_f007_heben_freigabe_auf[go, once CI is green]
+FAILED tests/test_phase_listener_followlines_311.py::test_bedingungswoerter_f007_heben_freigabe_auf[go\nfalls Henning zustimmt]
+FAILED tests/test_phase_listener_followlines_311.py::test_bedingungswoerter_f007_heben_freigabe_auf[go\nsobald CI gruen]
+FAILED tests/test_phase_listener_followlines_311.py::test_bedingungswoerter_f007_heben_freigabe_auf[go\nbevor wir mergen]
+FAILED tests/test_phase_listener_followlines_311.py::test_bedingungswoerter_f007_heben_freigabe_auf[go\nsolange Tests laufen]
+FAILED tests/test_phase_listener_followlines_311.py::test_bedingungswoerter_f007_heben_freigabe_auf[go\nsofern m\xf6glich]
+FAILED tests/test_phase_listener_followlines_311.py::test_bedingungswoerter_f007_heben_freigabe_auf[go\nunless broken]
+FAILED tests/test_phase_listener_followlines_311.py::test_bedingungswoerter_f007_heben_freigabe_auf[go\nuntil Friday]
+FAILED tests/test_phase_listener_followlines_311.py::test_bedingungswoerter_f007_heben_freigabe_auf[go\nonce CI is green]
+FAILED tests/test_phase_listener_followlines_311.py::test_override_verlangt_leere_folgezeilen
+FAILED tests/test_phase_listener_followlines_311.py::test_verworfen_hinweis_nennt_folgezeile_als_systemmessage
+FAILED tests/test_phase_listener_followlines_311.py::test_spec_170_konsistenz_folgezeilen_tabelle_schritt6
+FAILED tests/test_phase_listener_followlines_311.py::test_bash_gate_kommentar_nennt_keine_festen_phrasen
+========================= 26 failed, 8 passed in 5.89s =========================

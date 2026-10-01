@@ -67,7 +67,9 @@ PROTECTED_FILE_PATTERNS = [
 # erzeugen/aendern/loeschen — das waere "specification gaming" (der Agent
 # manipuliert den Verifier statt die Bedingung echt zu erfuellen). Der einzige
 # legitime Erzeuger ist phase_listener.py (UserPromptSubmit-Hook), der nur
-# feuert, wenn der echte User "go"/"freigabe"/"approved" tippt. Deny by default.
+# feuert, wenn der echte User eine der konfigurierten Freigabe-Phrasen tippt
+# (workflow.approval_phrases / green_phrases, override_token.keywords).
+# Deny by default.
 # Tier 1: Feldnamen mit hohem Freitext-Risiko (Issue #30) — nur blocken, wenn
 # zusaetzlich ein echter Protected-Pfad im selben Kommando referenziert wird.
 # Diese Feldnamen tauchen plausibel in Bug-Reports/PR-Texten/Doku auf.
