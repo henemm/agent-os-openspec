@@ -683,8 +683,8 @@ def main():
         "  des Pruefpunkts statt der echten Erfuellung der Bedingung.\n"
         "\n"
         "  Der einzige legitime Weg:\n"
-        "  -> Lege dem User die Ergebnisse vor und WARTE auf sein 'go' / 'freigabe'\n"
-        "     / 'approved'. Der phase_listener-Hook setzt den Marker dann selbst."
+        "  -> Lege dem User die Ergebnisse vor und WARTE auf seine ausdrueckliche\n"
+        "     Freigabe. Der phase_listener-Hook setzt den Marker dann selbst."
     )
     if workflow_enforced and not is_git_command and _has_write_indicator(scan_cmd):
         # Tier 2 (Dateinamen-Marker): pfad-unabhaengig blocken. Verhindert

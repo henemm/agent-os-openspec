@@ -51,6 +51,24 @@ erkennt sie nicht (siehe „Known Limitations" der Spec).
 
 ### Fixed
 
+**Freigabe-Wörter: Sperrmeldung aus Config, Einschränkungen heben auf, Rückmeldung sichtbar (#277, fasst #268 + #175, dazu #310)**
+
+Das Post-Implementation-Gate forderte „tippe 'go', 'freigabe' oder 'approved'", obwohl in phase6
+nur die GREEN-Phrasen wirken; Sätze wie „go, erst noch die Doku" setzten eine Freigabe; und alle
+Rückmeldungen des `phase_listener` gingen auf stderr, das bei `UserPromptSubmit` niemand sieht.
+Spec: `docs/specs/fix-277-freigabe-woerter.md`.
+
+- `core/hooks/post_implementation_gate.py`: beide Sperrmeldungen nennen die konfigurierten
+  `workflow.green_phrases` (über `phase_listener.green_phrases_text()`), nicht mehr fest verdrahtet.
+- `core/hooks/phase_listener.py`: `NEGATION_WORDS` um deutsche Einschränkungen erweitert (erst,
+  später, wenn, noch, war, fehlt, nein, nie, niemals, nichts, moment, nö) — gilt für Spec-Freigabe,
+  GREEN und Override. Meldungen erscheinen als `systemMessage` in genau einem JSON-Objekt auf stdout
+  (Statusvermerk dann in `additionalContext`); ohne Meldung bleibt stdout der reine Statusvermerk,
+  stderr bleibt Debug-Spiegel. Verworfen-Hinweis und Falsche-Phase-Warnung nennen Stichwort und die
+  konfigurierte Phrase statt „go oder approved".
+- `docs/specs/fix-170-go-freigabe-phrase.md`: Schritt 4 an Tabelle/AC-4 angeglichen (Override:
+  Phrase allein bis Zeilenende).
+
 **Testausgaben richtig erkennen: ANSI, xcbeautify, „übersprungen" (#275, fasst #201 + #202 + #256①)**
 
 Mit ANSI-Farbcodes ummantelte Fehlerzeilen, xcbeautify-Marker („❌"/„✖") und die

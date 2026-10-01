@@ -70,6 +70,9 @@ LEADING_CHARS = 120
 FILLER_PREFIXES = ["ja", "ok", "okay", "yes", "klar", "danke", "super", "top"]
 NEGATION_WORDS = [
     "nicht", "kein", "keine", "keinen", "not", "no", "aber", "but", "warte", "wait",
+    # Einschränkungen (#175): "go, erst noch die Doku", "Freigabe fehlt noch"
+    "erst", "später", "spaeter", "wenn", "noch", "war", "fehlt", "nein", "nie",
+    "niemals", "nichts", "moment", "nö",
 ]
 # Zusatzwörter im Kopfsatz nach der Phrase: 2 für approval/GREEN ("Go bitte
 # umsetzen", "Passt für mich"), 0 für override — ein Override-Token entsperrt eine
@@ -109,6 +112,50 @@ def _load_phrases() -> dict:
         }
     except Exception:
         return {}
+
+
+def format_phrases(phrases: list[str]) -> str:
+    """Phrasen für Meldungen: 'go' bzw. 'go', 'green ok', … (#268)."""
+    return ", ".join(f"'{p}'" for p in phrases)
+
+
+def green_phrases_text() -> str:
+    """Die in phase6 wirksamen GREEN-Phrasen als Meldungstext (#268).
+
+    Vorbild `workflow._not_approved_msg()` (#90): eine Sperrmeldung nennt nur
+    Wörter, die tatsächlich wirken — auch bei abweichender Projekt-Config.
+    """
+    phrases = _load_phrases().get("green", GREEN_PHRASES)
+    if not isinstance(phrases, list) or not phrases:
+        phrases = GREEN_PHRASES  # nie "tippt ." melden
+    return format_phrases(phrases)
+
+
+# --- Rückmeldekanal (#310) ---
+# stderr erreicht bei UserPromptSubmit weder Nutzer noch Claude. Meldungen
+# werden deshalb gesammelt und einmal als JSON-Objekt (systemMessage) auf
+# stdout ausgegeben; stderr bleibt als Debug-Spiegel.
+_NOTICES: list[str] = []
+
+
+def _notify(text: str) -> None:
+    print(text, file=sys.stderr)
+    _NOTICES.append(text)
+
+
+def _finish(note: "str | None" = None) -> None:
+    """Einziger Ausgabeschritt an jedem Austrittspunkt von main()."""
+    if _NOTICES:
+        out: dict = {"systemMessage": "\n".join(_NOTICES)}
+        if note:
+            out["hookSpecificOutput"] = {
+                "hookEventName": "UserPromptSubmit",
+                "additionalContext": note,
+            }
+        print(json.dumps(out, ensure_ascii=False))
+    elif note:
+        print(note)
+    sys.exit(0)
 
 
 # --- Helpers ---
@@ -205,14 +252,15 @@ def _discard_notice(message: str, phrases: list[str],
     """Hinweis, wenn die alte Regel getroffen hätte, die Satzbau-Regel aber nicht.
 
     Kein stilles Verwerfen (#90): der Nutzer erfährt, warum nichts passiert ist.
+    Beispielphrase ist die erste konfigurierte Phrase des Sets (F005).
     """
     phrase = _mentioned_phrase(message, phrases)
     if not phrase or _leading_approval_phrase(message, phrases, max_extra_words):
         return None
     return (
         f"HINWEIS: Stichwort '{phrase}' erkannt, aber nicht als Freigabe gewertet — "
-        "eine Freigabe ist eine kurze Nachricht, die mit dem Stichwort beginnt "
-        '(z. B. "go" oder "approved").'
+        "eine Freigabe ist eine kurze Nachricht ohne Einschränkung, die mit dem "
+        f'Stichwort beginnt (z. B. "{phrases[0]}").'
     )
 
 
@@ -299,13 +347,12 @@ def _stop_lock_path() -> Path:
     return _root / ".claude" / "stop_lock.json"
 
 
-def _emit_status_note() -> None:
-    """Statusvermerk zum aktiven Workflow auf stdout (3.25.0).
+def _emit_status_note() -> "str | None":
+    """Statusvermerk zum aktiven Workflow (3.25.0) — zurückgeben, nicht drucken.
 
     Bei UserPromptSubmit wird stdout dem Kontext hinzugefuegt — stderr sieht
-    Claude nicht. Der Vermerk geht deshalb als einziger Text dieses Hooks auf
-    stdout; alle bestehenden Meldungen bleiben unveraendert auf stderr, sonst
-    vermischen sich Kontext und Diagnose.
+    Claude nicht. Ausgegeben wird der Vermerk von `_finish()`: ohne Meldungen
+    als reiner Text, mit Meldungen als `additionalContext` im JSON-Objekt (#310).
 
     Still bei: kein Workflow, phase8_complete, defektem/unlesbarem State.
     Fehler werden hier bewusst geschluckt — ein Statusvermerk darf niemals
@@ -314,13 +361,11 @@ def _emit_status_note() -> None:
     try:
         wf_data, _ = _read_active_workflow()
         if not wf_data:
-            return
+            return None
         from workflow import status_note
-        note = status_note(wf_data)
-        if note:
-            print(note)
+        return status_note(wf_data) or None
     except Exception:
-        pass
+        return None
 
 
 def _set_stop_lock(enabled: bool) -> None:
@@ -350,8 +395,7 @@ def main():
         # raus: der Fundfall (gregor #1761) war genau so ein injizierter Turn
         # (Loop-Aufwachen), und dort fehlte die Erinnerung an den offenen
         # Pflicht-Schritt.
-        _emit_status_note()
-        sys.exit(0)
+        _finish(_emit_status_note())
 
     phrases = _load_phrases()
     approval = phrases.get("approval", APPROVAL_PHRASES)
@@ -367,31 +411,30 @@ def main():
     if _matches(message, override, leading_only=True, max_extra_words=OVERRIDE_EXTRA_WORDS):
         wf_name = wf_data["name"] if wf_data else "__global__"
         _create_override_token(wf_name)
-        print(
-            f"Override token created for workflow: {wf_name} {_trigger(message)}",
-            file=sys.stderr,
-        )
+        _notify(f"Override token created for workflow: {wf_name} {_trigger(message)}")
     else:
         override_discarded = _discard_notice(message, override, OVERRIDE_EXTRA_WORDS)
 
     # Stop-lock
     if _matches(message, stop) and not _matches(message, cont):
         _set_stop_lock(True)
+        # Not-Aus-Bestätigung bleibt reiner Debug-Text (kein Zusatzkontext).
         print("Stop-lock enabled.", file=sys.stderr)
-        sys.exit(0)
+        if override_discarded:
+            _notify(override_discarded)
+        _finish()
 
     if _matches(message, cont):
         _set_stop_lock(False)
 
     if not wf_data or not wf_path:
         if override_discarded:
-            print(override_discarded, file=sys.stderr)
+            _notify(override_discarded)
         if _matches(message, approval, leading_only=True) or _matches(message, green, leading_only=True):
-            print(
-                f"WARNUNG: Stichwort erkannt, aber kein auflösbarer Workflow. {gate_diagnostics()}",
-                file=sys.stderr,
+            _notify(
+                f"WARNUNG: Stichwort erkannt, aber kein auflösbarer Workflow. {gate_diagnostics()}"
             )
-        sys.exit(0)
+        _finish()
 
     changed = False
     # Eine Freigabe ist eine Nutzer-Willenserklärung: sie darf weder unbemerkt
@@ -426,10 +469,7 @@ def main():
             except Exception:
                 briefing_err = None
             if adr_err or briefing_err:
-                print(
-                    f"Freigabe blockiert: {adr_err or briefing_err}",
-                    file=sys.stderr,
-                )
+                _notify(f"Freigabe blockiert: {adr_err or briefing_err}")
                 # spec_approved NICHT setzen, current_phase bleibt phase3_spec
             else:
                 wf_data["spec_approved"] = True
@@ -444,18 +484,16 @@ def main():
                     # phase3_spec -> phase4_approved in phase_transitions (Issue #111).
                     record_transition(wf_data, "phase4_approved", "approval")
                 except Exception as exc:
-                    print(
+                    _notify(
                         f"WARNUNG: Phasenwechsel konnte nicht protokolliert werden ({exc}). "
-                        "Freigabe gilt trotzdem.",
-                        file=sys.stderr,
+                        "Freigabe gilt trotzdem."
                     )
                 wf_data["current_phase"] = "phase4_approved"
                 changed = True
                 approval_took_effect = True
-                print(
+                _notify(
                     f"Spec approved for '{wf_data['name']}' {_trigger(message)}! "
-                    "You may now run /tdd-red",
-                    file=sys.stderr,
+                    "You may now run /tdd-red"
                 )
         elif wf_data.get("spec_approved"):
             deferred_notices.append(
@@ -463,11 +501,14 @@ def main():
                 "Zustand unverändert."
             )
         else:
+            # In phase6 zusätzlich nennen, was dort stattdessen wirkt (F005).
+            green_hint = (f" In {phase} gilt: {format_phrases(green)}."
+                          if phase in ("phase6_implement", "phase6b_adversary") else "")
             deferred_notices.append(
-                "WARNUNG: Freigabe-Stichwort erkannt, aber Workflow steht in "
-                f"'{phase or 'unbekannt'}'; Freigabe wirkt nur in phase3_spec. "
-                "Zustand unverändert — Phase nachziehen und erneut fragen, "
-                "NICHT spec_approved von Hand setzen."
+                f"WARNUNG: Freigabe-Stichwort '{_leading_approval_phrase(message, approval)}' "
+                f"erkannt, aber Workflow steht in '{phase or 'unbekannt'}'; Freigabe wirkt "
+                f"nur in phase3_spec.{green_hint} Zustand unverändert — Phase nachziehen "
+                "und erneut fragen, NICHT spec_approved von Hand setzen."
             )
     # Erkannt, aber als Erwähnung verworfen (#170) — nur melden, wo die Freigabe
     # in dieser Phase überhaupt etwas bewirkt hätte.
@@ -489,7 +530,7 @@ def main():
             wf_data["green_approved"] = True
             changed = True
             green_took_effect = True
-            print(f"GREEN approved {_trigger(message)}.", file=sys.stderr)
+            _notify(f"GREEN approved {_trigger(message)}.")
             # Post-Implementation-Gate: Marker an den aktuellen Prüflauf binden (#134) —
             # Inhalt = `created`-Wert des lebenden Locks.
             try:
@@ -499,14 +540,15 @@ def main():
                     approval_path = approval_marker_path(_root, wf_data['name'])
                     approval_path.parent.mkdir(parents=True, exist_ok=True)
                     approval_path.write_text(str(lock["created"]))
-                    print(f"Post-implementation gate entsperrt für '{wf_data['name']}'.", file=sys.stderr)
+                    _notify(f"Post-implementation gate entsperrt für '{wf_data['name']}'.")
                 # Kein Lock vorhanden (Freigabe vor dem ersten Edit) → bewusst KEIN Marker,
                 # fail-closed statt Sonderfall auf der Lese-Seite.
             except OSError:
                 pass
         elif not wf_data.get("green_approved"):
             deferred_notices.append(
-                "WARNUNG: GREEN-Stichwort erkannt, aber Workflow steht in "
+                f"WARNUNG: GREEN-Stichwort '{_leading_approval_phrase(message, green)}' "
+                "erkannt, aber Workflow steht in "
                 f"'{phase or 'unbekannt'}'; GREEN wirkt nur in phase6_implement "
                 "und phase6b_adversary. Zustand unverändert."
             )
@@ -520,15 +562,14 @@ def main():
     # über das jeweils andere Gate regulär gewirkt hat (überlappende Phrasen-Sets).
     if not (approval_took_effect or green_took_effect):
         for notice in deferred_notices:
-            print(notice, file=sys.stderr)
+            _notify(notice)
 
     if changed:
         _save_workflow(wf_data, wf_path)
 
     # Zuletzt, damit der Vermerk den Zustand NACH einer Freigabe zeigt
     # (phase3_spec -> phase4_approved nennt bereits /40-tdd-red).
-    _emit_status_note()
-    sys.exit(0)
+    _finish(_emit_status_note())
 
 
 if __name__ == "__main__":
