@@ -150,7 +150,7 @@ Alle Tests laufen `core/hooks` des Worktrees per `subprocess` an (Wegwerf-Repo, 
   - Test: tests/test_bash_gate_erkennung_299.py::test_nested_shell_optionsbuendel_mit_c_wird_als_commit_erkannt
 - **AC-9:** Given dieselbe Lage / When `bash -o pipefail -c "git commit -m x"`, `bash -O extglob -c …`, `bash --rcfile f -c …`, `bash --init-file f -c …` oder `bash --noprofile --norc -c "git commit -m x"` läuft / Then wird der Befehl wie ein Commit blockiert; der Wert der Option wird nicht als Kommando gelesen.
   - Test: tests/test_bash_gate_erkennung_299.py::test_nested_shell_optionen_mit_wert_und_noprofile_werden_uebersprungen
-- **AC-10:** Given ein Workflow in phase6 / When `bash -c "git status"`, `bash -lc "echo git commit"` oder `bash --login -c "ls"` läuft / Then wird der Befehl nicht blockiert: kein Commit im Inneren, keine Über-Erkennung.
+- **AC-10:** Given ein Workflow in phase6 / When `bash -c "git status"`, `bash -lc "echo hallo"` oder `bash --login -c "ls"` läuft / Then wird der Befehl nicht blockiert: kein Commit im Inneren, keine Über-Erkennung. (Eine ungequotete Erwähnung wie `bash -lc "echo git commit"` gilt dagegen weiter im Zweifel als Commit — bestehende Regel, `tests/test_git_invocation_detection.py::test_ungequotete_erwaehnung_wird_im_zweifel_geprueft`.)
   - Test: tests/test_bash_gate_erkennung_299.py::test_nested_shell_ohne_commit_im_inneren_bleibt_erlaubt
 - **AC-11:** Given ein Workflow in phase6 ohne Verdict / When `git >/dev/null commit -m x`, `git >>log commit -m x` oder `git &>/dev/null commit -m x` läuft / Then wird der Befehl wie ein Commit blockiert; Umleitung samt Ziel wird übersprungen.
   - Test: tests/test_bash_gate_erkennung_299.py::test_umleitung_vor_unterbefehl_wird_uebersprungen
@@ -190,3 +190,4 @@ Automatische Tests (jeweils an eine AC oben gebunden). Subprozess-Tests gegen `c
 ## Changelog
 
 - 2026-10-01: Initial spec created (Teil A von #299)
+- 2026-10-01: AC-10 korrigiert (per Override in Phase 5) — Beispiel `bash -lc "echo git commit"` widersprach der bestehenden Zweifels-Regel; ersetzt durch `bash -lc "echo hallo"`

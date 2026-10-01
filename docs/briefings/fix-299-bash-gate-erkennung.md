@@ -1,6 +1,6 @@
 ---
 spec_file: docs/specs/fix-299-bash-gate-erkennung.md
-spec_sha256: 54bfb33e177a8f5f77abf92c2536ab28a529aaeb5235c721fc25b59f90eefbc8
+spec_sha256: 536194e7d7a920c9210f7b98092cda149d6ff20763c051d7f88a54851b90c7b1
 ---
 
 # PO-Briefing: fix-299-bash-gate-erkennung
@@ -11,22 +11,22 @@ spec_sha256: 54bfb33e177a8f5f77abf92c2536ab28a529aaeb5235c721fc25b59f90eefbc8
 
 ## Was gebaut wird
 
-Der Commit-Schutz erkennt fünf bisher übersehene Schreibweisen, und die Rebase-Meldung nennt einen Befehl, der bei vorgemerkten Dateien funktioniert.
+Der Commit-Wächter erkennt mehr Schreibweisen für Commits und blockiert sie ohne Prüfnachweis; Rebase-Hinweis funktioniert bei vorgemerkten Dateien.
 
 ## Definition of Done
 
-Alle genannten Umgehungen werden blockiert, harmlose Befehle bleiben erlaubt, und der empfohlene Rebase-Befehl gelingt bei vorgemerkten Dateien.
+Jede der geprüften Commit-Schreibweisen wird ohne Prüfnachweis blockiert, harmlose Befehle laufen weiter, und der Rebase-Hinweis gelingt tatsächlich.
 
 ## Wie geprüft wird
 
-Automatische Tests spielen jede Schreibweise gegen die echte Sperre durch, in beide Richtungen; Alias-Tricks und absichtliche Verschleierung prüfen sie nicht.
+Automatische Tests spielen jede Schreibweise gegen das echte Gate durch, in beide Richtungen; vorsätzliche Umgehungen und Alias-Tricks prüfen sie nicht.
 
 ## Kritische Anmerkungen
 
-- Nur Teil A: Alias- und merge-Umgehungen (#281, #297) bleiben offen, #299 ist nicht erledigt.
-- Gefordert war eine strukturelle Zustandsprüfung; geliefert wird weitere Textmustererkennung, vorsätzliche Umgehung bleibt möglich.
-- #284: Nur der Meldungstext ändert sich, keine Reihenfolge-Korrektur.
+- Nur Teil A: Alias-Umgehung (#281) und merge/cherry-pick (#297) bleiben offen; #299 kann nicht geschlossen werden.
+- Verschärfte Whitelist-Regel wirkt auch auf die Geheimnisprüfung; Über-Blockieren legitimer Befehle ist möglich, nur teilweise getestet.
+- Vorsätzliche Umgehung bleibt möglich; erst die Abschlussprüfung am Ende fängt sie ab.
 
 ## Freigabe-Frage
 
-Genügt es dir, dass #299 nur teilweise gelöst wird und Alias-Umgehungen vorerst offen bleiben?
+Gibst du frei, dass nur Teil A (Schreibweisen-Lücken, Rebase-Hinweis) jetzt gebaut wird und #281/#297 später folgen?
