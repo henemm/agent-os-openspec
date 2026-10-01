@@ -73,6 +73,8 @@ NEGATION_WORDS = [
     # Einschränkungen (#175): "go, erst noch die Doku", "Freigabe fehlt noch"
     "erst", "später", "spaeter", "wenn", "noch", "war", "fehlt", "nein", "nie",
     "niemals", "nichts", "moment", "nö",
+    # Bedingungs-/Zeitwörter (#311, F007): "go, falls Henning zustimmt"
+    "falls", "sobald", "bevor", "solange", "sofern", "unless", "until", "once",
 ]
 # Zusatzwörter im Kopfsatz nach der Phrase: 2 für approval/GREEN ("Go bitte
 # umsetzen", "Passt für mich"), 0 für override — ein Override-Token entsperrt eine
@@ -199,6 +201,30 @@ def _leading_line(message: str) -> str:
     return re.sub(r"\([^)]*$", " ", line).strip()
 
 
+def _follow_lines(message: str) -> str:
+    """Alles nach Zeile 1, ohne Klammer-Einschübe, nicht gekappt (#311)."""
+    parts = message.lower().strip().split("\n", 1)
+    rest = parts[1] if len(parts) > 1 else ""
+    rest = re.sub(r"\([^)]*\)", " ", rest)
+    return re.sub(r"\([^)]*$", " ", rest).strip()
+
+
+def _follow_restriction(message: str, budget: int) -> "str | None":
+    """Einschränkung in einer Folgezeile: '?', Listenwort bzw. bei Override
+    (Budget 0) jede nichtleere Folgezeile — sonst None (#311)."""
+    rest = _follow_lines(message)
+    if not rest:
+        return None
+    if "?" in rest:
+        return "?"
+    hit = _NEGATION_RE.search(rest)
+    if hit:
+        return hit.group(0)
+    if budget < 1:
+        return rest.split()[0]
+    return None
+
+
 def _phrase_at_start(text: str, phrases: list[str]) -> "str | None":
     """Längste Phrase, die den Text eröffnet ("ich genehmige" vor "genehmige")."""
     best = None
@@ -215,8 +241,19 @@ def _phrase_at_start(text: str, phrases: list[str]) -> "str | None":
 
 def _leading_approval_phrase(message: str, phrases: list[str],
                              max_extra_words: "int | None" = None) -> "str | None":
-    """Die Phrase, wenn die Nachricht selbst eine Freigabe IST — sonst None (#170)."""
+    """Die Phrase, wenn die Nachricht selbst eine Freigabe IST — sonst None (#170).
+
+    Zeile 1 muss eine Freigabe sein, und keine Folgezeile darf sie einschränken
+    (#311)."""
     budget = _extra_word_budget(phrases, max_extra_words)
+    if _follow_restriction(message, budget):
+        return None
+    return _first_line_approval(message, phrases, budget)
+
+
+def _first_line_approval(message: str, phrases: list[str],
+                         budget: int) -> "str | None":
+    """Satzbau-Prüfung nur auf Zeile 1 (#170)."""
     line = _leading_line(message)
     if "?" in line or _NEGATION_RE.search(line):
         return None
@@ -257,11 +294,19 @@ def _discard_notice(message: str, phrases: list[str],
     phrase = _mentioned_phrase(message, phrases)
     if not phrase or _leading_approval_phrase(message, phrases, max_extra_words):
         return None
-    return (
+    notice = (
         f"HINWEIS: Stichwort '{phrase}' erkannt, aber nicht als Freigabe gewertet — "
         "eine Freigabe ist eine kurze Nachricht ohne Einschränkung, die mit dem "
         f'Stichwort beginnt (z. B. "{phrases[0]}").'
     )
+    budget = _extra_word_budget(phrases, max_extra_words)
+    hit = _follow_restriction(message, budget)
+    if hit and _first_line_approval(message, phrases, budget):
+        notice += (
+            f" Die Einschränkung steht in einer Folgezeile ('{hit}'); "
+            f"'{phrase}' ohne Folgezeile wiederholen."
+        )
+    return notice
 
 
 def _trigger(message: str) -> str:
