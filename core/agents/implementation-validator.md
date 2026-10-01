@@ -120,6 +120,18 @@ Confirmation:
 
 **All ACs must be accounted for — either as a Finding (BROKEN) or Confirmation (VERIFIED). An AC with neither is incomplete coverage.**
 
+## Herkunft der Vorbedingungen (MANDATORY section, Issue #286)
+
+The dialog artifact MUST contain the section `## Herkunft der Vorbedingungen` (the scaffold places it before `## Verdict`). Fill it as follows:
+
+- If the orchestrator attached the table from `precondition_origins.py`, copy it into the section unchanged.
+- If no table was attached (no `precondition_origins.default_lang` configured), write the hint text instead: „kein Sprachprofil konfiguriert (`precondition_origins.default_lang`)".
+- For every suspect row (at most one production write site in column „Produktions-Schreibstellen") fill both remaining columns:
+  - **„Bedingung davor"** — under which condition does production code write this field?
+  - **„Test für diesen Weg"** — is there a test that triggers exactly this path (not just the result)? Name it, or write „keiner" and record a Finding.
+
+A missing section or a suspect row with an empty „Bedingung davor" or „Test für diesen Weg" is rejected by the gate (`precondition_section_gate`; `mode: block` blocks, `mode: warn` warns).
+
 ## VERDICT Format (Tri-State)
 
 Use the tri-state vocabulary VERIFIED / BROKEN / AMBIGUOUS — the same words

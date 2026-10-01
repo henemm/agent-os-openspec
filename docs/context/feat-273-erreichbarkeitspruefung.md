@@ -474,7 +474,7 @@ T1 (Werkzeug, unabhängig) ────────────┘
 | Teil | Vorgang | Status |
 |---|---|---|
 | T1 — Werkzeug: Herkunftstabelle maschinell vorbefüllen | **#285** | wird jetzt gebaut |
-| T2 — Pflichtsektion im Prüfprotokoll + Gate (inkl. Blindstelle 3) | **#286** | nach #285 und #278 |
+| T2 — Pflichtsektion im Prüfprotokoll + Gate (inkl. Blindstelle 3) | **#286** | umgesetzt (edfb9cd) |
 | T3 + T4 — Symmetrieprüfung und spec-freie Prüfrunde | **#287** | zurückgestellt bis nach der Gegenprobe |
 | T5 — „übersprungen ≠ grün" | Kommentar an **#275** | dort eingeplant |
 | T6 — Gegenprobe c36fec6 + Doku | bleibt in **#273** | Abnahme des Epics |
