@@ -167,6 +167,23 @@ def test_whitelist_mit_geschuetztem_pfad_ohne_schreibzugriff_bleibt_erlaubt(tmp_
     )
 
 
+def test_geschuetzter_pfad_im_whitelist_segment_zaehlt_nicht_fuer_3b(tmp_path):
+    """AC-21: geschuetzter Pfad nur im whitelisted Segment -> kein 3b-Block;
+    nennt ein NICHT-whitelisted Segment den State -> Block."""
+    sandbox = _sandbox(tmp_path)
+    hooks = sandbox / ".claude" / "hooks"
+    hooks.mkdir(parents=True)
+    (hooks / "workflow.py").write_text("# sandbox\n")
+    _assert_allowed(
+        ["python3 .claude/hooks/workflow.py status 2>&1 | tee out.log",
+         "python3 .claude/hooks/workflow.py status > /tmp/s.txt && cat /tmp/s.txt"],
+        sandbox, "AC-21 erlaubt",
+    )
+    wrong = _expect([f"python3 .claude/hooks/workflow.py status && echo x > {WF_PATH}"],
+                    sandbox, 2, "Direct state file manipulation")
+    assert not wrong, "AC-21: State-Schreibzugriff durchgelassen:\n" + "\n".join(wrong)
+
+
 # --------------------------------------------------------------------- #
 # AC-8 bis AC-10: verschachtelte Shells (#298)
 # --------------------------------------------------------------------- #
