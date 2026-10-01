@@ -145,7 +145,7 @@ Your output MUST end with one of these verdicts:
 VERDICT: VERIFIED
 ═══════════════════════════════════════
 The implementation withstood adversary testing.
-Tests: X passed, 0 failed
+Tests: X passed, 0 failed, Z übersprungen
 Edge cases: All checked, none broken
 Regressions: None found
 Checklist: N/N points proven
@@ -175,9 +175,11 @@ Ambiguous findings (require human review):
   F003: [description] — cannot determine if spec violation or intended behavior
 
 Proven points: N/M
-Tests: X passed, 0 failed
+Tests: X passed, 0 failed, Z übersprungen
 Recommendation: User should review F003 before proceeding
 ```
+
+Ein Lauf mit 0 bestanden und ≥ 1 übersprungen ist nicht grün — kein VERIFIED auf dieser Grundlage.
 
 **When to use AMBIGUOUS:**
 - Test passes but behavior seems inconsistent with spec intent

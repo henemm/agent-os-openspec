@@ -98,7 +98,7 @@ def _find_pytest_summary_line(content: str) -> str | None:
         r"(?:in\s+[\d.]+s\s*(?:\(\d+:\d{2}:\d{2}\)\s*)?"
         r"|\(\d+(?:\.\d+)?(?:ms|s|m|h)\)\s*)?=*\s*$"
     )
-    status_re = re.compile(r"\d+\s+(passed|failed|error)")
+    status_re = re.compile(r"\d+\s+(passed|failed|error|skipped)")
     # Terminal-Runner (Playwright/farbiges pytest) schreiben ANSI-Steuercodes
     # vor die Summary-Zeile; die werden pro Zeile entfernt (hook_utils.strip_ansi,
     # #275), bevor die full-line-Verankerung greift.
@@ -108,6 +108,40 @@ def _find_pytest_summary_line(content: str) -> str | None:
         if line_re.match(line) and status_re.search(line):
             last = line
     return last
+
+
+def _not_passed_skipped(skipped: int) -> tuple[bool, str]:
+    """#273-Regel: null bestanden + Uebersprungenes ist kein Erfolg."""
+    return False, f"Tests NOT PASSED: 0 passed, {skipped} skipped (nichts bestanden)"
+
+
+def _evaluate_executed(total: int, skipped: int, failures: int) -> tuple[bool, str]:
+    """Wertet die letzte 'Executed …'-Zeile aus (#275)."""
+    if failures > 0:
+        return False, f"Tests FAILED: {failures}/{total} failures"
+    if total == 0:
+        return False, "Tests NOT PASSED: 0 tests executed (nichts gelaufen)"
+    if skipped > 0 and total - skipped - failures <= 0:
+        return _not_passed_skipped(skipped)
+    suffix = f" ({skipped} skipped)" if skipped else ""
+    return True, f"Tests PASSED: {total} tests, 0 failures{suffix}"
+
+
+def _evaluate_pytest_summary(line: str) -> "tuple[bool, str] | None":
+    """Wertet eine pytest-Summary-Zeile aus; None = nicht bestimmbar."""
+    pytest_fail = re.search(r"(\d+)\s+failed", line)
+    pytest_pass = re.search(r"(\d+)\s+passed", line)
+    pytest_skip = re.search(r"(\d+)\s+skipped", line)
+    if pytest_fail and int(pytest_fail.group(1)) > 0:
+        return False, f"Tests FAILED: {pytest_fail.group(1)} failed"
+    n_pass = int(pytest_pass.group(1)) if pytest_pass else 0
+    n_skip = int(pytest_skip.group(1)) if pytest_skip else 0
+    if n_pass == 0 and n_skip > 0:
+        return _not_passed_skipped(n_skip)
+    if pytest_pass or pytest_fail:
+        suffix = f" ({n_skip} skipped)" if n_skip else ""
+        return True, f"Tests PASSED: {n_pass} passed{suffix}"
+    return None
 
 
 def validate_test_output(filepath: str, infra: bool = False) -> tuple[bool, str]:
@@ -136,12 +170,11 @@ def validate_test_output(filepath: str, infra: bool = False) -> tuple[bool, str]
     # Pattern: "Executed N tests, with [S tests skipped and ]M failures" (#275).
     # Nur die LETZTE Zeile zaehlt: sie ist die Gesamtsumme, Summieren ueber
     # Suite-Zeilen wuerde die Zahlen vervielfachen.
+    # Kehrt bei vorhandener Executed-Zeile IMMER zurueck — der spaetere
+    # 'TEST SUCCEEDED'-Fallback kann die skipped-Regel daher nicht aushebeln.
     exec_matches = _EXECUTED_RE.findall(content)
     if exec_matches:
-        total, _skipped, failures = (int(x or 0) for x in exec_matches[-1])
-        if failures > 0:
-            return False, f"Tests FAILED: {failures}/{total} failures"
-        return True, f"Tests PASSED: {total} tests, 0 failures"
+        return _evaluate_executed(*(int(x or 0) for x in exec_matches[-1]))
 
     # Pattern: pytest summary line ("N passed, M failed, ...").
     # Bound to the real summary line (not a whole-text scan) and check the
@@ -149,13 +182,9 @@ def validate_test_output(filepath: str, infra: bool = False) -> tuple[bool, str]
     # quoted "N failed"/"N passed" outside the summary can't flip the verdict.
     summary_line = _find_pytest_summary_line(content)
     if summary_line is not None:
-        pytest_fail = re.search(r"(\d+)\s+failed", summary_line)
-        pytest_pass = re.search(r"(\d+)\s+passed", summary_line)
-        if pytest_fail and int(pytest_fail.group(1)) > 0:
-            return False, f"Tests FAILED: {pytest_fail.group(1)} failed"
-        if pytest_pass or pytest_fail:
-            n = pytest_pass.group(1) if pytest_pass else "0"
-            return True, f"Tests PASSED: {n} passed"
+        verdict = _evaluate_pytest_summary(summary_line)
+        if verdict is not None:
+            return verdict
 
     # Pattern: go test — '--- PASS:'/'--- FAIL:' je Test, 'ok <pkg> <dauer>'/
     # 'FAIL <pkg>' je Paket (Issue #76). Greift nur, wenn keine pytest-Summary
