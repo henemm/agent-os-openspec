@@ -50,7 +50,7 @@ Neue Prüfung, angewandt auf die **erste Zeile** der Nachricht (Zeilenlogik und 
 1. **Klammer-Einschübe entfernen.** Text in runden Klammern (auch unvollständig, wenn die Zeile vor `)` endet) gilt als Nebenbemerkung und wird für alle folgenden Schritte ignoriert. Dort steht der Nachsatz des Realfalls "approved (oder kann ich nicht einfach selbst weitermachen?)".
 2. **Vorspann.** Führende Zeichen, die weder Buchstabe noch Ziffer sind (Anführungszeichen, `*`, `>`, Emojis), werden ignoriert. Danach darf höchstens EIN Füllwort aus {ja, ok, okay, yes, klar, danke, super, top} vor der Phrase stehen. Eine führende Ziffer ("1.", "1)") wird NICHT ignoriert: ein Listenpunkt einer Diskussion ist keine Freigabe.
 3. **Phrase führt.** Danach muss eine Phrase der Liste beginnen (Wortgrenzen-Regel wie bisher). Bei mehreren passenden Phrasen gewinnt die längste ("ich genehmige" vor "genehmige").
-4. **Kopfsatz.** Der Text vom Phrasenende bis zum ersten Klauselzeichen (`, . ; : ! ? …`, " - ", " — " oder Zeilenende) darf höchstens **2 Zusatzwörter** enthalten, bei **override 0**. Wörter sind `\w+`-Token (Umlaute zählen mit, Zeichen und Emojis nicht).
+4. **Kopfsatz.** Der Text vom Phrasenende bis zum ersten Klauselzeichen (`, . ; : ! ? …`, " - ", " — " oder Zeilenende) darf höchstens **2 Zusatzwörter** enthalten. Bei override gilt keine Kopfsatz-Regel: die Phrase muss allein stehen, ohne jedes Zusatzwort bis Zeilenende (`override, danke` wirkt nicht). Wörter sind `\w+`-Token (Umlaute zählen mit, Zeichen und Emojis nicht).
 5. **Kein Fragezeichen** außerhalb von Klammern in der Zeile.
 6. **Keine Negation oder Einschränkung** außerhalb von Klammern in der Zeile: nicht, kein, keine, keinen, not, no, aber, but, warte, wait.
 
