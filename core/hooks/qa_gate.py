@@ -19,7 +19,7 @@ Usage:
 Exit Codes: 0 = VERIFIED or AMBIGUOUS, 1 = BROKEN/FAILED
 """
 
-from hook_utils import setup_path
+from hook_utils import setup_path, strip_ansi
 setup_path()
 
 import json
@@ -47,6 +47,11 @@ TEST_PATTERNS = [
 _GO_TEST_RE = re.compile(r"(?m)^--- (PASS|FAIL|SKIP): ")
 _GO_PKG_OK_RE = re.compile(r"(?m)^ok\s+\S+\s+(?:[\d.]+s|\(cached\))")
 _GO_PKG_FAIL_RE = re.compile(r"(?m)^FAIL\s+\S+")
+
+# xcodebuild/XCTest-Summary, auch in der Apple-Variante mit Uebersprungenen (#275).
+_EXECUTED_RE = re.compile(
+    r"Executed (\d+) tests?, with (?:(\d+) tests? skipped and )?(\d+) failures?"
+)
 
 
 def _set_verdict(verdict: str) -> None:
@@ -95,12 +100,11 @@ def _find_pytest_summary_line(content: str) -> str | None:
     )
     status_re = re.compile(r"\d+\s+(passed|failed|error)")
     # Terminal-Runner (Playwright/farbiges pytest) schreiben ANSI-Steuercodes
-    # vor die Summary-Zeile; die werden pro Zeile entfernt, bevor die
-    # full-line-Verankerung greift.
-    ansi_re = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+    # vor die Summary-Zeile; die werden pro Zeile entfernt (hook_utils.strip_ansi,
+    # #275), bevor die full-line-Verankerung greift.
     last = None
     for raw in content.splitlines():
-        line = ansi_re.sub("", raw)
+        line = strip_ansi(raw)
         if line_re.match(line) and status_re.search(line):
             last = line
     return last
@@ -121,7 +125,7 @@ def validate_test_output(filepath: str, infra: bool = False) -> tuple[bool, str]
     if size < 100:
         return False, f"Test output too small ({size} bytes). Looks fabricated."
 
-    content = path.read_text(errors="replace")
+    content = strip_ansi(path.read_text(errors="replace"))
 
     # Must contain test patterns
     matches = sum(1 for p in TEST_PATTERNS if re.search(p, content, re.IGNORECASE))
@@ -129,11 +133,12 @@ def validate_test_output(filepath: str, infra: bool = False) -> tuple[bool, str]
         return False, f"Doesn't look like test output (matched {matches}/{len(TEST_PATTERNS)} patterns)."
 
     # Check for failures via common patterns
-    # Pattern: "Executed N tests, with M failures"
-    exec_matches = re.findall(r"Executed (\d+) tests?, with (\d+) failures?", content)
+    # Pattern: "Executed N tests, with [S tests skipped and ]M failures" (#275).
+    # Nur die LETZTE Zeile zaehlt: sie ist die Gesamtsumme, Summieren ueber
+    # Suite-Zeilen wuerde die Zahlen vervielfachen.
+    exec_matches = _EXECUTED_RE.findall(content)
     if exec_matches:
-        total = sum(int(m[0]) for m in exec_matches)
-        failures = sum(int(m[1]) for m in exec_matches)
+        total, _skipped, failures = (int(x or 0) for x in exec_matches[-1])
         if failures > 0:
             return False, f"Tests FAILED: {failures}/{total} failures"
         return True, f"Tests PASSED: {total} tests, 0 failures"
