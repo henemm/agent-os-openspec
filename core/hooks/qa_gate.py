@@ -132,12 +132,17 @@ def _evaluate_pytest_summary(line: str) -> "tuple[bool, str] | None":
     pytest_fail = re.search(r"(\d+)\s+failed", line)
     pytest_pass = re.search(r"(\d+)\s+passed", line)
     pytest_skip = re.search(r"(\d+)\s+skipped", line)
+    pytest_err = re.search(r"(\d+)\s+errors?\b", line)
     if pytest_fail and int(pytest_fail.group(1)) > 0:
         return False, f"Tests FAILED: {pytest_fail.group(1)} failed"
+    if pytest_err and int(pytest_err.group(1)) > 0:
+        return False, f"Tests FAILED: {pytest_err.group(1)} error(s)"
     n_pass = int(pytest_pass.group(1)) if pytest_pass else 0
     n_skip = int(pytest_skip.group(1)) if pytest_skip else 0
     if n_pass == 0 and n_skip > 0:
         return _not_passed_skipped(n_skip)
+    if (pytest_pass or pytest_fail) and n_pass == 0:
+        return False, "Tests NOT PASSED: 0 passed (nichts bestanden)"
     if pytest_pass or pytest_fail:
         suffix = f" ({n_skip} skipped)" if n_skip else ""
         return True, f"Tests PASSED: {n_pass} passed{suffix}"
@@ -168,13 +173,17 @@ def validate_test_output(filepath: str, infra: bool = False) -> tuple[bool, str]
 
     # Check for failures via common patterns
     # Pattern: "Executed N tests, with [S tests skipped and ]M failures" (#275).
-    # Nur die LETZTE Zeile zaehlt: sie ist die Gesamtsumme, Summieren ueber
-    # Suite-Zeilen wuerde die Zahlen vervielfachen.
+    # Die Zahlen der Meldung stammen aus der LETZTEN Zeile (Gesamtsumme;
+    # Summieren ueber Suite-Zeilen wuerde sie vervielfachen). Hat aber
+    # IRGENDEINE Zeile failures > 0, ist der Lauf rot: ist die letzte Zeile
+    # gruen, wird die erste rote Zeile gewertet.
     # Kehrt bei vorhandener Executed-Zeile IMMER zurueck — der spaetere
     # 'TEST SUCCEEDED'-Fallback kann die skipped-Regel daher nicht aushebeln.
-    exec_matches = _EXECUTED_RE.findall(content)
-    if exec_matches:
-        return _evaluate_executed(*(int(x or 0) for x in exec_matches[-1]))
+    exec_rows = [tuple(int(x or 0) for x in m) for m in _EXECUTED_RE.findall(content)]
+    if exec_rows:
+        red_rows = [r for r in exec_rows if r[2] > 0]
+        row = red_rows[0] if red_rows and exec_rows[-1][2] == 0 else exec_rows[-1]
+        return _evaluate_executed(*row)
 
     # Pattern: pytest summary line ("N passed, M failed, ...").
     # Bound to the real summary line (not a whole-text scan) and check the

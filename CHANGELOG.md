@@ -65,7 +65,9 @@ Scoping-Limit (PO-Entscheidung 2026-10-01), zwei Commits — Erkennung, dann ski
   `TEST FAILED`, `Test run with … failed`, `N≥1 failures`, `EXIT≥1` (`0 failures`/`EXIT=0` öffnen
   nichts). Ein Artefakt nur mit Übersprungenem bleibt abgewiesen.
 - `core/hooks/qa_gate.py`: eigenes ANSI-Muster entfällt; `Executed`-Zeile auch mit `skipped`, nur
-  die letzte (Gesamt-)Zeile zählt, Fehlschlag meldet `M/N`. Neue Regel: 0 bestanden + ≥ 1
+  die letzte (Gesamt-)Zeile liefert die Zahlen, Fehlschlag meldet `M/N` — bei mehreren
+  `Executed`-Zeilen macht jede rote Zeile den Lauf rot, auch vor einer grünen. pytest-Summary mit
+  `N error(s)` oder `0 passed` ist nie grün. Neue Regel: 0 bestanden + ≥ 1
   übersprungen bzw. `Executed 0 tests` ist nicht grün — auch nicht über `** TEST SUCCEEDED **`
   oder eine pytest-Summary `0 passed, 5 skipped`. Gemischte Läufe bleiben grün und nennen die Zahl.
 - `core/hooks/post_bash.py`: Fail-Guard auf bereinigtem Text, erkennt `✖`/`❌`/`N≥1 failures`;

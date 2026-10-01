@@ -451,3 +451,73 @@ def test_executed_without_skipped_unchanged_green_and_red(tmp_path):
     ok, msg = _qa(tmp_path, red, "red.txt")
     assert ok is False, msg
     assert "Tests FAILED" in msg and "2/5" in msg, msg
+
+
+# --- Adversary F001: frühere rote Executed-Zeile wird nicht maskiert --------
+
+def test_executed_earlier_red_line_not_masked_by_later_green(tmp_path):
+    red_then_green = (
+        "Test Suite 'SuiteA' started at 2026-10-01 12:00:00.000.\n"
+        "Executed 5 tests, with 2 failures (2 unexpected) in 0.1 (0.1) seconds\n"
+        "Test Suite 'SuiteB' started at 2026-10-01 12:00:00.100.\n"
+        "Executed 3 tests, with 0 failures (0 unexpected) in 0.1 (0.1) seconds\n"
+    )
+    ok, msg = _qa(tmp_path, red_then_green, "red_green.txt")
+    assert ok is False, msg
+    assert "Tests FAILED" in msg and "2/5" in msg, msg
+
+    ok, msg = _qa(tmp_path, red_then_green + "** TEST SUCCEEDED **\n", "red_green_ok.txt")
+    assert ok is False, msg
+    assert "Tests FAILED" in msg, msg
+
+    green_then_red = (
+        "Test Suite 'SuiteA' started at 2026-10-01 12:00:00.000.\n"
+        "Executed 3 tests, with 0 failures (0 unexpected) in 0.1 (0.1) seconds\n"
+        "Test Suite 'SuiteB' started at 2026-10-01 12:00:00.100.\n"
+        "Executed 5 tests, with 2 failures (2 unexpected) in 0.1 (0.1) seconds\n"
+        "** TEST SUCCEEDED **\n"
+    )
+    ok, msg = _qa(tmp_path, green_then_red, "green_red.txt")
+    assert ok is False, msg
+    assert "Tests FAILED" in msg and "2/5" in msg, msg
+
+
+# --- Adversary F002: pytest-errors / 0 passed nie grün ----------------------
+
+def _pytest_run(summary: str, errors_block: bool = True) -> str:
+    head = (
+        "============================= test session starts ==============================\n"
+        "platform darwin -- Python 3.12.4, pytest-8.3.3, pluggy-1.5.0\n"
+        "rootdir: /Users/dev/project\n"
+        "collected 2 items / 1 error\n\n"
+    )
+    block = (
+        "==================================== ERRORS ====================================\n"
+        "_____________________ ERROR collecting tests/test_broken.py _____________________\n"
+        "ImportError while importing test module 'tests/test_broken.py'.\n"
+        "E   ModuleNotFoundError: No module named 'missing_dep'\n"
+        "=========================== short test summary info ============================\n"
+        "ERROR tests/test_broken.py\n"
+    ) if errors_block else ""
+    return head + block + summary + "\n"
+
+
+def test_pytest_errors_or_zero_passed_never_green(tmp_path):
+    cases = {
+        "zero_passed_one_error": "========================= 0 passed, 1 error in 0.10s ==========================",
+        "passed_skipped_error": "=================== 1 passed, 1 skipped, 1 error in 0.12s ====================",
+        "passed_two_errors": "======================== 3 passed, 2 errors in 0.30s =========================",
+    }
+    for label, summary in cases.items():
+        ok, msg = _qa(tmp_path, _pytest_run(summary), f"{label}.txt")
+        assert ok is False, f"{label}: {msg}"
+        assert "Tests FAILED" in msg, f"{label}: {msg}"
+
+    # Reiner Sammelfehler ohne passed/failed-Wort: darf ebenfalls nie grün sein.
+    lone = "=============================== 1 error in 0.10s ==============================="
+    ok, msg = _qa(tmp_path, _pytest_run(lone), "one_error.txt")
+    assert ok is False, f"1 error: {msg}"
+
+    zero = "============================== 0 passed in 0.01s ==============================="
+    ok, msg = _qa(tmp_path, _pytest_run(zero, errors_block=False), "zero.txt")
+    assert ok is False, f"0 passed: {msg}"
