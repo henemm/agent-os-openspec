@@ -153,7 +153,7 @@ between.
 
 | Command | Phase | Description |
 |---------|-------|-------------|
-| `/00-intake` | — | Classify a task (Fast Track / Standard / Full Process) — always run first |
+| `/00-intake` | — | Classify a task (Fast Track / full process) — always run first |
 | `/00-bug` | — | Analyse a bug (Analysis-First, creates GitHub Issue) |
 | `/01-feature` | — | Plan a new feature (creates GitHub Issue) |
 | `/10-context` | 1 | Collect relevant context |
@@ -235,7 +235,7 @@ Template: `templates/spec_template.md`
 
 ## CI Spec Gate
 
-Local hooks can be disabled, edited, or bypassed with Bash, and `.claude/workflows/` — where the phase state lives — is gitignored, so none of that state reaches CI. `scripts/ci_spec_gate.py` runs server-side on every pull request instead, checking only what's actually committed: a spec exists for the code change and is complete (scope, DoD, acceptance criteria, test plan), and — for a Standard/Full-Process spec — a matching PO-briefing exists and is still current, bound to the spec by a SHA-256 stamp. `setup.py` installs the script and its workflow (`.github/workflows/spec-gate.yml`) into consumer projects.
+Local hooks can be disabled, edited, or bypassed with Bash, and `.claude/workflows/` — where the phase state lives — is gitignored, so none of that state reaches CI. `scripts/ci_spec_gate.py` runs server-side on every pull request instead, checking only what's actually committed: a spec exists for the code change and is complete (scope, DoD, acceptance criteria, test plan), and — for a full-process spec — a matching PO-briefing exists and is still current, bound to the spec by a SHA-256 stamp. `setup.py` installs the script and its workflow (`.github/workflows/spec-gate.yml`) into consumer projects.
 
 Skip a single PR with a `Spec-Gate: skip <reason>` commit trailer (visible in the history); skip the whole project with `ci_spec_gate.enabled: false` in `config.yaml`.
 

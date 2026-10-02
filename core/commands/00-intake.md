@@ -14,8 +14,14 @@ Bewerte die Aufgabe anhand von 3 Kriterien:
 | **Unsicherheit** | Bekanntes Pattern, vertrauter Code | Teilweise bekannt | Neue Technologie, unbekannter Bereich |
 
 **Summe 0**: Fast Track (`feature-fast`) — Phasen 3→4→6→8
-**Summe 1–3**: Standard (`feature`) — Phasen 1+2→3→4→5→6→7→8
-**Summe 4–6**: Full Process (`feature`) — alle Phasen, volle Tiefe, 2+ Adversary-Runden
+**Summe ≥ 1**: Voller Prozess (`feature`) — alle Phasen 1→8, Adversary mit mindestens 2 Dialog-Runden
+(`MIN_ROUNDS` in `adversary_dialog.py`)
+
+Der Workflow-State kennt genau diese zwei Stufen (`feature-fast`, `feature`). Die **Tiefe** im vollen
+Prozess richtet sich nach der Summe — das ist eine Anweisung, kein Zustand im State (#254):
+
+- Summe 1–3: Kontext und Analyse kurz in einem Durchgang (1x Explore)
+- Summe 4–6: Kontext und Analyse getrennt, Analyse mit 3x Haiku parallel
 
 ## Deine Aufgaben
 
@@ -74,43 +80,37 @@ export OPENSPEC_ACTIVE_WORKFLOW=[name]
 ```
 → Weiter mit `/30-write-spec` (Mini-Spec-Format, siehe unten)
 
-**Standard Track:**
+**Voller Prozess:**
 ```bash
 python3 .claude/hooks/workflow.py start [name] --type feature
 export OPENSPEC_ACTIVE_WORKFLOW=[name]
 ```
-→ Weiter mit `/10-context` (Context + Analyse in einem Durchgang kombinieren)
-
-**Full Process:**
-```bash
-python3 .claude/hooks/workflow.py start [name] --type feature
-export OPENSPEC_ACTIVE_WORKFLOW=[name]
-```
-→ Weiter mit `/10-context`, dann `/20-analyse` (getrennt, 3x parallele Agenten), dann `/30-write-spec`
+→ Summe 1–3: weiter mit `/10-context` (Context + Analyse in einem Durchgang kombinieren)
+→ Summe 4–6: weiter mit `/10-context`, dann `/20-analyse` (getrennt, 3x parallele Agenten), dann `/30-write-spec`
 
 ## Modell-Empfehlung
 
-| Track | Hauptkontext | Begründung |
+| Stufe | Hauptkontext | Begründung |
 |-------|-------------|-----------|
 | Fast Track | **Sonnet** | Bekannte Aufgabe, kein komplexes Reasoning nötig |
-| Standard | **Sonnet** | Kreativ/analytisch aber gut definiert — Kosten/Qualitäts-Optimum |
-| Full Process | **Opus** | Hohe Komplexität, hoher Einsatz, potenziell Neuland — Mehrpreis lohnt im Haupt-Reasoning-Loop |
+| Voller Prozess, Summe 1–3 | **Sonnet** | Kreativ/analytisch aber gut definiert — Kosten/Qualitäts-Optimum |
+| Voller Prozess, Summe 4–6 | **Opus** | Hohe Komplexität, hoher Einsatz, potenziell Neuland — Mehrpreis lohnt im Haupt-Reasoning-Loop |
 
 Die Modell-Wahl gilt für den **Hauptkontext** (die laufende Claude-Session).
 Sub-Agenten haben eigene Modelle (Haiku für mechanische Tasks, Sonnet für Analyse/Specs) — das bleibt unabhängig vom Track.
 
 Modell wechseln: `/model` in der Claude-Code-Session oder beim Start `claude --model claude-opus-4-8`.
 
-## Track-Unterschiede
+## Unterschiede nach Stufe und Tiefe
 
-| Phase | Fast Track | Standard | Full Process |
+| Phase | Fast Track | Voller Prozess, Summe 1–3 | Voller Prozess, Summe 4–6 |
 |-------|-----------|---------|-------------|
 | Context-Doc | ❌ entfällt | ✅ kurz, inline | ✅ vollständig |
 | Analyse | ❌ entfällt | ✅ 1x Explore | ✅ 3x Haiku parallel |
 | Spec | ✅ Mini-Spec | ✅ Vollständig | ✅ Vollständig |
 | User-Freigabe | ✅ immer | ✅ immer | ✅ immer |
 | TDD RED | ❌ inline | ✅ Separate Phase | ✅ Separate Phase |
-| Adversary | ❌ entfällt | ✅ 1 Runde | ✅ 2+ Runden |
+| Adversary | ❌ entfällt | ✅ mindestens 2 Runden | ✅ mindestens 2 Runden |
 | Validierung | ✅ immer | ✅ immer | ✅ immer |
 
 ## Mini-Spec (Fast Track)

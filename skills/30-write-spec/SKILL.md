@@ -71,11 +71,11 @@ Schreibe direkt eine Mini-Spec im Hauptkontext:
   `config.yaml` → `po_briefing_gate.skip_fast_track: false`, dann gilt Step 3b auch im Fast Track.
 - Nach Freigabe: direkt zu `/50-implement`
 
-**Standard- und Full-Process-Workflows** folgen dem normalen Ablauf unten.
+**Workflows im vollen Prozess** folgen dem normalen Ablauf unten.
 
 ---
 
-## Prerequisites (Standard / Full Process)
+## Prerequisites (voller Prozess)
 
 - Analysis completed (`phase2_analyse`)
 - Context document exists with affected files list
