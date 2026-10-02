@@ -309,6 +309,58 @@ def _git_nested_subcommands(segment: "list[str]", depth: int) -> "list[str]":
     return found
 
 
+# Zeichen, nach denen ein `#` am Wortanfang steht (#319).
+# `)` fehlt bewusst: nach `$(..)` beginnt kein neues Wort, `$(..)#x` ist Text.
+_COMMENT_WORD_START = " \t\r\n;&|("
+
+
+def _strip_shell_comments(command: str) -> str:
+    """Shell-Kommentare entfernen, quote- und escape-bewusst (#319).
+
+    Ein `#` beginnt nur dann einen Kommentar, wenn es ausserhalb von `'…'`,
+    `"…"` und `$'…'` steht, nicht durch `\\` maskiert ist und am Wortanfang
+    steht (Textanfang oder nach Leerraum/Zeilenumbruch/`; & | (`). Der
+    Kommentar reicht bis zum Zeilenende, der Zeilenumbruch bleibt (er trennt
+    Befehle). `a#b`, `$#`, `${#x}`, `--grep=#1431`, `-m "x # y"` bleiben.
+    Endet der Scan in einem offenen Quote, kommt der Befehl UNVERAENDERT
+    zurueck (fail-open, Verhalten wie vorher).
+    """
+    out: "list[str]" = []
+    quote = None  # None, "'", '"' oder "$'"
+    word_start = True
+    i, n = 0, len(command)
+    while i < n:
+        ch = command[i]
+        if quote is not None:
+            if quote != "'" and ch == "\\":
+                out.append(command[i:i + 2])
+                i += 2
+                continue
+            if ch == quote[-1]:
+                quote = None
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "#" and word_start:
+            end = command.find("\n", i)
+            i = n if end == -1 else end
+            continue
+        cont = next((c for c in _GIT_LINE_CONTINUATIONS if command.startswith(c, i)), "")
+        if cont:  # Zeilenfortsetzung: aendert den Wortanfang nicht
+            out.append(cont)
+            i += len(cont)
+            continue
+        step = 2 if ch == "\\" or command.startswith("$'", i) else 1
+        if step == 2 and ch == "$":
+            quote = "$'"
+        elif ch in "'\"":
+            quote = ch
+        word_start = step == 1 and ch in _COMMENT_WORD_START
+        out.append(command[i:i + step])
+        i += step
+    return command if quote is not None else "".join(out)
+
+
 def _git_lex(command: str) -> "list[str] | None":
     """Tokenisieren, mit Shell-Trennern als EIGENE Token; None bei kaputten Quotes.
 
@@ -329,6 +381,8 @@ def _git_lex(command: str) -> "list[str] | None":
     `commenters` wird geleert, damit `#` wie bei `shlex.split()` normaler Text
     bleibt (sonst wuerde `git log --grep=#1431` abgeschnitten).
     """
+    # Erst Kommentare (enden am Zeilenende, auch nach `\`), dann Fortsetzungen.
+    command = _strip_shell_comments(command)
     for _continuation in _GIT_LINE_CONTINUATIONS:
         command = command.replace(_continuation, "")
     lexer = shlex.shlex(command, posix=True, punctuation_chars=_GIT_PUNCTUATION)

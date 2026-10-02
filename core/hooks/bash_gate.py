@@ -23,6 +23,7 @@ from hook_utils import (
     SECRETS_SENSITIVE_PATTERNS, SECRETS_ALWAYS_BLOCKED, SECRETS_FREETEXT_FLAGS as _SHARED_FREETEXT_FLAGS,
     git_subcommands, git_head_subcommands, is_git_subcommand, is_pure_git_command,
     framework_disabled, _git_segments, git_runs_foreign_code,
+    _git_lex, _is_git_redirect,
 )
 setup_path()
 
@@ -254,6 +255,75 @@ def _protected_outside_whitelist(scan_cmd: str, command: str) -> bool:
         _references_protected(shlex.join(seg)) and not _segment_whitelisted(seg, entries)
         for seg in segments
     )
+
+
+def _strip_leading_separators(token: str) -> str:
+    """Fuehrende Trenner vor einer Umleitung abschneiden (`;>` -> `>`).
+
+    Der Lexer verschmilzt `git status;>x` zu `;>`. `&>`, `&>>` und `>|`
+    bleiben erhalten; nur `&&` vorne ist ein Trenner, ein einzelnes `&` nicht.
+    """
+    tok = token.lstrip(";()|\n")
+    while tok.startswith("&&"):
+        tok = tok[2:].lstrip(";()|\n")
+    return tok
+
+
+def _redirects_to_protected(scan_cmd: str) -> bool:
+    """Leitet irgendein Segment (auch whitelisted) Ausgabe auf State/Marker um? (#316)
+
+    `git status > <state>`: der Pfad ist nur Umleitungsziel hinter einem
+    erlaubten Befehl. `>&N`, `>&-` und `/dev/null` sind kein Datei-Write.
+    Nicht zerlegbar -> False (fail-open, wie bisher).
+    """
+    tokens = _git_lex(scan_cmd)
+    if tokens is None:
+        return False
+    patterns = PROTECTED_FILE_PATTERNS + APPROVAL_MARKER_PATTERNS_FILENAME
+    for raw, target in zip(tokens, tokens[1:]):
+        tok = _strip_leading_separators(raw)
+        if not (_is_git_redirect(tok) and ">" in tok and "<" not in tok):
+            continue
+        if target == "/dev/null" or target == "-" or target.isdigit():
+            continue
+        if any(re.search(p, target) for p in patterns):
+            return True
+    return False
+
+
+def _cd_into_claude(segment: list) -> bool:
+    """Wechselt das Segment per cd/pushd in `.claude` oder `.claude/workflows`?
+
+    Nur dort liegen State-Dateien und Marker. `.claude/worktrees/<name>`,
+    `.claude/hooks` usw. zaehlen nicht — sonst blockt jede Arbeit im Worktree.
+    """
+    if not segment or segment[0] not in ("cd", "pushd"):
+        return False
+    args = [a for a in segment[1:] if not a.startswith("-")]
+    if not args:
+        return False
+    parts = [p for p in args[0].split("/") if p]
+    return any(
+        p == ".claude" and (i == len(parts) - 1 or parts[i + 1] == "workflows")
+        for i, p in enumerate(parts)
+    )
+
+
+def _cd_context_protected(scan_cmd: str) -> bool:
+    """Nach `cd .claude/…` gelten bloße `.json`-/Marker-Namen als geschuetzt (#316).
+
+    Nicht zerlegbar -> False (fail-open).
+    """
+    segments = _git_segments(scan_cmd)
+    if segments is None:
+        return False
+    patterns = [r"\.json\b"] + APPROVAL_MARKER_PATTERNS_FILENAME
+    in_claude = False
+    for seg in segments:
+        if in_claude and _matches_file_token(shlex.join(seg), patterns):
+            return True
+        in_claude = in_claude or _cd_into_claude(seg)
+    return False
 
 
 def _references_protected(command: str) -> bool:
@@ -678,6 +748,10 @@ def main():
     if workflow_enforced and _is_stop_locked():
         block("BLOCKED: Stop-lock active.")
 
+    # Umleitung auf State/Marker hinter einem erlaubten Befehl (#316): VOR dem
+    # Git-Schnellweg berechnen, sonst endet `git status > <state>` dort.
+    redirect_hit = workflow_enforced and _redirects_to_protected(scan_cmd)
+
     # 2. Git commands fast path
     # Tokenbasiert (Issue #1431). Die alte Form
     #   command.lstrip().startswith("git ") and "git commit" not in command
@@ -695,7 +769,7 @@ def main():
         and not git_runs_foreign_code(command)    # Shell-Alias, `-c core.pager=…` (#297)
     ):
         git_only = True  # fail-open: exakt das bisherige Verhalten
-    if git_only and not is_git_subcommand(command, "commit"):
+    if git_only and not is_git_subcommand(command, "commit") and not redirect_hit:
         allow()
 
     # 3a. Approval-/Erfolgs-Marker: deny by default, kein Bash-Weg erlaubt.
@@ -733,10 +807,16 @@ def main():
     # 3b. State-integrity: protected file + write indicator
     #     Ein Whitelist-Treffer ueberspringt NUR diesen Block, nicht 4/4b/5
     #     (#296: `git commit -m x -- <state>` darf das Commit-Gate nicht umgehen).
-    #     Gezaehlt werden nur geschuetzte Pfade in nicht-whitelisted Segmenten (2b).
-    if workflow_enforced and _protected_outside_whitelist(scan_cmd, command):
+    #     Gezaehlt werden nur geschuetzte Pfade in nicht-whitelisted Segmenten (2b),
+    #     dazu Umleitungsziele und bloße .json-Namen nach `cd .claude/…` (#316).
+    _state_msg = "BLOCKED: Direct state file manipulation. Use workflow.py CLI."
+    if redirect_hit:
+        block(_state_msg)
+    if workflow_enforced and (
+        _protected_outside_whitelist(scan_cmd, command) or _cd_context_protected(scan_cmd)
+    ):
         if _has_write_indicator(scan_cmd):
-            block("BLOCKED: Direct state file manipulation. Use workflow.py CLI.")
+            block(_state_msg)
 
     # 4. Secrets guard
     sensitive_patterns = config.get("secrets_guard", {}).get("sensitive_patterns", SENSITIVE_PATTERNS)

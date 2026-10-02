@@ -1,0 +1,18 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.14.6, pytest-9.1.1, pluggy-1.6.0 -- /private/tmp/claude-501/-Users-hem-Developer-agent-os-openspec--claude-worktrees-issue-299-teil-b/78fcc467-df9b-458a-abbc-a6a6989f7015/scratchpad/venv/bin/python3.14
+cachedir: .pytest_cache
+rootdir: /Users/hem/Developer/agent-os-openspec/.claude/worktrees/issue-299-teil-b
+collecting ... collected 10 items
+
+tests/test_bash_gate_erkennung_299_teil_c.py::test_cd_in_state_ordner_dann_schreiben_blockt PASSED [ 10%]
+tests/test_bash_gate_erkennung_299_teil_c.py::test_umleitung_hinter_erlaubtem_befehl_auf_state_blockt PASSED [ 20%]
+tests/test_bash_gate_erkennung_299_teil_c.py::test_apostroph_im_kommentar_hebt_schutz_nicht_auf PASSED [ 30%]
+tests/test_bash_gate_erkennung_299_teil_c.py::test_harmlose_kontrollfaelle_bleiben_frei PASSED [ 40%]
+tests/test_bash_gate_erkennung_299_teil_c.py::test_hash_ohne_kommentar_bleibt_unveraendert PASSED [ 50%]
+tests/test_bash_gate_erkennung_299_teil_c.py::test_unausgewogene_quotes_bleiben_unveraendert PASSED [ 60%]
+tests/test_bash_gate_erkennung_299_teil_c.py::test_cd_in_worktree_und_hooks_ordner_ist_kein_state_kontext PASSED [ 70%]
+tests/test_bash_gate_erkennung_299_teil_c.py::test_umleitung_direkt_hinter_trenner_blockt PASSED [ 80%]
+tests/test_bash_gate_erkennung_299_teil_c.py::test_kommentar_mit_backslash_am_ende_verschluckt_folgezeile_nicht PASSED [ 90%]
+tests/test_bash_gate_erkennung_299_teil_c.py::test_kommentarzeichen_hinter_klammer_ist_kein_kommentar PASSED [100%]
+
+============================== 10 passed in 2.90s ==============================

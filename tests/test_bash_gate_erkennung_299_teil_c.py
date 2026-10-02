@@ -104,3 +104,52 @@ def test_hash_ohne_kommentar_bleibt_unveraendert(tmp_path):
 def test_unausgewogene_quotes_bleiben_unveraendert():
     cmd = "echo 'abc # x"
     assert hook_utils._strip_shell_comments(cmd) == cmd
+
+
+# --- Adversary-Befunde F001-F004 --------------------------------------------------
+
+def _sub(tmp_path: Path, name: str) -> Path:
+    """Eigene Sandbox je Fehlerrichtung (eine Sandbox pro Verzeichnis)."""
+    path = tmp_path / name
+    path.mkdir()
+    return path
+
+
+def test_cd_in_worktree_und_hooks_ordner_ist_kein_state_kontext(tmp_path):
+    """F001: Worktrees liegen unter .claude/worktrees — dort ist kein State."""
+    _assert_allowed([
+        "cd .claude/worktrees/foo && sed -i s/a/b/ package.json",
+        "cd /Users/x/.claude/worktrees/issue-1 && cp a.json b.json",
+        "cd .claude/hooks && python3 -c \"open('a.json','w')\"",
+    ], _sandbox(_sub(tmp_path, "frei")), "F001 cd-Kontext")
+    _assert_blocked_as_state([
+        "cd .claude && echo x > settings.json",
+        f"cd .claude/workflows/ && echo x > {WF_FILE}",
+    ], _sub(tmp_path, "blockt"), "F001 cd-Kontext")
+
+
+def test_umleitung_direkt_hinter_trenner_blockt(tmp_path):
+    """F002: der Lexer verschmilzt `;>` / `)>` zu einem Token."""
+    _assert_blocked_as_state([
+        f"git status;>{WF_PATH}",
+        f"git status;>>{WF_PATH}",
+        f"(git status)>{WF_PATH}",
+        f"git status;>{MARKER}",
+    ], _sub(tmp_path, "blockt"), "F002 Umleitung hinter Trenner")
+    _assert_allowed([
+        "git status;>out.txt",
+        "git status;>/dev/null",
+    ], _sandbox(_sub(tmp_path, "frei")), "F002 Kontrolle")
+
+
+def test_kommentar_mit_backslash_am_ende_verschluckt_folgezeile_nicht(tmp_path):
+    """F003: ein Kommentar endet am Zeilenende, auch wenn er auf `\\` endet."""
+    _assert_blocked_as_state([
+        f"git status # c \\\nsed -i s/a/b/ {WF_PATH}",
+    ], tmp_path, "F003 Kommentar mit Backslash")
+
+
+def test_kommentarzeichen_hinter_klammer_ist_kein_kommentar():
+    """F004: nach `$(..)` beginnt kein Wort, `)#x` ist kein Kommentar."""
+    cmd = "echo $(echo a)#x; git commit -m x"
+    assert hook_utils._strip_shell_comments(cmd) == cmd
