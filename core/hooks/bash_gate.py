@@ -22,7 +22,7 @@ from hook_utils import (
     get_active_workflow_name, gate_diagnostics, strip_heredoc_bodies,
     SECRETS_SENSITIVE_PATTERNS, SECRETS_ALWAYS_BLOCKED, SECRETS_FREETEXT_FLAGS as _SHARED_FREETEXT_FLAGS,
     git_subcommands, git_head_subcommands, is_git_subcommand, is_pure_git_command,
-    framework_disabled, _git_segments,
+    framework_disabled, _git_segments, git_runs_foreign_code,
 )
 setup_path()
 
@@ -692,6 +692,7 @@ def main():
         and not git_subcommands(command)          # nicht zerlegbar (kaputte Quotes)
         and command.lstrip().startswith("git ")
         and "git commit" not in command
+        and not git_runs_foreign_code(command)    # Shell-Alias, `-c core.pager=…` (#297)
     ):
         git_only = True  # fail-open: exakt das bisherige Verhalten
     if git_only and not is_git_subcommand(command, "commit"):
