@@ -1,0 +1,151 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.14.6, pytest-9.1.1, pluggy-1.6.0 -- /private/tmp/claude-501/-Users-hem-Developer-agent-os-openspec--claude-worktrees-issue-299-teil-b/78fcc467-df9b-458a-abbc-a6a6989f7015/scratchpad/venv/bin/python3.14
+cachedir: .pytest_cache
+rootdir: /Users/hem/Developer/agent-os-openspec/.claude/worktrees/issue-299-teil-b
+collecting ... collected 6 items
+
+tests/test_bash_gate_erkennung_299_teil_c.py::test_cd_in_state_ordner_dann_schreiben_blockt FAILED [ 16%]
+tests/test_bash_gate_erkennung_299_teil_c.py::test_umleitung_hinter_erlaubtem_befehl_auf_state_blockt FAILED [ 33%]
+tests/test_bash_gate_erkennung_299_teil_c.py::test_apostroph_im_kommentar_hebt_schutz_nicht_auf FAILED [ 50%]
+tests/test_bash_gate_erkennung_299_teil_c.py::test_harmlose_kontrollfaelle_bleiben_frei PASSED [ 66%]
+tests/test_bash_gate_erkennung_299_teil_c.py::test_hash_ohne_kommentar_bleibt_unveraendert FAILED [ 83%]
+tests/test_bash_gate_erkennung_299_teil_c.py::test_unausgewogene_quotes_bleiben_unveraendert FAILED [100%]
+
+=================================== FAILURES ===================================
+________________ test_cd_in_state_ordner_dann_schreiben_blockt _________________
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-111/test_cd_in_state_ordner_dann_s0')
+
+    def test_cd_in_state_ordner_dann_schreiben_blockt(tmp_path):
+>       _assert_blocked_as_state([
+            f"cd .claude/workflows && echo x > {WF_FILE}",
+            f"pushd .claude/workflows && sed -i s/a/b/ {WF_FILE}",
+            f"cd .claude/workflows && python3 -c \"open('{WF_FILE}','w')\"",
+        ], tmp_path, "AC-1 cd-Kontext")
+
+tests/test_bash_gate_erkennung_299_teil_c.py:38: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cases = ['cd .claude/workflows && echo x > sandboxwf.json', 'pushd .claude/workflows && sed -i s/a/b/ sandboxwf.json', 'cd .claude/workflows && python3 -c "open(\'sandboxwf.json\',\'w\')"']
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-111/test_cd_in_state_ordner_dann_s0')
+issue = 'AC-1 cd-Kontext'
+
+    def _assert_blocked_as_state(cases, tmp_path: Path, issue: str):
+        wrong = _expect(cases, _sandbox(tmp_path), 2, STATE_MSG)
+>       assert not wrong, (
+            f"{issue}: Schreibzugriff auf den Workflow-State rutscht durch "
+            f"({len(wrong)}/{len(cases)}):\n" + "\n".join(wrong)
+        )
+E       AssertionError: AC-1 cd-Kontext: Schreibzugriff auf den Workflow-State rutscht durch (3/3):
+E           'cd .claude/workflows && echo x > sandboxwf.json': rc=0 (soll 2), stderr=''
+E           'pushd .claude/workflows && sed -i s/a/b/ sandboxwf.json': rc=0 (soll 2), stderr=''
+E           'cd .claude/workflows && python3 -c "open(\'sandboxwf.json\',\'w\')"': rc=0 (soll 2), stderr=''
+E       assert not ["  'cd .claude/workflows && echo x > sandboxwf.json': rc=0 (soll 2), stderr=''", "  'pushd .claude/workflows && sed -i s/a/b/ sandboxwf.json': rc=0 (soll 2), stderr=''", '  \'cd .claude/workflows && python3 -c "open(\\\'sandboxwf.json\\\',\\\'w\\\')"\': rc=0 (soll 2), stderr=\'\'']
+
+tests/test_bash_gate_erkennung_299_teil_c.py:29: AssertionError
+___________ test_umleitung_hinter_erlaubtem_befehl_auf_state_blockt ____________
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-111/test_umleitung_hinter_erlaubte0')
+
+    def test_umleitung_hinter_erlaubtem_befehl_auf_state_blockt(tmp_path):
+>       _assert_blocked_as_state([
+            f"git status > {WF_PATH}",
+            f"git status >> {WF_PATH}",
+            f"python3 .claude/hooks/workflow.py status > {WF_PATH}",
+            f"git status > {MARKER}",
+        ], tmp_path, "AC-2 Umleitung")
+
+tests/test_bash_gate_erkennung_299_teil_c.py:48: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cases = ['git status > .claude/workflows/sandboxwf.json', 'git status >> .claude/workflows/sandboxwf.json', 'python3 .claude/hooks/workflow.py status > .claude/workflows/sandboxwf.json', 'git status > .claude/user_approved_validation_x']
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-111/test_umleitung_hinter_erlaubte0')
+issue = 'AC-2 Umleitung'
+
+    def _assert_blocked_as_state(cases, tmp_path: Path, issue: str):
+        wrong = _expect(cases, _sandbox(tmp_path), 2, STATE_MSG)
+>       assert not wrong, (
+            f"{issue}: Schreibzugriff auf den Workflow-State rutscht durch "
+            f"({len(wrong)}/{len(cases)}):\n" + "\n".join(wrong)
+        )
+E       AssertionError: AC-2 Umleitung: Schreibzugriff auf den Workflow-State rutscht durch (4/4):
+E           'git status > .claude/workflows/sandboxwf.json': rc=0 (soll 2), stderr=''
+E           'git status >> .claude/workflows/sandboxwf.json': rc=0 (soll 2), stderr=''
+E           'python3 .claude/hooks/workflow.py status > .claude/workflows/sandboxwf.json': rc=0 (soll 2), stderr=''
+E           'git status > .claude/user_approved_validation_x': rc=0 (soll 2), stderr=''
+E       assert not ["  'git status > .claude/workflows/sandboxwf.json': rc=0 (soll 2), stderr=''", "  'git status >> .claude/workflows/sandboxwf.json': rc=0 (soll 2), stderr=''", "  'python3 .claude/hooks/workflow.py status > .claude/workflows/sandboxwf.json': rc=0 (soll 2), stderr=''", "  'git status > .claude/user_approved_validation_x': rc=0 (soll 2), stderr=''"]
+
+tests/test_bash_gate_erkennung_299_teil_c.py:29: AssertionError
+______________ test_apostroph_im_kommentar_hebt_schutz_nicht_auf _______________
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-111/test_apostroph_im_kommentar_he0')
+
+    def test_apostroph_im_kommentar_hebt_schutz_nicht_auf(tmp_path):
+>       _assert_blocked_as_state([
+            f"git status && sed -i s/a/b/ {WF_PATH} # don't",
+            f"git status && sed -i s/a/b/ {WF_PATH} # dont",
+        ], tmp_path, "AC-3 Kommentar")
+
+tests/test_bash_gate_erkennung_299_teil_c.py:59: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cases = ["git status && sed -i s/a/b/ .claude/workflows/sandboxwf.json # don't", 'git status && sed -i s/a/b/ .claude/workflows/sandboxwf.json # dont']
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-111/test_apostroph_im_kommentar_he0')
+issue = 'AC-3 Kommentar'
+
+    def _assert_blocked_as_state(cases, tmp_path: Path, issue: str):
+        wrong = _expect(cases, _sandbox(tmp_path), 2, STATE_MSG)
+>       assert not wrong, (
+            f"{issue}: Schreibzugriff auf den Workflow-State rutscht durch "
+            f"({len(wrong)}/{len(cases)}):\n" + "\n".join(wrong)
+        )
+E       AssertionError: AC-3 Kommentar: Schreibzugriff auf den Workflow-State rutscht durch (1/2):
+E           "git status && sed -i s/a/b/ .claude/workflows/sandboxwf.json # don't": rc=0 (soll 2), stderr=''
+E       assert not ['  "git status && sed -i s/a/b/ .claude/workflows/sandboxwf.json # don\'t": rc=0 (soll 2), stderr=\'\'']
+
+tests/test_bash_gate_erkennung_299_teil_c.py:29: AssertionError
+_________________ test_hash_ohne_kommentar_bleibt_unveraendert _________________
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-111/test_hash_ohne_kommentar_bleib0')
+
+    def test_hash_ohne_kommentar_bleibt_unveraendert(tmp_path):
+        wrong = _expect([
+            "git log --grep='#1431'",
+            "echo \"it's\" > out.txt",
+            "git status # don't panic",
+        ], _sandbox(tmp_path), 0)
+    
+        strip = getattr(hook_utils, "_strip_shell_comments", None)
+        if strip is None:
+            wrong.append("  hook_utils._strip_shell_comments fehlt")
+        else:
+            for cmd in ["a#b", "echo $#", "echo ${#x}", "git log --grep=#1431", 'git commit -m "x # y"']:
+                out = strip(cmd)
+                if out != cmd:
+                    wrong.append(f"  {cmd!r}: veraendert zu {out!r}")
+            out = strip("git status # don't")
+            if "don" in out:
+                wrong.append(f"  'git status # don't': Kommentar nicht entfernt ({out!r})")
+    
+>       assert not wrong, "AC-5:\n" + "\n".join(wrong)
+E       AssertionError: AC-5:
+E           hook_utils._strip_shell_comments fehlt
+E       assert not ['  hook_utils._strip_shell_comments fehlt']
+
+tests/test_bash_gate_erkennung_299_teil_c.py:99: AssertionError
+________________ test_unausgewogene_quotes_bleiben_unveraendert ________________
+
+    def test_unausgewogene_quotes_bleiben_unveraendert():
+        cmd = "echo 'abc # x"
+>       assert hook_utils._strip_shell_comments(cmd) == cmd
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'hook_utils' has no attribute '_strip_shell_comments'
+
+tests/test_bash_gate_erkennung_299_teil_c.py:106: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_bash_gate_erkennung_299_teil_c.py::test_cd_in_state_ordner_dann_schreiben_blockt
+FAILED tests/test_bash_gate_erkennung_299_teil_c.py::test_umleitung_hinter_erlaubtem_befehl_auf_state_blockt
+FAILED tests/test_bash_gate_erkennung_299_teil_c.py::test_apostroph_im_kommentar_hebt_schutz_nicht_auf
+FAILED tests/test_bash_gate_erkennung_299_teil_c.py::test_hash_ohne_kommentar_bleibt_unveraendert
+FAILED tests/test_bash_gate_erkennung_299_teil_c.py::test_unausgewogene_quotes_bleiben_unveraendert
+========================= 5 failed, 1 passed in 3.79s ==========================

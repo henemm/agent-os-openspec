@@ -18,6 +18,28 @@ stattdessen. Ohne Workflow oder vor der Freigabe bleibt der Override nötig, `.c
 
 ### Fixed
 
+**bash_gate: Restlücken der State-Integrity-Prüfung (#299 Teil C: #316, #319)**
+
+- **cd-Kontext (#316):** Nach `cd`/`pushd` nach `.claude` oder `.claude/workflows` gelten bloße
+  `.json`- und Marker-Namen als geschützt; `cd .claude/workflows && echo x > <wf>.json` (auch
+  `sed -i`, `python3 -c "open(…,'w')"`) blockt. `cd …`, `cd … && ls`, `cd … && cat <wf>.json`
+  bleiben frei. Abweichung von der Spec („Pfadkomponente `.claude`"): `.claude/worktrees/<name>`,
+  `.claude/hooks` usw. zählen bewusst nicht, sonst blockt jede `.json`-Arbeit im Worktree.
+- **Umleitungsziel hinter erlaubtem Befehl (#316):** `git status > <state>`,
+  `workflow.py status >> <state>`, `git status > <marker>` blocken — auch im Git-Schnellweg, der
+  solche Befehle vorher ungeprüft durchließ, und direkt hinter Trennern (`git status;><state>`,
+  `(git status)><state>`). `/dev/null`, `2>&1`, `| tee out.txt` bleiben frei.
+- **Apostroph im Kommentar (#319):** `hook_utils._strip_shell_comments` entfernt Shell-Kommentare
+  (quote-/escape-bewusst, nur `#` am Wortanfang, nicht nach `)`) vor der Zerlegung; `… # don't`
+  hebt den Whitelist-Schutz nicht mehr auf. Ein Kommentar endet am Zeilenende, auch wenn er auf
+  `\` endet. Bei unausgewogenen Quotes bleibt der Befehl unverändert.
+- Known Limitation: Env-Aliase über `GIT_CONFIG_COUNT`/`--config-env`/`GIT_CONFIG_PARAMETERS`
+  (#324) und das CI-Gate für den Adversary-Nachweis (#325) sind ausgelagert. Der cd-Kontext ist
+  textbasiert und bewusst breit: `cd .claude/workflows && cat x.json > /tmp/out.txt` blockt.
+
+Spec: `docs/specs/fix-299-bash-gate-erkennung-teil-c.md`. Tests:
+`tests/test_bash_gate_erkennung_299_teil_c.py`.
+
 **bash_gate: Aliase, fremder Code und Schreibweisen-Randfälle (#299 Teil B: #281, #297, #318)**
 
 - **#281:** Git-Aliase sind Commits: `git -c alias.ci=commit ci`, Repo-Aliase (eine einzige
