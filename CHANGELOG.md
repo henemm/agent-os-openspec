@@ -18,6 +18,21 @@ stattdessen. Ohne Workflow oder vor der Freigabe bleibt der Override nötig, `.c
 
 ### Fixed
 
+**Gate-Event-Log: Befehlsausschnitt und Version bei den Kern-Gates (#328, Folge von #181)**
+
+Die erste Auswertung echter Logs (3.291 Blockaden) zeigte `command_excerpt` bei `bash_gate`,
+`edit_gate`, `tdd_enforcement` und `post_implementation_gate` zu 100 % leer: Der Log-Helfer leitete
+das Tool-Input nur aus `CLAUDE_TOOL_INPUT` ab, Claude Code liefert es über stdin. Die Fehlalarm-Triage
+dieser Gates war damit unmöglich.
+
+- `hook_utils.get_tool_input()` merkt sich die stdin-Eingabe; `block()` nutzt sie als Fallback für
+  `tool` und `command_excerpt` (Reihenfolge: ausdrücklich übergeben → Umgebungsvariable → stdin).
+  An den Gates ändert sich nichts. `secret_egress_guard` loggt weiterhin ohne Inhalt.
+- Neues Feld `framework_version` je Ereignis (aus `.claude-plugin/plugin.json`; leer im Copy-Modus),
+  damit Auswertungen Fixes über die Zeit einer Version zuordnen können.
+- Tests: `tests/test_gate_event_excerpt_328.py` (stdin statt Umgebungsvariable, echter `edit_gate`).
+  Siehe `docs/specs/fast/fix-328-gate-log-excerpt.md`.
+
 **bash_gate: Restlücken der State-Integrity-Prüfung (#299 Teil C: #316, #319)**
 
 - **cd-Kontext (#316):** Nach `cd`/`pushd` nach `.claude` oder `.claude/workflows` gelten bloße
