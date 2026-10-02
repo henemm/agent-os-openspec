@@ -51,6 +51,25 @@ erkennt sie nicht (siehe „Known Limitations" der Spec).
 
 ### Fixed
 
+**bash_gate: Erkennungslücken der Commit-Gates geschlossen (Teil A von #299: #296, #298, #304, #284)**
+
+Gängige Schreibweisen umgingen bisher die Commit-Gates oder den Schutz der Workflow-Dateien.
+Siehe `docs/specs/fix-299-bash-gate-erkennung.md`.
+
+- `core/hooks/bash_gate.py`: Ein Whitelist-Treffer überspringt in Schritt 3b nur noch den
+  Block, nicht mehr Secrets- und Commit-Gates (`git commit -m x -- .claude/workflows/<wf>.json`
+  wird geprüft). Whitelisted ist ein Befehl nur, wenn JEDES Segment einen Eintrag trifft
+  (`git status && sed -i … <state>` wird geblockt); nicht zerlegbare Befehle wie bisher.
+  Schritt 3b zählt geschützte Pfade nur in nicht-whitelisted Segmenten
+  (`workflow.py status 2>&1 | tee out.log` bleibt erlaubt).
+  Die Rebase-Pflicht-Meldung rät zu `git rebase --autostash origin/main`, das bei
+  vorgemerkten Dateien gelingt (#284).
+- `core/hooks/hook_utils.py`: `bash -lc`, `sh -ec`, `bash --login -c`, `bash -o … -c`,
+  `--rcfile`/`--init-file` werden als verschachtelte Shell erkannt (#298). Umleitungen samt
+  Ziel und Ziffern-Präfix vor dem Unterbefehl werden übersprungen (`git >/dev/null commit`,
+  `git 2>&1 commit`); `>&`, `&>`, `&>>` sind keine Befehlstrenner mehr, `git status 2>&1`
+  gilt als reines git (#304). `--attr-source` nimmt einen Wert, `--exec-path` nicht mehr.
+
 **Freigabe: Einschränkungen in Folgezeilen und Bedingungswörter (#311, Befunde F001/F006/F007/F008 aus #277)**
 
 `go⏎erst die Doku` setzte eine GREEN-Freigabe, `approved⏎später` die Spec-Freigabe, und
