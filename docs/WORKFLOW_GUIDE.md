@@ -210,7 +210,9 @@ Läuft **bevor Claude einen Shell-Befehl ausführt**. Besonders relevant bei `gi
 
 ```
 1. Stop-Lock aktiv? → BLOCK
-2. Reiner git-Befehl (kein commit)? → ALLOW (Fast Path)
+2. Reiner git-Befehl (kein commit, auch nicht per Alias)? → ALLOW (Fast Path)
+   git-Aliase werden vorher aufgelöst (#281); Shell-Alias (`!…`) oder nicht
+   auflösbarer Unterbefehl → kein Fast Path, Prüfung wie bei git commit
 3. Versucht Workflow-State direkt zu manipulieren? → BLOCK
 4. Sensitive Datei + Output-Befehl? → BLOCK
 5. Hardcoded Credentials im Befehl? → BLOCK

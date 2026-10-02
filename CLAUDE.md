@@ -53,6 +53,7 @@ agent-os-openspec/
 │   │   ├── override_token.py            # Shared Override-Token Management (TTL, Multi-WF)
 │   │   ├── migrate_state.py             # v2 → v3 State-Migration
 │   │   ├── precondition_origins.py      # Eigenstaendiges CLI-Werkzeug (KEIN Hook/Gate, nicht in hooks.json): Herkunft von Testvorbedingungen einsammeln
+│   │   ├── git_alias.py                 # Hilfsmodul (KEIN Hook, nicht in hooks.json): loest git-Aliase fuer das Commit-Gate von bash_gate.py auf (#281)
 │   │   ├── hook_utils.py                # Shared Bootstrap (Imports, Parsing, Exit)
 │   │   └── config_loader.py             # Config-Loader (YAML + Local Overrides)
 │   ├── agents/              # Agent-Definitionen (Markdown)
@@ -437,6 +438,7 @@ python3 /path/to/agent-os-openspec/setup.py --version
 | `core/hooks/config_loader.py` | Config-Loader (YAML + Local Overrides) |
 | `core/hooks/adversary_dialog.py` | Adversary Dialog System (Spec-Checkliste, Tri-State Verdict) |
 | `core/hooks/precondition_origins.py` | Eigenstaendiges CLI-Werkzeug, KEIN Hook/Gate: sammelt per Regex Herkunft von Testvorbedingungen ein (Sprachprofile in `config.yaml`) |
+| `core/hooks/git_alias.py` | Hilfsmodul, KEIN Hook: loest git-Aliase fuer das Commit-Gate auf (Builtins nie nachgeschlagen, nicht Aufloesbares wird wie ein Commit geprueft, #281) |
 | `core/agents/fresh-eyes-inspector.md` | Unabhaengiger UI-Beobachter ohne Bug-Kontext |
 | `core/agents/po-briefer.md` | Unabhaengiges PO-Freigabe-Briefing (Spec vs. Ursprungsanfrage) |
 | `scripts/ci_spec_gate.py` | CI-Gate: prueft Spec + Briefing serverseitig im Pull Request |

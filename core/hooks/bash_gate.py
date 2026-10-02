@@ -22,7 +22,7 @@ from hook_utils import (
     get_active_workflow_name, gate_diagnostics, strip_heredoc_bodies,
     SECRETS_SENSITIVE_PATTERNS, SECRETS_ALWAYS_BLOCKED, SECRETS_FREETEXT_FLAGS as _SHARED_FREETEXT_FLAGS,
     git_subcommands, git_head_subcommands, is_git_subcommand, is_pure_git_command,
-    framework_disabled,
+    framework_disabled, _git_subcommand_after,
 )
 setup_path()
 
@@ -32,6 +32,7 @@ import re
 import shlex
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 # --- Defaults (overridable via config.yaml) ---
 
@@ -490,7 +491,7 @@ _COMMIT_VALUE_OPTS = {
 }
 
 
-def _commit_form(command: str) -> "tuple[bool, bool, bool, bool]":
+def _commit_form(command: str, view=None) -> "tuple[bool, bool, bool, bool]":
     """(-a/--all, Pfadangabe, begleitendes `git add`, --amend) des Commit-Aufrufs (#259 §3).
 
     Jedes Nicht-Options-Token der commit-Argumente, das kein Wert einer
@@ -499,9 +500,14 @@ def _commit_form(command: str) -> "tuple[bool, bool, bool, bool]":
     git akzeptiert), nie im Wert von `-m` & Co. (F101). Unsicherheit (nicht
     zerlegbar, kein direkter commit-Aufruf) ergibt (True, True, True, True) —
     die groessere Menge, nie die kleinere.
+    Alias-Sicht (#281 §9): Expansionen und Rumpf-Segmente zaehlen mit, `stage` wie `add`.
     """
     from hook_utils import _git_segments, _looks_like_git
-    commits = [seg[seg.index("commit") + 1:] for seg in (_git_segments(command) or [])
+    view, texts = view or _NO_VIEW, [command, *(view.shell_bodies if view else ())]
+    if view.unresolved or None in map(_git_segments, texts[1:]):  # unzerlegbarer Rumpf: groesste Menge (F010)
+        return True, True, True, True
+    segments = [s for t in texts for s in (_git_segments(t) or [])] + [list(t) for t in view.expansions]
+    commits = [seg[seg.index("commit") + 1:] for seg in segments
                if "commit" in seg and any(_looks_like_git(t) for t in seg[:seg.index("commit")])]
     if not commits:
         return True, True, True, True
@@ -527,10 +533,12 @@ def _commit_form(command: str) -> "tuple[bool, bool, bool, bool]":
                         break
             else:
                 pathspec = True
-    return all_files, pathspec, "add" in git_subcommands(command), amend
+    subs = [s for t in texts for s in git_subcommands(t)]
+    subs += [_git_subcommand_after(t, 1) for t in view.expansions]
+    return all_files, pathspec, bool({"add", "stage"} & set(subs)), amend
 
 
-def _commit_change_set(command: str) -> "tuple[list | None, list, str | None]":
+def _commit_change_set(command: str, view=None) -> "tuple[list | None, list, str | None]":
     """(Commit-Menge, teilweise gestagte Dateien, git-Fehler) — Code-Dateien, realpath-absolut.
 
     Commit-Menge (#259 §3), immer als Vereinigung mit dem Index (nie kleiner als er):
@@ -543,7 +551,7 @@ def _commit_change_set(command: str) -> "tuple[list | None, list, str | None]":
     from adversary_dialog import (
         DIFF_NAMES, ChangeSetError, code_files, git_code_files, git_names, git_toplevel, run_git,
     )
-    all_files, pathspec, with_add, amend = _commit_form(command)
+    all_files, pathspec, with_add, amend = _commit_form(command, view)
 
     def has(rev: str) -> bool:
         return run_git(["rev-parse", "--verify", "-q", rev], top, probe=True) is not None
@@ -570,7 +578,7 @@ def _commit_change_set(command: str) -> "tuple[list | None, list, str | None]":
     return sorted(set(files)), partial, None
 
 
-def _require_dialog_evidence(wf: dict, verdict: str, command: str) -> None:
+def _require_dialog_evidence(wf: dict, verdict: str, command: str, view=None) -> None:
     """VERIFIED bzw. AMBIGUOUS+Override zaehlen nur mit gueltigem Dialog-Artefakt (#253),
     das jede Code-Datei des entstehenden Commits bindet (#259).
 
@@ -585,7 +593,7 @@ def _require_dialog_evidence(wf: dict, verdict: str, command: str) -> None:
         from adversary_dialog import check_dialog_evidence, coverage_gate_enabled, display_path
         changed, partial, git_error = None, [], None
         if coverage_gate_enabled():
-            changed, partial, git_error = _commit_change_set(command)
+            changed, partial, git_error = _commit_change_set(command, view)
         reasons.append(git_error or check_dialog_evidence(wf, changed_files=changed))
         reasons += [
             f"teilweise gestagt: `{display_path(f)}` — geprüft wurde der Arbeitsbaum, committet "
@@ -615,6 +623,33 @@ def _require_dialog_evidence(wf: dict, verdict: str, command: str) -> None:
         "    workflow.py add-artifact adversary_dialog <pfad> \"Adversary Dialog Protokoll\" phase6b_adversary\n"
         "  " + gate_diagnostics(wf, verdict=verdict)
     )
+
+
+_NO_VIEW = SimpleNamespace(expansions=(), shell_bodies=(), unresolved=(), unresolved_subs=(), resolutions=())
+
+
+def _alias_view(command: str):
+    """Alias-Sicht (#281): ein Resolver-Aufruf, wirft nie; leer (_NO_VIEW) = altes Verhalten."""
+    if "git" not in re.sub(r"\\\r?\n|[\\'\"]", "", command):  # `g""it`, `g\it` sind fuer bash `git` (F001)
+        return _NO_VIEW
+    try:
+        import git_alias  # das Modul, nicht die Funktion: Tests patchen an einer Stelle
+    except ImportError as exc:
+        print(f"Hinweis: git_alias nicht importierbar ({exc}) — keine Alias-Auflösung (#281).", file=sys.stderr)
+        return _NO_VIEW
+    return git_alias.resolve_git_aliases(strip_heredoc_bodies(command))  # Heredoc-Prosa ist kein Befehl (F024)
+
+
+def _alias_notice(view) -> None:
+    """Meldungszeile(n), wenn der Commit nur ueber die Alias-Sicht erkannt wurde (#281 §12)."""
+    hits = [r for r in view.resolutions if "commit" in r.rsplit(" → ", 1)[-1]]
+    if hits or not view.unresolved:
+        print("Commit erkannt über Alias: " + "; ".join(hits or view.resolutions), file=sys.stderr)
+    if view.unresolved:
+        subs = ", ".join(f"git {s}" for s in view.unresolved_subs)
+        print(f"Unterbefehl nicht auflösbar ({'; '.join(view.unresolved)}): {subs} — wird wie ein Commit "
+              "geprüft. Ausweg: Unterbefehl ausschreiben (z. B. git commit statt git ci) oder den Aufruf "
+              "auftrennen.", file=sys.stderr)
 
 
 # --- Main ---
@@ -647,6 +682,8 @@ def main():
     if workflow_enforced and _is_stop_locked():
         block("BLOCKED: Stop-lock active.")
 
+    view = _alias_view(command)  # #281: genau einmal, nach dem Stop-Lock; leer = wie bisher
+
     # 2. Git commands fast path
     # Tokenbasiert (Issue #1431). Die alte Form
     #   command.lstrip().startswith("git ") and "git commit" not in command
@@ -655,16 +692,22 @@ def main():
     # Gates; und `git status && touch <freigabe-marker>` beginnt zwar mit "git ",
     # ist aber genau der Angriffsvektor, den Abschnitt 3a abwehren soll.
     # Der Fast Path greift jetzt nur, wenn JEDES Segment ein git-Aufruf ist.
-    git_only = is_pure_git_command(command)
+    git_only = is_pure_git_command(command) and not (view.shell_bodies or view.unresolved)
     if (
         not git_only
         and not git_subcommands(command)          # nicht zerlegbar (kaputte Quotes)
         and command.lstrip().startswith("git ")
         and "git commit" not in command
+        and not view.unresolved
     ):
         git_only = True  # fail-open: exakt das bisherige Verhalten
-    if git_only and not is_git_subcommand(command, "commit"):
+    literal_commit = is_git_subcommand(command, "commit")
+    committing = (literal_commit or bool(view.unresolved)
+                  or any(_git_subcommand_after(t, 1) == "commit" for t in view.expansions)
+                  or any(is_git_subcommand(b, "commit") for b in view.shell_bodies))
+    if git_only and not committing:
         allow()
+    scan_cmd = "\n".join([scan_cmd, *view.shell_bodies])  # Shell-Alias-Ruempfe: 3a, 3b, 4, nicht 4b
 
     # 3a. Approval-/Erfolgs-Marker: deny by default, kein Bash-Weg erlaubt.
     #     "approve" ist eine High-Risk-Operation, die NUR ein Mensch ausloesen
@@ -723,7 +766,9 @@ def main():
             block(f"BLOCKED: Hardcoded {cred_type} detected. Use env vars or secrets.env instead.")
 
     # 5. Git commit gates (tokenbasiert, Issue #1431 — Erwaehnung ist kein Aufruf)
-    if workflow_enforced and is_git_subcommand(command, "commit"):
+    if workflow_enforced and committing:
+        if not literal_commit:
+            _alias_notice(view)
         import subprocess
 
         # Gemessen wird im Arbeitsbaum, nicht im Hauptrepo (Issue #155).
@@ -780,13 +825,13 @@ def main():
                 else:
                     verdict = str(wf.get("adversary_verdict", "") or "")
                     if verdict.startswith("VERIFIED"):
-                        _require_dialog_evidence(wf, verdict, command)  # #253, #259
+                        _require_dialog_evidence(wf, verdict, command, view)  # #253, #259
                     elif verdict.startswith("AMBIGUOUS"):
                         if not wf.get("adversary_ambiguous_override"):
                             block("BLOCKED: Adversary verdict is AMBIGUOUS. "
                                   "Review findings, then: workflow.py override-ambiguous '<reason>' "
                                   + gate_diagnostics(wf, verdict="AMBIGUOUS"))
-                        _require_dialog_evidence(wf, verdict, command)  # #253, #259
+                        _require_dialog_evidence(wf, verdict, command, view)  # #253, #259
                     else:
                         has_override = False
                         try:

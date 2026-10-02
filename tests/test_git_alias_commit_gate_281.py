@@ -15,6 +15,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import types
 from collections.abc import Mapping
 from pathlib import Path
@@ -329,6 +330,12 @@ AC2 = [
        "GIT_CONFIG_KEY_0": "alias.ci", "GIT_CONFIG_VALUE_0": "commit"}),
     _u("env-wrapper-overlay", "env GIT_CONFIG_GLOBAL={t}/have.cfg git ci -m x", CI, "commit", 1,
        env={"GIT_CONFIG_GLOBAL": "{t}/have.cfg"}),
+    _e("adv-F005", "export GIT_TERMINAL_PROMPT=commit; "
+       "git --config-env=alias.ci=GIT_TERMINAL_PROMPT ci -m x", 2),
+    _u("adv-F005", "read ZZ; git --config-env=alias.ci=ZZ ci -m x", CI, "offen", environ={"ZZ": "c"}),
+    _e("adv-F020", 'export GIT_TERMINAL_P""ROMPT=commit; git --config-env=alias.ci=GIT_TERMINAL_PROMPT ci -m x', 2),
+    _e("adv-F020-declare", 'declare -x "GIT_TERMINAL_P""ROMPT"=commit; '
+       "git --config-env=alias.ci=GIT_TERMINAL_PROMPT ci -m x", 2),
 ]
 
 
@@ -383,6 +390,33 @@ AC3 = [
     _u("body-relative-cd", "git sb", [("sb", "!cd sub && git ci"), ("ci", "commit")], "offen"),
     _u("body-absolute-cd", "git sa", [("sa", "!cd {t}/B && git ci"), ("ci", "commit")],
        "commit", dir="B"),
+    _e("adv-F002", "builtin cd {t}/B && git ci -m x", 2),
+    _e("adv-F002-eval", 'eval "cd {t}/B" && git ci -m x', 2),
+    _e("adv-F009", "/usr/bin/env -C {t}/B git ci -m x", 2),
+    _e("adv-F009-execdir", "find {t}/B -name f -execdir git ci -m x \\;", 2),
+    _e("adv-F009-execdir-dot", "find . -execdir git ci -m x \\;", 2),
+    *[_u("adv-F002-" + c.split()[0], c, CI, "offen") for c in ('eval "cd B" && git ci', "builtin cd B; git ci",
+      "command cd B; git ci", "X=1 cd B; git ci", "time cd B; git ci", "for i in 1; do git ci; cd B; done",
+      "export CDPATH=/x; cd B; git ci")],
+    *[_u("adv-F009-" + i, c, t, v) for i, c, t, v in (  # Stellung: A offen, B Kontext bleibt, C nur ein Alias
+        ("timeout", "timeout 5 git ci", CI, "commit"), ("xargs", "xargs git ci", CI, "commit"),
+        ("nice", "nice -n 1 git ci", CI, "commit"), ("xargs-no-alias", "xargs git st", (), "frei"),
+        ("xargs-sh", "xargs sh -c 'git ci'", CI, "commit"), ("execdir", "find . -execdir git ci ;", CI, "offen"),
+        ("execdir-sh", "find . -execdir sh -c 'git ci' ;", CI, "offen"), ("sudo-u", "sudo -u x git ci", CI, "offen"),
+        ("mention-alias", "grep -rn git ci", CI, "commit"), ("mention", "echo git is $X `great`", CI, "frei"),
+        ("mention-sh", "echo sh -c 'git $X'", CI, "frei"), ("mention-loop", "echo git l1", [("l1", "l2"), ("l2", "l1")],
+                                                            "offen"),  # Alias-Erwaehnung = echter Aufruf
+        ("mention-taint", "echo git ci; git config alias.q x", CI, "offen"))],
+    _u("adv-C-plausible", "grep -rn git core/", CI, "frei", 0),  # kein moeglicher Alias-Name: keine Abfrage
+    _u("adv-C-plausible-name", "echo git is great", ST, "frei", 1),
+    _e("adv-F009-timeout-C", "timeout 5 git -C {t}/B ci -m x", 2),
+    *[_u(f"adv-F021-{i}", c + "; cd B && git ci", CI, "offen") for i, c in enumerate(
+        ('export CD""PATH=/x', "export CD\\PATH=/x"))],
+    *[_u(f"adv-F018-{i}", c + " git ci", CI, "commit", 1) for i, c in enumerate((
+        "timeout -s KILL 5", "flock /tmp/lockx", "stdbuf -o L", "nice -n +5", ">/dev/null", "2>/dev/null",
+        "xargs -I {} -P 2", "ionice -c 2 -n 7"))],
+    _u("adv-F011", "timeout 5 git `echo ci` -m x", CI, "offen", 0),
+    _u("adv-F009-control-word", "if git ci -m x; then :; fi", CI, "commit", 1),
 ]
 
 
@@ -407,6 +441,11 @@ AC4 = [
     _u("builtin-name-exact", "git STATUS -m x", [("status", "commit")], "commit", 1),
     _u("builtin-shadows-alias", "git status", [("status", "commit")], "frei", 0),
     _u("chain-ends-at-builtin", "git x", [("x", "status"), ("status", "commit")], "frei", 1),
+    _e("adv-F001", 'g""it ci -m x', 2),
+    *[_u(f"adv-F001-{i}", c + " ci -m x", CI, "commit", 1)
+      for i, c in enumerate(('g""it', "g\\it", "gi''t", '"g""it"', "gi\\\nt"))],
+    _e("adv-F024-bash-heredoc", "bash <<'EOF'\ngit ci -m x\nEOF", 2),
+    _e("adv-F024-sh-heredoc", "sh <<'EOF'\ngit ci -m x\nEOF", 2),
 ]
 
 
@@ -437,6 +476,7 @@ AC5 = [
     _u("c-include-in-value", "git ci2", [("ci2", "-c Include.path=/x commit")], "offen"),
     _u("config-env-alias-in-value", "git ce", [("ce", "--config-env=alias.y=V y")], "offen"),
     _u("external-name-ends-chain", "git ext", [("ext", "frobnicate --x")], "frei", 1),
+    _u("adv-F003", "git ci -m x", [("ci", '"com\\mit"')], "offen"),
 ]
 
 
@@ -464,6 +504,18 @@ AC6 = [
     _u("alias-in-body", "git sh2 -m x", [("sh2", "!git ci"), ("ci", "commit")], "commit", 1,
        expansion=["git", "commit", "-m", "x"]),
     _u("harmless-body", "git hi", [("hi", "!echo hi")], "frei", 1, bodies=True),
+    _e("adv-F007", "git dc -m x", 2, "git dc → !git-commit"),
+    *[_u(f"adv-F007-{i}", "git dc", [("dc", b)], "commit", 1) for i, b in enumerate((
+        "!exec git-commit", '!f() { git-commit "$@"; }; f', "!$(git --exec-path)/git-commit", '!"git-commit"'))],
+    _e("adv-F019", "git d2 -m x", 2),
+    _e("adv-F019-sh-c", "git d3 -m x", 2),
+    _e("adv-F019-exec-path", "git d4 -m x", 2),
+    _e("adv-F019-ls-free", "git d5", 0),
+    *[_u(f"adv-F019-{i}", "git dc", [("dc", b)], "commit", 1) for i, b in enumerate((
+        "!git\\-commit", '!git-com""mit', "!g\\it-commit", "!'git'-commit", "!git-'commit'",
+        "!sh -c 'git-commit \"$@\"' --", "!bash -c 'git-commit \"$@\"' --", '!sh -c "git-commit \\"\\$@\\"" --',
+        '!"$(git --exec-path)/git-commit" "$@"'))],
+    _u("adv-F019-ls", "git dc", [("dc", "!ls git-hooks")], "frei", 1),
 ]
 
 
@@ -474,7 +526,9 @@ def test_ac6_shell_aliases(case, request, tmp_path):
     (Wächter). unit-*: Rumpf-Aufbau, -z mit Zeilenumbruch, Alias im Rumpf."""
     if _unit(case, tmp_path):
         return
-    proj, _ = _e2e(request, tmp_path, case, sh1="!git commit", mk=f"!touch {MARKER}", hi="!echo hi")
+    proj, _ = _e2e(request, tmp_path, case, sh1="!git commit", mk=f"!touch {MARKER}", hi="!echo hi",
+                   dc="!git-commit", d2='!git-com""mit', d3="!sh -c 'git-commit \"$@\"' --",
+                   d4='!"$(git --exec-path)/git-commit" "$@"', d5="!ls git-hooks")
     assert not (proj / MARKER).exists(), "Freigabe-Marker entstanden"
 
 
@@ -488,7 +542,7 @@ AC7 = [
     _u("a-config-include", "git config Include.path /x; git st", ST, "offen"),
     _u("a-clone-alias", "git clone -c alias.st=commit r d && git st", ST, "offen"),
     _u("a-unrelated", "git config user.name y && git st", ST, "frei", 1),
-    _u("a-only-later-calls", "git st; git config alias.st commit", ST, "frei", 1),
+    _u("a-earlier-calls-too", "git st; git config alias.st commit", ST, "offen", 1),  # F004: jede Stelle
     _u("b-gitconfig", "echo x >> ~/.gitconfig; git st", ST, "offen"),
     _u("b-dot-git-config", "cp x .git/config && git st", ST, "offen"),
     _u("b-config-worktree", "cp x config.worktree && git st", ST, "offen"),
@@ -515,6 +569,29 @@ AC7 = [
     _u("src-parameters-include", "GIT_CONFIG_PARAMETERS=\"'include.path'='/x'\" git st", ST,
        "offen", 0),
     _u("src-nested-shell", "bash -c 'GIT_CONFIG_GLOBAL={t}/missing.cfg git st'", ST, "offen"),
+    _e("adv-F004", "git ci -m x $(git config alias.ci commit)", 2, UNRESOLVED),
+    _e("adv-C-taint", "git config alias.ci commit; strace git ci -m x", 2, UNRESOLVED),
+    _e("adv-C-prefix-source", "GIT_CONFIG_GLOBAL={t}/g.cfg strace git ci -m x", 2, UNRESOLVED),
+    _e("adv-C-export-source", "export GIT_CONFIG_GLOBAL={t}/g.cfg; strace git ci -m x", 2, UNRESOLVED),
+    _e("adv-C-open-dir", 'cd "$X" && strace git ci -m x', 2, UNRESOLVED),
+    _e("adv-C-config-env", "V=commit strace git --config-env=alias.ci=V ci -m x", 2, UNRESOLVED),
+    _e("adv-C-include", "printf '[alias]\\n\\tci = commit\\n' > {t}/inc && strace git -c include.path={t}/inc ci -m x",
+       2, UNRESOLVED),
+    _e("adv-F022-tem", "git init -q --tem={t}/tpl {t}/C && git ci -m x", 2, UNRESOLVED),
+    _e("adv-F022-ed", "git config --ed && git ci -m x", 2, UNRESOLVED),
+    _u("adv-F022-t", "git init --t=/x d; git st", ST, "offen"),  # git nimmt auch --t= (eindeutiges Praefix)
+    _e("adv-F023-key", "K=alias.ci; git config $K commit && git ci -m x", 2, UNRESOLVED),
+    _e("adv-F023-name", "PFX=GIT_CONFIG_GL; export ${PFX}OBAL={t}/g.cfg; git ci -m x", 2, UNRESOLVED),
+    _u("adv-F023-declare", "declare -x ${P}OBAL=/x; git st", ST, "offen"),
+    _u("adv-F023-value-ok", 'git config user.name "$N" && git st', ST, "frei", 1),
+    _e("adv-F004-trap", "trap 'git ci -m x' EXIT; git config alias.ci commit", 2, UNRESOLVED),
+    *[_u(f"adv-F004-{i}", c, ST, "offen") for i, c in enumerate((
+        'git st -m "x$(git config alias.st commit)"', 'X="$(git config alias.st x)" git st',
+        "for i in 1 2; do git st; git config alias.st commit; done", "trap 'git st' EXIT; git config alias.st c",
+        "f() { git st; }; git config alias.st commit; f", "for i in 1 2; do git st; cd B; done",
+        "read HOME; git st", "for HOME in x; do git st; done", "printf -v HOME x; git st"))],
+    *[_u(f"adv-F017-{i}", c + "; git st", ST, "offen") for i, c in enumerate(("git config -e", "git init "
+      "--template=/t d", "git clone --template=/t r d", "git submodule add --template=/t r"))],
 ]
 
 
@@ -530,9 +607,25 @@ def test_ac7_same_call_changes_taint(case, request, tmp_path):
     _e2e(request, tmp_path, case, st="status")
 
 
-@pytest.mark.parametrize("command", ["git st", "git lg", "git status"])
+@pytest.mark.parametrize("command", ["git st", "git lg", "git status",
+                                     pytest.param("grep -rn git core/", id="adv-fp-grep"),
+                                     pytest.param("echo git is great", id="adv-fp-echo"),
+                                     pytest.param('grep -n "git" "$f"', id="adv-fp-var"),
+                                     pytest.param('find . -type f -exec grep -l "git" {} \\;', id="adv-fp-find-exec"),
+                                     pytest.param("timeout 60 grep -rn git *.py", id="adv-fp-timeout-glob"),
+                                     pytest.param("xargs -I{} grep git {}", id="adv-fp-xargs-I"),
+                                     pytest.param("find . -execdir grep -l git {} \\;", id="adv-fp-find-execdir"),
+                                     pytest.param('cd "$D" && grep -rn git .', id="adv-fp-cd-var"),
+                                     pytest.param("git config user.name y && grep -rn git core/", id="adv-fp-config"),
+                                     pytest.param("gh pr create --title t --body \"$(cat <<'EOF'\n- Fix git alias "
+                                                  "bypass (it's #281)\nEOF\n)\"", id="adv-F024-pr"),
+                                     pytest.param("cat > docs/n.md <<'EOF'\nDon't run git hooks manually.\nEOF",
+                                                  id="adv-F024-doc"),
+                                     pytest.param('cd "$D" && grep git README.md', id="adv-F018-dotted-file")])
 def test_ac8_harmless_aliases_pass(command, request, tmp_path):
-    """Wächter (heute grün): Given gesperrt, st=status, lg=log --graph --oneline, status=commit /
+    """adv-fp-*: git als Argument (grep, echo; auch hinter find -exec, timeout, xargs) ist nur eine Erwähnung ohne
+    möglichen Alias-Namen bzw. ohne Alias (F009) — Exit 0 auch im gesperrten Zustand.
+    Wächter (heute grün): Given gesperrt, st=status, lg=log --graph --oneline, status=commit /
     When `git st`, `git lg`, `git status` / Then Exit 0 (Alias auf Builtin-Namen wirkungslos)."""
     _e2e(request, tmp_path, _case(command, 0), st="status", lg="log --graph --oneline",
          status="commit")
@@ -600,11 +693,13 @@ AC11 = [
     _u("trace-and-git-config-removed", "GIT_TRACE2_EVENT={t}/t4 git -c alias.ci=commit ci -m x",
        CI, "commit", 1, environ={"GIT_TRACE": "{t}/t1", "GIT_TRACE2": "{t}/t2",
                                  "GIT_TRACE_PACKET": "{t}/t3", "GIT_CONFIG": "{t}/have.cfg"},
-       env={"GIT_TRACE": None, "GIT_TRACE2": None, "GIT_TRACE_PACKET": None,
-            "GIT_TRACE2_EVENT": None, "GIT_CONFIG": None}),
+       env={"GIT_TRACE": None, "GIT_TRACE2": "0", "GIT_TRACE_PACKET": None,  # F012: trace2 aus, nie Hook-Ziel
+            "GIT_TRACE2_EVENT": "0", "GIT_CONFIG": None}),
     _u("foreign-prefixes-dropped", "LD_PRELOAD=/x.so GIT_EXEC_PATH=/y PAGER=evil PATH=/evil "
        "git ci -m x", CI, "commit", 1,
        env={"LD_PRELOAD": None, "GIT_EXEC_PATH": None, "PAGER": None, "PATH": "/usr/bin:/bin"}),
+    _u("adv-F012", "git st", ST, "frei", 1, env=dict.fromkeys(("GIT_TRACE2", "GIT_TRACE2_EVENT",
+                                                                "GIT_TRACE2_PERF"), "0")),
 ]
 
 
@@ -642,6 +737,12 @@ AC12 = [
     _f("stage-in-body", "git sb", [("sb", f"!git stage {NEW} && git commit -m x")],
        (False, False, True, False)),
     _f("unresolved-largest-set", "git l1", [("l1", "l2"), ("l2", "l1")], (True, True, True, True)),
+    _e("adv-F010", "git b1 && git commit -m y", 2, MOD_C, gate=EVIDENCE),
+    _f("adv-F007-stage", "git sb", [("sb", f"!git-stage {NEW} && git-commit -m x")],
+       (False, False, True, False)),
+    _e("adv-F024-phase7", "cd {t}/A && git commit -m \"$(cat <<'EOF'\nfix: tidy up the git hooks\nEOF\n)\"", 0),
+    _e("adv-F024-phase7-apostrophe", "git commit -m \"$(cat <<'EOF'\nfix: don't resolve git aliases twice\nEOF\n)\"",
+       0),
 ]
 
 
@@ -662,7 +763,7 @@ def test_ac12_commit_set_follows_alias_arguments(case, request, tmp_path):
         assert got == expected, f"{command!r}: {got} statt {expected}"
         return
     _e2e(request, tmp_path, case, "verified_tpl", ci="commit", cam="commit -a -m", a="add",
-         s="stage")
+         s="stage", b1="!git commit -a -m $'it\\'s'")
 
 
 def test_ac13_whitelist_ignores_aliases(tmp_path, monkeypatch):
@@ -735,6 +836,16 @@ AC15 = [
     _u("in-shell-body", "git sd", [("sd", "!git $CMD")], "offen"),
     _u("unparsable-non-builtin", "git ci -m $'it\\'s'", CI, "offen", 0),
     _u("unparsable-builtin", "git status $'it\\'s'", CI, "frei", 0),
+    _e("adv-F006", "echo $'it\\'s';git ci -m x", 2, UNRESOLVED),
+    _e("adv-F013", "git -c help.autocorrect=immediate comit -m x", 2, UNRESOLVED),
+    _e("adv-F013-off", "git -c help.autocorrect=never comit -m x", 0),
+    _e("adv-F018-timeout-s", "timeout -s KILL 5 git $(echo ci) -m x", 2, UNRESOLVED),
+    _e("adv-F018-redirect", "2>/dev/null git $(echo ci) -m x", 2, UNRESOLVED),
+    _e("adv-F018-flock-dotted", "flock /tmp/lockx git -c alias.a.b=commit a.b -m x", 2),
+    _e("adv-F018-nice-sign", "nice -n +5 git -c alias.a.b=commit a.b -m x", 2),
+    _e("adv-F018-mywrap-autocorrect", "mywrap git -c help.autocorrect=immediate comit -m x", 2, UNRESOLVED),
+    *[_u(f"adv-F006-{i}", c, CI, "offen", 0) for i, c in enumerate(("echo $'it\\'s'&&git ci -m x",
+      "(git ci -m x); echo $'it\\'s'", "git status $'it\\'s';git ci -m x"))],
 ]
 
 
@@ -745,6 +856,20 @@ def test_ac15_undeterminable_subcommand_is_checked(case, request, tmp_path):
     Unterbefehl, Alias-Wert und Rumpf; unzerlegbarer Gesamtbefehl — jeweils ohne Abfrage."""
     if not _unit(case, tmp_path):
         _e2e(request, tmp_path, case)
+
+
+@pytest.mark.parametrize("command,aliases,big", [
+    pytest.param("git commit -m x # " + "git " * 50000, ST, True, id="adv-F008"),  # Polster: Erwähnungen `git git`
+    pytest.param("git st; " * 20000, ST, True, id="adv-F008-work-limit"),
+    pytest.param("grep " + "git core/ " * 25000, ST, False, id="adv-F008-mentions"),
+    pytest.param("git a", [("a", "!" + "; ".join(["git a"] * 2000))], True, id="adv-F014")])
+def test_ac9_work_limit_is_linear(command, aliases, big, tmp_path):
+    """Adversary F008/F014: Laufzeit linear (< 3 s); > 64 Nicht-Builtin-Aufrufe/Rümpfe → sofort `unresolved`
+    („zu groß“); Erwähnungen ohne möglichen Alias-Namen (F009) machen nie `unresolved`."""
+    start = time.monotonic()
+    view = _resolve(command, aliases, tmp_path, _environ(tmp_path))[0]
+    assert time.monotonic() - start < 3, "Resolver zu langsam"
+    assert big == any("zu groß" in r for r in view.unresolved) and (big or not view.unresolved), view.unresolved
 
 
 def _section(rel: str, start: str, end: str) -> str:

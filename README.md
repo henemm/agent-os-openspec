@@ -379,6 +379,7 @@ agent-os-openspec/
 │   │   ├── adversary_dialog.py          # Adversary dialog protocol
 │   │   ├── override_token.py            # Override token management
 │   │   ├── precondition_origins.py      # Standalone CLI tool (NOT a hook/gate): collects origin of test preconditions
+│   │   ├── git_alias.py                 # Helper module (NOT a hook): resolves git aliases for the commit gate (#281)
 │   │   ├── hook_utils.py                # Shared bootstrap
 │   │   └── config_loader.py             # YAML config loader
 │   ├── agents/              # Agent definitions (Markdown)

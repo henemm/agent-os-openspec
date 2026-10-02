@@ -164,6 +164,61 @@ jeden späteren Workflow gleichen Namens beim ersten Code-Edit. Spec:
 - `tests/test_post_implementation_gate_marker_binding.py` (neu): AC-1 bis AC-7 plus AC-4b
   (verwaistes Lock+Marker-Paar eines wiederverwendeten Namens).
 
+**Commit-Gate löst git-Aliase auf (#281)**
+
+Das Commit-Gate erkannte einen Commit nur am wörtlichen Unterbefehl `commit`. Ein git-Alias
+(`git config alias.ci commit`, dann `git ci -m x`) oder der Inline-Alias
+`git -c alias.ci=commit ci -m x` galt als „reiner git-Aufruf“ und lief über den Git-Schnellpfad an
+Marker-Schutz, Secrets-Guard und allen Commit-Gates vorbei — ohne VERIFIED-Pflicht (#253) und ohne
+Abdeckungsprüfung (#259). Spec: `docs/specs/fix-281-git-alias-commit-gate.md`.
+
+- `core/hooks/git_alias.py` (neu): Hilfsmodul, kein Hook. `resolve_git_aliases()` liefert eine
+  Alias-Sicht auf den Bash-Befehl. Builtins (statische Liste aus git 2.43) werden nie
+  nachgeschlagen — `git status`, `git add`, `git commit` … starten keinen zusätzlichen Prozess.
+  Andere Unterbefehle schlägt eine lesende Abfrage (`git config -z --get-regexp`) dort nach, wo
+  der Aufruf läuft: nachgespielt werden `-C`, `cd`, `-c`, `--config-env`, `--git-dir`,
+  `--work-tree` und freigegebene Präfix-Zuweisungen (`GIT_CONFIG_*`, `GIT_DIR`, `HOME` …);
+  `GIT_TRACE*`, `GIT_CONFIG`, `PATH` und `LD_*` kommen nie durch, `argv[0]` ist immer `git`.
+  Ketten, Optionen im Alias-Wert, Groß-/Kleinschreibung und die Schatten-Regel (ein Alias mit
+  Builtin-Namen wirkt nicht) wie bei git; höchstens drei Abfragen je Befehl.
+- `core/hooks/bash_gate.py`: Ein Alias auf `commit` gilt wie `commit` (stderr:
+  `Commit erkannt über Alias: git ci → git commit`), und seine Argumente bestimmen die
+  #259-Commit-Menge (`cam = commit -a -m` → Arbeitsbaum-Form). Ein Shell-Alias (`!…`) ist kein
+  reiner git-Aufruf mehr; sein Rumpf wird auf Commit, Freigabe-Marker (3a) und Secrets geprüft —
+  `alias.x = !touch …user_approved…` umgeht die Marker-Sperre nicht mehr.
+
+**Neue Block-Fälle.** Was sich nicht sicher auflösen lässt, wird wie ein Commit geprüft — mit
+Wirkung nur dort, wo auch ein wörtliches `git commit` geprüft würde (vor allem 5c in Phase 6–7).
+Meldung: `Unterbefehl nicht auflösbar (<Grund>): git <sub> — wird wie ein Commit geprüft`. Gründe
+sind unter anderem eine gescheiterte Abfrage, eine Alias-Schleife, eine Alias-Änderung im selben
+Aufruf (`git config alias.ci commit && git ci`), eine im Befehl benannte Konfigurationsdatei, die
+es noch nicht gibt oder die derselbe Befehl erneut nennt, Shell-Syntax im Unterbefehl oder in einem
+nachgespielten Wert (`git $CMD`, `git -C "$R" st`), ein unbekanntes Arbeitsverzeichnis
+(`cd "$X"`), `sudo` oder `env -i` sowie ein für `shlex` unzerlegbarer Befehl mit
+Nicht-Builtin-Unterbefehl. Nach der Adversary-Runde ebenso: Quoting im Wort `git` (`g""it ci`), ein
+`cd` außerhalb eines einfach sequentiellen Befehls (Schleife, `eval`, `builtin cd`, `X=1 cd` …), eine
+Alias-/Konfigurationsänderung an beliebiger Stelle des Befehls (auch in `$(…)`, `trap`, nach dem
+Aufruf, `git config -e`, `--template`), `git` hinter einem Starter, der Verzeichnis oder Benutzer
+wechselt (`sudo`, `env -C`, `find -execdir`, `--chdir` …; in Befehlsposition hinter `xargs`, `timeout`
+& Co. wird normal aufgelöst; sonst, etwa hinter `grep`, `echo` oder `strace`, ist `git` eine Erwähnung, die
+nur mit möglichem Alias-Namen zählt — dann aber mit allen Regeln; Optionswerte und Operanden bekannter
+Starter sowie Umleitungen halten die Befehlsposition), ein aktives `help.autocorrect`, ein Backslash im
+Alias-Wert, `git config $K …` und `export ${P}…=` sowie mehr als 64 Nicht-Builtin-Aufrufe in einem Befehl
+(Heredoc-Prosa ohne Interpreter zählt nicht, der Resolver sieht `strip_heredoc_bodies`; Rest-Grenzen: unbekannte
+Starter, die selbst Verzeichnis oder Benutzer
+wechseln, etwa `firejail --private-cwd=B git ci`; hinter unbekannten Wrappern nur Erwähnung, etwa
+`mywrap git $(echo ci)`; weitere Indirektion bei Schlüssel oder Variablenname). Ausweg: Unterbefehl ausschreiben (z. B. `git commit` statt `git ci`),
+Werte literal angeben, die Datei vorher in einem eigenen Aufruf anlegen oder den Aufruf auftrennen.
+
+**Nebeneffekt:** `stage`, das Builtin-Synonym für `add`, zählt jetzt als begleitendes `add` — auch
+das wörtliche `git stage neu.py && git commit -m x` nimmt die neue Datei in die Commit-Menge auf
+(bisher fehlte sie dort, ebenso bei einem Alias auf `add` oder `stage`).
+
+Nicht Teil dieses Fixes: das Whitelist-Gefälle in Schritt 3b (#296), externe `git-<name>`,
+weitere Code-Ausführung in reinem git und Commits ohne `commit` (#297) sowie Shell-Aufrufe mit
+Optionsbündel wie `bash -lc` (#298). Tests: `tests/test_git_alias_commit_gate_281.py` (AC-1 bis
+AC-17).
+
 ## [3.34.0] - 2026-09-29
 
 ### Added

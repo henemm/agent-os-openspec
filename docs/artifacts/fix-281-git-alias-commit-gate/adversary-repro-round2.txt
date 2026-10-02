@@ -1,0 +1,572 @@
+Adversary #281 — Runde 2: Reproduktionslaeufe (Ausgaben der Wegwerf-Skripte, hermetische Repos unter /tmp, echte bash, echtes git 2.43)
+Stand des Codes: core/hooks/git_alias.py md5 25d53f185b82f2b0962f008511ccdbe0; core/hooks/bash_gate.py md5 a317ac5990364a96ce99ad521a8aab51
+Spalten: neu = Exit des Hooks im Arbeitsbaum, alt = Exit des Hooks aus HEAD; 'commit=JA' = die echte bash hat den Befehl ausgefuehrt und einen Commit angelegt; BYPASS = neu=0 UND Commit.
+In den Reproduktionen steht G fuer: -c user.name=T -c user.email=t@t
+Wegwerf-Skripte: /tmp/claude-0/-home-user-agent-os-openspec/76054b3f-0401-5941-9b95-6f771556ea2e/scratchpad/adv/ (r2lib.py, repro_round1*.py, repro_round2*.py, acverify.py, r2fuzz*.py, atk*.py, perf)
+
+################ A. Runde-1-Reproduktionen gegen den neuen Stand (repro_round1.py) ################
+== F001 Anfuehrungszeichen/Backslash im Wort git (Alias ci=commit lokal) ==
+F001      hook neu=2 alt=0 | echte bash: COMMIT ENTSTANDEN 
+           'g""it -c user.name=T -c user.email=t@t ci -m x'
+F001      hook neu=2 alt=0 | echte bash: COMMIT ENTSTANDEN 
+           'g\\it -c user.name=T -c user.email=t@t ci -m x'
+F001k     hook neu=2 alt=2 | echte bash: COMMIT ENTSTANDEN 
+           'g""it -c user.name=T -c user.email=t@t commit -m x'
+== F002 cd-Modell (Alias nur in B) ==
+F002      hook neu=2 alt=0 | echte bash: COMMIT ENTSTANDEN 
+           'eval "cd /tmp/adv281r-29q5g0iz/B" && git -c user.name=T -c user.email=t@t ci -m x'
+F002      hook neu=2 alt=0 | echte bash: COMMIT ENTSTANDEN 
+           'builtin cd /tmp/adv281r-neqf6ty3/B && git -c user.name=T -c user.email=t@t ci -m x'
+F002      hook neu=2 alt=0 | echte bash: COMMIT ENTSTANDEN 
+           'command cd /tmp/adv281r-a_k12t9e/B && git -c user.name=T -c user.email=t@t ci -m x'
+F002      hook neu=2 alt=0 | echte bash: COMMIT ENTSTANDEN 
+           'X=1 cd /tmp/adv281r-58euh3vq/B && git -c user.name=T -c user.email=t@t ci -m x'
+F002      hook neu=2 alt=0 | echte bash: COMMIT ENTSTANDEN 
+           'time cd /tmp/adv281r-o2he583t/B && git -c user.name=T -c user.email=t@t ci -m x'
+F002      hook neu=2 alt=0 | echte bash: COMMIT ENTSTANDEN 
+           'for i in 1 2; do git -c user.name=T -c user.email=t@t ci -m x 2>/dev/null; cd /tmp/adv281r-oz7yliph/B; done'
+F002k     hook neu=2 alt=0 | echte bash: COMMIT ENTSTANDEN 
+           'cd /tmp/adv281r-ytuof3xq/B && git -c user.name=T -c user.email=t@t ci -m x'
+== F003 Alias-Wert: shlex.split != git split_cmdline ==
+F003      hook neu=2 alt=0 | echte bash: COMMIT ENTSTANDEN 
+           'git -c user.name=T -c user.email=t@t ci -m x'
+== F004 Ausfuehrungsreihenfolge != Textreihenfolge (Alias-Aenderung im selben Aufruf) ==
+F004      hook neu=2 alt=0 | echte bash: COMMIT ENTSTANDEN 
+           'git -c user.name=T -c user.email=t@t ci -m x $(git config alias.ci commit)'
+F004      hook neu=2 alt=0 | echte bash: COMMIT ENTSTANDEN 
+           'git -c user.name=T -c user.email=t@t ci -m "x$(git config alias.ci commit)"'
+F004      hook neu=2 alt=0 | echte bash: COMMIT ENTSTANDEN 
+           'X="$(git config alias.ci commit)" git -c user.name=T -c user.email=t@t ci -m x'
+F004      hook neu=2 alt=0 | echte bash: COMMIT ENTSTANDEN 
+           'for i in 1 2; do git -c user.name=T -c user.email=t@t ci -m x 2>/dev/null; git config alias.ci commit; done'
+F004      hook neu=2 alt=0 | echte bash: COMMIT ENTSTANDEN 
+           'f() { git -c user.name=T -c user.email=t@t ci -m x; }; git config alias.ci commit; f'
+F004      hook neu=2 alt=0 | echte bash: COMMIT ENTSTANDEN 
+           "trap 'git -c user.name=T -c user.email=t@t ci -m x' EXIT; git config alias.ci commit"
+F004k     hook neu=2 alt=0 | echte bash: COMMIT ENTSTANDEN 
+           'git config alias.ci commit && git -c user.name=T -c user.email=t@t ci -m x'
+== F005 --config-env-Variable im selben Aufruf exportiert (Name existiert in der Hook-Umgebung) ==
+F005      hook neu=2 alt=0 | echte bash: COMMIT ENTSTANDEN 
+           'export TERM=commit; git -c user.name=T -c user.email=t@t --config-env=alias.ci=TERM ci -m x'
+== F006 unzerlegbarer Gesamtbefehl + verklebtes git-Token ==
+F006      hook neu=2 alt=0 | echte bash: COMMIT ENTSTANDEN 
+           "echo $'it\\'s';git -c user.name=T -c user.email=t@t ci -m x"
+F006      hook neu=2 alt=0 | echte bash: COMMIT ENTSTANDEN 
+           "echo $'it\\'s'&&git -c user.name=T -c user.email=t@t ci -m x"
+F006k     hook neu=2 alt=2 | echte bash: kein Commit       
+           "echo $'it\\'s';git commit -m x"
+== F007 Shell-Alias mit gestrichener Builtin-Form git-commit ==
+F007      hook neu=2 alt=0 | echte bash: COMMIT ENTSTANDEN 
+           'git -c user.name=T -c user.email=t@t ci -m x'
+== F009 Wrapper, die das Verzeichnis wechseln (Alias nur in B) ==
+F009      hook neu=2 alt=0 | echte bash: COMMIT ENTSTANDEN 
+           '/usr/bin/env -C /tmp/adv281r-b4rrrt1k/B git -c user.name=T -c user.email=t@t ci -m x'
+F009      hook neu=2 alt=0 | echte bash: COMMIT ENTSTANDEN 
+           'find /tmp/adv281r-rcagaevo/B -name f.txt -execdir git -c user.name=T -c user.email=t@t ci -m x \\;'
+F009k     hook neu=2 alt=0 | echte bash: COMMIT ENTSTANDEN 
+           'env -C /tmp/adv281r-2gt50k1y/B git -c user.name=T -c user.email=t@t ci -m x'
+== F011 Backtick-Unterbefehl nicht am Segmentkopf ==
+F011      hook neu=2 alt=0 | echte bash: COMMIT ENTSTANDEN 
+           'timeout 5 git -c user.name=T -c user.email=t@t `echo ci` -m x'
+F011      hook neu=2 alt=0 | echte bash: COMMIT ENTSTANDEN 
+           'if git -c user.name=T -c user.email=t@t `echo ci` -m x; then :; fi'
+F011k     hook neu=2 alt=0 | echte bash: COMMIT ENTSTANDEN 
+           'git -c user.name=T -c user.email=t@t `echo ci` -m x'
+== F013 help.autocorrect ==
+F013      hook neu=2 alt=0 | echte bash: COMMIT ENTSTANDEN 
+           'git -c user.name=T -c user.email=t@t comit -m x'
+== F015 vorbestehend (auch woertlicher Commit unbemerkt): Umleitung hinter git, --attr-source ==
+F015      hook neu=0 alt=0 | echte bash: COMMIT ENTSTANDEN   <== BYPASS
+           'git >/dev/null -c user.name=T -c user.email=t@t commit -m x'
+F015      hook neu=0 alt=0 | echte bash: COMMIT ENTSTANDEN   <== BYPASS
+           'git --attr-source HEAD -c user.name=T -c user.email=t@t commit -m x'
+
+################ A2. repro_round1b.py (F008, F010, F012, F014, F016) ################
+== F010 #259-Commit-Menge: nicht zerlegbarer Shell-Alias-Rumpf (-a) + woertlicher Index-Commit ==
+F010  exit=2  'git sh2'
+F010  exit=2  'git sh2 && git commit -m y'
+F010  exit=2  'git sh1'
+F010  exit=2  'git sh1 && git commit -m y'
+      (sh2 = zerlegbarer Rumpf: blockt; sh1 = Rumpf mit $'..': `git sh1 && git commit -m y` laesst src/c.py unbelegt durch)
+== F012 Abfrage schreibt: trace2-Ziel in einer per HOME/GIT_CONFIG_GLOBAL ersetzten globalen Konfiguration ==
+F012  exit=0  Marker vom Hook-Prozess angelegt: False  (Befehlstext nennt den Marker nicht)
+F012  exit=0  Marker vom Hook-Prozess angelegt (GIT_CONFIG_GLOBAL-Variante): False
+F012' altes Gate: 0 0 (0 = durchgelassen; vorbestehend, nicht #281)
+== F008 Laufzeit: n `git`-Token in EINEM Segment (Kommentar-Polster hinter einem woertlichen Commit) ==
+F008  n=  5000  alt: exit=2    0.3s   neu: exit=2    0.3s
+F008  n= 10000  alt: exit=2    0.4s   neu: exit=2    0.6s
+F008  n= 20000  alt: exit=2    0.8s   neu: exit=2    1.0s
+F008  n=50000 (200 KB): alt exit=2 1.7 s | neu exit=2 aber 368.1 s > hooks.json-Timeout 300 s (separat gemessen, atk20.out)
+== F014 Rekursions-Faecher: Shell-Alias a = '!git a; git a; ...' (n Aufrufe, Tiefe 2 => n^3 Rumpf-Laeufe) ==
+F014  n= 15  exit=2    0.1s
+F014  n= 30  exit=2    0.1s
+F014  n= 45  exit=2    0.1s
+== F016 Ueber-Erkennung: Daten im gequoteten Heredoc (kein Befehl) blocken im gesperrten Zustand ==
+F016  neu=2 alt=0  'cat > run.sh <<\'EOF\'\n#!/bin/sh\nexec git "$@"\nEOF'  'Unterbefehl nicht auflösbar (Unterbefehl mit Shell-Syntax): git $@ — wird wie ei'
+F016  neu=0 alt=0  "cat > notes.md <<'EOF'\nRun git $CMD when done\nEOF"  ''
+F016  neu=0 alt=0  'echo Use git carefully'  ''
+
+################ A3. repro_round1c.py (F017) ################
+== F017 Config-Erzeuger im selben Aufruf ohne Taint (Alias ci=commit entsteht erst zur Laufzeit) ==
+init --template      hook=2  Commits -->1   'git init -q --template=/tmp/adv281r-qy_m0v54/tpl /tmp/adv281r-qy_m0v54/C && cd /tmp/adv281r-qy_m0v54/C &&'
+glob-Ziel            hook=0  Commits 1->2   'cp /tmp/adv281r-bqknu26b/alias.cfg /tmp/adv281r-bqknu26b/g.c* && GIT_CONFIG_GLOBAL=/tmp/adv281r-bqknu26b/'
+glob-Kontrolle       hook=2  Commits 1->2   'cp /tmp/adv281r-tt__sayg/alias.cfg /tmp/adv281r-tt__sayg/g.cfg && GIT_CONFIG_GLOBAL=/tmp/adv281r-tt__sayg'
+rev-parse --git-dir  hook=0  Commits 1->2   'printf \'[alias]\\n\\tci = commit\\n\' >> "$(git rev-parse --git-dir)/config" && git -c user.name=T -c user.em'
+rev-parse --git-path hook=0  Commits 1->2   'printf \'[alias]\\n\\tci = commit\\n\' >> "$(git rev-parse --git-path config)" && git -c user.name=T -c user.e'
+python ohne Pfad     hook=0  Commits 1->2   "python3 - <<'EOF'\nimport pathlib\npathlib.Path('.git/con'+'fig').open('a').write('[alias]\\nci=commit\\n')\nE"
+wortlich .git/config hook=2  Commits 1->2   "printf '[alias]\\n\\tci = commit\\n' >> .git/config && git -c user.name=T -c user.email=t@t ci -m x"
+
+################ B. Nachpruefung F001 und F006 (repro_round2h.py) ################
+== F001 (Nachpruefung): Quoting/Backslash/Zeilenfortsetzung im Wort git, auch verschachtelt (Alias ci=commit lokal) ==
+g""it        neu=2 alt=0 commit=JA   'g""it -c user.name=T -c user.email=t@t ci --allow-empty -m x'
+"g""it"      neu=2 alt=0 commit=JA   '"g""it" -c user.name=T -c user.email=t@t ci --allow-empty -m x'
+gi''t        neu=2 alt=0 commit=JA   "gi''t -c user.name=T -c user.email=t@t ci --allow-empty -m x"
+g\it         neu=2 alt=0 commit=JA   'g\\it -c user.name=T -c user.email=t@t ci --allow-empty -m x'
+gi\<NL>t     neu=2 alt=0 commit=JA   'gi\\\nt -c user.name=T -c user.email=t@t ci --allow-empty -m x'
+bash -c g""it neu=2 alt=0 commit=JA   'bash -c \'g""it -c user.name=T -c user.email=t@t ci --allow-empty -m x\''
+heredoc g""it neu=2 alt=0 commit=JA   'bash <<\'EOF\'\ng""it -c user.name=T -c user.email=t@t ci --allow-empty -m x\nEOF'
+(g""it)      neu=2 alt=0 commit=JA   '(g""it -c user.name=T -c user.email=t@t ci --allow-empty -m x)'
+$(g""it)     neu=2 alt=0 commit=JA   'echo $(g""it -c user.name=T -c user.email=t@t ci --allow-empty -m x)'
+timeout g""it neu=2 alt=0 commit=JA   'timeout 5 g""it -c user.name=T -c user.email=t@t ci --allow-empty -m x'
+alias c""i   neu=2 alt=0 commit=JA   'git -c user.name=T -c user.email=t@t c""i --allow-empty -m x'
+alias 'ci'   neu=2 alt=0 commit=JA   "git -c user.name=T -c user.email=t@t 'ci' --allow-empty -m x"
+alias c\i    neu=2 alt=0 commit=JA   'git -c user.name=T -c user.email=t@t c\\i --allow-empty -m x'
+Kontrolle commit neu=2 alt=2 commit=JA   'g""it -c user.name=T -c user.email=t@t commit --allow-empty -m x'
+== F006 (Nachpruefung): unzerlegbarer Gesamtbefehl, Trenner direkt am git ==
+;git         neu=2 alt=0 commit=JA   "echo $'it\\'s';git -c user.name=T -c user.email=t@t ci --allow-empty -m x"
+&&git        neu=2 alt=0 commit=JA   "echo $'it\\'s'&&git -c user.name=T -c user.email=t@t ci --allow-empty -m x"
+(git         neu=2 alt=0 commit=JA   "(git -c user.name=T -c user.email=t@t ci --allow-empty -m x); echo $'it\\'s'"
+status;git   neu=2 alt=0 commit=JA   "git status $'it\\'s';git -c user.name=T -c user.email=t@t ci --allow-empty -m x"
+||git        neu=2 alt=0 commit=nein  "echo $'it\\'s'||git -c user.name=T -c user.email=t@t ci --allow-empty -m x"
+|git         neu=2 alt=0 commit=JA   "echo $'it\\'s'|git -c user.name=T -c user.email=t@t ci --allow-empty -m x"
+Kontrolle commit neu=0 alt=0 commit=JA   <== BYPASS  "echo $'it\\'s';git -c user.name=T -c user.email=t@t commit --allow-empty -m x"
+
+################ C. Neue Funde F018-F024 (repro_round2.py) ################
+== F018 Stellungsregel: statischer, gueltiger Alias-Name `a.b` ([alias "a"] b = commit) und Laufzeit-Unterbefehl ==
+F018k head   neu=2 alt=0 commit=JA   'git -c user.name=T -c user.email=t@t a.b -m x'
+F018k timeout neu=2 alt=0 commit=JA   'timeout 5 git -c user.name=T -c user.email=t@t a.b -m x'
+F018 timeout-s neu=0 alt=0 commit=JA   <== BYPASS  'timeout -s KILL 5 git -c user.name=T -c user.email=t@t a.b -m x'
+F018 flock   neu=0 alt=0 commit=JA   <== BYPASS  'flock /tmp/lockx git -c user.name=T -c user.email=t@t a.b -m x'
+F018 redirect neu=0 alt=0 commit=JA   <== BYPASS  '>/dev/null git -c user.name=T -c user.email=t@t a.b -m x'
+F018 2>redir neu=0 alt=0 commit=JA   <== BYPASS  '2>/dev/null git -c user.name=T -c user.email=t@t a.b -m x'
+F018 unbek.  neu=0 alt=0 commit=JA   <== BYPASS  'mywrap git -c user.name=T -c user.email=t@t a.b -m x'
+F018 $CMD    neu=0 alt=0 commit=JA   <== BYPASS  'export CMD=ci; timeout -s KILL 5 git -c user.name=T -c user.email=t@t $CMD -m x'
+F018 $()     neu=0 alt=0 commit=JA   <== BYPASS  'timeout -s KILL 5 git -c user.name=T -c user.email=t@t $(echo ci) -m x'
+F018 stdbuf  neu=0 alt=0 commit=JA   <== BYPASS  'stdbuf -o L git -c user.name=T -c user.email=t@t $(echo ci) -m x'
+F018 nice    neu=0 alt=0 commit=JA   <== BYPASS  'nice -n +5 git -c user.name=T -c user.email=t@t $(echo ci) -m x'
+F018 >/dev/null neu=0 alt=0 commit=JA   <== BYPASS  '>/dev/null git -c user.name=T -c user.email=t@t $(echo ci) -m x'
+F018 autocorr neu=0 alt=0 commit=JA   <== BYPASS  'mywrap git -c user.name=T -c user.email=t@t -c help.autocorrect=immediate comit -m x'
+F018k plausibel neu=2 alt=0 commit=JA   'timeout -s KILL 5 git -c user.name=T -c user.email=t@t ci -m x'
+== F019 Shell-Alias-Rumpf mit gestrichelter Builtin-Form (Quoting, verschachtelte Shell) ==
+F019k        neu=2 alt=0 commit=JA   Alias dc = '!git-commit'
+F019         neu=0 alt=0 commit=JA   <== BYPASS  Alias dc = '!git\\-commit'
+F019         neu=0 alt=0 commit=JA   <== BYPASS  Alias dc = '!git-com""mit'
+F019         neu=0 alt=0 commit=JA   <== BYPASS  Alias dc = '!g\\it-commit'
+F019         neu=0 alt=0 commit=JA   <== BYPASS  Alias dc = "!'git'-commit"
+F019         neu=0 alt=0 commit=JA   <== BYPASS  Alias dc = "!git-'commit'"
+F019         neu=0 alt=0 commit=JA   <== BYPASS  Alias dc = '!sh -c \'git-commit "$@"\' --'
+== F020 --config-env: Variable im selben Aufruf veraendert, Name per Quoting gesplittet (Hook-Umgebung hat TERM) ==
+F020k plain  neu=2 alt=0 commit=JA   'export TERM=commit; git -c user.name=T -c user.email=t@t --config-env=alias.ci=TERM ci -m x'
+F020 export  neu=0 alt=0 commit=JA   <== BYPASS  'export TE""RM=commit; git -c user.name=T -c user.email=t@t --config-env=alias.ci=TERM ci -m x'
+F020 backslash neu=0 alt=0 commit=JA   <== BYPASS  'export TE\\RM=commit; git -c user.name=T -c user.email=t@t --config-env=alias.ci=TERM ci -m x'
+F020 declare neu=0 alt=0 commit=JA   <== BYPASS  'declare -x "TE""RM"=commit; git -c user.name=T -c user.email=t@t --config-env=alias.ci=TERM ci -m x'
+F020 eval    neu=0 alt=0 commit=JA   <== BYPASS  'eval "export TE""RM=commit"; git -c user.name=T -c user.email=t@t --config-env=alias.ci=TERM ci -m x'
+== F021 CDPATH: Name per Quoting gesplittet (relatives cd landet per CDPATH in einem anderen Repo) ==
+F021k plain      neu=2 commit_im_CDPATH_Repo=JA   'export CDPATH=/tmp/adv281r2-dumqf228/w899zi_0c/cp; cd dec && git -c user.name=T '
+F021 gesplittet  neu=0 commit_im_CDPATH_Repo=JA   <== BYPASS  'export CD""PATH=/tmp/adv281r2-dumqf228/ws53cmwme/cp; cd dec && git -c user.name='
+== F022 Taint (a): Abkuerzungen der Optionen (git akzeptiert eindeutige Praefixe) ==
+F022k --template   neu=2 Commits in C=1
+F022 --tem         neu=0 Commits in C=1  <== BYPASS
+F022 --te          neu=0 Commits in C=1  <== BYPASS
+F022k config -e    neu=2 commit=JA 
+F022 config --ed   neu=0 commit=JA   <== BYPASS
+== F023 Taint per Indirektion (Schluessel/Name steht nur im Wert einer Zuweisung) — Familie 'verschleierte Wege' ==
+F023 Schluessel neu=0 alt=0 commit=JA   <== BYPASS  'K=alias.ci; git config $K commit && git -c user.name=T -c user.email=t@t ci -m x'
+F023 Name        neu=0 commit=JA   <== BYPASS  V=GIT_CONFIG_GLOBAL; export $V=<datei>; git ci
+== F024 Ueber-Erkennung: Prosa `git <Wort>` (Apostroph / cd / Heredoc) und Phase 7 (VERIFIED) ==
+F024 Phase7 ohne git-Prosa, cd           alt=0 neu=0
+F024 Phase7 git hooks, cd                alt=0 neu=2  <== FALSCH-BLOCK
+F024 Phase7 don't git aliases, kein cd   alt=0 neu=2  <== FALSCH-BLOCK
+F024 Phase6 gh pr create (heredoc, Apostroph)  alt=0 neu=2  <== FALSCH-BLOCK
+F024 Phase6 cat > doc <<'EOF' Apostroph        alt=0 neu=2  <== FALSCH-BLOCK
+F024 Phase6 echo it's git time                 alt=0 neu=2  <== FALSCH-BLOCK
+F024 Phase6 cd $D && echo git done             alt=0 neu=2  <== FALSCH-BLOCK
+F024 Phase6 heredoc exec git "$@" (F016)       alt=0 neu=2  <== FALSCH-BLOCK
+
+################ C2. F018-Kontrollen (woertlicher Commit hinter denselben Wrappern) und Breite der Quoting-Klasse (repro_round2b.py) ################
+== F018-Kontrollen: WOERTLICHES commit hinter denselben Wrappern (erwartet: blockt, alt wie neu) ==
+F018 lit     neu=2 alt=2 commit=JA   'timeout -s KILL 5 git -c user.name=T -c user.email=t@t commit -m x'
+F018 lit     neu=2 alt=2 commit=JA   'flock /tmp/lockx git -c user.name=T -c user.email=t@t commit -m x'
+F018 lit     neu=2 alt=2 commit=JA   '>/dev/null git -c user.name=T -c user.email=t@t commit -m x'
+F018 lit     neu=2 alt=2 commit=JA   '2>/dev/null git -c user.name=T -c user.email=t@t commit -m x'
+F018 lit     neu=2 alt=2 commit=JA   'mywrap git -c user.name=T -c user.email=t@t commit -m x'
+F018 lit     neu=2 alt=2 commit=JA   'stdbuf -o L git -c user.name=T -c user.email=t@t commit -m x'
+F018 lit     neu=2 alt=2 commit=JA   'nice -n +5 git -c user.name=T -c user.email=t@t commit -m x'
+== Breite der Quoting-Klasse: Taint (c) fuer freigegebene Namen, Name per Quoting gesplittet ==
+taint-c plain neu=2 alt=0 commit=JA   'export GIT_CONFIG_GLOBAL=/tmp/adv281r2-ub03_sx0/whrvktm_8/g.cfg; git -c user.name=T -c user.email=t@t ci -m x'
+taint-c split neu=2 alt=0 commit=JA   'export GIT_CONFIG_GL""OBAL=/tmp/adv281r2-ub03_sx0/wbu2la0pg/g.cfg; git -c user.name=T -c user.email=t@t ci -m x'
+HOME plain   neu=2 alt=0 commit=nein  'export HOME=/tmp/adv281r2-ub03_sx0/w69kohs51/h; git -c user.name=T -c user.email=t@t ci -m x'
+HOME split   neu=2 alt=0 commit=nein  'export HO""ME=/tmp/adv281r2-ub03_sx0/wfy8hxusu/h; git -c user.name=T -c user.email=t@t ci -m x'
+declare split neu=2 alt=0 commit=JA   'declare -x GIT_CONFIG_GL""OBAL=/tmp/adv281r2-ub03_sx0/wx6ozcn3w/g.cfg; git -c user.name=T -c user.email=t@t ci -m x'
+indirect     neu=0 alt=0 commit=nein  'A=GIT_CONFIG_GL; export $/tmp/adv281r2-ub03_sx0/w10kzz3v4/AOBAL=/tmp/adv281r2-ub03_sx0/w10kzz3v4/g.cfg; git -c user.name=T -c user'
+== --config-env: weitere Setzer-Formen ==
+cfgenv indirect neu=0 alt=0 commit=nein  'A=TE; export $/tmp/adv281r2-ub03_sx0/w91e3g8g7/ARM=commit; git -c user.name=T -c user.email=t@t --config-env=alias.ci=TERM ci -m x'
+cfgenv read  neu=2 alt=0 commit=JA   'read TERM <<< commit; export TERM; git -c user.name=T -c user.email=t@t --config-env=alias.ci=TERM ci -m x'
+cfgenv printf-v neu=2 alt=0 commit=JA   'printf -v TERM commit; export TERM; git -c user.name=T -c user.email=t@t --config-env=alias.ci=TERM ci -m x'
+(Hinweis: die Zeilen 'indirect' / 'cfgenv indirect' sind durch eine Kollision meines Platzhalters {A} im Wegwerf-Skript verfaelscht; korrekt wiederholt in C3.)
+
+################ C3. Indirektion beim Setzer (repro_round2c.py) ################
+== Indirektion beim Setzer (Variablenname setzt sich erst zur Laufzeit zusammen) ==
+taint-c indir neu=0 alt=0 commit=JA   <== BYPASS  'PFX=GIT_CONFIG_GL; export ${PFX}OBAL=/tmp/adv281r2-m1p8zlqd/w07s_k01q/g.cfg; git -c user.name=T -c user.email=t@t ci -m x'
+cfgenv indir neu=0 alt=0 commit=JA   <== BYPASS  'PFX=TE; export ${PFX}RM=commit; git -c user.name=T -c user.email=t@t --config-env=alias.ci=TERM ci -m x'
+taint-c indir neu=0 alt=0 commit=JA   <== BYPASS  'PFX=GIT_CONFIG_GL; export ${PFX}OBAL=/tmp/adv281r2-m1p8zlqd/wf4dkrjix/g.cfg; git -c user.name=T -c user.email=t@t ci -m x'
+
+################ C4. Naive Zerlegung, Varianten (repro_round2d.py) ################
+== naive Zerlegung (unzerlegbarer Gesamtbefehl wegen $'it\'s'): Varianten des Alias-Aufrufs ==
+plain        neu=2 alt=0 commit=nein  "echo $'it\\'s'; git -c user.name=T -c user.email=t@t ci -m x"
+git gesplittet neu=2 alt=0 commit=nein  'echo $\'it\\\'s\'; g""it -c user.name=T -c user.email=t@t ci -m x'
+alias gesplittet neu=2 alt=0 commit=nein  'echo $\'it\\\'s\'; git -c user.name=T -c user.email=t@t c""i -m x'
+alias gequotet neu=2 alt=0 commit=nein  "echo $'it\\'s'; git -c user.name=T -c user.email=t@t 'ci' -m x"
+alias backslash neu=2 alt=0 commit=nein  "echo $'it\\'s'; git -c user.name=T -c user.email=t@t c\\i -m x"
+Pfadform     neu=2 alt=0 commit=nein  "echo $'it\\'s'; /usr/bin/git -c user.name=T -c user.email=t@t ci -m x"
+command git  neu=2 alt=0 commit=nein  "echo $'it\\'s'; command git -c user.name=T -c user.email=t@t ci -m x"
+timeout -s   neu=2 alt=0 commit=nein  "echo $'it\\'s'; timeout -s KILL 5 git -c user.name=T -c user.email=t@t ci -m x"
+env -C B     neu=2 alt=0 commit=JA   "echo $'it\\'s'; env -C /tmp/adv281r2-l93a2enn/w7cqfp2we/B git -c user.name=T -c user.email=t@t ci -m x"
+cd B         neu=2 alt=0 commit=JA   "echo $'it\\'s'; cd /tmp/adv281r2-l93a2enn/w2yxyycpe/B && git -c user.name=T -c user.email=t@t ci -m x"
+git -C B     neu=2 alt=0 commit=JA   "echo $'it\\'s'; git -C /tmp/adv281r2-l93a2enn/wko05e8y9/B -c user.name=T -c user.email=t@t ci -m x"
+runtime      neu=2 alt=0 commit=nein  "echo $'it\\'s'; git -c user.name=T -c user.email=t@t $CMD -m x"
+brace        neu=2 alt=0 commit=nein  "echo $'it\\'s'; { git -c user.name=T -c user.email=t@t ci -m x; }"
+subshell     neu=2 alt=0 commit=nein  "echo $'it\\'s'; (git -c user.name=T -c user.email=t@t ci -m x)"
+tab          neu=2 alt=0 commit=nein  "echo $'it\\'s'; git\t-c user.name=T -c user.email=t@t ci -m x"
+Zeilenfortsetzung neu=2 alt=0 commit=nein  "echo $'it\\'s'; git\\\n -c user.name=T -c user.email=t@t ci -m x"
+-C hinter -c neu=2 alt=0 commit=JA   "echo $'it\\'s'; git -c user.name=T -c user.email=t@t -C /tmp/adv281r2-l93a2enn/wma7ej48n/B ci -m x"
+GIT_DIR      neu=2 alt=0 commit=JA   "echo $'it\\'s'; GIT_DIR=/tmp/adv281r2-l93a2enn/wbvf6pr1l/B/.git git -c user.name=T -c user.email=t@t ci -m x"
+
+################ C5. Wrapper und Config-Erzeuger (offener Punkt 4 aus Runde 1; repro_round2e.py) ################
+== Wrapper, die Verzeichnis oder Benutzer wechseln (Alias nur in B; cwd A) ==
+sudo -D B    neu=2 alt=0 commit=nein  'sudo -D /tmp/adv281r2-6hztagaz/wz00nf9d3/B git -c user.name=T -c user.email=t@t ci -m x'
+sudo -u      neu=2 alt=0 commit=nein  'sudo -u root git -c user.name=T -c user.email=t@t ci -m x'
+sudo true; cd B neu=2 alt=0 commit=JA   'sudo -n true && cd /tmp/adv281r2-6hztagaz/wbzrerzsp/B && git -c user.name=T -c user.email=t@t ci -m x'
+su -c        neu=0 alt=0 commit=JA   <== BYPASS  "su -c 'cd /tmp/adv281r2-6hztagaz/wzetittuy/B && git -c user.name=T -c user.email=t@t ci -m x' root"
+su -l -c     neu=0 alt=0 commit=nein  "su -l -c 'git -c user.name=T -c user.email=t@t ci -m x' root"
+runuser -u   neu=2 alt=0 commit=nein  'runuser -u root -- git -c user.name=T -c user.email=t@t ci -m x'
+runuser -l -c neu=0 alt=0 commit=JA   <== BYPASS  "runuser -l root -c 'cd /tmp/adv281r2-6hztagaz/wggln8yg8/B && git -c user.name=T -c user.email=t@t ci -m x'"
+chroot /     neu=2 alt=0 commit=nein  'chroot / git -c user.name=T -c user.email=t@t ci -m x'
+nsenter --wd= neu=2 alt=0 commit=JA   'nsenter --wd=/tmp/adv281r2-6hztagaz/whvvfcmb0/B git -c user.name=T -c user.email=t@t ci -m x'
+nsenter -wB (Kurzform) neu=0 alt=0 commit=JA   <== BYPASS  'nsenter -w/tmp/adv281r2-6hztagaz/w2xam1lat/B git -c user.name=T -c user.email=t@t ci -m x'
+unshare --wd= neu=2 alt=0 commit=JA   'unshare --wd=/tmp/adv281r2-6hztagaz/w6gb24x5k/B git -c user.name=T -c user.email=t@t ci -m x'
+unshare -r   neu=0 alt=0 commit=nein  'unshare -r git -c user.name=T -c user.email=t@t ci -m x'
+script -c    neu=0 alt=0 commit=nein  "script -qec 'git -c user.name=T -c user.email=t@t ci -m x' /dev/null"
+watch        neu=0 alt=0 commit=nein  'watch -n 100 -x git -c user.name=T -c user.email=t@t ci -m x'
+strace       neu=0 alt=0 commit=nein  'strace -f -o /dev/null git -c user.name=T -c user.email=t@t ci -m x'
+env -C B     neu=2 alt=0 commit=JA   'env -C /tmp/adv281r2-6hztagaz/wn4e5kpy8/B git -c user.name=T -c user.email=t@t ci -m x'
+env --chdir  neu=2 alt=0 commit=JA   'env --chdir=/tmp/adv281r2-6hztagaz/whsb7p6a7/B git -c user.name=T -c user.email=t@t ci -m x'
+find -execdir neu=2 alt=0 commit=nein  'find /tmp/adv281r2-6hztagaz/w0_dgaurn/B -maxdepth 0 -execdir git -c user.name=T -c user.email=t@t ci -m x \\;'
+xargs -a     neu=0 alt=0 commit=nein  'xargs -a /dev/null git -c user.name=T -c user.email=t@t ci -m x'
+parallel     neu=0 alt=0 commit=nein  'parallel git -c user.name=T -c user.email=t@t ci -m x ::: 1'
+== Config-Erzeuger im selben Aufruf (Alias entsteht erst zur Laufzeit) ==
+clone --template neu=2 alt=0 commit=nein  'git clone -q --template=/tmp/adv281r2-6hztagaz/w4uk8tt8u/tpl /tmp/adv281r2-6hztagaz/w4uk8tt8u/src /tmp/adv281r2-6hztagaz/w4uk8tt8u'
+clone --templ (Abk.) neu=0 alt=0 commit=nein  'git clone -q --templ=/tmp/adv281r2-6hztagaz/wdr_4rn9a/tpl /tmp/adv281r2-6hztagaz/wdr_4rn9a/src /tmp/adv281r2-6hztagaz/wdr_4rn9a/C '
+submodule add (kein Alias) neu=0 alt=0 commit=nein  'git -C /tmp/adv281r2-6hztagaz/wy8iv_s4l/src submodule add -q /tmp/adv281r2-6hztagaz/wy8iv_s4l/src sub 2>/dev/null; git -c user.nam'
+remote add (kein Alias) neu=0 alt=0 commit=nein  'git remote add o /tmp/adv281r2-6hztagaz/w9ehr15e_/src; git -c user.name=T -c user.email=t@t ci -m x'
+worktree add (kein Alias) neu=0 alt=0 commit=nein  'git worktree add -q /tmp/adv281r2-6hztagaz/w27hk_akk/wt; git -c user.name=T -c user.email=t@t ci -m x'
+config --worktree neu=2 alt=0 commit=JA   'git config --worktree alias.ci commit && git -c user.name=T -c user.email=t@t ci -m x'
+config -e GIT_EDITOR neu=2 alt=0 commit=JA   'GIT_EDITOR=/tmp/adv281r2-6hztagaz/wbo4q0413/ed.sh git config -e && git -c user.name=T -c user.email=t@t ci -m x'
+config --edit GIT_EDITOR neu=2 alt=0 commit=JA   'GIT_EDITOR=/tmp/adv281r2-6hztagaz/wuf5uv4oz/ed.sh git config --edit && git -c user.name=T -c user.email=t@t ci -m x'
+config --ed (Abk.) neu=0 alt=0 commit=JA   <== BYPASS  'GIT_EDITOR=/tmp/adv281r2-6hztagaz/wpj0tremd/ed.sh git config --ed && git -c user.name=T -c user.email=t@t ci -m x'
+config --file neu=2 alt=0 commit=JA   'git config --file .git/config alias.ci commit && git -c user.name=T -c user.email=t@t ci -m x'
+config -e core.editor neu=2 alt=0 commit=JA   'git -c core.editor=/tmp/adv281r2-6hztagaz/wekz_do7h/ed.sh config -e && git -c user.name=T -c user.email=t@t ci -m x'
+(Hinweis: bei 'clone --template' und 'clone --templ' zaehlt das Skript nur Commits in A und B, nicht im Klon C; die Abkuerzung ist in repro_round2.py (F022) mit 'init --tem' belegt.)
+
+################ C6. Kontrollen su -c / runuser -c / script -c: woertlicher Commit laeuft auch im ALTEN Gate durch (Paritaet; repro_round2f.py) ################
+== Kontrollen: woertlicher Commit in einem String-Argument eines Nicht-Shell-Starters (su -c / runuser -c / script -c / watch) ==
+su -c literal neu=0 alt=0 commit=JA   <== BYPASS  "su -c 'git -c user.name=T -c user.email=t@t commit --allow-empty -m x' root"
+su -c cd B literal neu=0 alt=0 commit=JA   <== BYPASS  "su -c 'cd /tmp/adv281r2-8ms1oxho/wkaxrt8_b/B && git -c user.name=T -c user.email=t@t commit --allow-empty -m x' root"
+runuser -c literal neu=0 alt=0 commit=JA   <== BYPASS  "runuser -l root -c 'cd /tmp/adv281r2-8ms1oxho/wyjl38rom/B && git -c user.name=T -c user.email=t@t commit --allow-empty -m x'"
+script -c literal neu=0 alt=0 commit=JA   <== BYPASS  "script -qec 'git -c user.name=T -c user.email=t@t commit --allow-empty -m x' /dev/null"
+watch literal neu=2 alt=2 commit=JA   'watch -n 100 -x git -c user.name=T -c user.email=t@t commit --allow-empty -m x'
+su -c alias(A) neu=0 alt=0 commit=JA   <== BYPASS  "su -c 'git -c user.name=T -c user.email=t@t ci --allow-empty -m x' root"
+
+################ C7. F019 Breite: Schreibweisen von git-commit im Shell-Alias-Rumpf (repro_round2g.py) ################
+== F019 (Breite): natuerliche Schreibweisen von git-commit im Shell-Alias-Rumpf (ohne absichtliche Verschleierung) ==
+F019 ok      neu=2 alt=0 commit=JA   Alias dc = '!git-commit'
+F019 ok      neu=2 alt=0 commit=JA   Alias dc = '!exec git-commit'
+F019 ok      neu=2 alt=0 commit=JA   Alias dc = '!env git-commit'
+F019 ok      neu=2 alt=0 commit=JA   Alias dc = '!command git-commit'
+F019 ok      neu=2 alt=0 commit=JA   Alias dc = '!f() { git-commit "$@"; }; f'
+F019 ok      neu=2 alt=0 commit=JA   Alias dc = '!git-commit "$@"'
+F019 BYPASS  neu=0 alt=0 commit=JA   Alias dc = '!sh -c \'git-commit "$@"\' --'
+F019 BYPASS  neu=0 alt=0 commit=JA   Alias dc = '!bash -c \'git-commit "$@"\' --'
+F019 BYPASS  neu=0 alt=0 commit=JA   Alias dc = '!sh -c "git-commit \\"\\$@\\"" --'
+F019 BYPASS  neu=0 alt=0 commit=JA   Alias dc = '!"$(git --exec-path)/git-commit" "$@"'
+F019 ok      neu=2 alt=0 commit=JA   Alias dc = '!$(git --exec-path)/git-commit'
+F019 ok      neu=2 alt=0 commit=nein  Alias dc = '!( git-commit )'
+F019 ok      neu=2 alt=0 commit=nein  Alias dc = '!{ git-commit; }'
+F019 ok      neu=2 alt=0 commit=JA   Alias dc = '!true && git-commit'
+F019 ok      neu=2 alt=0 commit=JA   Alias dc = '!xargs git-commit < /dev/null'
+F019 ok      neu=2 alt=0 commit=JA   Alias dc = "!eval 'git-commit'"
+F019 ok      neu=2 alt=0 commit=JA   Alias dc = '!git-stage . && git-commit -m x'
+F019 ok      neu=2 alt=0 commit=JA   Alias dc = '!git commit'
+
+################ D. Eigene AC-Pruefung gegen den neuen Stand, wortgetreu (acverify.py) ################
+PASS  AC-1  
+PASS  AC-2a  
+PASS  AC-2b  
+PASS  AC-2c  
+PASS  AC-2d  
+PASS  AC-2e  
+PASS  AC-2f  
+PASS  AC-2g  
+PASS  AC-2h  
+PASS  AC-3 -C  
+PASS  AC-3 cd  
+PASS  AC-3 bash -c  
+PASS  AC-3 cd $X  
+PASS  AC-4 CI  
+PASS  AC-4 STATUS  
+PASS  AC-5a  
+PASS  AC-5b  
+PASS  AC-5c  
+PASS  AC-6 commit body  
+PASS  AC-6 marker  
+PASS  AC-6 harmless  
+PASS  AC-7a  
+PASS  AC-7b  
+PASS  AC-7c  
+PASS  AC-7d  
+PASS  AC-8 git st  
+PASS  AC-8 git lg  
+PASS  AC-8 git status  
+PASS  AC-9 hot path + cache  
+PASS  AC-9 budget  
+PASS  AC-10  
+PASS  AC-10 no workflow  
+PASS  AC-11  
+PASS  AC-12  
+PASS  AC-13  
+PASS  AC-14  
+PASS  AC-15  
+PASS  AC-16/17 (pytest -k)  5 passed, 233 deselected in 6.00s
+
+38/38 checks passed
+
+################ E. Invarianz-Differential ALT (HEAD) gegen NEU, 450 Befehlsketten x 2 Zustaende (atk13.py) ################
+runs 900 diffs 0
+
+################ E2. Heisser Pfad: git-Prozesse je Aufrufform (atk8.py) ################
+old rc=0 git-procs=0  'git status'
+new rc=0 git-procs=0  'git status'
+old rc=0 git-procs=0  'git -C . status'
+new rc=0 git-procs=0  'git -C . status'
+old rc=0 git-procs=0  'git --no-pager log -1'
+new rc=0 git-procs=0  'git --no-pager log -1'
+old rc=0 git-procs=0  'GIT_DIR=.git git status'
+new rc=0 git-procs=0  'GIT_DIR=.git git status'
+old rc=0 git-procs=0  'env X=1 git diff'
+new rc=0 git-procs=0  'env X=1 git diff'
+old rc=0 git-procs=0  'git add src/b.py'
+new rc=0 git-procs=0  'git add src/b.py'
+old rc=0 git-procs=0  'git stage x'
+new rc=0 git-procs=0  'git stage x'
+old rc=0 git-procs=1  'git commit -m x'
+new rc=0 git-procs=1  'git commit -m x'
+old rc=0 git-procs=0  'git push origin main'
+new rc=0 git-procs=0  'git push origin main'
+old rc=0 git-procs=0  'cd . && git status'
+new rc=0 git-procs=0  'cd . && git status'
+old rc=0 git-procs=0  'git status && git diff && git log'
+new rc=0 git-procs=0  'git status && git diff && git log'
+old rc=0 git-procs=0  'git config user.name x'
+new rc=0 git-procs=0  'git config user.name x'
+old rc=0 git-procs=0  'git worktree list'
+new rc=0 git-procs=0  'git worktree list'
+old rc=0 git-procs=0  'git rev-parse HEAD'
+new rc=0 git-procs=0  'git rev-parse HEAD'
+old rc=0 git-procs=0  'git submodule status'
+new rc=0 git-procs=1  'git submodule status'
+old rc=0 git-procs=0  'git st'
+new rc=0 git-procs=1  'git st'
+old rc=0 git-procs=0  'git -c a=b st'
+new rc=0 git-procs=2  'git -c a=b st'
+old rc=0 git-procs=0  'echo hi'
+new rc=0 git-procs=0  'echo hi'
+old rc=0 git-procs=0  'ls'
+new rc=0 git-procs=0  'ls'
+old rc=0 git-procs=0  'git'
+new rc=0 git-procs=0  'git'
+
+################ E3. Die Abfrage fuehrt keinen fremden Code aus: 14 Varianten (atk35.py) ################
+core.pager             hook=2  sentinel created by hook: False
+pager.config           hook=2  sentinel created by hook: False
+-p (paginate)          hook=2  sentinel created by hook: False
+core.fsmonitor         hook=2  sentinel created by hook: False
+core.hooksPath         hook=2  sentinel created by hook: False
+core.sshCommand        hook=2  sentinel created by hook: False
+credential.helper      hook=2  sentinel created by hook: False
+GIT_PAGER prefix       hook=2  sentinel created by hook: False
+GIT_EXTERNAL_DIFF      hook=2  sentinel created by hook: False
+GIT_EXEC_PATH prefix   hook=2  sentinel created by hook: False
+PATH prefix            hook=2  sentinel created by hook: False
+exec-path opt          hook=2  sentinel created by hook: False
+alias.config           hook=2  sentinel created by hook: False
+git-dir evil           hook=2  sentinel created by hook: False
+
+################ E4. Override-Token und Stop-Lock (atk26.py) ################
+locked alias commit: 2
+with override token: 0 Commit erkannt über Alias: git ci → git commit | E2E scope: backend
+stop-lock: 2 BLOCKED: Stop-lock active.
+stop-lock + builtin: 2 BLOCKED: Stop-lock active.
+
+################ F. Differentielles Fuzzing gegen die echte bash (r2fuzz.py wrap/ctx/taint, Seeds 2-5; Seed 1 siehe Dialog Runde 1) ################
+mode=wrap seed=2 trials=300 BYPASS=0 over-detect=1
+mode=ctx seed=2 trials=300 BYPASS=0 over-detect=30
+mode=taint seed=2 trials=300 BYPASS=0 over-detect=45
+mode=wrap seed=3 trials=300 BYPASS=0 over-detect=0
+mode=ctx seed=3 trials=300 BYPASS=0 over-detect=39
+mode=taint seed=3 trials=300 BYPASS=0 over-detect=33
+mode=wrap seed=4 trials=300 BYPASS=0 over-detect=2
+mode=ctx seed=4 trials=300 BYPASS=0 over-detect=39
+mode=taint seed=4 trials=300 BYPASS=0 over-detect=46
+mode=wrap seed=5 trials=300 BYPASS=0 over-detect=5
+mode=ctx seed=5 trials=300 BYPASS=0 over-detect=34
+mode=taint seed=5 trials=300 BYPASS=0 over-detect=45
+
+################ F2. Robustheit: Resolver-Fuzz (fuzz_resolver2.py, 2 x 60000) und Hook-Fuzz (r2hookfuzz.py, 2 x 600) ################
+{} slow: []
+
+real	0m4.123s
+user	0m4.060s
+sys	0m0.000s
+{} slow: []
+
+real	0m4.200s
+user	0m4.123s
+sys	0m0.008s
+exit codes: {0: 566, 2: 34} anomalies: 0
+
+real	0m36.881s
+user	0m30.639s
+sys	0m5.543s
+exit codes: {0: 560, 2: 40} anomalies: 0
+
+real	0m37.145s
+user	0m30.576s
+sys	0m5.831s
+
+################ G. Ueber-Erkennung: Korpus 1572 echte Bash-Befehle, 3-fach (alt/R1-Code/neu), gesperrter Zustand, ohne Ausfuehrung ################
+Namen: ['old', 'r1', 'new']
+(0, 0, 0) 1452
+(0, 0, 2) 34
+(0, 2, 0) 2
+(0, 2, 2) 21
+(2, 2, 2) 63
+old: median 0.086s p95 0.132s max 0.28s
+r1: median 0.087s p95 0.144s max 0.31s
+new: median 0.090s p95 0.146s max 0.24s
+(Zeilen: (alt, R1-Code, neu) -> Anzahl; Exit 0 = durchgelassen, 2 = geblockt. Vergleichskorpora: 388 Doku/Test-Befehle -> 0 Zusatzbloecke; 186 Commit-/PR-Nachrichten -> 2; 128 'typische' Befehle -> 18.)
+
+################ H. Laufzeit pathologischer Eingaben (r2perf.py, r2perf2.py) ################
+50000 git tokens + literal commit  neu   1.87s rc=2 | alt   1.49s rc=2
+50000 'git' tokens, no commit      neu   2.54s rc=2 | alt   0.51s rc=0
+git st; x 20000                    neu   2.37s rc=2 | alt   0.49s rc=0
+git a; x 100                       neu   0.09s rc=2 | alt   0.06s rc=0
+grep git x 25000                   neu   2.86s rc=0 | alt   2.70s rc=0
+echo $(x) x 20000 + git st         neu   3.36s rc=0 | alt   2.64s rc=0
+nested $( x2000                    neu   0.23s rc=0 | alt   0.23s rc=0
+bash -c nest 6                     neu   0.06s rc=0 | alt   0.06s rc=0
+1MB single token + git st          neu >250s TIMEOUT
+200KB prose lines 'git word'       neu   1.88s rc=2 | alt   1.96s rc=0
+5000 cd &&                         neu   0.84s rc=2 | alt   0.61s rc=0
+env assigns 50000 + git st         neu   1.34s rc=0 | alt   1.03s rc=0
+unbalanced quote 500KB git st      neu  56.93s rc=2 | alt  15.04s rc=0
+100000 separators ;                neu   9.12s rc=0 | alt   6.75s rc=0
+30000 &&-chain of builtins         neu   5.04s rc=0 | alt   3.96s rc=0
+20000 nested bash -c tokens        neu   3.67s rc=2 | alt   3.42s rc=0
+20000 eval tokens                  neu   2.92s rc=2 | alt   2.28s rc=0
+20000 timeout wrappers             neu   2.19s rc=0 | alt   1.93s rc=0
+20000 sudo -u x                    neu   2.47s rc=2 | alt   2.26s rc=0
+20000 find -exec                   neu   3.67s rc=2 | alt   3.56s rc=0
+---
+1 token  100000 B  alt:    2.8s rc=0
+1 token  100000 B  neu:    3.2s rc=0
+1 token  200000 B  alt:    9.6s rc=0
+1 token  200000 B  neu:   10.6s rc=0
+1 token  400000 B  alt:   35.0s rc=0
+1 token  400000 B  neu:   37.0s rc=0
+unbalanced  100000 B  alt:    0.7s rc=0
+unbalanced  100000 B  neu:    2.6s rc=2
+unbalanced  200000 B  alt:    2.6s rc=0
+unbalanced  200000 B  neu:    9.2s rc=2
+unbalanced  400000 B  alt:    9.0s rc=0
+unbalanced  400000 B  neu:   34.7s rc=2
+
+################ I. Remediation-Prototypen (Scratch-Kopien, Repo unberuehrt; nur Hinweise fuer den Fixer) ################
+-- F024: Resolver bekommt strip_heredoc_bodies(command) --
+== Prototyp: Resolver bekommt strip_heredoc_bodies(command) (Scratch-Kopie, Repo unberuehrt) ==
+Phase7 ohne git-Prosa, cd           alt=0 Repo-neu=0 Prototyp=0
+Phase7 git hooks, cd                alt=0 Repo-neu=2 Prototyp=0
+Phase7 don't git aliases, kein cd   alt=0 Repo-neu=2 Prototyp=0
+Phase6 gh pr create (heredoc, Apostroph)  alt=0 Repo-neu=2 Prototyp=0
+Phase6 cat > doc <<'EOF' Apostroph        alt=0 Repo-neu=2 Prototyp=0
+Phase6 heredoc exec git "$@" (F016)       alt=0 Repo-neu=2 Prototyp=2
+Phase6 Kontrolle: bash <<EOF git ci       alt=0 Repo-neu=0 Prototyp=0
+Phase6 Kontrolle: python <<EOF + git ci   alt=0 Repo-neu=0 Prototyp=0
+Phase6 echo it's git time                 alt=0 Repo-neu=2 Prototyp=2
+== Prototyp-Kontrollen mit Alias ci=commit in A: Interpreter-Heredocs muessen weiter blocken ==
+bash <<EOF git ci                      alt=0 Repo-neu=2 Prototyp=2
+sh <<EOF git ci                        alt=0 Repo-neu=2 Prototyp=2
+python3 - <<EOF os.system git ci       alt=0 Repo-neu=0 Prototyp=0
+cat <<EOF Daten mit git ci (Prosa)     alt=0 Repo-neu=2 Prototyp=0
+git commit -F - <<EOF (woertlich)      alt=2 Repo-neu=2 Prototyp=2
+-- F018: Umleitungen ueberspringen + Operanden-Tabelle je Starter (alle 238 Tests der Datei bleiben gruen) --
+== Prototyp F018: Befehlsposition hinter Starter (beliebige Argumente) und fuehrende Umleitungen ==
+a.b            Repo-neu=0 Prototyp=2  'timeout -s KILL 5 git -c user.name=T -c user.email=t@t a.b -m x'
+$(echo ci)     Repo-neu=0 Prototyp=2  'timeout -s KILL 5 git -c user.name=T -c user.email=t@t $(echo ci) -m x'
+a.b            Repo-neu=0 Prototyp=2  'flock /tmp/lockx git -c user.name=T -c user.email=t@t a.b -m x'
+$(echo ci)     Repo-neu=0 Prototyp=2  'flock /tmp/lockx git -c user.name=T -c user.email=t@t $(echo ci) -m x'
+a.b            Repo-neu=0 Prototyp=2  '>/dev/null git -c user.name=T -c user.email=t@t a.b -m x'
+$(echo ci)     Repo-neu=0 Prototyp=2  '>/dev/null git -c user.name=T -c user.email=t@t $(echo ci) -m x'
+a.b            Repo-neu=0 Prototyp=2  '2>/dev/null git -c user.name=T -c user.email=t@t a.b -m x'
+$(echo ci)     Repo-neu=0 Prototyp=2  '2>/dev/null git -c user.name=T -c user.email=t@t $(echo ci) -m x'
+a.b            Repo-neu=0 Prototyp=2  'stdbuf -o L git -c user.name=T -c user.email=t@t a.b -m x'
+$(echo ci)     Repo-neu=0 Prototyp=2  'stdbuf -o L git -c user.name=T -c user.email=t@t $(echo ci) -m x'
+a.b            Repo-neu=0 Prototyp=2  'nice -n +5 git -c user.name=T -c user.email=t@t a.b -m x'
+$(echo ci)     Repo-neu=0 Prototyp=2  'nice -n +5 git -c user.name=T -c user.email=t@t $(echo ci) -m x'
+unbekannt a.b  Repo-neu=0 Prototyp=0  'mywrap git -c user.name=T -c user.email=t@t a.b -m x'
+-- Kontrollen (Ueber-Erkennung): Erwaehnungen bleiben frei --
+Kontrolle      Repo-neu=0 Prototyp=0  'echo git $X'
+Kontrolle      Repo-neu=0 Prototyp=0  'grep -rn git $PATTERN docs/'
+Kontrolle      Repo-neu=0 Prototyp=0  'strace git $X'
+Kontrolle      Repo-neu=0 Prototyp=0  'cat >/dev/null; echo hello'
+Kontrolle      Repo-neu=0 Prototyp=0  'git log --oneline | head -3'
+Kontrolle      Repo-neu=0 Prototyp=0  'xargs grep -l git README.md'
+Kontrolle      Repo-neu=0 Prototyp=0  'timeout -s KILL 5 git status'
+Kontrolle      Repo-neu=0 Prototyp=0  'flock /tmp/lockx git log -1'
+Kontrolle      Repo-neu=0 Prototyp=0  '>/dev/null git status'
+-- F019: gestrichelte Form lexer-basiert (238 Tests gruen) --
+== Prototyp F019: dashed-Form lexer-basiert (Scratch-Kopie) ==
+Repo-neu=2 Prototyp=2  Alias dc = '!git-commit'
+Repo-neu=0 Prototyp=2  Alias dc = '!git\\-commit'
+Repo-neu=0 Prototyp=2  Alias dc = '!git-com""mit'
+Repo-neu=0 Prototyp=2  Alias dc = '!g\\it-commit'
+Repo-neu=0 Prototyp=2  Alias dc = "!'git'-commit"
+Repo-neu=0 Prototyp=2  Alias dc = "!git-'commit'"
+Repo-neu=0 Prototyp=2  Alias dc = '!sh -c \'git-commit "$@"\' --'
+Repo-neu=0 Prototyp=2  Alias dc = '!bash -c \'git-commit "$@"\' --'
+Repo-neu=0 Prototyp=2  Alias dc = '!sh -c "git-commit \\"\\$@\\"" --'
+Repo-neu=0 Prototyp=2  Alias dc = '!"$(git --exec-path)/git-commit" "$@"'
+Repo-neu=2 Prototyp=2  Alias dc = '!echo git-commit'
+Repo-neu=0 Prototyp=0  Alias dc = '!ls git-hooks'
+-- F020/F021/F022: Quoting-normalisierte Pruefungen, Optionsabkuerzungen (238 Tests gruen) --
+== Prototyp F020/F021/F022: Quoting-normalisierte Roh-Text-Pruefungen, Optionsabkuerzungen (Scratch-Kopie) ==
+F020 export      Repo-neu=0 Prototyp=2  'export TE""RM=commit; git -c user.name=T -c user.email=t@t --config-env=alias.ci=TERM ci -'
+F020 backslash   Repo-neu=0 Prototyp=2  'export TE\\RM=commit; git -c user.name=T -c user.email=t@t --config-env=alias.ci=TERM ci -m'
+F020 declare     Repo-neu=0 Prototyp=2  'declare -x "TE""RM"=commit; git -c user.name=T -c user.email=t@t --config-env=alias.ci=TER'
+F020 eval        Repo-neu=0 Prototyp=2  'eval "export TE""RM=commit"; git -c user.name=T -c user.email=t@t --config-env=alias.ci=TE'
+F020 indirekt    Repo-neu=0 Prototyp=0  'PFX=TE; export ${PFX}RM=commit; git -c user.name=T -c user.email=t@t --config-env=alias.ci'
+Kontrolle Praefix Repo-neu=2 Prototyp=2  'TERM=commit git -c user.name=T -c user.email=t@t --config-env=alias.ci=TERM ci -m x'
+F021 gesplittet  Repo-neu=0 Prototyp=2  'export CD""PATH=/tmp/adv281r2-jrogbshl/wnq2yzhjb/cp; cd dec && git -c user.name=T -c user.'
+F022 --tem       Repo-neu=0 Prototyp=2  'git init -q --tem=/tmp/adv281r2-jrogbshl/wqr2cqyp6/tpl /tmp/adv281r2-jrogbshl/wqr2cqyp6/C '
+F022 --te        Repo-neu=0 Prototyp=2  'git init -q --te=/tmp/adv281r2-jrogbshl/w2t39k4ec/tpl /tmp/adv281r2-jrogbshl/w2t39k4ec/C &'
+F022 config --ed Repo-neu=0 Prototyp=2  'GIT_EDITOR=/tmp/adv281r2-jrogbshl/wj885l252/ed.sh git config --ed && git -c user.name=T -c'
+Kontrolle --bare Repo-neu=0 Prototyp=0  'git init -q --bare /tmp/adv281r2-jrogbshl/whitw0cro/C2 && git -c user.name=T -c user.email'
