@@ -106,6 +106,24 @@ def test_kaputte_eingaben_fail_open_ohne_exception(tmp_path):
     _assert_allowed(KAPUTT, _sandbox(tmp_path), "#324 AC-8")
 
 
+KAPUTT_COUNT = "GIT_CONFIG_COUNT=²"  # Nicht-ASCII-Ziffer: isdigit() ja, int() nein (F001)
+
+
+def test_count_mit_nicht_ascii_ziffer_fail_open(tmp_path):
+    for cmd in (f"{KAPUTT_COUNT} git status",
+                f"{KAPUTT_COUNT} GIT_CONFIG_KEY_0=alias.ci GIT_CONFIG_VALUE_0=commit git ci -m x"):
+        hook_utils.git_subcommands(cmd)
+        hook_utils.git_head_subcommands(cmd)
+        hook_utils.git_runs_foreign_code(cmd)
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    _assert_allowed([f"{KAPUTT_COUNT} git status"], _sandbox(tmp_path / "a"), "#324 F001 status")
+    _assert_blocked_as_commit([
+        f"{KAPUTT_COUNT} git commit -m x",
+        f"{KAPUTT_COUNT} GIT_CONFIG_PARAMETERS=\"'alias.ci=commit'\" git ci -m x",
+    ], tmp_path / "b", "#324 F001 commit")
+
+
 # --- AC-9: kein Zustand, Signaturen ---------------------------------------------
 
 def test_kein_zustand_zwischen_aufrufen_und_signaturen_stabil():
