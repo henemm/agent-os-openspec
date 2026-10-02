@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+**Framework-Entwicklung: Override für `core/hooks/` und `core/agents/` entfällt im laufenden Workflow (#322)**
+
+Nur im Framework-Repo: Läuft ein Workflow ab `phase6_implement`, braucht ein Edit an den
+Framework-Quellen keinen Override-Token mehr; Phase-, RED-Artefakt-, AC- und LoC-Prüfung gelten
+stattdessen. Ohne Workflow oder vor der Freigabe bleibt der Override nötig, `.claude/hooks/` und
+`.claude/agents/` bleiben geschützt. Tests: `tests/test_edit_gate_framework_workflow_322.py`.
+
 ### Fixed
 
 **bash_gate: Aliase, fremder Code und Schreibweisen-Randfälle (#299 Teil B: #281, #297, #318)**

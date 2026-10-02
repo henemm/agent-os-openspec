@@ -310,6 +310,16 @@ def _is_framework_repo() -> bool:
         return False
 
 
+def _framework_impl_workflow_active() -> bool:
+    """Laeuft im Framework-Repo ein Workflow ab phase6 (Spec freigegeben)? (#322)
+
+    Dann entfaellt fuer core/hooks/ und core/agents/ die zusaetzliche Override-
+    Pflicht; Phase, RED-Artefakte, AC- und LoC-Pruefung gelten wie bei jedem Code.
+    """
+    workflow = _read_active_workflow()
+    return bool(workflow) and workflow.get("current_phase") in IMPL_PHASES
+
+
 def _infrastructure_dirs(config: dict) -> list:
     """Infrastruktur-Verzeichnisse: Defaults + Config-Ergaenzung + Framework-Quellen.
 
@@ -609,6 +619,8 @@ def main():
         if infra in file_path:
             if _has_override_token("__infra__") or _has_override_token():
                 allow()
+            if infra in FRAMEWORK_SOURCE_DIRS and _framework_impl_workflow_active():
+                break  # #322: laufender Workflow ab phase6 ersetzt den Override
             block(
                 f"BLOCKED: Infrastruktur-Datei ({infra}) — Aenderungen an Gates/Agenten "
                 "brauchen eine ausdrueckliche Freigabe.\n"
