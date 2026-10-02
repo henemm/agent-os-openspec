@@ -22,7 +22,7 @@ from hook_utils import (
     get_active_workflow_name, gate_diagnostics, strip_heredoc_bodies,
     SECRETS_SENSITIVE_PATTERNS, SECRETS_ALWAYS_BLOCKED, SECRETS_FREETEXT_FLAGS as _SHARED_FREETEXT_FLAGS,
     git_subcommands, git_head_subcommands, is_git_subcommand, is_pure_git_command,
-    framework_disabled,
+    framework_disabled, _git_segments,
 )
 setup_path()
 
@@ -217,11 +217,42 @@ def _whitelist_matches(command: str, entry: str) -> bool:
 
 
 def _is_whitelisted(command: str) -> bool:
+    """Whitelisted nur, wenn JEDES Segment einen Whitelist-Eintrag trifft (#299).
+
+    `git status && sed -i … <state>` ist damit nicht mehr whitelisted. Nicht
+    zerlegbare Kommandos (kaputte Quotes) behalten das alte Verhalten
+    (irgendein Treffer genuegt), damit niemand ausgesperrt wird.
+    """
+    entries = _whitelist_entries()
+    segments = _git_segments(command)
+    if segments is None:
+        return any(_whitelist_matches(command, allowed) for allowed in entries)
+    return bool(segments) and all(_segment_whitelisted(seg, entries) for seg in segments)
+
+
+def _whitelist_entries() -> list:
     config = _load_config_values()
-    project_whitelist = config.get("bash_gate", {}).get("whitelist", [])
+    return WHITELIST_COMMANDS + config.get("bash_gate", {}).get("whitelist", [])
+
+
+def _segment_whitelisted(segment: list, entries: list) -> bool:
+    return any(_whitelist_matches(shlex.join(segment), allowed) for allowed in entries)
+
+
+def _protected_outside_whitelist(scan_cmd: str, command: str) -> bool:
+    """Nennt ein NICHT-whitelisted Segment einen geschuetzten Pfad? (#299, 2b)
+
+    `workflow.py status 2>&1 | tee out.log`: der Pfad steht nur im
+    whitelisted Segment -> zaehlt fuer 3b nicht. Nicht zerlegbar -> wie
+    bisher auf den ganzen Befehl (fail-open).
+    """
+    segments = _git_segments(scan_cmd)
+    if segments is None:
+        return _references_protected(scan_cmd) and not _is_whitelisted(command)
+    entries = _whitelist_entries()
     return any(
-        _whitelist_matches(command, allowed)
-        for allowed in WHITELIST_COMMANDS + project_whitelist
+        _references_protected(shlex.join(seg)) and not _segment_whitelisted(seg, entries)
+        for seg in segments
     )
 
 
@@ -699,9 +730,10 @@ def main():
             block(_marker_block_msg)
 
     # 3b. State-integrity: protected file + write indicator
-    if workflow_enforced and _references_protected(scan_cmd):
-        if _is_whitelisted(command):
-            allow()
+    #     Ein Whitelist-Treffer ueberspringt NUR diesen Block, nicht 4/4b/5
+    #     (#296: `git commit -m x -- <state>` darf das Commit-Gate nicht umgehen).
+    #     Gezaehlt werden nur geschuetzte Pfade in nicht-whitelisted Segmenten (2b).
+    if workflow_enforced and _protected_outside_whitelist(scan_cmd, command):
         if _has_write_indicator(scan_cmd):
             block("BLOCKED: Direct state file manipulation. Use workflow.py CLI.")
 
@@ -762,9 +794,10 @@ def main():
                     )
                     behind = int(behind_result.stdout.strip() or "0")
                     if behind > 0:
+                        # --autostash: vorgemerkte Dateien ueberleben den Rebase (#284)
                         block(
                             f"BLOCKED — Branch ist {behind} Commit(s) hinter origin/main.\n"
-                            "Bitte erst: git fetch origin && git rebase origin/main"
+                            "Bitte erst: git fetch origin && git rebase --autostash origin/main"
                         )
                 # fetch returncode != 0 → kein Netz → silent skip
             except (subprocess.TimeoutExpired, OSError, ValueError):

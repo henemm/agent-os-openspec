@@ -77,10 +77,14 @@ _GIT_SEPARATOR_WORDS = frozenset({"{", "}", "!"})
 # Dateinamen) und jeder andere Backslash.
 _GIT_LINE_CONTINUATIONS = ("\\\r\n", "\\\n")
 # git-Vor-Optionen (vor dem Unterbefehl), deren WERT ein eigenes Token ist.
+# `--exec-path` gehoert NICHT dazu: laut git(1) `--exec-path[=<path>]`, ein Wert
+# nur mit `=` — sonst wuerde `git --exec-path commit` den Unterbefehl schlucken.
 _GIT_OPTS_WITH_VALUE = {
-    "-c", "-C", "--exec-path", "--git-dir", "--work-tree",
+    "-c", "-C", "--git-dir", "--work-tree", "--attr-source",
     "--namespace", "--super-prefix", "--config-env",
 }
+# Shell-Optionen vor `-c`, deren Wert ein eigenes Token ist (#298).
+_SHELL_OPTS_WITH_VALUE = {"-o", "+o", "-O", "+O", "--rcfile", "--init-file"}
 # Wrapper, die vor `git` stehen duerfen, ohne die Bedeutung zu aendern.
 _GIT_COMMAND_PREFIXES = {"sudo", "env", "nice", "command", "time", "nohup"}
 _ENV_ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
@@ -96,6 +100,12 @@ def _git_subcommand_after(tokens: "list[str]", i: int) -> "str | None":
         tok = tokens[i]
         if _is_git_separator(tok):
             return None  # Kommando endet, bevor ein Unterbefehl kam
+        if _is_git_redirect(tok):
+            i += 2  # Umleitung + ihr Ziel (`>/dev/null`, `>& 1`) (#304)
+            continue
+        if tok.isdigit() and i + 1 < len(tokens) and _is_git_redirect(tokens[i + 1]):
+            i += 1  # Ziffern-Praefix einer Umleitung (`2>&1` -> `2`, `>&`, `1`)
+            continue
         if tok in _GIT_OPTS_WITH_VALUE:
             i += 2  # Vor-Option + ihr Wert (`-C /pfad`, `-c k=v`)
             continue
@@ -141,6 +151,30 @@ def _git_subcommands_in_segment(tokens: "list[str]") -> "list[str]":
     return out
 
 
+def _shell_c_argument(segment: "list[str]", j: int) -> "str | None":
+    """Kommando-Token hinter `-c` einer Shell, Optionen davor uebersprungen (#298).
+
+    `-c` darf in einem Buendel stecken (`-lc`, `-ec`). Werte von `-o`/`-O`/
+    `--rcfile`/`--init-file` sind kein Kommando. Erstes Nicht-Options-Token
+    (Skriptdatei) beendet die Suche: dann gibt es kein `-c`.
+    """
+    while j < len(segment):
+        tok = segment[j]
+        if tok in _SHELL_OPTS_WITH_VALUE:
+            j += 2
+        elif tok.startswith("--"):
+            j += 1  # `--login`, `--noprofile`, `--norc`, `--posix`, …
+        elif tok.startswith("-") and len(tok) > 1:
+            if "c" in tok[1:]:
+                return segment[j + 1] if j + 1 < len(segment) else None
+            j += 1  # `-l`, `-e`, `-x`, …
+        elif tok.startswith("+") and len(tok) > 1:
+            j += 1  # `+e`, `+x`
+        else:
+            return None
+    return None
+
+
 def _git_nested_subcommands(segment: "list[str]", depth: int) -> "list[str]":
     """Unterbefehle aus verschachtelten Shells (`sh -c "…"`, `eval "…"`)."""
     if depth >= 2:
@@ -149,8 +183,9 @@ def _git_nested_subcommands(segment: "list[str]", depth: int) -> "list[str]":
     for i, tok in enumerate(segment):
         base = tok.rsplit("/", 1)[-1]
         if _GIT_SHELL_BINARY_RE.match(base):
-            if i + 2 < len(segment) and segment[i + 1] == "-c":
-                found.extend(git_subcommands(segment[i + 2], depth + 1))
+            nested = _shell_c_argument(segment, i + 1)
+            if nested is not None:
+                found.extend(git_subcommands(nested, depth + 1))
         elif base == "eval":
             for nested in segment[i + 1:]:
                 found.extend(git_subcommands(nested, depth + 1))
@@ -189,6 +224,16 @@ def _git_lex(command: str) -> "list[str] | None":
         return None
 
 
+def _is_git_redirect(token: str) -> bool:
+    """Umleitungs-Token: nur aus `<>&`, mit mindestens einem `<` oder `>`.
+
+    Deckt `>`, `>>`, `<`, `>&`, `&>`, `&>>`. Ein einzelnes `&` (Hintergrund),
+    `&&`, `|&` und `<(`/`>(` sind KEINE Umleitung.
+    """
+    return (bool(token) and all(ch in "<>&" for ch in token)
+            and ("<" in token or ">" in token))
+
+
 def _is_git_separator(token: str) -> bool:
     """Ist das Token ein Kommando-Trenner (und kein Argument)?
 
@@ -207,6 +252,8 @@ def _is_git_separator(token: str) -> bool:
         return False
     if token in _GIT_SEPARATOR_WORDS:
         return True
+    if _is_git_redirect(token):
+        return False  # `>&`, `&>`, `&>>` sind Umleitungen, keine Trenner (#304)
     if not all(ch in _GIT_PUNCTUATION_CHARS for ch in token):
         return False
     return any(ch in _GIT_SEPARATOR_CHARS for ch in token)
