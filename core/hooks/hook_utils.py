@@ -642,6 +642,12 @@ def setup_path():
         sys.path.insert(0, hooks_dir)
 
 
+# Zuletzt ueber stdin gelieferte Hook-Eingabe (tool_name, tool_input). Claude Code uebergibt sie
+# per stdin, nicht per Umgebungsvariable; ohne diesen Zwischenspeicher kennt block() sie nicht und
+# das Gate-Event-Log bleibt ohne Ausschnitt (#328).
+_STDIN_PAYLOAD: dict = {}
+
+
 def get_tool_input() -> dict:
     """Parse tool input from CLAUDE_TOOL_INPUT env var or stdin.
     Returns parsed dict or empty dict on failure."""
@@ -650,6 +656,9 @@ def get_tool_input() -> dict:
     if not tool_input:
         try:
             data = json.load(sys.stdin)
+            if isinstance(data, dict):
+                _STDIN_PAYLOAD.clear()
+                _STDIN_PAYLOAD.update(data)
             return data.get("tool_input", {})
         except (json.JSONDecodeError, Exception):
             return {}
@@ -756,12 +765,29 @@ def mask_and_truncate_excerpt(text: "str | None") -> str:
     return text
 
 
+_FRAMEWORK_VERSION_CACHE: "list[str]" = []
+
+
+def _framework_version() -> str:
+    """Version aus .claude-plugin/plugin.json neben dem Hook-Ordner; leer, wenn nicht ermittelbar
+    (z. B. Copy-Modus). Damit koennen Auswertungen Fixes ueber die Zeit einer Version zuordnen (#328)."""
+    if not _FRAMEWORK_VERSION_CACHE:
+        version = ""
+        try:
+            manifest = Path(__file__).resolve().parent.parent.parent / ".claude-plugin" / "plugin.json"
+            version = str(json.loads(manifest.read_text(encoding="utf-8")).get("version", ""))
+        except Exception:
+            version = ""
+        _FRAMEWORK_VERSION_CACHE.append(version)
+    return _FRAMEWORK_VERSION_CACHE[0]
+
+
 def log_gate_event(hook: str, tool: str, reason: str, command_excerpt: str = "") -> None:
     """Eine Blockade als JSON-Zeile anhaengen. Schlaegt niemals sichtbar fehl.
 
     Schema pro Zeile: ts (UTC ISO8601), hook, tool, reason (erste Zeile,
     gekappt), command_excerpt (maskiert + gekappt), session_id (leer wenn
-    nicht ermittelbar).
+    nicht ermittelbar), framework_version (leer wenn nicht ermittelbar).
     """
     try:
         root = find_worktree_root() or find_project_root()
@@ -774,6 +800,7 @@ def log_gate_event(hook: str, tool: str, reason: str, command_excerpt: str = "")
             "reason": reason_line[:300],
             "command_excerpt": mask_and_truncate_excerpt(command_excerpt),
             "session_id": os.environ.get("CLAUDE_CODE_SESSION_ID", ""),
+            "framework_version": _framework_version(),
         }
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "a", encoding="utf-8") as f:
@@ -795,18 +822,19 @@ def _log_gate_event_for_block(message: str, hook: "str | None", tool: "str | Non
         except Exception:
             hook = ""
     if tool is None:
-        tool = os.environ.get("CLAUDE_TOOL_NAME", "") or os.environ.get("CLAUDE_TOOL", "")
+        tool = (os.environ.get("CLAUDE_TOOL_NAME", "") or os.environ.get("CLAUDE_TOOL", "")
+                or str(_STDIN_PAYLOAD.get("tool_name") or ""))
     if command_excerpt is None:
         command_excerpt = ""
         ti_raw = os.environ.get("CLAUDE_TOOL_INPUT", "")
-        if ti_raw:
-            try:
-                ti = json.loads(ti_raw)
+        try:
+            ti = json.loads(ti_raw) if ti_raw else _STDIN_PAYLOAD.get("tool_input")
+            if isinstance(ti, dict):
                 command_excerpt = (
                     ti.get("command") or ti.get("file_path") or ti.get("content", "")
                 )
-            except Exception:
-                command_excerpt = ""
+        except Exception:
+            command_excerpt = ""
     log_gate_event(hook, tool, message, command_excerpt)
 
 
