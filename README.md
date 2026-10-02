@@ -285,6 +285,8 @@ python3 .claude/hooks/workflow.py set-field github_issue 42
 
 Every block any hook issues is appended to `.claude/gate-events.jsonl` — hook, tool, reason, a secret-masked excerpt of the command, nothing more. The log only observes; it never changes a gate's decision and never blocks anything itself. It exists so a recurring false alarm becomes a number and a regression test instead of a memory: before adding a new guardrail, check whether the log shows the problem it would solve actually happening.
 
+`scripts/gate_audit.py` summarizes one or more logs (blocks per hook, most frequent reason patterns, weekly trend, suspected block loops, one sample per pattern). It is a standalone read-only tool, not a hook: `python3 scripts/gate_audit.py <log-or-project-dir> [more …] [--since YYYY-MM-DD]`. The log records blocks only — no allowed calls and no verdict on whether a block was justified — so the report gives frequencies and clusters; judging "real or false alarm" stays manual.
+
 ---
 
 ## Configuration

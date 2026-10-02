@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+**Auswertung des Gate-Event-Logs (`scripts/gate_audit.py`, Folge von #181)**
+
+Eigenständiges, nur lesendes Werkzeug (kein Hook, kein Gate, kein neuer Slash-Befehl), das
+`.claude/gate-events.jsonl` aus einem oder mehreren Projekten auswertet: Blockaden je Hook,
+häufigste Muster (Zahlen, Pfade, Hashes und Workflow-Namen werden zusammengefasst),
+Verlauf je Kalenderwoche, Schleifen-Verdacht (gleiches Muster mehrfach in kurzer Zeit in
+derselben Sitzung) und eine Stichprobe je Muster zur Handeinstufung. Das Log enthält nur
+Blockaden — Häufigkeiten und Cluster, kein Fehlalarm-Urteil. Tests: `tests/test_gate_audit.py`.
+Bisher nur mit synthetischen Daten geprüft; der erste Lauf gegen ein echtes Log steht aus.
+
 **Herkunft der Vorbedingungen als Pflichtsektion des Prüfprotokolls (#286, Scheibe 2 von #273)**
 
 Die Tabelle aus `precondition_origins.py` (#285) wird zur Pflichtsektion
