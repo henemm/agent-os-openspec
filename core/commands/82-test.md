@@ -54,15 +54,17 @@ Das `status`-Kommando ist der eigentliche Wiedereinstiegs-Check: Es zeigt die Qu
 
 ## Output Format
 
+Ein Lauf mit 0 bestanden und ≥ 1 übersprungen ist nicht grün.
+
 **Bei Erfolg:**
 ```
-Tests: X passed
+Tests: X passed, Y failed, Z übersprungen
 Status: Alles gruen
 ```
 
 **Bei Failures:**
 ```
-Tests: X passed, Y failed
+Tests: X passed, Y failed, Z übersprungen
 Fehlgeschlagen:
 - TestClass.testMethod: [Fehlermeldung]
 

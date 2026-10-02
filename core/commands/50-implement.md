@@ -199,6 +199,21 @@ python3 .claude/hooks/adversary_dialog.py parse <spec-pfad>
 
 Das zeigt dir die zu beweisenden Punkte — geparst aus `## Expected Behavior` und/oder `## Acceptance Criteria` (`- **AC-N:** ...`) der Spec, je nachdem welche Section(s) vorhanden sind.
 
+Danach das Protokoll-Geruest erzeugen (#278) — es ist die einzige Quelle des Formats (Checkliste, `### Runde N`-Koepfe, `## Verdict`); der Adversary-Agent befuellt es, statt das Format zu erraten:
+
+```bash
+python3 .claude/hooks/adversary_dialog.py scaffold <workflow-name> <spec-pfad> \
+    > docs/artifacts/<workflow-name>/adversary-dialog.md
+```
+
+Herkunft der Vorbedingungen (#286): Ist in der Projekt-`config.yaml` `precondition_origins.default_lang` gesetzt, zusaetzlich die Tabelle erzeugen und dem `implementation-validator`-Auftrag beilegen:
+
+```bash
+python3 .claude/hooks/precondition_origins.py --lang <default_lang> --root .
+```
+
+Ist `default_lang` nicht gesetzt, entfaellt der Aufruf; der Agent traegt dann den Hinweistext „kein Sprachprofil konfiguriert (`precondition_origins.default_lang`)" in die Sektion `## Herkunft der Vorbedingungen` ein. Das Gate (`precondition_section_gate`, `mode: warn|block`) prueft, dass die Sektion existiert und jede Verdachtszeile (hoechstens eine Produktions-Schreibstelle) „Bedingung davor" und „Test für diesen Weg" ausgefuellt hat.
+
 #### 8b. Adversary-Dialog fuehren
 
 Starte den `implementation-validator` Agent mit der Checkliste:

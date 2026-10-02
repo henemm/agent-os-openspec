@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+**Herkunft der Vorbedingungen als Pflichtsektion des Prüfprotokolls (#286, Scheibe 2 von #273)**
+
+Die Tabelle aus `precondition_origins.py` (#285) wird zur Pflichtsektion
+`## Herkunft der Vorbedingungen` im Adversary-Prüfprotokoll. Für jede Verdachtszeile (höchstens
+eine Produktions-Schreibstelle) muss der Prüfer *Bedingung davor* und *Test für diesen Weg*
+ausfüllen. Siehe `docs/specs/feat-286-herkunft-vorbedingungen.md`.
+
+- `core/hooks/adversary_dialog.py`: `validate_dialog_artifact_ex()` prüft die Sektion als letzten
+  Schritt (fehlt → `format`, unvollständige Verdachtszeile → `content`); `scaffold` rendert einen
+  Platzhalter vor `## Verdict`. Commit-Gate und Phase-8-Übergang erben die Prüfung.
+- `config.yaml`: neuer Block `precondition_section_gate` (`enabled`, `mode: warn|block`,
+  `skip_fast_track`). Default `mode: warn` — fehlt der Block, wird gewarnt, nicht geblockt.
+  Neues optionales Feld `precondition_origins.default_lang`.
+- `/50-implement` Step 8a ruft `precondition_origins.py` auf, wenn `default_lang` gesetzt ist;
+  `implementation-validator.md` beschreibt den neuen Pflichtabschnitt.
+
 **Herkunft von Testvorbedingungen maschinell einsammeln (#285, Scheibe 1 von #273)**
 
 Ein Test, der seine Ausgangslage per Zuweisung herstellt (`objekt.feld = wert`), prüft nur das
@@ -34,6 +50,80 @@ Verdachtsliste, kein Beweis — Zuweisungen über Setter, Reflection oder Member
 erkennt sie nicht (siehe „Known Limitations" der Spec).
 
 ### Fixed
+
+**Freigabe: Einschränkungen in Folgezeilen und Bedingungswörter (#311, Befunde F001/F006/F007/F008 aus #277)**
+
+`go⏎erst die Doku` setzte eine GREEN-Freigabe, `approved⏎später` die Spec-Freigabe, und
+`go, falls Henning zustimmt` galt ebenfalls als Freigabe. Spec: `docs/specs/fix-311-freigabe-folgezeilen.md`.
+
+- `core/hooks/phase_listener.py`: Fragezeichen und Einschränkungswörter heben die Freigabe auch in
+  Folgezeilen auf (ganze Nachricht, Klammer-Einschübe ausgenommen); Phrase, Füllwort und
+  Zusatzwörter gelten weiter nur in Zeile 1. Override verlangt leere Folgezeilen. `NEGATION_WORDS`
+  um falls, sobald, bevor, solange, sofern, unless, until, once erweitert. Der Verworfen-Hinweis
+  nennt die Folgezeile als Grund.
+- `core/hooks/bash_gate.py`: Kommentar verweist auf die konfigurierten Freigabe-Phrasen statt fest
+  „go"/„freigabe"/„approved".
+- `docs/specs/fix-170-go-freigabe-phrase.md`: Schritt 6, Known Limitations und Beispieltabelle an
+  die Folgezeilen-Regel und die aktuelle Wortliste angeglichen.
+
+**Freigabe-Wörter: Sperrmeldung aus Config, Einschränkungen heben auf, Rückmeldung sichtbar (#277, fasst #268 + #175, dazu #310)**
+
+Das Post-Implementation-Gate forderte „tippe 'go', 'freigabe' oder 'approved'", obwohl in phase6
+nur die GREEN-Phrasen wirken; Sätze wie „go, erst noch die Doku" setzten eine Freigabe; und alle
+Rückmeldungen des `phase_listener` gingen auf stderr, das bei `UserPromptSubmit` niemand sieht.
+Spec: `docs/specs/fix-277-freigabe-woerter.md`.
+
+- `core/hooks/post_implementation_gate.py`: beide Sperrmeldungen nennen die konfigurierten
+  `workflow.green_phrases` (über `phase_listener.green_phrases_text()`), nicht mehr fest verdrahtet.
+- `core/hooks/phase_listener.py`: `NEGATION_WORDS` um deutsche Einschränkungen erweitert (erst,
+  später, wenn, noch, war, fehlt, nein, nie, niemals, nichts, moment, nö) — gilt für Spec-Freigabe,
+  GREEN und Override. Meldungen erscheinen als `systemMessage` in genau einem JSON-Objekt auf stdout
+  (Statusvermerk dann in `additionalContext`); ohne Meldung bleibt stdout der reine Statusvermerk,
+  stderr bleibt Debug-Spiegel. Verworfen-Hinweis und Falsche-Phase-Warnung nennen Stichwort und die
+  konfigurierte Phrase statt „go oder approved".
+- `docs/specs/fix-170-go-freigabe-phrase.md`: Schritt 4 an Tabelle/AC-4 angeglichen (Override:
+  Phrase allein bis Zeilenende).
+
+**Testausgaben richtig erkennen: ANSI, xcbeautify, „übersprungen" (#275, fasst #201 + #202 + #256①)**
+
+Mit ANSI-Farbcodes ummantelte Fehlerzeilen, xcbeautify-Marker („❌"/„✖") und die
+xcodebuild-Summary `Executed … with N tests skipped and M failures` wurden nicht oder falsch
+erkannt — echte RED-Artefakte wurden abgewiesen, `qa_gate` meldete „Could not determine test
+result." statt einer Zahl, und ein Lauf, in dem nichts bestanden hat und alles übersprungen wurde,
+galt als grün. Spec: `docs/specs/fix-275-testausgabe-erkennung.md`. Scope: bewusst über dem
+Scoping-Limit (PO-Entscheidung 2026-10-01), zwei Commits — Erkennung, dann skipped-Regel.
+
+- `core/hooks/hook_utils.py`: neu `strip_ansi()`, die einzige ANSI-Entfernung im Framework.
+- `core/hooks/tdd_enforcement.py`: Fehler-Evidenz auf bereinigtem Text; neu `❌`, `✖`, `✘`,
+  `TEST FAILED`, `Test run with … failed`, `N≥1 failures`, `EXIT≥1` (`0 failures`/`EXIT=0` öffnen
+  nichts). Ein Artefakt nur mit Übersprungenem bleibt abgewiesen.
+- `core/hooks/qa_gate.py`: eigenes ANSI-Muster entfällt; `Executed`-Zeile auch mit `skipped`, nur
+  die letzte (Gesamt-)Zeile liefert die Zahlen, Fehlschlag meldet `M/N` — bei mehreren
+  `Executed`-Zeilen macht jede rote Zeile den Lauf rot, auch vor einer grünen. pytest-Summary mit
+  `N error(s)` oder `0 passed` ist nie grün. Neue Regel: 0 bestanden + ≥ 1
+  übersprungen bzw. `Executed 0 tests` ist nicht grün — auch nicht über `** TEST SUCCEEDED **`
+  oder eine pytest-Summary `0 passed, 5 skipped`. Gemischte Läufe bleiben grün und nennen die Zahl.
+- `core/hooks/post_bash.py`: Fail-Guard auf bereinigtem Text, erkennt `✖`/`❌`/`N≥1 failures`;
+  Lauf ohne Bestandenes mit Übersprungenem wird als Hinweis `skipped` statt `passed` vermerkt.
+- Report-Vorlagen (`60-validate`, `82-test`, `implementation-validator`, `test-runner`): Feld
+  „übersprungen" und der Satz, dass 0 bestanden + ≥ 1 übersprungen nicht grün ist.
+
+**Adversary-Protokollformat hat eine Quelle, Kennzahlen werden geschrieben (#278, fasst #263 + #247)**
+
+Das Rundenformat (`### Runde N`) stand in keiner Anweisung — ein inhaltlich vollständiges
+Protokoll mit `## Runde N` wurde am 2026-09-27 grundlos abgewiesen. `adversary_findings_total`
+und `scope_files_changed` blieben strukturell immer 0, weil sie nie geschrieben wurden.
+Spec: `docs/specs/fix-278-adversary-protokoll-format.md`.
+
+- `core/hooks/adversary_dialog.py`: Rundenzählung akzeptiert `##` und `###`; neuer Subcommand
+  `scaffold <workflow> <spec>` gibt das Protokoll-Gerüst aus (Checkliste, `MIN_ROUNDS`
+  Rundenköpfe, `## Verdict`); `stamp` schreibt nach dem Hash-Block best-effort
+  `adversary_findings_total` (eindeutige `ID: F…` außerhalb von Codeblöcken) und
+  `affected_files` (Phase-8-Änderungsmenge) in den aktiven Workflow.
+- `core/hooks/workflow.py`: `write-log` schreibt `unbekannt` statt `0`, wenn die Kennzahlen nie
+  persistiert wurden; `set-field adversary_findings_total` speichert eine Zahl.
+- `core/agents/implementation-validator.md`, `core/commands/50-implement.md`: verweisen auf
+  `scaffold` statt das Format in Prosa zu beschreiben.
 
 **Gate-Event-Log respektiert Worktree-Wurzel (#280, Befund 2 von #265)**
 

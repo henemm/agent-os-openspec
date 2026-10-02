@@ -1,0 +1,43 @@
+
+----- xcbeautify -----
+Version: 3.2.1
+----------------------
+
+[36;1mResolving Package Graph[0m
+[32;1mResolved source packages[0m
+[36;1mnote: [0mBuilding targets in dependency order
+[36;1mnote: [0mTarget dependency graph (2 targets)
+[[36mDemoTests-product[0m] [1mWrite Auxiliary File[0m empty-DemoTests.plist
+[[36mDemo[0m] [1mWrite Auxiliary File[0m Demo.LinkFileList
+[[36mDemo[0m] [1mWrite Auxiliary File[0m Demo_const_extract_protocols.json
+[[36mDemo[0m] [1mWrite Auxiliary File[0m Demo.SwiftConstValuesFileList
+[[36mDemo[0m] [1mWrite Auxiliary File[0m Demo.SwiftFileList
+[[36mDemoTests-product[0m] [1mWrite Auxiliary File[0m DemoTests.SwiftFileList
+[[36mDemoTests-product[0m] [1mWrite Auxiliary File[0m DemoTests.SwiftConstValuesFileList
+[[36mDemoTests-product[0m] [1mWrite Auxiliary File[0m DemoTests_const_extract_protocols.json
+[[36mDemoTests-product[0m] [1mWrite Auxiliary File[0m DemoTests.LinkFileList
+[[36mDemoTests-product[0m] [1mWrite Auxiliary File[0m DemoTests.DependencyStaticMetadataFileList
+[[36mDemoTests-product[0m] [1mWrite Auxiliary File[0m DemoTests-OutputFileMap.json
+[[36mDemoTests-product[0m] [1mWrite Auxiliary File[0m DemoTests.DependencyMetadataFileList
+[[36mDemo[0m] [1mWrite Auxiliary File[0m Demo-OutputFileMap.json
+[[36mDemo[0m] [1mWrite Auxiliary File[0m Demo.modulemap
+[[36mDemo[0m] [1mWrite Auxiliary File[0m Demo.DependencyStaticMetadataFileList
+[[36mDemo[0m] [1mWrite Auxiliary File[0m Demo.DependencyMetadataFileList
+[[36mDemo[0m] [1mCopy[0m Demo.modulemap -> Demo.modulemap
+[[36mDemo[0m] [1mCompiling[0m Demo.swift
+[[36mDemo[0m] [1mCopy[0m arm64-apple-macos.swiftmodule -> Demo.swiftmodule
+[[36mDemo[0m] [1mCopy[0m arm64-apple-macos.swiftdoc -> Demo.swiftdoc
+[[36mDemo[0m] [1mCopy[0m arm64-apple-macos.abi.json -> Demo.abi.json
+[[36mDemo[0m] [1mCopy[0m arm64-apple-macos.swiftsourceinfo -> Demo.swiftsourceinfo
+[[36mDemo[0m] [1mLinking[0m Demo.o
+[[36mDemo[0m] [1mExtract App Intents Metadata[0m
+[[36mDemoTests-product[0m] [1mProcessing[0m empty-DemoTests.plist
+[[36mDemoTests-product[0m] [1mCompiling[0m DemoTests.swift
+❌ /tmp/claude-501/-Users-hem-Developer-agent-os-openspec--claude-worktrees-sprightly-snacking-thacker/82241e35-cd06-4d0c-b132-399632c043c5/scratchpad/pkg_compileerror/Tests/DemoTests/DemoTests.swift:4:45: [31mcannot find 'LeaveOneOut' in scope[0m
+2 | @testable import Demo
+[36m3 | final class DemoTests: XCTestCase {[0m
+[[36mDemoTests-product[0m] [1mCopy[0m arm64-apple-macos.swiftdoc -> DemoTests.swiftdoc
+[[36mDemoTests-product[0m] [1mCopy[0m arm64-apple-macos.abi.json -> DemoTests.abi.json
+[[36mDemoTests-product[0m] [1mCopy[0m arm64-apple-macos.swiftmodule -> DemoTests.swiftmodule
+[[36mDemoTests-product[0m] [1mCopy[0m arm64-apple-macos.swiftsourceinfo -> DemoTests.swiftsourceinfo
+[1mTest session results:[0m /tmp/claude-501/-Users-hem-Developer-agent-os-openspec--claude-worktrees-sprightly-snacking-thacker/82241e35-cd06-4d0c-b132-399632c043c5/scratchpad/dd_compileerror/Logs/Test/Test-Demo-Package-2026.10.01_12-49-26-+0200.xcresult

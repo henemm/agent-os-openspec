@@ -9,7 +9,8 @@ Ablauf:
 1. Erster Code-Edit in phase6_implement → Lock-Datei erstellen (mit Timestamp)
 2. Innerhalb von 15 Minuten → weitere Edits erlaubt (Batch-Fenster)
 3. Nach 15 Minuten → BLOCKIERT bis User-Freigabe
-4. User sagt "go" / "freigabe" / "approved" → phase_listener erstellt Approval-Marker
+4. User sagt eine GREEN-Phrase (Default "go", Config `workflow.green_phrases`)
+   → phase_listener erstellt Approval-Marker
 5. Approval-Marker vorhanden → entsperren + Lock löschen
 
 Bypasses:
@@ -73,6 +74,16 @@ def _write_lock(lock_path: Path, wf_name: str, workflow_created) -> None:
         "created": time.time(),
         "created_iso": __import__("datetime").datetime.now().isoformat(),
     }, indent=2))
+
+
+def _green_text() -> str:
+    """Wirksame GREEN-Phrasen aus der Config (#268) — nie 'freigabe'/'approved',
+    die in phase6 nicht wirken. Fallback hält das Gate auch bei Importfehler zu."""
+    try:
+        from phase_listener import green_phrases_text
+        return green_phrases_text()
+    except (Exception, SystemExit):
+        return "'go'"
 
 
 def _clear_lock(lock_path: Path, approval_path: Path) -> None:
@@ -163,7 +174,7 @@ def main() -> None:
                 f"BLOCKED [post_implementation_gate]: Freigabe-Marker passt nicht zum aktuellen "
                 f"Pruflauf (Workflow: {wf_name}).\n"
                 f"  Der Marker stammt von einem frueheren Lauf und gilt nicht mehr.\n"
-                f"  Neue Freigabe noetig: User tippt 'go', 'freigabe' oder 'approved'."
+                f"  Neue Freigabe noetig: User tippt {_green_text()}."
             )
 
     if lock is None:
@@ -193,7 +204,7 @@ def main() -> None:
         f"  Lege dem User jetzt die bisherigen Änderungen vor und WARTE.\n"
         f"\n"
         f"  Freigabe — und zwar AUSSCHLIESSLICH durch den User:\n"
-        f"  Der User tippt 'go', 'freigabe' oder 'approved'. Der phase_listener-Hook\n"
+        f"  Der User tippt {_green_text()}. Der phase_listener-Hook\n"
         f"  setzt den Freigabe-Marker dann selbst und legitim.\n"
         f"\n"
         f"  Du kannst dieses Gate NICHT selbst öffnen. Erzeuge den Marker niemals\n"

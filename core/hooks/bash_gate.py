@@ -67,7 +67,9 @@ PROTECTED_FILE_PATTERNS = [
 # erzeugen/aendern/loeschen — das waere "specification gaming" (der Agent
 # manipuliert den Verifier statt die Bedingung echt zu erfuellen). Der einzige
 # legitime Erzeuger ist phase_listener.py (UserPromptSubmit-Hook), der nur
-# feuert, wenn der echte User "go"/"freigabe"/"approved" tippt. Deny by default.
+# feuert, wenn der echte User eine der konfigurierten Freigabe-Phrasen tippt
+# (workflow.approval_phrases / green_phrases, override_token.keywords).
+# Deny by default.
 # Tier 1: Feldnamen mit hohem Freitext-Risiko (Issue #30) — nur blocken, wenn
 # zusaetzlich ein echter Protected-Pfad im selben Kommando referenziert wird.
 # Diese Feldnamen tauchen plausibel in Bug-Reports/PR-Texten/Doku auf.
@@ -683,8 +685,8 @@ def main():
         "  des Pruefpunkts statt der echten Erfuellung der Bedingung.\n"
         "\n"
         "  Der einzige legitime Weg:\n"
-        "  -> Lege dem User die Ergebnisse vor und WARTE auf sein 'go' / 'freigabe'\n"
-        "     / 'approved'. Der phase_listener-Hook setzt den Marker dann selbst."
+        "  -> Lege dem User die Ergebnisse vor und WARTE auf seine ausdrueckliche\n"
+        "     Freigabe. Der phase_listener-Hook setzt den Marker dann selbst."
     )
     if workflow_enforced and not is_git_command and _has_write_indicator(scan_cmd):
         # Tier 2 (Dateinamen-Marker): pfad-unabhaengig blocken. Verhindert

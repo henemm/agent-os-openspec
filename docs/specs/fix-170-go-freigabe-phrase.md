@@ -50,9 +50,9 @@ Neue Prüfung, angewandt auf die **erste Zeile** der Nachricht (Zeilenlogik und 
 1. **Klammer-Einschübe entfernen.** Text in runden Klammern (auch unvollständig, wenn die Zeile vor `)` endet) gilt als Nebenbemerkung und wird für alle folgenden Schritte ignoriert. Dort steht der Nachsatz des Realfalls "approved (oder kann ich nicht einfach selbst weitermachen?)".
 2. **Vorspann.** Führende Zeichen, die weder Buchstabe noch Ziffer sind (Anführungszeichen, `*`, `>`, Emojis), werden ignoriert. Danach darf höchstens EIN Füllwort aus {ja, ok, okay, yes, klar, danke, super, top} vor der Phrase stehen. Eine führende Ziffer ("1.", "1)") wird NICHT ignoriert: ein Listenpunkt einer Diskussion ist keine Freigabe.
 3. **Phrase führt.** Danach muss eine Phrase der Liste beginnen (Wortgrenzen-Regel wie bisher). Bei mehreren passenden Phrasen gewinnt die längste ("ich genehmige" vor "genehmige").
-4. **Kopfsatz.** Der Text vom Phrasenende bis zum ersten Klauselzeichen (`, . ; : ! ? …`, " - ", " — " oder Zeilenende) darf höchstens **2 Zusatzwörter** enthalten, bei **override 0**. Wörter sind `\w+`-Token (Umlaute zählen mit, Zeichen und Emojis nicht).
+4. **Kopfsatz.** Der Text vom Phrasenende bis zum ersten Klauselzeichen (`, . ; : ! ? …`, " - ", " — " oder Zeilenende) darf höchstens **2 Zusatzwörter** enthalten. Bei override gilt keine Kopfsatz-Regel: die Phrase muss allein stehen, ohne jedes Zusatzwort bis Zeilenende (`override, danke` wirkt nicht). Wörter sind `\w+`-Token (Umlaute zählen mit, Zeichen und Emojis nicht).
 5. **Kein Fragezeichen** außerhalb von Klammern in der Zeile.
-6. **Keine Negation oder Einschränkung** außerhalb von Klammern in der Zeile: nicht, kein, keine, keinen, not, no, aber, but, warte, wait.
+6. **Keine Negation oder Einschränkung** außerhalb von Klammern, in Zeile 1 und in allen Folgezeilen (#311): nicht, kein, keine, keinen, not, no, aber, but, warte, wait; seit #175/#277 erst, später, spaeter, wenn, noch, war, fehlt, nein, nie, niemals, nichts, moment, nö; seit #311 die Bedingungs- und Zeitwörter falls, sobald, bevor, solange, sofern, unless, until, once. Maßgeblich ist `NEGATION_WORDS` in `core/hooks/phase_listener.py`. Ein Fragezeichen in einer Folgezeile hebt die Freigabe ebenso auf; bei override müssen die Folgezeilen (ohne Klammern) leer sein.
 
 Sichtbarkeit (alle Meldungen gehen wie bisher auf stderr, also an den User):
 
@@ -79,11 +79,13 @@ Beispiele (Freigabe = ja):
 | `Go check the spec first` | keine | Kopfsatz 4 Wörter |
 | `override` | Token | override braucht die Phrase allein |
 | `Override?` / `override, bitte erklären` | kein Token | override erlaubt 0 Zusatzwörter |
+| `go⏎erst die Doku` | keine | Einschränkung in Folgezeile (#311) |
+| `go⏎⏎Bitte Doku schreiben` | Freigabe | Folgezeile ohne Fragezeichen und Einschränkungswort (#311) |
 
 ## Known Limitations
 
 - **Restrisiko bleibt:** Kurze Sätze, die mit einer Phrase beginnen und weder Fragezeichen noch Negation enthalten (z. B. "Go back", "Freigabe fehlt"), gelten weiterhin als Freigabe. Das ist bewusst: strengere Regeln würden natürliche Freigaben ("Passt für mich") verwerfen. Der wirksame Schutz dahinter bleibt: Spec-Freigabe braucht das unabhängige PO-Briefing, der Commit den Adversary-Verdict.
-- **Nur die erste Zeile zählt** (unverändert): "Passt" in Zeile 1, Fremdtext darunter, gilt als Freigabe.
+- **Zeile 1 und Folgezeilen (geändert durch #311):** Phrase, Füllwort und Zusatzwörter gelten nur in Zeile 1. Die Einschränkungsprüfung (Fragezeichen, Negations-/Einschränkungswörter) gilt für die gesamte Nachricht; override verlangt leere Folgezeilen. "Passt" in Zeile 1 mit Fremdtext ohne Einschränkung darunter gilt weiter als Freigabe.
 - **Zitat-Präfixe** (`"go"`, `> go`) werden durch den Vorspann-Schritt freigegeben. Bewusster Kompromiss.
 - **Umlaute** gelten in der Lookaround-Regel der Wortgrenze nicht als Buchstaben (bestehendes Verhalten, nicht Teil dieser Änderung).
 - **Verteilung:** Wirkt in Konsumenten-Projekten erst nach dem Plugin-Update; lokale Patches sind wirkungslos.

@@ -1,0 +1,892 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.14.6, pytest-9.1.1, pluggy-1.6.0 -- /private/tmp/claude-501/-Users-hem-Developer-agent-os-openspec--claude-worktrees-sprightly-snacking-thacker/7d6e514a-f6eb-486e-a717-542d0ed46e61/scratchpad/venv/bin/python3.14
+cachedir: .pytest_cache
+rootdir: /Users/hem/Developer/agent-os-openspec/.claude/worktrees/sprightly-snacking-thacker
+collecting ... collected 29 items
+
+tests/test_phase_listener_restrictions_277.py::test_sperrmeldung_nennt_nur_green_phrasen FAILED [  3%]
+tests/test_phase_listener_restrictions_277.py::test_sperrmeldung_folgt_projekt_config FAILED [  6%]
+tests/test_phase_listener_restrictions_277.py::test_jede_genannte_phrase_wirkt_in_phase6[standard] FAILED [ 10%]
+tests/test_phase_listener_restrictions_277.py::test_jede_genannte_phrase_wirkt_in_phase6[projekt] FAILED [ 13%]
+tests/test_phase_listener_restrictions_277.py::test_einschraenkungssaetze_setzen_keine_green_freigabe[Go war falsch] FAILED [ 17%]
+tests/test_phase_listener_restrictions_277.py::test_einschraenkungssaetze_setzen_keine_green_freigabe[go, erst noch die Doku] FAILED [ 20%]
+tests/test_phase_listener_restrictions_277.py::test_einschraenkungssaetze_setzen_keine_green_freigabe[go, wenn Tests gr\xfcn] FAILED [ 24%]
+tests/test_phase_listener_restrictions_277.py::test_einschraenkungssaetze_setzen_keine_green_freigabe[go, nein] FAILED [ 27%]
+tests/test_phase_listener_restrictions_277.py::test_einschraenkungssaetze_setzen_keine_green_freigabe[go, niemals] FAILED [ 31%]
+tests/test_phase_listener_restrictions_277.py::test_einschraenkungssaetze_setzen_keine_spec_freigabe[Freigabe fehlt noch] FAILED [ 34%]
+tests/test_phase_listener_restrictions_277.py::test_einschraenkungssaetze_setzen_keine_spec_freigabe[approved, erst noch die Doku] FAILED [ 37%]
+tests/test_phase_listener_restrictions_277.py::test_einschraenkungssaetze_setzen_keine_spec_freigabe[approved, wenn Tests gr\xfcn] FAILED [ 41%]
+tests/test_phase_listener_restrictions_277.py::test_einschraenkungssaetze_setzen_keine_spec_freigabe[approved, nein] FAILED [ 44%]
+tests/test_phase_listener_restrictions_277.py::test_echte_freigaben_wirken_weiter[go-phase6_implement-None-green_approved] PASSED [ 48%]
+tests/test_phase_listener_restrictions_277.py::test_echte_freigaben_wirken_weiter[go, passt-phase6_implement-None-green_approved] PASSED [ 51%]
+tests/test_phase_listener_restrictions_277.py::test_echte_freigaben_wirken_weiter[go bitte umsetzen-phase6_implement-None-green_approved] PASSED [ 55%]
+tests/test_phase_listener_restrictions_277.py::test_echte_freigaben_wirken_weiter[approved (oder kann ich nicht einfach selbst weitermachen?)-phase3_spec-None-spec_approved] PASSED [ 58%]
+tests/test_phase_listener_restrictions_277.py::test_echte_freigaben_wirken_weiter[Passt f\xfcr mich-phase3_spec-\nworkflow:\n  approval_phrases:\n    - "approved"\n    - "passt"\n-spec_approved] PASSED [ 62%]
+tests/test_phase_listener_restrictions_277.py::test_listenwort_als_wortteil_hebt_nicht_auf[go, erste Version] PASSED [ 65%]
+tests/test_phase_listener_restrictions_277.py::test_listenwort_als_wortteil_hebt_nicht_auf[go, nochmal bitte] PASSED [ 68%]
+tests/test_phase_listener_restrictions_277.py::test_negation_in_klammern_bleibt_wirkungslos PASSED [ 72%]
+tests/test_phase_listener_restrictions_277.py::test_meldung_als_systemmessage_ein_json_objekt[go, nein-go] FAILED [ 75%]
+tests/test_phase_listener_restrictions_277.py::test_meldung_als_systemmessage_ein_json_objekt[approved-approved] FAILED [ 79%]
+tests/test_phase_listener_restrictions_277.py::test_status_note_und_meldung_ein_objekt FAILED [ 82%]
+tests/test_phase_listener_restrictions_277.py::test_fruehe_austrittspunkte_nutzen_denselben_kanal FAILED [ 86%]
+tests/test_phase_listener_restrictions_277.py::test_verworfen_hinweis_nennt_konfigurierte_phrase[None-go] FAILED [ 89%]
+tests/test_phase_listener_restrictions_277.py::test_verworfen_hinweis_nennt_konfigurierte_phrase[\nworkflow:\n  green_phrases:\n    - "los"\n    - "go"\n-los] FAILED [ 93%]
+tests/test_phase_listener_restrictions_277.py::test_notification_turn_unveraendert PASSED [ 96%]
+tests/test_phase_listener_restrictions_277.py::test_spec_170_schritt4_passt_zur_tabelle FAILED [100%]
+
+=================================== FAILURES ===================================
+__________________ test_sperrmeldung_nennt_nur_green_phrasen ___________________
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-23/test_sperrmeldung_nennt_nur_gr0')
+
+    def test_sperrmeldung_nennt_nur_green_phrasen(tmp_path):
+        """AC-1: Standard-Config -> Meldung nennt 'go', nicht freigabe/approved."""
+        for msg in _gate_messages(tmp_path, None):
+            assert "'go'" in msg, f"Sperrmeldung nennt 'go' nicht: {msg!r}"
+>           assert "freigabe'" not in msg.lower() and "'freigabe" not in msg.lower(), (
+                f"Sperrmeldung nennt unwirksames Wort 'freigabe': {msg!r}"
+            )
+E           AssertionError: Sperrmeldung nennt unwirksames Wort 'freigabe': "BLOCKED [post_implementation_gate]: Implementierung läuft seit 60 Min.\n  Workflow: wf-277 · Phase: phase6_implement\n\n  Lege dem User jetzt die bisherigen Änderungen vor und WARTE.\n\n  Freigabe — und zwar AUSSCHLIESSLICH durch den User:\n  Der User tippt 'go', 'freigabe' oder 'approved'. Der phase_listener-Hook\n  setzt den Freigabe-Marker dann selbst und legitim.\n\n  Du kannst dieses Gate NICHT selbst öffnen. Erzeuge den Marker niemals\n  per Bash (touch/echo/…) — das ist eine blockierte Verifier-Manipulation.\n  Danach ist der nächste Edit automatisch erlaubt.\n"
+E           assert ("freigabe'" not in 'blocked [po...h erlaubt.\n'
+E             
+E             "freigabe'" is contained here:
+E               blocked [post_implementation_gate]: implementierung läuft seit 60 min.
+E                 workflow: wf-277 · phase: phase6_implement
+E               
+E                 lege dem user jetzt die bisherigen änderungen vor und warte.
+E               ...
+E             
+E             ...Full output truncated (8 lines hidden), use '-vv' to show)
+
+tests/test_phase_listener_restrictions_277.py:178: AssertionError
+____________________ test_sperrmeldung_folgt_projekt_config ____________________
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-23/test_sperrmeldung_folgt_projek0')
+
+    def test_sperrmeldung_folgt_projekt_config(tmp_path):
+        """AC-2: abweichende green_phrases stehen genau so in der Sperrmeldung."""
+        for msg in _gate_messages(tmp_path, LOS_CONFIG):
+>           assert sorted(_quoted_phrases(msg)) == ["go", "los"], (
+                f"Sperrmeldung nennt nicht genau die konfigurierten Phrasen "
+                f"['los','go']: {msg!r}"
+            )
+E           AssertionError: Sperrmeldung nennt nicht genau die konfigurierten Phrasen ['los','go']: "BLOCKED [post_implementation_gate]: Implementierung läuft seit 60 Min.\n  Workflow: wf-277 · Phase: phase6_implement\n\n  Lege dem User jetzt die bisherigen Änderungen vor und WARTE.\n\n  Freigabe — und zwar AUSSCHLIESSLICH durch den User:\n  Der User tippt 'go', 'freigabe' oder 'approved'. Der phase_listener-Hook\n  setzt den Freigabe-Marker dann selbst und legitim.\n\n  Du kannst dieses Gate NICHT selbst öffnen. Erzeuge den Marker niemals\n  per Bash (touch/echo/…) — das ist eine blockierte Verifier-Manipulation.\n  Danach ist der nächste Edit automatisch erlaubt.\n"
+E           assert ['approved', 'freigabe', 'go'] == ['go', 'los']
+E             
+E             At index 0 diff: 'approved' != 'go'
+E             Left contains one more item: 'go'
+E             
+E             Full diff:
+E               [
+E             +     'approved',...
+E             
+E             ...Full output truncated (4 lines hidden), use '-vv' to show
+
+tests/test_phase_listener_restrictions_277.py:189: AssertionError
+_____________ test_jede_genannte_phrase_wirkt_in_phase6[standard] ______________
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-23/test_jede_genannte_phrase_wirk0')
+config_yaml = None
+
+    @pytest.mark.parametrize("config_yaml", [None, LOS_CONFIG], ids=["standard", "projekt"])
+    def test_jede_genannte_phrase_wirkt_in_phase6(tmp_path, config_yaml):
+        """AC-3: jede in einer Sperrmeldung genannte Phrase setzt green_approved."""
+        phrases = set()
+        for msg in _gate_messages(tmp_path / "gate", config_yaml):
+            phrases.update(_quoted_phrases(msg))
+        assert phrases, "Keine Phrase in den Sperrmeldungen gefunden"
+        for i, phrase in enumerate(sorted(phrases)):
+            project = _make_project(tmp_path / f"listener{i}", "phase6_implement",
+                                    config_yaml=config_yaml)
+            res = _run_listener(project, phrase)
+            assert res.returncode == 0
+>           assert _state(project).get("green_approved") is True, (
+                f"Sperrmeldung nennt '{phrase}', aber es setzt keine GREEN-Freigabe "
+                f"(stderr={res.stderr!r})"
+            )
+E           AssertionError: Sperrmeldung nennt 'approved', aber es setzt keine GREEN-Freigabe (stderr="WARNUNG: Freigabe-Stichwort erkannt, aber Workflow steht in 'phase6_implement'; Freigabe wirkt nur in phase3_spec. Zustand unverändert — Phase nachziehen und erneut fragen, NICHT spec_approved von Hand setzen.\n")
+E           assert False is True
+E            +  where False = <built-in method get of dict object at 0x106ee5e40>('green_approved')
+E            +    where <built-in method get of dict object at 0x106ee5e40> = {'name': 'wf-277', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...}.get
+E            +      where {'name': 'wf-277', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...} = _state(PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-23/test_jede_genannte_phrase_wirk0/listener0'))
+
+tests/test_phase_listener_restrictions_277.py:207: AssertionError
+______________ test_jede_genannte_phrase_wirkt_in_phase6[projekt] ______________
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-23/test_jede_genannte_phrase_wirk1')
+config_yaml = '\nworkflow:\n  green_phrases:\n    - "los"\n    - "go"\n'
+
+    @pytest.mark.parametrize("config_yaml", [None, LOS_CONFIG], ids=["standard", "projekt"])
+    def test_jede_genannte_phrase_wirkt_in_phase6(tmp_path, config_yaml):
+        """AC-3: jede in einer Sperrmeldung genannte Phrase setzt green_approved."""
+        phrases = set()
+        for msg in _gate_messages(tmp_path / "gate", config_yaml):
+            phrases.update(_quoted_phrases(msg))
+        assert phrases, "Keine Phrase in den Sperrmeldungen gefunden"
+        for i, phrase in enumerate(sorted(phrases)):
+            project = _make_project(tmp_path / f"listener{i}", "phase6_implement",
+                                    config_yaml=config_yaml)
+            res = _run_listener(project, phrase)
+            assert res.returncode == 0
+>           assert _state(project).get("green_approved") is True, (
+                f"Sperrmeldung nennt '{phrase}', aber es setzt keine GREEN-Freigabe "
+                f"(stderr={res.stderr!r})"
+            )
+E           AssertionError: Sperrmeldung nennt 'approved', aber es setzt keine GREEN-Freigabe (stderr="WARNUNG: Freigabe-Stichwort erkannt, aber Workflow steht in 'phase6_implement'; Freigabe wirkt nur in phase3_spec. Zustand unverändert — Phase nachziehen und erneut fragen, NICHT spec_approved von Hand setzen.\n")
+E           assert False is True
+E            +  where False = <built-in method get of dict object at 0x106e61180>('green_approved')
+E            +    where <built-in method get of dict object at 0x106e61180> = {'name': 'wf-277', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...}.get
+E            +      where {'name': 'wf-277', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...} = _state(PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-23/test_jede_genannte_phrase_wirk1/listener0'))
+
+tests/test_phase_listener_restrictions_277.py:207: AssertionError
+____ test_einschraenkungssaetze_setzen_keine_green_freigabe[Go war falsch] _____
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-23/test_einschraenkungssaetze_set0')
+message = 'Go war falsch'
+
+    @pytest.mark.parametrize("message", [
+        "Go war falsch",
+        "go, erst noch die Doku",
+        "go, wenn Tests grün",
+        "go, nein",
+        "go, niemals",
+    ])
+    def test_einschraenkungssaetze_setzen_keine_green_freigabe(tmp_path, message):
+        """AC-4: Einschraenkung -> kein green_approved, kein Freigabe-Marker."""
+        project = _make_project(tmp_path, "phase6_implement", lock_age_s=60)
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+>       assert _state(project).get("green_approved") is False, (
+            f"'{message}' setzte green_approved (stderr={res.stderr!r})"
+        )
+E       AssertionError: 'Go war falsch' setzte green_approved (stderr="GREEN approved (durch: 'Go war falsch').\nPost-implementation gate entsperrt für 'wf-277'.\n")
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x106e75240>('green_approved')
+E        +    where <built-in method get of dict object at 0x106e75240> = {'name': 'wf-277', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...}.get
+E        +      where {'name': 'wf-277', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...} = _state(PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-23/test_einschraenkungssaetze_set0'))
+
+tests/test_phase_listener_restrictions_277.py:229: AssertionError
+_ test_einschraenkungssaetze_setzen_keine_green_freigabe[go, erst noch die Doku] _
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-23/test_einschraenkungssaetze_set1')
+message = 'go, erst noch die Doku'
+
+    @pytest.mark.parametrize("message", [
+        "Go war falsch",
+        "go, erst noch die Doku",
+        "go, wenn Tests grün",
+        "go, nein",
+        "go, niemals",
+    ])
+    def test_einschraenkungssaetze_setzen_keine_green_freigabe(tmp_path, message):
+        """AC-4: Einschraenkung -> kein green_approved, kein Freigabe-Marker."""
+        project = _make_project(tmp_path, "phase6_implement", lock_age_s=60)
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+>       assert _state(project).get("green_approved") is False, (
+            f"'{message}' setzte green_approved (stderr={res.stderr!r})"
+        )
+E       AssertionError: 'go, erst noch die Doku' setzte green_approved (stderr="GREEN approved (durch: 'go, erst noch die Doku').\nPost-implementation gate entsperrt für 'wf-277'.\n")
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x106ebb680>('green_approved')
+E        +    where <built-in method get of dict object at 0x106ebb680> = {'name': 'wf-277', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...}.get
+E        +      where {'name': 'wf-277', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...} = _state(PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-23/test_einschraenkungssaetze_set1'))
+
+tests/test_phase_listener_restrictions_277.py:229: AssertionError
+_ test_einschraenkungssaetze_setzen_keine_green_freigabe[go, wenn Tests gr\xfcn] _
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-23/test_einschraenkungssaetze_set2')
+message = 'go, wenn Tests grün'
+
+    @pytest.mark.parametrize("message", [
+        "Go war falsch",
+        "go, erst noch die Doku",
+        "go, wenn Tests grün",
+        "go, nein",
+        "go, niemals",
+    ])
+    def test_einschraenkungssaetze_setzen_keine_green_freigabe(tmp_path, message):
+        """AC-4: Einschraenkung -> kein green_approved, kein Freigabe-Marker."""
+        project = _make_project(tmp_path, "phase6_implement", lock_age_s=60)
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+>       assert _state(project).get("green_approved") is False, (
+            f"'{message}' setzte green_approved (stderr={res.stderr!r})"
+        )
+E       AssertionError: 'go, wenn Tests grün' setzte green_approved (stderr="GREEN approved (durch: 'go, wenn Tests grün').\nPost-implementation gate entsperrt für 'wf-277'.\n")
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x106e76740>('green_approved')
+E        +    where <built-in method get of dict object at 0x106e76740> = {'name': 'wf-277', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...}.get
+E        +      where {'name': 'wf-277', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...} = _state(PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-23/test_einschraenkungssaetze_set2'))
+
+tests/test_phase_listener_restrictions_277.py:229: AssertionError
+_______ test_einschraenkungssaetze_setzen_keine_green_freigabe[go, nein] _______
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-23/test_einschraenkungssaetze_set3')
+message = 'go, nein'
+
+    @pytest.mark.parametrize("message", [
+        "Go war falsch",
+        "go, erst noch die Doku",
+        "go, wenn Tests grün",
+        "go, nein",
+        "go, niemals",
+    ])
+    def test_einschraenkungssaetze_setzen_keine_green_freigabe(tmp_path, message):
+        """AC-4: Einschraenkung -> kein green_approved, kein Freigabe-Marker."""
+        project = _make_project(tmp_path, "phase6_implement", lock_age_s=60)
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+>       assert _state(project).get("green_approved") is False, (
+            f"'{message}' setzte green_approved (stderr={res.stderr!r})"
+        )
+E       AssertionError: 'go, nein' setzte green_approved (stderr="GREEN approved (durch: 'go, nein').\nPost-implementation gate entsperrt für 'wf-277'.\n")
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x106ec2900>('green_approved')
+E        +    where <built-in method get of dict object at 0x106ec2900> = {'name': 'wf-277', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...}.get
+E        +      where {'name': 'wf-277', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...} = _state(PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-23/test_einschraenkungssaetze_set3'))
+
+tests/test_phase_listener_restrictions_277.py:229: AssertionError
+_____ test_einschraenkungssaetze_setzen_keine_green_freigabe[go, niemals] ______
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-23/test_einschraenkungssaetze_set4')
+message = 'go, niemals'
+
+    @pytest.mark.parametrize("message", [
+        "Go war falsch",
+        "go, erst noch die Doku",
+        "go, wenn Tests grün",
+        "go, nein",
+        "go, niemals",
+    ])
+    def test_einschraenkungssaetze_setzen_keine_green_freigabe(tmp_path, message):
+        """AC-4: Einschraenkung -> kein green_approved, kein Freigabe-Marker."""
+        project = _make_project(tmp_path, "phase6_implement", lock_age_s=60)
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+>       assert _state(project).get("green_approved") is False, (
+            f"'{message}' setzte green_approved (stderr={res.stderr!r})"
+        )
+E       AssertionError: 'go, niemals' setzte green_approved (stderr="GREEN approved (durch: 'go, niemals').\nPost-implementation gate entsperrt für 'wf-277'.\n")
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x106ea7300>('green_approved')
+E        +    where <built-in method get of dict object at 0x106ea7300> = {'name': 'wf-277', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...}.get
+E        +      where {'name': 'wf-277', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'spec_approved': False, ...} = _state(PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-23/test_einschraenkungssaetze_set4'))
+
+tests/test_phase_listener_restrictions_277.py:229: AssertionError
+__ test_einschraenkungssaetze_setzen_keine_spec_freigabe[Freigabe fehlt noch] __
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-23/test_einschraenkungssaetze_set5')
+message = 'Freigabe fehlt noch'
+
+    @pytest.mark.parametrize("message", [
+        "Freigabe fehlt noch",
+        "approved, erst noch die Doku",
+        "approved, wenn Tests grün",
+        "approved, nein",
+    ])
+    def test_einschraenkungssaetze_setzen_keine_spec_freigabe(tmp_path, message):
+        """AC-5: Einschraenkung -> kein spec_approved, Phase bleibt phase3_spec."""
+        project = _make_project(tmp_path, "phase3_spec")
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+        state = _state(project)
+>       assert state.get("spec_approved") is False, (
+            f"'{message}' setzte spec_approved (stderr={res.stderr!r})"
+        )
+E       AssertionError: 'Freigabe fehlt noch' setzte spec_approved (stderr="Spec approved for 'wf-277' (durch: 'Freigabe fehlt noch')! You may now run /tdd-red\n")
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x106e7f340>('spec_approved')
+E        +    where <built-in method get of dict object at 0x106e7f340> = {'name': 'wf-277', 'workflow_type': 'feature', 'current_phase': 'phase4_approved', 'spec_approved': True, ...}.get
+
+tests/test_phase_listener_restrictions_277.py:247: AssertionError
+_ test_einschraenkungssaetze_setzen_keine_spec_freigabe[approved, erst noch die Doku] _
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-23/test_einschraenkungssaetze_set6')
+message = 'approved, erst noch die Doku'
+
+    @pytest.mark.parametrize("message", [
+        "Freigabe fehlt noch",
+        "approved, erst noch die Doku",
+        "approved, wenn Tests grün",
+        "approved, nein",
+    ])
+    def test_einschraenkungssaetze_setzen_keine_spec_freigabe(tmp_path, message):
+        """AC-5: Einschraenkung -> kein spec_approved, Phase bleibt phase3_spec."""
+        project = _make_project(tmp_path, "phase3_spec")
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+        state = _state(project)
+>       assert state.get("spec_approved") is False, (
+            f"'{message}' setzte spec_approved (stderr={res.stderr!r})"
+        )
+E       AssertionError: 'approved, erst noch die Doku' setzte spec_approved (stderr="Spec approved for 'wf-277' (durch: 'approved, erst noch die Doku')! You may now run /tdd-red\n")
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x106ec3a00>('spec_approved')
+E        +    where <built-in method get of dict object at 0x106ec3a00> = {'name': 'wf-277', 'workflow_type': 'feature', 'current_phase': 'phase4_approved', 'spec_approved': True, ...}.get
+
+tests/test_phase_listener_restrictions_277.py:247: AssertionError
+_ test_einschraenkungssaetze_setzen_keine_spec_freigabe[approved, wenn Tests gr\xfcn] _
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-23/test_einschraenkungssaetze_set7')
+message = 'approved, wenn Tests grün'
+
+    @pytest.mark.parametrize("message", [
+        "Freigabe fehlt noch",
+        "approved, erst noch die Doku",
+        "approved, wenn Tests grün",
+        "approved, nein",
+    ])
+    def test_einschraenkungssaetze_setzen_keine_spec_freigabe(tmp_path, message):
+        """AC-5: Einschraenkung -> kein spec_approved, Phase bleibt phase3_spec."""
+        project = _make_project(tmp_path, "phase3_spec")
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+        state = _state(project)
+>       assert state.get("spec_approved") is False, (
+            f"'{message}' setzte spec_approved (stderr={res.stderr!r})"
+        )
+E       AssertionError: 'approved, wenn Tests grün' setzte spec_approved (stderr="Spec approved for 'wf-277' (durch: 'approved, wenn Tests grün')! You may now run /tdd-red\n")
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x106eb3400>('spec_approved')
+E        +    where <built-in method get of dict object at 0x106eb3400> = {'name': 'wf-277', 'workflow_type': 'feature', 'current_phase': 'phase4_approved', 'spec_approved': True, ...}.get
+
+tests/test_phase_listener_restrictions_277.py:247: AssertionError
+____ test_einschraenkungssaetze_setzen_keine_spec_freigabe[approved, nein] _____
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-23/test_einschraenkungssaetze_set8')
+message = 'approved, nein'
+
+    @pytest.mark.parametrize("message", [
+        "Freigabe fehlt noch",
+        "approved, erst noch die Doku",
+        "approved, wenn Tests grün",
+        "approved, nein",
+    ])
+    def test_einschraenkungssaetze_setzen_keine_spec_freigabe(tmp_path, message):
+        """AC-5: Einschraenkung -> kein spec_approved, Phase bleibt phase3_spec."""
+        project = _make_project(tmp_path, "phase3_spec")
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+        state = _state(project)
+>       assert state.get("spec_approved") is False, (
+            f"'{message}' setzte spec_approved (stderr={res.stderr!r})"
+        )
+E       AssertionError: 'approved, nein' setzte spec_approved (stderr="Spec approved for 'wf-277' (durch: 'approved, nein')! You may now run /tdd-red\n")
+E       assert True is False
+E        +  where True = <built-in method get of dict object at 0x106e65740>('spec_approved')
+E        +    where <built-in method get of dict object at 0x106e65740> = {'name': 'wf-277', 'workflow_type': 'feature', 'current_phase': 'phase4_approved', 'spec_approved': True, ...}.get
+
+tests/test_phase_listener_restrictions_277.py:247: AssertionError
+_________ test_meldung_als_systemmessage_ein_json_objekt[go, nein-go] __________
+
+res = CompletedProcess(args=['/private/tmp/claude-501/-Users-hem-Developer-agent-os-openspec--claude-worktrees-sprightly-sna...chlossen“/„erledigt“ gilt für den Workflow erst ab phase8_complete.\n', stderr="GREEN approved (durch: 'go, nein').\n")
+
+    def _json_stdout(res: subprocess.CompletedProcess) -> dict:
+        """stdout muss genau ein parsbares JSON-Objekt sein."""
+        try:
+>           obj = json.loads(res.stdout)
+                  ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_phase_listener_restrictions_277.py:128: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py:352: in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:345: in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.decoder.JSONDecoder object at 0x105ad9fd0>
+s = '[agent-os-openspec] AKTIVER WORKFLOW wf-277 · Phase 6 von 8 (phase6_implement) · Nächster Pflicht-Schritt: /50-implem...im Fließtext bleiben Emoji-frei.\n„fertig“/„abgeschlossen“/„erledigt“ gilt für den Workflow erst ab phase8_complete.\n'
+idx = 0
+
+    def raw_decode(self, s, idx=0):
+        """Decode a JSON document from ``s`` (a ``str`` beginning with
+        a JSON document) and return a 2-tuple of the Python
+        representation and the index in ``s`` where the document ended.
+    
+        This can be used to decode a JSON document from a string that may
+        have extraneous data at the end.
+    
+        """
+        try:
+            obj, end = self.scan_once(s, idx)
+        except StopIteration as err:
+>           raise JSONDecodeError("Expecting value", s, err.value) from None
+E           json.decoder.JSONDecodeError: Expecting value: line 1 column 2 (char 1)
+
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:363: JSONDecodeError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-23/test_meldung_als_systemmessage0')
+message = 'go, nein', keyword = 'go'
+
+    @pytest.mark.parametrize("message,keyword", [
+        ("go, nein", "go"),
+        ("approved", "approved"),
+    ])
+    def test_meldung_als_systemmessage_ein_json_objekt(tmp_path, message, keyword):
+        """AC-9: stdout = ein JSON-Objekt, systemMessage nennt das Stichwort,
+        stderr bleibt als Spiegel gefuellt."""
+        project = _make_project(tmp_path, "phase6_implement")
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+>       assert keyword in _system_message(res).lower()
+                          ^^^^^^^^^^^^^^^^^^^^
+
+tests/test_phase_listener_restrictions_277.py:305: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_phase_listener_restrictions_277.py:139: in _system_message
+    obj = _json_stdout(res)
+          ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+res = CompletedProcess(args=['/private/tmp/claude-501/-Users-hem-Developer-agent-os-openspec--claude-worktrees-sprightly-sna...chlossen“/„erledigt“ gilt für den Workflow erst ab phase8_complete.\n', stderr="GREEN approved (durch: 'go, nein').\n")
+
+    def _json_stdout(res: subprocess.CompletedProcess) -> dict:
+        """stdout muss genau ein parsbares JSON-Objekt sein."""
+        try:
+            obj = json.loads(res.stdout)
+        except json.JSONDecodeError:
+>           pytest.fail(
+                "stdout ist kein einzelnes JSON-Objekt (Rueckmeldung erreicht den "
+                f"Nutzer nicht). stdout={res.stdout!r} stderr={res.stderr!r}"
+            )
+E           Failed: stdout ist kein einzelnes JSON-Objekt (Rueckmeldung erreicht den Nutzer nicht). stdout='[agent-os-openspec] AKTIVER WORKFLOW wf-277 · Phase 6 von 8 (phase6_implement) · Nächster Pflicht-Schritt: /50-implement #277\nNenne diesen Schritt in jeder Arbeitsstandsmeldung als Pflicht — nie als „bei Bedarf“ oder „optional“; Empfehlungen zu /clear oder Token-Kosten stehen nie darüber.\nKennzeichne für den PO, wer am Zug ist, mit GENAU EINER Zeile ganz am Ende der Nachricht — nie zusätzlich mitten im Fließtext: „❗ Du: <Schritt>“, wenn der PO ihn tippen oder entscheiden muss. Das gilt AUCH, wenn du selbst gerade nichts mehr zu tun hast und nur auf den nächsten Befehl des PO wartest — das ist niemals „nichts zu tun“. „ℹ️ Nichts zu tun: <du arbeitest gerade selbst / wartest auf ein Ergebnis, z. B. einen Hintergrund-Agenten> — danach: <Schritt>“ gilt ausschließlich, wenn du auf etwas ANDERES als den PO wartest.\nHast DU SELBST in dieser Nachricht per `workflow.py phase <x>` (oder `complete`) die Phase gewechselt, ist dieser Hinweis hier noch der ALTE Stand von Turn-Beginn — nutze für Schritt und Phase in der Fußzeile trotzdem den NEUEN, von dir selbst herbeigeführten Stand. Die Marker-Zeilen entfallen NIE aus diesem Grund.\n❗/ℹ️/⚙ erscheinen AUSSCHLIESSLICH in den hier und in den Command-Vorlagen fest vorgeschriebenen Zeilen. Erfinde keine weiteren Zeilen mit diesen oder anderen Emojis (z. B. eine eigene „ℹ️ Status: ...“-Zusammenfassung) — Statusrekaps im Fließtext bleiben Emoji-frei.\n„fertig“/„abgeschlossen“/„erledigt“ gilt für den Workflow erst ab phase8_complete.\n' stderr="GREEN approved (durch: 'go, nein').\n"
+
+tests/test_phase_listener_restrictions_277.py:130: Failed
+______ test_meldung_als_systemmessage_ein_json_objekt[approved-approved] _______
+
+res = CompletedProcess(args=['/private/tmp/claude-501/-Users-hem-Developer-agent-os-openspec--claude-worktrees-sprightly-sna... nur in phase3_spec. Zustand unverändert — Phase nachziehen und erneut fragen, NICHT spec_approved von Hand setzen.\n")
+
+    def _json_stdout(res: subprocess.CompletedProcess) -> dict:
+        """stdout muss genau ein parsbares JSON-Objekt sein."""
+        try:
+>           obj = json.loads(res.stdout)
+                  ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_phase_listener_restrictions_277.py:128: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py:352: in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:345: in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.decoder.JSONDecoder object at 0x105ad9fd0>
+s = '[agent-os-openspec] AKTIVER WORKFLOW wf-277 · Phase 6 von 8 (phase6_implement) · Nächster Pflicht-Schritt: /50-implem...im Fließtext bleiben Emoji-frei.\n„fertig“/„abgeschlossen“/„erledigt“ gilt für den Workflow erst ab phase8_complete.\n'
+idx = 0
+
+    def raw_decode(self, s, idx=0):
+        """Decode a JSON document from ``s`` (a ``str`` beginning with
+        a JSON document) and return a 2-tuple of the Python
+        representation and the index in ``s`` where the document ended.
+    
+        This can be used to decode a JSON document from a string that may
+        have extraneous data at the end.
+    
+        """
+        try:
+            obj, end = self.scan_once(s, idx)
+        except StopIteration as err:
+>           raise JSONDecodeError("Expecting value", s, err.value) from None
+E           json.decoder.JSONDecodeError: Expecting value: line 1 column 2 (char 1)
+
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:363: JSONDecodeError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-23/test_meldung_als_systemmessage1')
+message = 'approved', keyword = 'approved'
+
+    @pytest.mark.parametrize("message,keyword", [
+        ("go, nein", "go"),
+        ("approved", "approved"),
+    ])
+    def test_meldung_als_systemmessage_ein_json_objekt(tmp_path, message, keyword):
+        """AC-9: stdout = ein JSON-Objekt, systemMessage nennt das Stichwort,
+        stderr bleibt als Spiegel gefuellt."""
+        project = _make_project(tmp_path, "phase6_implement")
+        res = _run_listener(project, message)
+        assert res.returncode == 0
+>       assert keyword in _system_message(res).lower()
+                          ^^^^^^^^^^^^^^^^^^^^
+
+tests/test_phase_listener_restrictions_277.py:305: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_phase_listener_restrictions_277.py:139: in _system_message
+    obj = _json_stdout(res)
+          ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+res = CompletedProcess(args=['/private/tmp/claude-501/-Users-hem-Developer-agent-os-openspec--claude-worktrees-sprightly-sna... nur in phase3_spec. Zustand unverändert — Phase nachziehen und erneut fragen, NICHT spec_approved von Hand setzen.\n")
+
+    def _json_stdout(res: subprocess.CompletedProcess) -> dict:
+        """stdout muss genau ein parsbares JSON-Objekt sein."""
+        try:
+            obj = json.loads(res.stdout)
+        except json.JSONDecodeError:
+>           pytest.fail(
+                "stdout ist kein einzelnes JSON-Objekt (Rueckmeldung erreicht den "
+                f"Nutzer nicht). stdout={res.stdout!r} stderr={res.stderr!r}"
+            )
+E           Failed: stdout ist kein einzelnes JSON-Objekt (Rueckmeldung erreicht den Nutzer nicht). stdout='[agent-os-openspec] AKTIVER WORKFLOW wf-277 · Phase 6 von 8 (phase6_implement) · Nächster Pflicht-Schritt: /50-implement #277\nNenne diesen Schritt in jeder Arbeitsstandsmeldung als Pflicht — nie als „bei Bedarf“ oder „optional“; Empfehlungen zu /clear oder Token-Kosten stehen nie darüber.\nKennzeichne für den PO, wer am Zug ist, mit GENAU EINER Zeile ganz am Ende der Nachricht — nie zusätzlich mitten im Fließtext: „❗ Du: <Schritt>“, wenn der PO ihn tippen oder entscheiden muss. Das gilt AUCH, wenn du selbst gerade nichts mehr zu tun hast und nur auf den nächsten Befehl des PO wartest — das ist niemals „nichts zu tun“. „ℹ️ Nichts zu tun: <du arbeitest gerade selbst / wartest auf ein Ergebnis, z. B. einen Hintergrund-Agenten> — danach: <Schritt>“ gilt ausschließlich, wenn du auf etwas ANDERES als den PO wartest.\nHast DU SELBST in dieser Nachricht per `workflow.py phase <x>` (oder `complete`) die Phase gewechselt, ist dieser Hinweis hier noch der ALTE Stand von Turn-Beginn — nutze für Schritt und Phase in der Fußzeile trotzdem den NEUEN, von dir selbst herbeigeführten Stand. Die Marker-Zeilen entfallen NIE aus diesem Grund.\n❗/ℹ️/⚙ erscheinen AUSSCHLIESSLICH in den hier und in den Command-Vorlagen fest vorgeschriebenen Zeilen. Erfinde keine weiteren Zeilen mit diesen oder anderen Emojis (z. B. eine eigene „ℹ️ Status: ...“-Zusammenfassung) — Statusrekaps im Fließtext bleiben Emoji-frei.\n„fertig“/„abgeschlossen“/„erledigt“ gilt für den Workflow erst ab phase8_complete.\n' stderr="WARNUNG: Freigabe-Stichwort erkannt, aber Workflow steht in 'phase6_implement'; Freigabe wirkt nur in phase3_spec. Zustand unverändert — Phase nachziehen und erneut fragen, NICHT spec_approved von Hand setzen.\n"
+
+tests/test_phase_listener_restrictions_277.py:130: Failed
+___________________ test_status_note_und_meldung_ein_objekt ____________________
+
+res = CompletedProcess(args=['/private/tmp/claude-501/-Users-hem-Developer-agent-os-openspec--claude-worktrees-sprightly-sna...chlossen“/„erledigt“ gilt für den Workflow erst ab phase8_complete.\n', stderr="GREEN approved (durch: 'go, nein').\n")
+
+    def _json_stdout(res: subprocess.CompletedProcess) -> dict:
+        """stdout muss genau ein parsbares JSON-Objekt sein."""
+        try:
+>           obj = json.loads(res.stdout)
+                  ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_phase_listener_restrictions_277.py:128: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py:352: in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:345: in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.decoder.JSONDecoder object at 0x105ad9fd0>
+s = '[agent-os-openspec] AKTIVER WORKFLOW wf-277 · Phase 6 von 8 (phase6_implement) · Nächster Pflicht-Schritt: /50-implem...im Fließtext bleiben Emoji-frei.\n„fertig“/„abgeschlossen“/„erledigt“ gilt für den Workflow erst ab phase8_complete.\n'
+idx = 0
+
+    def raw_decode(self, s, idx=0):
+        """Decode a JSON document from ``s`` (a ``str`` beginning with
+        a JSON document) and return a 2-tuple of the Python
+        representation and the index in ``s`` where the document ended.
+    
+        This can be used to decode a JSON document from a string that may
+        have extraneous data at the end.
+    
+        """
+        try:
+            obj, end = self.scan_once(s, idx)
+        except StopIteration as err:
+>           raise JSONDecodeError("Expecting value", s, err.value) from None
+E           json.decoder.JSONDecodeError: Expecting value: line 1 column 2 (char 1)
+
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:363: JSONDecodeError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-23/test_status_note_und_meldung_e0')
+
+    def test_status_note_und_meldung_ein_objekt(tmp_path):
+        """AC-10: mit Meldung -> ein JSON-Objekt, Statusvermerk in
+        additionalContext; ohne Meldung -> reiner Statusvermerk wie bisher."""
+        # ohne Meldung: reiner Text (bleibt wie 3.25.0)
+        quiet = _make_project(tmp_path / "quiet", "phase6_implement")
+        res = _run_listener(quiet, "Bitte mach weiter mit dem Test")
+        assert res.returncode == 0
+        assert res.stdout.strip(), "Statusvermerk fehlt ohne Meldung"
+        with pytest.raises(json.JSONDecodeError):
+            json.loads(res.stdout)
+        plain_note = res.stdout.strip()
+    
+        # mit Meldung: ein Objekt, Vermerk in additionalContext
+        noisy = _make_project(tmp_path / "noisy", "phase6_implement")
+        res = _run_listener(noisy, "go, nein")
+        assert res.returncode == 0
+>       obj = _json_stdout(res)
+              ^^^^^^^^^^^^^^^^^
+
+tests/test_phase_listener_restrictions_277.py:325: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+res = CompletedProcess(args=['/private/tmp/claude-501/-Users-hem-Developer-agent-os-openspec--claude-worktrees-sprightly-sna...chlossen“/„erledigt“ gilt für den Workflow erst ab phase8_complete.\n', stderr="GREEN approved (durch: 'go, nein').\n")
+
+    def _json_stdout(res: subprocess.CompletedProcess) -> dict:
+        """stdout muss genau ein parsbares JSON-Objekt sein."""
+        try:
+            obj = json.loads(res.stdout)
+        except json.JSONDecodeError:
+>           pytest.fail(
+                "stdout ist kein einzelnes JSON-Objekt (Rueckmeldung erreicht den "
+                f"Nutzer nicht). stdout={res.stdout!r} stderr={res.stderr!r}"
+            )
+E           Failed: stdout ist kein einzelnes JSON-Objekt (Rueckmeldung erreicht den Nutzer nicht). stdout='[agent-os-openspec] AKTIVER WORKFLOW wf-277 · Phase 6 von 8 (phase6_implement) · Nächster Pflicht-Schritt: /50-implement #277\nNenne diesen Schritt in jeder Arbeitsstandsmeldung als Pflicht — nie als „bei Bedarf“ oder „optional“; Empfehlungen zu /clear oder Token-Kosten stehen nie darüber.\nKennzeichne für den PO, wer am Zug ist, mit GENAU EINER Zeile ganz am Ende der Nachricht — nie zusätzlich mitten im Fließtext: „❗ Du: <Schritt>“, wenn der PO ihn tippen oder entscheiden muss. Das gilt AUCH, wenn du selbst gerade nichts mehr zu tun hast und nur auf den nächsten Befehl des PO wartest — das ist niemals „nichts zu tun“. „ℹ️ Nichts zu tun: <du arbeitest gerade selbst / wartest auf ein Ergebnis, z. B. einen Hintergrund-Agenten> — danach: <Schritt>“ gilt ausschließlich, wenn du auf etwas ANDERES als den PO wartest.\nHast DU SELBST in dieser Nachricht per `workflow.py phase <x>` (oder `complete`) die Phase gewechselt, ist dieser Hinweis hier noch der ALTE Stand von Turn-Beginn — nutze für Schritt und Phase in der Fußzeile trotzdem den NEUEN, von dir selbst herbeigeführten Stand. Die Marker-Zeilen entfallen NIE aus diesem Grund.\n❗/ℹ️/⚙ erscheinen AUSSCHLIESSLICH in den hier und in den Command-Vorlagen fest vorgeschriebenen Zeilen. Erfinde keine weiteren Zeilen mit diesen oder anderen Emojis (z. B. eine eigene „ℹ️ Status: ...“-Zusammenfassung) — Statusrekaps im Fließtext bleiben Emoji-frei.\n„fertig“/„abgeschlossen“/„erledigt“ gilt für den Workflow erst ab phase8_complete.\n' stderr="GREEN approved (durch: 'go, nein').\n"
+
+tests/test_phase_listener_restrictions_277.py:130: Failed
+______________ test_fruehe_austrittspunkte_nutzen_denselben_kanal ______________
+
+res = CompletedProcess(args=['/private/tmp/claude-501/-Users-hem-Developer-agent-os-openspec--claude-worktrees-sprightly-sna...rees/sprightly-snacking-thacker/core/hooks/phase_listener.py'], returncode=0, stdout='', stderr='Stop-lock enabled.\n')
+
+    def _json_stdout(res: subprocess.CompletedProcess) -> dict:
+        """stdout muss genau ein parsbares JSON-Objekt sein."""
+        try:
+>           obj = json.loads(res.stdout)
+                  ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_phase_listener_restrictions_277.py:128: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py:352: in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:345: in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.decoder.JSONDecoder object at 0x105ad9fd0>, s = '', idx = 0
+
+    def raw_decode(self, s, idx=0):
+        """Decode a JSON document from ``s`` (a ``str`` beginning with
+        a JSON document) and return a 2-tuple of the Python
+        representation and the index in ``s`` where the document ended.
+    
+        This can be used to decode a JSON document from a string that may
+        have extraneous data at the end.
+    
+        """
+        try:
+            obj, end = self.scan_once(s, idx)
+        except StopIteration as err:
+>           raise JSONDecodeError("Expecting value", s, err.value) from None
+E           json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:363: JSONDecodeError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-23/test_fruehe_austrittspunkte_nu0')
+
+    def test_fruehe_austrittspunkte_nutzen_denselben_kanal(tmp_path):
+        """AC-11: Stop-Lock-Exit und Lauf ohne aufloesbaren Workflow."""
+        # Stop-Lock-Satz mit verworfenem Override-Stichwort -> Meldung + frueher Exit
+        p1 = _make_project(tmp_path / "stop", "phase6_implement")
+        res = _run_listener(p1, "override, bitte stopp")
+        assert res.returncode == 0
+>       assert "override" in _system_message(res).lower()
+                             ^^^^^^^^^^^^^^^^^^^^
+
+tests/test_phase_listener_restrictions_277.py:340: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_phase_listener_restrictions_277.py:139: in _system_message
+    obj = _json_stdout(res)
+          ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+res = CompletedProcess(args=['/private/tmp/claude-501/-Users-hem-Developer-agent-os-openspec--claude-worktrees-sprightly-sna...rees/sprightly-snacking-thacker/core/hooks/phase_listener.py'], returncode=0, stdout='', stderr='Stop-lock enabled.\n')
+
+    def _json_stdout(res: subprocess.CompletedProcess) -> dict:
+        """stdout muss genau ein parsbares JSON-Objekt sein."""
+        try:
+            obj = json.loads(res.stdout)
+        except json.JSONDecodeError:
+>           pytest.fail(
+                "stdout ist kein einzelnes JSON-Objekt (Rueckmeldung erreicht den "
+                f"Nutzer nicht). stdout={res.stdout!r} stderr={res.stderr!r}"
+            )
+E           Failed: stdout ist kein einzelnes JSON-Objekt (Rueckmeldung erreicht den Nutzer nicht). stdout='' stderr='Stop-lock enabled.\n'
+
+tests/test_phase_listener_restrictions_277.py:130: Failed
+__________ test_verworfen_hinweis_nennt_konfigurierte_phrase[None-go] __________
+
+res = CompletedProcess(args=['/private/tmp/claude-501/-Users-hem-Developer-agent-os-openspec--claude-worktrees-sprightly-sna...chlossen“/„erledigt“ gilt für den Workflow erst ab phase8_complete.\n', stderr="GREEN approved (durch: 'go, nein').\n")
+
+    def _json_stdout(res: subprocess.CompletedProcess) -> dict:
+        """stdout muss genau ein parsbares JSON-Objekt sein."""
+        try:
+>           obj = json.loads(res.stdout)
+                  ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_phase_listener_restrictions_277.py:128: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py:352: in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:345: in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.decoder.JSONDecoder object at 0x105ad9fd0>
+s = '[agent-os-openspec] AKTIVER WORKFLOW wf-277 · Phase 6 von 8 (phase6_implement) · Nächster Pflicht-Schritt: /50-implem...im Fließtext bleiben Emoji-frei.\n„fertig“/„abgeschlossen“/„erledigt“ gilt für den Workflow erst ab phase8_complete.\n'
+idx = 0
+
+    def raw_decode(self, s, idx=0):
+        """Decode a JSON document from ``s`` (a ``str`` beginning with
+        a JSON document) and return a 2-tuple of the Python
+        representation and the index in ``s`` where the document ended.
+    
+        This can be used to decode a JSON document from a string that may
+        have extraneous data at the end.
+    
+        """
+        try:
+            obj, end = self.scan_once(s, idx)
+        except StopIteration as err:
+>           raise JSONDecodeError("Expecting value", s, err.value) from None
+E           json.decoder.JSONDecodeError: Expecting value: line 1 column 2 (char 1)
+
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:363: JSONDecodeError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-23/test_verworfen_hinweis_nennt_k0')
+config_yaml = None, expected = 'go'
+
+    @pytest.mark.parametrize("config_yaml,expected", [(None, "go"), (LOS_CONFIG, "los")])
+    def test_verworfen_hinweis_nennt_konfigurierte_phrase(tmp_path, config_yaml, expected):
+        """AC-12: Beispielphrase im Verworfen-Hinweis = erste konfigurierte
+        GREEN-Phrase, nie 'approved'."""
+        project = _make_project(tmp_path, "phase6_implement", config_yaml=config_yaml)
+        res = _run_listener(project, "go, nein")
+        assert res.returncode == 0
+>       msg = _system_message(res)
+              ^^^^^^^^^^^^^^^^^^^^
+
+tests/test_phase_listener_restrictions_277.py:356: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_phase_listener_restrictions_277.py:139: in _system_message
+    obj = _json_stdout(res)
+          ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+res = CompletedProcess(args=['/private/tmp/claude-501/-Users-hem-Developer-agent-os-openspec--claude-worktrees-sprightly-sna...chlossen“/„erledigt“ gilt für den Workflow erst ab phase8_complete.\n', stderr="GREEN approved (durch: 'go, nein').\n")
+
+    def _json_stdout(res: subprocess.CompletedProcess) -> dict:
+        """stdout muss genau ein parsbares JSON-Objekt sein."""
+        try:
+            obj = json.loads(res.stdout)
+        except json.JSONDecodeError:
+>           pytest.fail(
+                "stdout ist kein einzelnes JSON-Objekt (Rueckmeldung erreicht den "
+                f"Nutzer nicht). stdout={res.stdout!r} stderr={res.stderr!r}"
+            )
+E           Failed: stdout ist kein einzelnes JSON-Objekt (Rueckmeldung erreicht den Nutzer nicht). stdout='[agent-os-openspec] AKTIVER WORKFLOW wf-277 · Phase 6 von 8 (phase6_implement) · Nächster Pflicht-Schritt: /50-implement #277\nNenne diesen Schritt in jeder Arbeitsstandsmeldung als Pflicht — nie als „bei Bedarf“ oder „optional“; Empfehlungen zu /clear oder Token-Kosten stehen nie darüber.\nKennzeichne für den PO, wer am Zug ist, mit GENAU EINER Zeile ganz am Ende der Nachricht — nie zusätzlich mitten im Fließtext: „❗ Du: <Schritt>“, wenn der PO ihn tippen oder entscheiden muss. Das gilt AUCH, wenn du selbst gerade nichts mehr zu tun hast und nur auf den nächsten Befehl des PO wartest — das ist niemals „nichts zu tun“. „ℹ️ Nichts zu tun: <du arbeitest gerade selbst / wartest auf ein Ergebnis, z. B. einen Hintergrund-Agenten> — danach: <Schritt>“ gilt ausschließlich, wenn du auf etwas ANDERES als den PO wartest.\nHast DU SELBST in dieser Nachricht per `workflow.py phase <x>` (oder `complete`) die Phase gewechselt, ist dieser Hinweis hier noch der ALTE Stand von Turn-Beginn — nutze für Schritt und Phase in der Fußzeile trotzdem den NEUEN, von dir selbst herbeigeführten Stand. Die Marker-Zeilen entfallen NIE aus diesem Grund.\n❗/ℹ️/⚙ erscheinen AUSSCHLIESSLICH in den hier und in den Command-Vorlagen fest vorgeschriebenen Zeilen. Erfinde keine weiteren Zeilen mit diesen oder anderen Emojis (z. B. eine eigene „ℹ️ Status: ...“-Zusammenfassung) — Statusrekaps im Fließtext bleiben Emoji-frei.\n„fertig“/„abgeschlossen“/„erledigt“ gilt für den Workflow erst ab phase8_complete.\n' stderr="GREEN approved (durch: 'go, nein').\n"
+
+tests/test_phase_listener_restrictions_277.py:130: Failed
+_ test_verworfen_hinweis_nennt_konfigurierte_phrase[\nworkflow:\n  green_phrases:\n    - "los"\n    - "go"\n-los] _
+
+res = CompletedProcess(args=['/private/tmp/claude-501/-Users-hem-Developer-agent-os-openspec--claude-worktrees-sprightly-sna...chlossen“/„erledigt“ gilt für den Workflow erst ab phase8_complete.\n', stderr="GREEN approved (durch: 'go, nein').\n")
+
+    def _json_stdout(res: subprocess.CompletedProcess) -> dict:
+        """stdout muss genau ein parsbares JSON-Objekt sein."""
+        try:
+>           obj = json.loads(res.stdout)
+                  ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_phase_listener_restrictions_277.py:128: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py:352: in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:345: in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.decoder.JSONDecoder object at 0x105ad9fd0>
+s = '[agent-os-openspec] AKTIVER WORKFLOW wf-277 · Phase 6 von 8 (phase6_implement) · Nächster Pflicht-Schritt: /50-implem...im Fließtext bleiben Emoji-frei.\n„fertig“/„abgeschlossen“/„erledigt“ gilt für den Workflow erst ab phase8_complete.\n'
+idx = 0
+
+    def raw_decode(self, s, idx=0):
+        """Decode a JSON document from ``s`` (a ``str`` beginning with
+        a JSON document) and return a 2-tuple of the Python
+        representation and the index in ``s`` where the document ended.
+    
+        This can be used to decode a JSON document from a string that may
+        have extraneous data at the end.
+    
+        """
+        try:
+            obj, end = self.scan_once(s, idx)
+        except StopIteration as err:
+>           raise JSONDecodeError("Expecting value", s, err.value) from None
+E           json.decoder.JSONDecodeError: Expecting value: line 1 column 2 (char 1)
+
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py:363: JSONDecodeError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-23/test_verworfen_hinweis_nennt_k1')
+config_yaml = '\nworkflow:\n  green_phrases:\n    - "los"\n    - "go"\n'
+expected = 'los'
+
+    @pytest.mark.parametrize("config_yaml,expected", [(None, "go"), (LOS_CONFIG, "los")])
+    def test_verworfen_hinweis_nennt_konfigurierte_phrase(tmp_path, config_yaml, expected):
+        """AC-12: Beispielphrase im Verworfen-Hinweis = erste konfigurierte
+        GREEN-Phrase, nie 'approved'."""
+        project = _make_project(tmp_path, "phase6_implement", config_yaml=config_yaml)
+        res = _run_listener(project, "go, nein")
+        assert res.returncode == 0
+>       msg = _system_message(res)
+              ^^^^^^^^^^^^^^^^^^^^
+
+tests/test_phase_listener_restrictions_277.py:356: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_phase_listener_restrictions_277.py:139: in _system_message
+    obj = _json_stdout(res)
+          ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+res = CompletedProcess(args=['/private/tmp/claude-501/-Users-hem-Developer-agent-os-openspec--claude-worktrees-sprightly-sna...chlossen“/„erledigt“ gilt für den Workflow erst ab phase8_complete.\n', stderr="GREEN approved (durch: 'go, nein').\n")
+
+    def _json_stdout(res: subprocess.CompletedProcess) -> dict:
+        """stdout muss genau ein parsbares JSON-Objekt sein."""
+        try:
+            obj = json.loads(res.stdout)
+        except json.JSONDecodeError:
+>           pytest.fail(
+                "stdout ist kein einzelnes JSON-Objekt (Rueckmeldung erreicht den "
+                f"Nutzer nicht). stdout={res.stdout!r} stderr={res.stderr!r}"
+            )
+E           Failed: stdout ist kein einzelnes JSON-Objekt (Rueckmeldung erreicht den Nutzer nicht). stdout='[agent-os-openspec] AKTIVER WORKFLOW wf-277 · Phase 6 von 8 (phase6_implement) · Nächster Pflicht-Schritt: /50-implement #277\nNenne diesen Schritt in jeder Arbeitsstandsmeldung als Pflicht — nie als „bei Bedarf“ oder „optional“; Empfehlungen zu /clear oder Token-Kosten stehen nie darüber.\nKennzeichne für den PO, wer am Zug ist, mit GENAU EINER Zeile ganz am Ende der Nachricht — nie zusätzlich mitten im Fließtext: „❗ Du: <Schritt>“, wenn der PO ihn tippen oder entscheiden muss. Das gilt AUCH, wenn du selbst gerade nichts mehr zu tun hast und nur auf den nächsten Befehl des PO wartest — das ist niemals „nichts zu tun“. „ℹ️ Nichts zu tun: <du arbeitest gerade selbst / wartest auf ein Ergebnis, z. B. einen Hintergrund-Agenten> — danach: <Schritt>“ gilt ausschließlich, wenn du auf etwas ANDERES als den PO wartest.\nHast DU SELBST in dieser Nachricht per `workflow.py phase <x>` (oder `complete`) die Phase gewechselt, ist dieser Hinweis hier noch der ALTE Stand von Turn-Beginn — nutze für Schritt und Phase in der Fußzeile trotzdem den NEUEN, von dir selbst herbeigeführten Stand. Die Marker-Zeilen entfallen NIE aus diesem Grund.\n❗/ℹ️/⚙ erscheinen AUSSCHLIESSLICH in den hier und in den Command-Vorlagen fest vorgeschriebenen Zeilen. Erfinde keine weiteren Zeilen mit diesen oder anderen Emojis (z. B. eine eigene „ℹ️ Status: ...“-Zusammenfassung) — Statusrekaps im Fließtext bleiben Emoji-frei.\n„fertig“/„abgeschlossen“/„erledigt“ gilt für den Workflow erst ab phase8_complete.\n' stderr="GREEN approved (durch: 'go, nein').\n"
+
+tests/test_phase_listener_restrictions_277.py:130: Failed
+___________________ test_spec_170_schritt4_passt_zur_tabelle ___________________
+
+    def test_spec_170_schritt4_passt_zur_tabelle():
+        """Schritt 4 darf Override nicht als '0 Zusatzwoerter im Kopfsatz'
+        beschreiben (das liesse 'override, danke' zu, Tabelle/Code verlangen die
+        Phrase allein bis Zeilenende). Pflicht: Schritt 4 sagt fuer Override
+        ausdruecklich 'allein' und nennt das Zeilenende."""
+        text = SPEC_170.read_text()
+        step4 = next((ln for ln in text.splitlines() if ln.startswith("4. **Kopfsatz")), None)
+        assert step4 is not None, "Schritt 4 (Kopfsatz) nicht gefunden"
+        assert "2 Zusatzwörter" in step4, f"Schritt 4 nennt die 2-Wort-Regel nicht: {step4!r}"
+>       assert not re.search(r"override\s*\**\s*0", step4, re.IGNORECASE), (
+            f"Schritt 4 beschreibt Override noch als '0 Zusatzwoerter im Kopfsatz': {step4!r}"
+        )
+E       AssertionError: Schritt 4 beschreibt Override noch als '0 Zusatzwoerter im Kopfsatz': '4. **Kopfsatz.** Der Text vom Phrasenende bis zum ersten Klauselzeichen (`, . ; : ! ? …`, " - ", " — " oder Zeilenende) darf höchstens **2 Zusatzwörter** enthalten, bei **override 0**. Wörter sind `\\w+`-Token (Umlaute zählen mit, Zeichen und Emojis nicht).'
+E       assert not <re.Match object; span=(171, 181), match='override 0'>
+E        +  where <re.Match object; span=(171, 181), match='override 0'> = <function search at 0x1059df320>('override\\s*\\**\\s*0', '4. **Kopfsatz.** Der Text vom Phrasenende bis zum ersten Klauselzeichen (`, . ; : ! ? …`, " - ", " — " oder Zeilenende) darf höchstens **2 Zusatzwörter** enthalten, bei **override 0**. Wörter sind `\\w+`-Token (Umlaute zählen mit, Zeichen und Emojis nicht).', re.IGNORECASE)
+E        +    where <function search at 0x1059df320> = re.search
+E        +    and   re.IGNORECASE = re.IGNORECASE
+
+tests/test_phase_listener_restrictions_277.py:394: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_phase_listener_restrictions_277.py::test_sperrmeldung_nennt_nur_green_phrasen
+FAILED tests/test_phase_listener_restrictions_277.py::test_sperrmeldung_folgt_projekt_config
+FAILED tests/test_phase_listener_restrictions_277.py::test_jede_genannte_phrase_wirkt_in_phase6[standard]
+FAILED tests/test_phase_listener_restrictions_277.py::test_jede_genannte_phrase_wirkt_in_phase6[projekt]
+FAILED tests/test_phase_listener_restrictions_277.py::test_einschraenkungssaetze_setzen_keine_green_freigabe[Go war falsch]
+FAILED tests/test_phase_listener_restrictions_277.py::test_einschraenkungssaetze_setzen_keine_green_freigabe[go, erst noch die Doku]
+FAILED tests/test_phase_listener_restrictions_277.py::test_einschraenkungssaetze_setzen_keine_green_freigabe[go, wenn Tests gr\xfcn]
+FAILED tests/test_phase_listener_restrictions_277.py::test_einschraenkungssaetze_setzen_keine_green_freigabe[go, nein]
+FAILED tests/test_phase_listener_restrictions_277.py::test_einschraenkungssaetze_setzen_keine_green_freigabe[go, niemals]
+FAILED tests/test_phase_listener_restrictions_277.py::test_einschraenkungssaetze_setzen_keine_spec_freigabe[Freigabe fehlt noch]
+FAILED tests/test_phase_listener_restrictions_277.py::test_einschraenkungssaetze_setzen_keine_spec_freigabe[approved, erst noch die Doku]
+FAILED tests/test_phase_listener_restrictions_277.py::test_einschraenkungssaetze_setzen_keine_spec_freigabe[approved, wenn Tests gr\xfcn]
+FAILED tests/test_phase_listener_restrictions_277.py::test_einschraenkungssaetze_setzen_keine_spec_freigabe[approved, nein]
+FAILED tests/test_phase_listener_restrictions_277.py::test_meldung_als_systemmessage_ein_json_objekt[go, nein-go]
+FAILED tests/test_phase_listener_restrictions_277.py::test_meldung_als_systemmessage_ein_json_objekt[approved-approved]
+FAILED tests/test_phase_listener_restrictions_277.py::test_status_note_und_meldung_ein_objekt
+FAILED tests/test_phase_listener_restrictions_277.py::test_fruehe_austrittspunkte_nutzen_denselben_kanal
+FAILED tests/test_phase_listener_restrictions_277.py::test_verworfen_hinweis_nennt_konfigurierte_phrase[None-go]
+FAILED tests/test_phase_listener_restrictions_277.py::test_verworfen_hinweis_nennt_konfigurierte_phrase[\nworkflow:\n  green_phrases:\n    - "los"\n    - "go"\n-los]
+FAILED tests/test_phase_listener_restrictions_277.py::test_spec_170_schritt4_passt_zur_tabelle
+========================= 20 failed, 9 passed in 1.77s =========================

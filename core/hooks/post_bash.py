@@ -16,7 +16,7 @@ geschrieben — ein gruener Testlauf ersetzt den Adversary-Dialog nicht.
 Exit Codes: 0 always (never blocks)
 """
 
-from hook_utils import setup_path, find_project_root, get_tool_result, get_active_workflow_name, framework_disabled
+from hook_utils import setup_path, find_project_root, get_tool_result, get_active_workflow_name, framework_disabled, strip_ansi
 setup_path()
 
 import json
@@ -35,9 +35,17 @@ _FAILURE_EVIDENCE_RE = re.compile(
     r"|--- FAIL:"
     r"|^FAIL\b"
     r"|\*\* TEST FAILED \*\*"
-    r"|test result: FAILED",
+    r"|test result: FAILED"
+    r"|[✖❌]"                       # xcbeautify-Marker (#275)
+    r"|\b[1-9]\d*\s+failures?\b",  # XCTest-Zaehler, '0 failures' zaehlt nicht
     re.MULTILINE | re.IGNORECASE,
 )
+
+# #275/#273: Lauf ohne Bestandenes, aber mit Uebersprungenem ist nicht 'passed'.
+_PASS_COUNT_RE = re.compile(
+    r"\b[1-9]\d*\s+passed\b|Tests:.*passed|^ok\s+|test result: ok", re.MULTILINE
+)
+_SKIPPED_RE = re.compile(r"\b[1-9]\d*\s+(?:tests?\s+)?skipped\b")
 
 
 def _extract_stdout(payload: dict) -> str:
@@ -73,8 +81,15 @@ def _detect_test_output(command: str, stdout: str) -> None:
     if not stdout:
         return
 
+    stdout = strip_ansi(stdout)  # ANSI darf Fehler-Evidenz nicht verdecken (#275)
     if _FAILURE_EVIDENCE_RE.search(stdout):
         _record_test_run("failed", runner)  # alter gruener Hinweis bleibt nicht stehen
+        return
+
+    # Nichts bestanden, aber etwas uebersprungen: auch '** TEST SUCCEEDED **'
+    # macht daraus keinen gruenen Lauf (#275). Bleibt ein Hinweis (#253).
+    if not _PASS_COUNT_RE.search(stdout) and _SKIPPED_RE.search(stdout):
+        _record_test_run("skipped", runner)
         return
 
     # Check for framework-specific pass patterns (pytest, jest, xcodebuild, go, cargo)

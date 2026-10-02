@@ -203,9 +203,10 @@ Erstelle eine Zusammenfassung:
 ## Validation Report: [Workflow Name]
 
 ### Test Results
-- Unit Tests: [N] passed, [N] failed
-- Integration Tests: [N] passed, [N] failed
-- Full Suite: [N] total, [N] passed
+- Unit Tests: [N] passed, [N] failed, [N] übersprungen
+- Integration Tests: [N] passed, [N] failed, [N] übersprungen
+- Full Suite: [N] total, [N] passed, [N] übersprungen
+- Ein Lauf mit 0 bestanden und ≥ 1 übersprungen ist nicht grün.
 
 ### Spec Compliance
 - Acceptance Criteria: [N]/[N] erfuellt

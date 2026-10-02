@@ -28,22 +28,23 @@ Fuehre die Tests aus und fasse die Ergebnisse **kurz und verstaendlich** zusamme
    - Capture stdout und stderr
 
 3. **Ergebnis analysieren:**
-   - Zaehle passed/failed Tests
+   - Zaehle passed/failed/übersprungene Tests
    - Bei Failures: Finde die genaue Fehlermeldung
    - Identifiziere betroffene Dateien
+   - Ein Lauf mit 0 bestanden und ≥ 1 übersprungen ist nicht grün.
 
 4. **Zusammenfassung erstellen:**
 
 **Bei Erfolg:**
 ```
-Tests: X passed
+Tests: X passed, Y failed, Z übersprungen
 Dauer: ~Ys
 Status: Alles gruen
 ```
 
 **Bei Failures:**
 ```
-Tests: X passed, Y failed
+Tests: X passed, Y failed, Z übersprungen
 Fehlgeschlagen:
 - TestClass.testMethod: [Fehlermeldung]
 
