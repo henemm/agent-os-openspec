@@ -17,6 +17,7 @@ import json
 import os
 import re
 import shlex
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -94,8 +95,71 @@ def _looks_like_git(token: str) -> bool:
     return token == "git" or token.endswith("/git")
 
 
+def _repo_aliases() -> "dict[str, str]":
+    """Aliase aus der git-Konfiguration des Aufrufverzeichnisses (#281).
+
+    Eine einzige Abfrage (`git config --get-regexp ^alias\\.`), je Prozess
+    einmal. Fail-open: jeder Fehler (kein git, kein Repo, Timeout) ergibt {}.
+    """
+    global _REPO_ALIASES
+    if _REPO_ALIASES is None:
+        _REPO_ALIASES = {}
+        try:
+            out = subprocess.run(["git", "config", "--get-regexp", r"^alias\."],
+                                 capture_output=True, text=True, timeout=5).stdout
+            for line in out.splitlines():
+                key, _, value = line.partition(" ")
+                _REPO_ALIASES[key[len("alias."):].lower()] = value
+        except (OSError, subprocess.SubprocessError):
+            pass
+    return _REPO_ALIASES
+
+
+_REPO_ALIASES: "dict[str, str] | None" = None
+
+
+def _inline_aliases(tokens: "list[str]", i: int) -> "dict[str, str]":
+    """`-c alias.<name>=<wert>` zwischen `git` und Unterbefehl (#281)."""
+    found: "dict[str, str]" = {}
+    while i + 1 < len(tokens) and tokens[i].startswith("-"):
+        if tokens[i] == "-c" and tokens[i + 1].lower().startswith("alias."):
+            key, _, value = tokens[i + 1].partition("=")
+            found[key[len("alias."):].lower()] = value
+        i += 2 if tokens[i] in _GIT_OPTS_WITH_VALUE else 1
+    return found
+
+
+def _resolve_alias(sub: str, inline: "dict[str, str]") -> str:
+    """Alias-Kette zum echten Unterbefehl aufloesen (#281).
+
+    Ergebnis ist das erste Wort des Alias-Werts; ein Shell-Alias (`!...`) bleibt
+    als `!<rumpf>` stehen — der Aufrufer behandelt ihn als nicht-reines git und
+    zerlegt den Rumpf als eigenes Kommando. Eingebaute Kommandos gewinnen in git
+    immer gegen gleichnamige Aliase; `commit` ist daher nie ein Alias-Ziel.
+    """
+    aliases = {**_repo_aliases(), **inline}
+    for _ in range(5):
+        value = aliases.get(sub.lower()) if sub != "commit" else None
+        if value is None:
+            return sub
+        if value.startswith("!"):
+            return value
+        try:
+            words = shlex.split(value)
+        except ValueError:
+            return sub
+        if not words:
+            return sub
+        sub = words[0]
+    return sub
+
+
 def _git_subcommand_after(tokens: "list[str]", i: int) -> "str | None":
-    """Erstes Nicht-Options-Token nach einem `git`-Token (= der Unterbefehl)."""
+    """Erstes Nicht-Options-Token nach einem `git`-Token (= der Unterbefehl).
+
+    Ein Alias wird zum echten Unterbefehl aufgeloest (#281).
+    """
+    start = i
     while i < len(tokens):
         tok = tokens[i]
         if _is_git_separator(tok):
@@ -110,10 +174,54 @@ def _git_subcommand_after(tokens: "list[str]", i: int) -> "str | None":
             i += 2  # Vor-Option + ihr Wert (`-C /pfad`, `-c k=v`)
             continue
         if tok.startswith("-"):
-            i += 1  # `--no-pager`, `--git-dir=…`, `-p`, …
+            i += 1  # `--no-pager`, `--git-dir=...`, `-p`, ...
             continue
-        return tok
+        return _resolve_alias(tok, _inline_aliases(tokens, start))
     return None
+
+
+# Konfigurationsschluessel, die git beim Aufruf fremden Code ausfuehren lassen (#297).
+_GIT_CODE_CONFIG_KEYS = (
+    "core.pager", "core.editor", "core.sshcommand", "core.fsmonitor", "core.hookspath",
+    "core.askpass", "sequence.editor", "diff.external", "credential.helper",
+    "gpg.program", "pager.",
+)
+# Unterbefehle, die ein Kommando ausfuehren (#297).
+_GIT_CODE_SUBCOMMANDS = {"difftool", "mergetool", "filter-branch"}
+_GIT_CODE_SUBCOMMAND_PAIRS = {("bisect", "run"), ("submodule", "foreach")}
+
+
+def _git_runs_foreign_code(tokens: "list[str]", i: int) -> bool:
+    """Fuehrt dieser git-Aufruf (Unterbefehl-Suche ab Token i) fremden Code aus? (#297)
+
+    Gefaehrliche `-c`-Schluessel, Kommando-Unterbefehle, `rebase --exec` und
+    Shell-Aliase. Dann gilt der Aufruf nicht als „reines git“ — Marker-Schutz
+    und Secrets-Guard laufen wieder; zusaetzlich blockt dadurch nichts.
+    """
+    j = i
+    while j + 1 < len(tokens) and tokens[j].startswith("-"):
+        if tokens[j] == "-c" and tokens[j + 1].lower().startswith(_GIT_CODE_CONFIG_KEYS):
+            return True
+        j += 2 if tokens[j] in _GIT_OPTS_WITH_VALUE else 1
+    sub = _git_subcommand_after(tokens, i)
+    if sub is None:
+        return False
+    if sub.startswith("!") or sub in _GIT_CODE_SUBCOMMANDS:
+        return True
+    rest = [t for t in tokens[i:] if not _is_git_separator(t)]
+    rest = rest[rest.index(sub) + 1:] if sub in rest else []
+    if rest and (sub, rest[0]) in _GIT_CODE_SUBCOMMAND_PAIRS:
+        return True
+    return sub == "rebase" and any(t in ("-x", "--exec") or t.startswith("--exec=") for t in rest)
+
+
+def git_runs_foreign_code(command: str) -> bool:
+    """Fuehrt irgendein git-Aufruf im Kommando fremden Code aus? (#297)"""
+    return any(
+        _git_runs_foreign_code(seg, i + 1)
+        for seg in _git_segments(command) or []
+        for i, tok in enumerate(seg) if _looks_like_git(tok)
+    )
 
 
 def _git_subcommand_of_segment(tokens: "list[str]") -> "str | None":
@@ -130,6 +238,8 @@ def _git_subcommand_of_segment(tokens: "list[str]") -> "str | None":
         i += 1
     if i >= len(tokens) or not _looks_like_git(tokens[i]):
         return None
+    if _git_runs_foreign_code(tokens, i + 1):
+        return None  # fremder Code: nicht „reines git“ (#297)
     return _git_subcommand_after(tokens, i + 1)
 
 
@@ -146,32 +256,39 @@ def _git_subcommands_in_segment(tokens: "list[str]") -> "list[str]":
     for i, tok in enumerate(tokens):
         if _looks_like_git(tok):
             sub = _git_subcommand_after(tokens, i + 1)
-            if sub:
+            if sub and sub.startswith("!"):
+                out.extend(git_subcommands(sub[1:], 1))  # Shell-Alias: Rumpf zerlegen
+            elif sub:
                 out.append(sub)
     return out
 
 
 def _shell_c_argument(segment: "list[str]", j: int) -> "str | None":
-    """Kommando-Token hinter `-c` einer Shell, Optionen davor uebersprungen (#298).
+    """Kommando-Token hinter `-c` einer Shell, Optionen davor uebersprungen (#298, #318).
 
     `-c` darf in einem Buendel stecken (`-lc`, `-ec`). Werte von `-o`/`-O`/
-    `--rcfile`/`--init-file` sind kein Kommando. Erstes Nicht-Options-Token
-    (Skriptdatei) beendet die Suche: dann gibt es kein `-c`.
+    `--rcfile`/`--init-file` (auch am Ende eines Buendels: `-eo pipefail`) sind
+    kein Kommando, Umleitungen (`2>&1`, `>/dev/null`) ebenfalls nicht. Wie in
+    bash ist das Kommando das erste Nicht-Options-Token NACH `-c` (`-c -l "…"`).
+    Ein Nicht-Options-Token ohne vorheriges `-c` ist eine Skriptdatei: dann
+    gibt es kein `-c`.
     """
+    seen_c = False
     while j < len(segment):
         tok = segment[j]
-        if tok in _SHELL_OPTS_WITH_VALUE:
+        if _is_git_redirect(tok):
+            j += 2  # Umleitung + Ziel
+        elif tok.isdigit() and j + 1 < len(segment) and _is_git_redirect(segment[j + 1]):
+            j += 1  # Ziffern-Praefix (`2>&1`)
+        elif tok in _SHELL_OPTS_WITH_VALUE:
             j += 2
         elif tok.startswith("--"):
             j += 1  # `--login`, `--noprofile`, `--norc`, `--posix`, …
-        elif tok.startswith("-") and len(tok) > 1:
-            if "c" in tok[1:]:
-                return segment[j + 1] if j + 1 < len(segment) else None
-            j += 1  # `-l`, `-e`, `-x`, …
-        elif tok.startswith("+") and len(tok) > 1:
-            j += 1  # `+e`, `+x`
+        elif tok.startswith(("-", "+")) and len(tok) > 1:
+            seen_c |= tok[0] == "-" and "c" in tok[1:]
+            j += 2 if tok[-1] in "oO" and "c" not in tok else 1  # `-eo pipefail`
         else:
-            return None
+            return tok if seen_c else None
     return None
 
 
@@ -227,10 +344,10 @@ def _git_lex(command: str) -> "list[str] | None":
 def _is_git_redirect(token: str) -> bool:
     """Umleitungs-Token: nur aus `<>&`, mit mindestens einem `<` oder `>`.
 
-    Deckt `>`, `>>`, `<`, `>&`, `&>`, `&>>`. Ein einzelnes `&` (Hintergrund),
-    `&&`, `|&` und `<(`/`>(` sind KEINE Umleitung.
+    Deckt `>`, `>>`, `<`, `>&`, `&>`, `&>>` und `>|` (#318). Ein einzelnes `&`
+    (Hintergrund), `&&`, `|&` und `<(`/`>(` sind KEINE Umleitung.
     """
-    return (bool(token) and all(ch in "<>&" for ch in token)
+    return (bool(token) and all(ch in "<>&|" for ch in token)
             and ("<" in token or ">" in token))
 
 

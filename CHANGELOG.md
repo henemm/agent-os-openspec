@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+**bash_gate: Aliase, fremder Code und Schreibweisen-Randfälle (#299 Teil B: #281, #297, #318)**
+
+- **#281:** Git-Aliase sind Commits: `git -c alias.ci=commit ci`, Repo-Aliase (eine einzige
+  `git config --get-regexp ^alias\.`-Abfrage je Aufruf, fail-open), Alias-Ketten (Tiefe 5) und
+  `!`-Aliase (Rumpf wird zerlegt). Eingebaute Kommandos bleiben nie Alias-Ziel.
+- **#297:** Fremden Code ausführende git-Aufrufe verlieren den Status „reines git“, sodass
+  Marker-Schutz und Secrets-Guard laufen: `-c core.pager/editor/sshCommand/fsmonitor/hooksPath/…`,
+  `diff.external`, `credential.helper`, `rebase --exec`, `bisect run`, `submodule foreach`,
+  `difftool`, `mergetool`, `filter-branch`, Shell-Aliase. Es blockt dadurch nichts zusätzlich.
+- **Produktentscheidung #297:** `merge`, `cherry-pick`, `revert`, `am`, `pull` zählen **nicht** als
+  Commit-Weg (sie spielen bereits geprüfte Stände ein; der Weg „origin/main in den Zweig holen“
+  bleibt frei). Known Limitation: ein per `cherry-pick` eingeschleuster neuer Code umgeht die
+  Adversary-Pflicht.
+- **#318:** `bash -eo pipefail -c …`, `>|` vor dem Unterbefehl, Umleitung zwischen Shell und `-c`,
+  `bash -c -l "…"` werden erkannt. Ein Skriptdatei-Aufruf bleibt kein `-c`.
+- Nicht in diesem Teil (offen unter #299): `cd` in den State-Ordner + Schreiben, Umleitung im
+  Whitelist-Segment, Apostroph im Kommentar (#316, #319).
+
 ### Added
 
 **Auswertung des Gate-Event-Logs (`scripts/gate_audit.py`, Folge von #181)**
