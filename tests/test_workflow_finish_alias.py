@@ -35,14 +35,21 @@ def _run_workflow(tmp_path: Path, args: list, wf_name: str = "wf-under-test"):
 
 
 def _make_completable_workflow(tmp_path: Path, name: str = "wf-under-test"):
-    """workflow_type 'bug' — keine Adversary-/Approval-Vorbedingungen, damit
-    ausschliesslich der Unterbefehlsname selbst getestet wird, nicht die
-    Gate-Logik von cmd_complete."""
+    """workflow_type 'feature-fast' mit erfuellten Vorbedingungen (existierende
+    Spec mit ausgefuellter ADR-Sektion, spec_approved), damit ausschliesslich der
+    Unterbefehlsname selbst getestet wird, nicht die Gate-Logik von cmd_complete.
+    Ein Briefing ist nicht noetig: das PO-Briefing-Gate ueberspringt den Fast
+    Track per Default."""
+    spec = tmp_path / "docs" / "specs" / "x.md"
+    spec.parent.mkdir(parents=True, exist_ok=True)
+    spec.write_text("## Architektur-Entscheidung (ADR)\n\n- **ADR-Nr.:** keine\n")
     wf_dir = tmp_path / ".claude" / "workflows"
     wf_dir.mkdir(parents=True, exist_ok=True)
     (wf_dir / f"{name}.json").write_text(json.dumps({
         "name": name,
-        "workflow_type": "bug",
+        "workflow_type": "feature-fast",
+        "spec_file": "docs/specs/x.md",
+        "spec_approved": True,
         "current_phase": "phase8_complete",
         "context_file": "docs/context/x.md",
         "affected_files": [],

@@ -267,7 +267,7 @@ REENTRY_ARCHIVE_ONLY = ["90-retro"]
 
 # Kein Wiedereinstieg: diese drei legen einen Workflow erst an bzw. klassifizieren
 # eine Aufgabe — es gibt noch keinen State, den eine Nummer aufloesen koennte.
-REENTRY_EXEMPT = ["00-intake", "00-bug", "01-feature"]
+REENTRY_EXEMPT = ["00-intake", "01-feature"]
 
 
 def _command(name: str) -> str:

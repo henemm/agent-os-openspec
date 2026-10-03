@@ -15,7 +15,7 @@ Geprüft wird das `phase`-Kommando als Subprozess (so ruft Claude es auf),
 damit auch der Zustand auf der Platte belegt ist.
 
 **Fixture-Hygiene** — drei Wege, auf denen ein Test hier vakuum-grün wäre:
-  1. `workflow_type` `bug`/`feature-fast`: `_validate_transition` steigt früh
+  1. `workflow_type` `feature-fast`: `_validate_transition` steigt früh
      aus (workflow.py:917-936) und erreicht den RED-Check nie. Deshalb ueberall
      `workflow_type: "feature"`.
   2. Ziel <= aktueller Phase: `if tgt_idx <= cur_idx: return None` greift
