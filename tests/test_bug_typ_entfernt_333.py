@@ -281,10 +281,12 @@ def test_docs_have_no_bug_fast_track_left():
 # --- AC-10 ------------------------------------------------------------------
 
 def test_changelog_replaces_a1_sentence():
-    """AC-10: [Unreleased] beschreibt die Entfernung samt Rezept und Rueckfall."""
+    """AC-10: Der CHANGELOG-Abschnitt mit dem Eintrag zur Entfernung beschreibt
+    sie samt Rezept und Rueckfall (release-stabil: nicht an [Unreleased] gebunden)."""
     text = (REPO_ROOT / "CHANGELOG.md").read_text()
-    start = text.index("## [Unreleased]")
-    nxt = text.find("\n## [", start + 1)
+    marker = text.index("Workflow-Typ `bug` und `/00-bug` entfernt")
+    start = text.rfind("\n## [", 0, marker) + 1
+    nxt = text.find("\n## [", marker)
     section = text[start: nxt if nxt != -1 else len(text)]
     assert "set-field workflow_type feature-fast" in section
     assert "fast_track.require_tdd" in section
