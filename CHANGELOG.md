@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+**Token-Messung je Phase und Akteur (#250, Teil 0)**
+- `scripts/token_report.py` wertet die Claude-Code-Transcripts (inkl. Subagenten) aus: Neu-Tokens je Workflow-Phase und je Akteur, Filter `--branch`/`--since`/`--until`, `--md`. Eigenständiges Werkzeug, kein Hook/Gate. Streaming-Duplikate werden je `message.id` nur einmal gezählt.
+- Grenze: Phasen werden nur aus Bash-Aufrufen `workflow.py phase …` erkannt; Freigabe-Übergänge landen in `vor-workflow`.
+
 ### Changed
 
 **Framework-Entwicklung: Override für `core/hooks/` und `core/agents/` entfällt im laufenden Workflow (#322)**
