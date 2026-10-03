@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+**`/00-intake` ist der einzige Eingang, auch für Bugs (#250, Teil A, Stufe A1)**
+- `/00-intake` hat einen Abschnitt „Bugs" vor dem Scoring: Duplikatsuche, Fehler nachstellen, Ursache mit `file:line` belegen (Details: `/20-analyse` Step 2b), STOP-Bedingungen. Ursache bekannt und ≤3 Dateien → Unsicherheit Low; Ursache unklar → mindestens Medium.
+- `/00-bug` ist nur noch ein Hinweis auf `/00-intake`. Der Bug-Schnellweg (`workflow.py start --type bug`, „Manuell testen") entfällt aus den Befehlen; Nachweis ist ein Test, der den Fehler vorher rot zeigt. Die Hooks kennen den Typ `bug` bis A2 weiter.
+
 **Zwei Stufen statt drei: Stufen-Tabelle in `/00-intake` auf den Code zurückgeschnitten (#254, Teil von #250)**
 
 `/00-intake` dokumentierte Fast Track, Standard und Full Process, der Workflow-State kennt aber nur

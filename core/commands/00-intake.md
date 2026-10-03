@@ -1,6 +1,6 @@
 # Intake: Aufgaben-Klassifikation
 
-**Immer der erste Schritt** — vor jedem Feature-Workflow.
+**Immer der erste Schritt** — vor jedem Feature-Workflow. Auch Bugs starten hier.
 Bestimmt den Track und verhindert, dass ein 10-Minuten-Fix 8 Phasen durchläuft.
 
 ## Scoring
@@ -46,6 +46,22 @@ python3 .claude/hooks/session_singleton_guard.py claim --issue <N>[,<M>...]
 
 Damit weiß jede andere Session, wer gerade an Issue #N arbeitet. Ohne Issue-Nummer
 (z.B. reiner Wartungs-Task) entfällt der Schritt.
+
+### 1c. Bugs: Vorprüfung vor dem Scoring
+
+Bei einem Fehlerbericht, noch bevor bewertet wird:
+
+1. **Duplikatsuche:** `gh issue list --label "bug" --state open` und
+   `gh issue list --search "<Stichwort>" --state open`. Duplikat → bestehendes Issue verwenden.
+2. **Fehler nachstellen** und die Ursache mit `file:line` belegen. Die ausführliche Vorgehensweise
+   steht in `/20-analyse` Step 2b.
+3. **Scoring speisen:** Ursache bekannt und ≤3 Dateien → Unsicherheit **Low**.
+   Ursache unklar → Unsicherheit mindestens Medium.
+4. **STOP** und nachfragen, wenn: Ursache unklar, nicht reproduzierbar, mehrere mögliche Ursachen,
+   Fix > 5 Dateien.
+
+Es gibt keinen eigenen Bug-Typ: Der Nachweis ist ein Test, der den Fehler vorher rot zeigt.
+Danach gilt dieselbe Wahl `feature-fast` / `feature` wie für jede andere Aufgabe.
 
 ### 2. Score präsentieren und Track vorschlagen
 
