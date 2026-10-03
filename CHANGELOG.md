@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `complete` speichert `loc_delta_final`/`loc_delta_test_final` (gemessen gegen `base_commit`, überlebt den Commit); `write-log` nutzt den Wert für `scope_loc_delta`. Messfehler blockieren den Abschluss nie.
 - Kill-Switch: `effort_budget.enabled: false`.
 
+### Fixed
+
+**Aufwandsbremse: Randfälle (#341, Folgearbeit zu #250 B)**
+- `loc_delta_final` misst nach einem Rebase nur noch die eigenen Zeilen (Basis über `_phase8_base`, nicht mehr der alte `base_commit`); ohne auflösbare Basis bleibt der Wert leer.
+- `git diff --numstat -z`: Umlaut-Pfade treffen die Testmuster, Umbenennungen zählen nach dem Nachher-Pfad.
+- Überschreitet die Freigabe (`phase4_approved`) das Budget, gibt der Listener die Rückfrage an den PO aus; die Freigabe gelingt in jedem Fall.
+- Klarstellung AC-6 (#250 B): Rückfrage erst beim vierten Betreten einer Phase (Wert > Grenze), PO-Entscheidung 2026-10-03.
+
 ### Changed
 
 **`/00-intake` ist der einzige Eingang, auch für Bugs (#250, Teil A, Stufe A1)**

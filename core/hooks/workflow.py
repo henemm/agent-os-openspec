@@ -1095,38 +1095,61 @@ def _start_base_commit() -> "str | None":
     return (head.strip() or None) if head else None
 
 
-def _final_loc(data: dict) -> "tuple[int, int] | None":
-    """Hinzugefuegte Zeilen seit base_commit als (prod, test) (#250 B).
+def _parse_numstat_z(output: str) -> "list[tuple[int, str]]":
+    """`git diff --numstat -z` in (hinzugefuegt, pfad) zerlegen (#341).
 
-    Gleiche Ausschluesse und Testmuster wie edit_gate._check_loc_delta, misst
-    aber gegen base_commit statt HEAD und ueberlebt damit den Commit.
-    None ohne base_commit oder bei jedem Fehler.
+    Eintrag `added\\tdeleted\\tpfad`; leeres drittes Feld = Umbenennung, die
+    beiden folgenden NUL-Tokens sind Vorher/Nachher, der Nachher-Pfad zaehlt.
+    Binaer (`-`) zaehlt 0.
     """
-    base = data.get("base_commit")
-    if not base:
-        return None
+    tokens = output.split("\0")
+    entries: "list[tuple[int, str]]" = []
+    i = 0
+    while i < len(tokens):
+        parts = tokens[i].split("\t")
+        i += 1
+        if len(parts) < 3:
+            continue
+        path = parts[2]
+        if not path:
+            if i + 1 >= len(tokens):
+                break
+            path = tokens[i + 1]
+            i += 2
+        entries.append((int(parts[0]) if parts[0].isdigit() else 0, path))
+    return entries
+
+
+def _final_loc(data: dict) -> "tuple[int, int] | None":
+    """Hinzugefuegte Zeilen seit der Phase-8-Basis als (prod, test) (#250 B, #341).
+
+    Gleiche Ausschluesse und Testmuster wie edit_gate._check_loc_delta. Basis wie
+    adversary_dialog._phase8_base (base_commit bzw. merge-base gegen origin/main,
+    rebase-fest). None ohne aufloesbare Basis oder bei jedem Fehler.
+    """
     try:
         import subprocess
+        from adversary_dialog import _phase8_base, git_toplevel
         from config_loader import get_scope_loc_config, get_scope_test_loc_config
+        top = git_toplevel(_worktree_root_if_any() or find_project_root())
+        if not top:
+            return None
+        base, _ = _phase8_base(data, top)
+        if not base or base == "HEAD":
+            return None
         _, exclude_patterns = get_scope_loc_config()
         _, test_patterns = get_scope_test_loc_config()
         result = subprocess.run(
-            ["git", "diff", str(base), "--numstat"],
-            cwd=str(_worktree_root_if_any() or find_project_root()),
-            capture_output=True, text=True, timeout=10,
+            ["git", "diff", str(base), "--numstat", "-z"],
+            cwd=str(top), capture_output=True, text=True, timeout=10,
         )
         if result.returncode != 0:
             return None
         prod_total = 0
         test_total = 0
-        for line in result.stdout.splitlines():
-            parts = line.split("\t")
-            if len(parts) < 3:
-                continue
-            file_name = parts[2]
+        for added, file_name in _parse_numstat_z(result.stdout):
             if any(_re.search(p, file_name) for p in exclude_patterns):
                 continue
-            added = int(parts[0]) if parts[0].isdigit() else 0
             if any(_re.search(p, file_name) for p in test_patterns):
                 test_total += added
             else:
@@ -1295,15 +1318,22 @@ def cmd_phase(args: list[str]) -> None:
     _print_budget_question(exceeded)
 
 
+def format_budget_question(exceeded: list) -> str:
+    """Rueckfrage-Text zu Budget-Ueberschreitungen; leer ohne Ereignisse (#250, #341)."""
+    return "\n".join(
+        f"RÜCKFRAGE AN DEN PO: Stufe {event.get('stage')}: {event['metric']} "
+        f"steht bei {event['value']}, Grenze {event['limit']}.\n"
+        f"  Lege dem PO jetzt den Stand vor und frage: weiter, kleiner schneiden "
+        f"oder abbrechen?"
+        for event in exceeded or []
+    )
+
+
 def _print_budget_question(exceeded: list) -> None:
     """Budget-Ueberschreitung als Anweisung an Claude ausgeben, keine Sperre (#250)."""
-    for event in exceeded or []:
-        print(
-            f"RÜCKFRAGE AN DEN PO: Stufe {event.get('stage')}: {event['metric']} "
-            f"steht bei {event['value']}, Grenze {event['limit']}.\n"
-            f"  Lege dem PO jetzt den Stand vor und frage: weiter, kleiner schneiden "
-            f"oder abbrechen?"
-        )
+    text = format_budget_question(exceeded)
+    if text:
+        print(text)
 
 
 def cmd_set_field(args: list[str]) -> None:
