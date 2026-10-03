@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+**Gegenprüfung nach Risiko staffeln (#342, Teil von #250)**
+- `hook_utils.adversary_risk_report()` stuft die Änderung mechanisch aus der Dateiliste ein (Muster in `config.yaml` → `adversary_risk`), fail-closed: Fehler, abgeschaltet, leere Liste, unbekannte Datei oder ungültiger Wert ergeben hohes Risiko. `adversary_dialog.required_rounds()` liefert 2 Runden bei hohem, `low_risk_min_rounds` (Standard 1) bei niedrigem Risiko; nur `check_dialog_evidence` wendet sie an, `validate_dialog_artifact_ex(..., min_rounds=)` behält ohne Parameter `MIN_ROUNDS`.
+- CLI `adversary_dialog.py risk` zeigt Stufe, Grund, Dateianzahl und geforderte Runden. Kill-Switch: `adversary_risk.enabled: false`.
+- Grenze: Die Einstufung „niedrig" für Anweisungstext folgt der PO-Entscheidung und ist ein bewusstes Restrisiko.
+
 **Token-Messung je Phase und Akteur (#250, Teil 0)**
 - `scripts/token_report.py` wertet die Claude-Code-Transcripts (inkl. Subagenten) aus: Neu-Tokens je Workflow-Phase und je Akteur, Filter `--branch`/`--since`/`--until`, `--md`. Eigenständiges Werkzeug, kein Hook/Gate. Streaming-Duplikate werden je `message.id` nur einmal gezählt.
 - Grenze: Phasen werden nur aus Bash-Aufrufen `workflow.py phase …` erkannt; Freigabe-Übergänge landen in `vor-workflow`.
