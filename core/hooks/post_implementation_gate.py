@@ -50,7 +50,22 @@ from hook_utils import (  # noqa: E402
 )
 
 # Batch-Fenster: innerhalb dieser Zeit nach dem ersten Edit kein Gate
-_BATCH_WINDOW_S = 15 * 60  # 15 Minuten
+_DEFAULT_BATCH_WINDOW_S = 15 * 60  # 15 Minuten
+
+
+def _batch_window_s(workflow: dict) -> int:
+    """Fenster je Stufe aus `effort_budget.<Stufe>.batch_window_min` (#250 Teil B).
+
+    Ohne Config, bei Kill-Switch oder Fehler: 15 Minuten (bisheriges Verhalten).
+    """
+    try:
+        from config_loader import get_effort_budget
+        budget = get_effort_budget((workflow or {}).get("workflow_type", "feature"))
+        if budget:
+            return int(float(budget["batch_window_min"]) * 60)
+    except Exception:
+        pass
+    return _DEFAULT_BATCH_WINDOW_S
 
 # Phasen in denen das Gate gilt
 _GATED_PHASES = {"phase6_implement"}
@@ -184,10 +199,11 @@ def main() -> None:
 
     # Lock existiert → prüfen ob Batch-Fenster noch offen
     age_s = time.time() - lock.get("created", 0)
+    window_s = _batch_window_s(workflow)
 
-    if age_s <= _BATCH_WINDOW_S:
-        # Noch im 15-Minuten-Fenster → erlauben
-        remaining_min = (_BATCH_WINDOW_S - age_s) / 60
+    if age_s <= window_s:
+        # Noch im Batch-Fenster → erlauben
+        remaining_min = (window_s - age_s) / 60
         # Optional: kurze Info-Nachricht (kein block, nur stderr-Info)
         print(
             f"[post_implementation_gate] Batch-Fenster: noch {remaining_min:.0f} Min.",

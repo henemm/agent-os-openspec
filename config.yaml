@@ -270,6 +270,17 @@ adversary_gate:
 adr_gate:
   enabled: true
 
+# Aufwandsbremse (#250 Teil B) — Rueckfrage an den PO statt Blockade
+# Ueberschreitet ein Workflow sein Stufen-Budget (Fix-Loops, Phasen-Wiedereintritte),
+# gibt `workflow.py phase` eine RUECKFRAGE AN DEN PO aus und protokolliert sie; ein
+# Phasenwechsel wird nie verweigert. `batch_window_min` ist das Batch-Fenster des
+# post_implementation_gate. Nur ein ausdrueckliches `enabled: false` schaltet ab
+# (dann 15 Minuten fuer alle Stufen, keine Rueckfrage). Unbekannte Typen nutzen `feature`.
+effort_budget:
+  enabled: true
+  feature-fast: {max_fix_loops: 1, max_phase_reentries: 1, batch_window_min: 30}
+  feature:      {max_fix_loops: 2, max_phase_reentries: 2, batch_window_min: 15}
+
 # PO-Briefing-Gate (Freigabe Phase 3 -> 4)
 # Die Freigabe verlangt ein unabhaengig erstelltes Briefing (po-briefer Agent),
 # registriert via `workflow.py set-briefing <pfad>`. Das Briefing ist per

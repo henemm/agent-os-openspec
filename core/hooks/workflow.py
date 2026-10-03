@@ -36,6 +36,7 @@ import hashlib as _hashlib
 import json
 import os
 import re as _re
+import subprocess
 import sys
 import tempfile
 import time
@@ -567,7 +568,7 @@ def _log_phase_transition(data: dict, new_phase: str) -> None:
     log.append({"phase": new_phase, "entered_at": now, "exited_at": None, "duration_min": None})
 
 
-def record_transition(data: dict, target: str, trigger: str = "command") -> None:
+def record_transition(data: dict, target: str, trigger: str = "command") -> list:
     """Einen Phasenwechsel vollstaendig protokollieren: `phase_transitions` UND `phase_log`.
 
     Die EINZIGE Stelle, die einen Phasen-WECHSEL aufzeichnet — jeder Aufrufer muss sie
@@ -582,6 +583,11 @@ def record_transition(data: dict, target: str, trigger: str = "command") -> None
     Aufruf BEVOR `data['current_phase']` gesetzt wird — die Ausgangsphase wird von hier
     gelesen. Setzt `current_phase` bewusst NICHT selbst, damit Aufrufer mit Zusatzlogik
     (Fix-Loop-Zaehler, Gate-Pruefungen) die Reihenfolge behalten.
+
+    Rueckgabe (#250 Teil B): neu ueberschrittene Aufwands-Budgets als Liste von
+    `{metric, value, limit, stage}`; leer im Budget, bei Kill-Switch und bei jedem Fehler.
+    Ein Phasenwechsel wird NIE wegen des Budgets verweigert. Bestehende Aufrufer duerfen
+    den Rueckgabewert ignorieren.
     """
     data.setdefault("phase_transitions", []).append({
         "from": data.get("current_phase", "phase0_idle"),
@@ -590,6 +596,107 @@ def record_transition(data: dict, target: str, trigger: str = "command") -> None
         "trigger": trigger,
     })
     _log_phase_transition(data, target)
+    try:
+        return _check_effort_budget(data)
+    except Exception:
+        return []
+
+
+def effort_budget_exceeded(data: dict, budget: dict) -> list:
+    """Ueberschrittene Aufwands-Metriken eines Workflow-Zustands (reine Funktion).
+
+    Rueckgabe: Liste von `{metric, value, limit}`.
+    - `fix_loops`: `fix_loop_iterations`, gemeldet bei Wert > Grenze.
+    - `phase_reentries`: hoechster Zaehler je Phase (Eintraege mit `to == Phase` minus 1),
+      gemeldet bei Wert >= Grenze.
+    Die Asymmetrie ist gewollt (freigegebene ACs): AC-2 meldet 2 Fix-Loops bei Grenze 1,
+    AC-6 meldet das dritte Betreten einer Phase (Wiedereintritts-Wert 2) bei Grenze 2.
+    """
+    result = []
+    try:
+        loops = int(data.get("fix_loop_iterations", 0) or 0)
+        limit = int(budget["max_fix_loops"])
+        if loops > limit:
+            result.append({"metric": "fix_loops", "value": loops, "limit": limit})
+    except (KeyError, TypeError, ValueError):
+        pass
+    try:
+        limit = int(budget["max_phase_reentries"])
+        counts: dict = {}
+        for e in data.get("phase_transitions", []) or []:
+            if isinstance(e, dict) and e.get("to"):
+                counts[e["to"]] = counts.get(e["to"], 0) + 1
+        reentries = max(counts.values()) - 1 if counts else 0
+        if reentries >= limit:
+            result.append({"metric": "phase_reentries", "value": reentries, "limit": limit})
+    except (KeyError, TypeError, ValueError):
+        pass
+    return result
+
+
+def _check_effort_budget(data: dict) -> list:
+    """Budget pruefen, neue Ueberschreitungen in `budget_events` ablegen und protokollieren."""
+    from config_loader import get_effort_budget
+    stage = data.get("workflow_type", "feature")
+    budget = get_effort_budget(stage)
+    if not budget:
+        return []
+    events = data.setdefault("budget_events", [])
+    seen = {(e.get("metric"), e.get("value")) for e in events if isinstance(e, dict)}
+    new = []
+    for hit in effort_budget_exceeded(data, budget):
+        if (hit["metric"], hit["value"]) in seen:
+            continue
+        hit = dict(hit, stage=stage)
+        events.append(dict(hit, at=datetime.now().isoformat()))
+        new.append(hit)
+        try:
+            from hook_utils import log_gate_event
+            log_gate_event(
+                "effort_budget", "workflow.py phase",
+                f"Budget {stage}: {hit['metric']} {hit['value']}/{hit['limit']} "
+                f"(Workflow {data.get('name', '?')})",
+            )
+        except Exception:
+            pass
+    return new
+
+
+def _final_loc(data: dict) -> "tuple[int, int] | None":
+    """Hinzugefuegte Zeilen seit `base_commit` als (Produktiv, Test); None bei jedem Fehler.
+
+    Gleiche Ausschluesse und Test-Muster wie `edit_gate._check_loc_delta`. Darf einen
+    Abschluss nie blockieren.
+    """
+    try:
+        base = data.get("base_commit")
+        if not base:
+            return None
+        from config_loader import get_scope_loc_config, get_scope_test_loc_config
+        _max, exclude_patterns = get_scope_loc_config()
+        _maxt, test_patterns = get_scope_test_loc_config()
+        root = _worktree_root_if_any() or find_project_root()
+        res = subprocess.run(
+            ["git", "diff", str(base), "--numstat"],
+            cwd=str(root), capture_output=True, text=True, timeout=15,
+        )
+        if res.returncode != 0:
+            return None
+        prod = test = 0
+        for line in res.stdout.splitlines():
+            parts = line.split("	")
+            if len(parts) < 3:
+                continue
+            if any(_re.search(p, parts[2]) for p in exclude_patterns):
+                continue
+            added = int(parts[0]) if parts[0].isdigit() else 0
+            if any(_re.search(p, parts[2]) for p in test_patterns):
+                test += added
+            else:
+                prod += added
+        return prod, test
+    except Exception:
+        return None
 
 
 # --- ADR Reflection Gate ---
@@ -1196,13 +1303,21 @@ def cmd_phase(args: list[str]) -> None:
         print(f"BLOCKED: {error}", file=sys.stderr)
         sys.exit(1)
     current = data.get("current_phase", "phase0_idle")
-    record_transition(data, target, trigger)
     # Fix-loop counter: re-entering phase6_implement from phase6b_adversary
+    # (vor record_transition, damit die Budget-Pruefung den aktuellen Stand sieht)
     if target == "phase6_implement" and current == "phase6b_adversary":
         data["fix_loop_iterations"] = data.get("fix_loop_iterations", 0) + 1
+    exceeded = record_transition(data, target, trigger)
     data["current_phase"] = target
     _save_active(data)
     print(f"Set phase to: {target}")
+    if exceeded:
+        stage = data.get("workflow_type", "feature")
+        print("RÜCKFRAGE AN DEN PO:")
+        for hit in exceeded:
+            print(f"  Stufe {stage}: {hit['metric']} {hit['value']} (Grenze {hit['limit']}) überschritten.")
+        print("  Lege dem PO jetzt den Stand vor und frage, ob weitergearbeitet, kleiner "
+              "geschnitten oder abgebrochen wird. Das ist eine Anweisung, keine Sperre.")
 
 
 def cmd_set_field(args: list[str]) -> None:
@@ -1370,6 +1485,8 @@ def cmd_write_log(args: list[str]) -> None:
     persisted = "adversary_findings_total" in data
     findings_total = data["adversary_findings_total"] if persisted else "unbekannt"
     files_changed = len(data.get("affected_files", [])) if persisted else "unbekannt"
+    final = _final_loc(data)
+    scope_loc = f"+{final[0]}" if final else data.get("loc_delta_current", "+0")
     lines = [
         f"workflow_id: {name}",
         f"project: {find_project_root().name}",
@@ -1384,7 +1501,8 @@ def cmd_write_log(args: list[str]) -> None:
         f"adversary_findings_total: {findings_total}",
         f"adversary_fix_loop_iterations: {data.get('fix_loop_iterations', 0)}",
         f"scope_files_changed: {files_changed}",
-        f"scope_loc_delta: {data.get('loc_delta_current', '+0')}",
+        f"scope_loc_delta: {scope_loc}",
+        f"effort_budget_exceeded: {len(data.get('budget_events') or [])}",
         f"outcome: {outcome}",
     ]
     log_file.write_text("\n".join(lines) + "\n")
@@ -1421,6 +1539,10 @@ def cmd_complete(args: list[str]) -> None:
         print(f"BLOCKED: {error}", file=sys.stderr)
         sys.exit(1)
     data["current_phase"] = "phase8_complete"
+    final = _final_loc(data)  # None bei Fehlschlag: nichts speichern, nie blockieren
+    if final:
+        data["loc_delta_final"] = f"+{final[0]}"
+        data["loc_delta_test_final"] = f"+{final[1]}"
     archive = _archive_dir()
     archive.mkdir(parents=True, exist_ok=True)
     _atomic_write(archive / f"{name}.json", data)

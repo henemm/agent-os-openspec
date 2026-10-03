@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+**Aufwandsbremse: Rückfrage statt Blockade (#250, Teil B)**
+- Neuer Config-Block `effort_budget` (Kill-Switch `enabled`, je Stufe `max_fix_loops`, `max_phase_reentries`, `batch_window_min`); `config_loader.get_effort_budget()` liefert die Werte, unbekannte Typen fallen auf `feature`.
+- `workflow.record_transition()` prüft das Budget, legt neue Überschreitungen in `budget_events` ab, protokolliert sie im Gate-Event-Log (`hook` = `effort_budget`) und gibt sie zurück; `workflow.py phase` gibt `RÜCKFRAGE AN DEN PO:` aus. Ein Phasenwechsel wird nie verweigert, die Gegenprüfung bleibt unberührt.
+- Die 15-Minuten-Bremse des `post_implementation_gate` ist stufenabhängig (`feature-fast` 30 min); ohne Config oder bei Kill-Switch unverändert 15 min.
+- Abschluss-Messung: `write-log` schreibt `scope_loc_delta` aus `git diff <base_commit>` und `effort_budget_exceeded`, `complete` speichert `loc_delta_final`/`loc_delta_test_final`; eine fehlgeschlagene Messung blockiert den Abschluss nicht.
+
 **Token-Messung je Phase und Akteur (#250, Teil 0)**
 - `scripts/token_report.py` wertet die Claude-Code-Transcripts (inkl. Subagenten) aus: Neu-Tokens je Workflow-Phase und je Akteur, Filter `--branch`/`--since`/`--until`, `--md`. Eigenständiges Werkzeug, kein Hook/Gate. Streaming-Duplikate werden je `message.id` nur einmal gezählt.
 - Grenze: Phasen werden nur aus Bash-Aufrufen `workflow.py phase …` erkannt; Freigabe-Übergänge landen in `vor-workflow`.

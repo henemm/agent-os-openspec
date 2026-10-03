@@ -341,6 +341,26 @@ def get_scope_test_loc_config() -> tuple[int, list]:
     return max_test_loc, patterns
 
 
+def get_effort_budget(workflow_type: str) -> "dict | None":
+    """Aufwands-Budget der Stufe (#250 Teil B) oder None.
+
+    None bei Kill-Switch (nur ein ausdrueckliches `enabled: false`), fehlendem Block oder
+    ungueltiger Stufe. Unbekannte Typen (Altbestand `bug`, `express`) fallen auf `feature`.
+    """
+    try:
+        block = load_config().get("effort_budget")
+        if not isinstance(block, dict) or block.get("enabled") is False:
+            return None
+        stage = block.get(workflow_type)
+        if not isinstance(stage, dict):
+            stage = block.get("feature")
+        if not isinstance(stage, dict):
+            return None
+        return dict(stage)
+    except Exception:
+        return None
+
+
 if __name__ == "__main__":
     # Test: Print loaded config
     import json
