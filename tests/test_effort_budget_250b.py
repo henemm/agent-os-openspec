@@ -381,7 +381,7 @@ def _git_project(tmp_path: Path, base_commit: "str | None" = None) -> "tuple[Pat
 
     (project / ".claude" / "workflows").mkdir(parents=True, exist_ok=True)
     _write_workflow(
-        project, workflow_type="bug", current_phase="phase7_validate",
+        project, workflow_type="feature-fast", current_phase="phase7_validate",
         base_commit=base_commit or base, loc_delta_current="+0",
     )
     return project, base
