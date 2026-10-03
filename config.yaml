@@ -365,6 +365,44 @@ observable_surface:
   # Frage bleibt. Es gibt KEINEN geratenen Rueckfall wie "origin/main".
   base_branch: ""
 
+# Gegenpruefung nach Risiko (#342). Das Risiko ergibt sich mechanisch aus der
+# Dateiliste der Aenderung (Vergleich mit dem Basis-Stand), nicht aus
+# Selbsteinstufung und nicht aus der Zeilenzahl. Hohes Risiko: mindestens 2
+# Dialog-Runden (`MIN_ROUNDS`); niedriges Risiko: `low_risk_min_rounds`.
+# Gelesen von `hook_utils.adversary_risk_report()` und
+# `adversary_dialog.required_rounds()`, ausgegeben von `adversary_dialog.py risk`.
+# Fail-closed: Fehler, abgeschaltet, leere Liste, unbekannte Datei, ungueltiger
+# Wert → hoch / 2 Runden. Nur ein ausdrueckliches `true` laesst die Staffelung zu.
+adversary_risk:
+  enabled: true
+  # Ein Treffer genuegt fuer hohes Risiko.
+  high_risk_patterns:
+    - '^core/hooks/'
+    - '^hooks/'
+    - '^core/agents/'
+    - '^scripts/'
+    - '^modules/'
+    - '^setup\.py$'
+    - '^config\.yaml$'
+    - '^\.github/'
+    - '^\.claude-plugin/'
+    - '(^|/)\.env'
+    - 'secret'
+  # Niedriges Risiko nur, wenn JEDE geaenderte Datei hier trifft.
+  low_risk_patterns:
+    - '^docs/'
+    - '^tests?/'
+    - '(^|/)test_[^/]+\.py$'
+    - '^core/commands/[^/]+\.md$'
+    - '^skills/[^/]+/SKILL\.md$'
+    - '(^|/)(CHANGELOG|README|CONTRIBUTING)\.md$'
+    - '(^|/)CLAUDE\.md$'
+    - '(^|/)\.gitignore$'
+  # Nur der ganzzahlige Wert 1 oder 2 gilt; alles andere (auch true/false) → 2.
+  low_risk_min_rounds: 1
+  # Basis-Stand. Leer = aus `origin/HEAD` ableiten; sonst "no-base" → hoch.
+  base_branch: ""
+
 # Specs Configuration
 specs:
   base_path: "docs/specs"

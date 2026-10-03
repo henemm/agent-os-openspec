@@ -227,7 +227,7 @@ Task (implementation-validator, run_in_background: true): "Pruefe den aktuellen 
   - Lies NUR die Spec (nicht den Code!)
   - Fordere fuer JEDEN Punkt einen Beweis (Screenshot, Test-Output, konkreter Code-Pfad)
   - Akzeptiere NICHT die erste Antwort — bohre nach, frage nach Edge Cases
-  - Mindestens 2 Runden Dialog
+  - Mindestens 2 Runden Dialog bei hohem Risiko, 1 Runde bei niedrigem Risiko (Stufe: `python3 .claude/hooks/adversary_dialog.py risk`); auch eine einzige Runde belegt jeden Punkt
   - Fuehre Tests aus und speichere Output
   - Nutze das Structured Findings Schema (python3 .claude/hooks/adversary_dialog.py schema)"
 ```

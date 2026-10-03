@@ -216,7 +216,7 @@ Phase 8 reject the artifact if any listed file is missing from the hash block.
 4. **ALWAYS save test output** to `docs/artifacts/{workflow}/` for qa_gate validation
 5. **Be thorough but focused** — check what changed, not the entire codebase
 6. **Report specifics** — file paths, line numbers, exact error messages
-7. **Minimum 2 dialog rounds** — do not converge in round 1
+7. **Dialog rounds depend on risk** — at least 2 rounds at high risk, 1 round at low risk (check with `python3 .claude/hooks/adversary_dialog.py risk`); even a single round must prove every point, never converge on a first answer without evidence
 8. **Use structured findings** — every issue gets an ID, severity, category, evidence
 9. **ALWAYS run `adversary_dialog.py stamp`** on the dialog artifact after writing your VERDICT — see Step 6. The gate rejects an unstamped artifact regardless of age.
 8. **Use structured findings** — every issue gets an ID, severity, category, evidence

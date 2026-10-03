@@ -417,7 +417,8 @@ def validate_dialog_artifact(artifact_path: str) -> tuple[bool, str]:
     return valid, message
 
 
-def validate_dialog_artifact_ex(artifact_path: str) -> "tuple[bool, str, str | None]":
+def validate_dialog_artifact_ex(artifact_path: str,
+                                min_rounds: int = MIN_ROUNDS) -> "tuple[bool, str, str | None]":
     """Validiert ein Dialog-Artifact.
 
     Prueft:
@@ -491,10 +492,10 @@ def validate_dialog_artifact_ex(artifact_path: str) -> "tuple[bool, str, str | N
     # 3. Mindestens MIN_ROUNDS Runden
     # H2 und H3 zaehlen (#278): '## Runde N' ist der real geratene Fall vom 2026-09-27.
     rounds = len(re.findall(r"(?m)^#{2,3} Runde \d+", scan))
-    if rounds < MIN_ROUNDS:
+    if rounds < min_rounds:
         return False, (
             f"Nur {rounds} Dialog-Runde(n) dokumentiert. "
-            f"Minimum sind {MIN_ROUNDS} Runden."
+            f"Minimum sind {min_rounds} Runden."
         ), "format"
 
     # 4. Verdict — gemeinsamer Parser mit dialog_verdict() (#259 F003): drei
@@ -922,6 +923,22 @@ def _outside_roots(path: Path) -> bool:
     return not any(r == resolved or r in resolved.parents for r in roots)
 
 
+def required_rounds() -> int:
+    """Mindestzahl der Dialog-Runden nach Risiko (#342). MIN_ROUNDS bei hohem
+    Risiko, sonst der geprueft gueltige `low_risk_min_rounds` (echter int
+    1..MIN_ROUNDS). Jeder Fehler, jeder ungueltige Wert: MIN_ROUNDS."""
+    try:
+        from hook_utils import adversary_risk_report
+        report = adversary_risk_report()
+        value = report.get("min_rounds")
+        if (report.get("risk") == "niedrig" and type(value) is int
+                and 1 <= value <= MIN_ROUNDS):
+            return value
+    except Exception:
+        pass
+    return MIN_ROUNDS
+
+
 def check_dialog_evidence(wf: dict, changed_files: "list[str] | None" = None) -> "str | None":
     """Die eine Regel fuer Commit-Gate (bash_gate.py 5c) und Phase 8 (workflow.py).
 
@@ -952,7 +969,14 @@ def check_dialog_evidence(wf: dict, changed_files: "list[str] | None" = None) ->
                 f"registriertes Dialog-Artefakt nicht gefunden: {path} "
                 "(die Registrierung gilt — kein Rückfall auf den Standardpfad)"
             )
-        valid, message, _kind = validate_dialog_artifact_ex(str(path))
+        # Nur bei NIEDRIGEM Risiko weicht die Mindestzahl vom Standard ab; sonst
+        # bleibt der Aufruf unveraendert (Standard MIN_ROUNDS).
+        rounds_needed = required_rounds()
+        if rounds_needed == MIN_ROUNDS:
+            valid, message, _kind = validate_dialog_artifact_ex(str(path))
+        else:
+            valid, message, _kind = validate_dialog_artifact_ex(
+                str(path), min_rounds=rounds_needed)
         if not valid:
             return f"{path}: {message}"
         if changed_files is not None:
@@ -1207,6 +1231,17 @@ def print_finding_schema():
     print(f"Min Rounds: {MIN_ROUNDS}")
 
 
+def _cmd_risk() -> int:
+    """Auskunft zur Risikostufe (#342); kein Gate, Exit-Code immer 0."""
+    from hook_utils import adversary_risk_report
+    report = adversary_risk_report()
+    print(f"Risiko: {report['risk']}")
+    print(f"Grund: {report['reason']}")
+    print(f"Dateien: {report['files']}")
+    print(f"Geforderte Runden: {required_rounds()}")
+    return 0
+
+
 def main():
     """CLI-Einstiegspunkt."""
     if len(sys.argv) < 2:
@@ -1216,6 +1251,7 @@ def main():
         print("  python3 adversary_dialog.py validate <artifact-path>")
         print("  python3 adversary_dialog.py stamp <artifact-path>")
         print("  python3 adversary_dialog.py required-files")
+        print("  python3 adversary_dialog.py risk")
         print("  python3 adversary_dialog.py schema")
         sys.exit(1)
 
@@ -1260,6 +1296,9 @@ def main():
 
     elif cmd == "required-files":
         sys.exit(_cmd_required_files())
+
+    elif cmd == "risk":
+        sys.exit(_cmd_risk())
 
     elif cmd == "schema":
         print_finding_schema()

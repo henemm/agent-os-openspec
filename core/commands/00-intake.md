@@ -14,8 +14,10 @@ Bewerte die Aufgabe anhand von 3 Kriterien:
 | **Unsicherheit** | Bekanntes Pattern, vertrauter Code | Teilweise bekannt | Neue Technologie, unbekannter Bereich |
 
 **Summe 0**: Fast Track (`feature-fast`) — Phasen 3→4→6→8
-**Summe ≥ 1**: Voller Prozess (`feature`) — alle Phasen 1→8, Adversary mit mindestens 2 Dialog-Runden
-(`MIN_ROUNDS` in `adversary_dialog.py`)
+**Summe ≥ 1**: Voller Prozess (`feature`) — alle Phasen 1→8, Adversary: mindestens 2 Dialog-Runden bei hohem Risiko, eine Runde bei niedrigem Risiko
+(`MIN_ROUNDS` in `adversary_dialog.py`). Das Risiko folgt mechanisch aus der Dateiliste der Änderung
+(Hook-/Gate-Code, Guards, Konfiguration = hoch; nur Anweisungstext, Doku, Tests = niedrig; im Zweifel hoch) —
+`python3 .claude/hooks/adversary_dialog.py risk` zeigt Stufe, Grund und geforderte Runden (#342)
 
 Der Workflow-State kennt genau diese zwei Stufen (`feature-fast`, `feature`). Die **Tiefe** im vollen
 Prozess richtet sich nach der Summe — das ist eine Anweisung, kein Zustand im State (#254):
@@ -126,7 +128,7 @@ Modell wechseln: `/model` in der Claude-Code-Session oder beim Start `claude --m
 | Spec | ✅ Mini-Spec | ✅ Vollständig | ✅ Vollständig |
 | User-Freigabe | ✅ immer | ✅ immer | ✅ immer |
 | TDD RED | ❌ inline | ✅ Separate Phase | ✅ Separate Phase |
-| Adversary | ❌ entfällt | ✅ mindestens 2 Runden | ✅ mindestens 2 Runden |
+| Adversary | ❌ entfällt | ✅ mindestens 2 Runden bei hohem Risiko, 1 bei niedrigem | ✅ mindestens 2 Runden bei hohem Risiko, 1 bei niedrigem |
 | Validierung | ✅ immer | ✅ immer | ✅ immer |
 
 ## Mini-Spec (Fast Track)

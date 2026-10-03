@@ -1471,9 +1471,9 @@ def _observable_files(cwd: Path, merge_base: str) -> "tuple[list[str] | None, st
     Quelle 4 (`ls-files --others`) ist Pflicht, sonst erschiene eine neu
     angelegte, noch nicht hinzugefuegte Datei als "keine Aenderung"."""
     sources = (
-        ["diff", "--name-only", f"{merge_base}...HEAD"],
-        ["diff", "--name-only", "--cached"],
-        ["diff", "--name-only"],
+        ["diff", "--name-only", "--no-renames", f"{merge_base}...HEAD"],
+        ["diff", "--name-only", "--no-renames", "--cached"],
+        ["diff", "--name-only", "--no-renames"],
         ["ls-files", "--others", "--exclude-standard"],
     )
     found = set()
@@ -1554,6 +1554,111 @@ def observable_surface_report() -> dict:
         if not _observable_matches(path, non_surface_rx):
             return result(True, f"{path} unbekannt", count)
     return result(True, "unbekannt", count)
+
+
+# --- Gegenpruefung nach Risiko (#342) ---------------------------------------
+# Startwerte; identisch zum Block `adversary_risk` in config.yaml und dessen
+# Rueckfall, wenn der Block fehlt. Das Risiko kommt NUR aus der Dateiliste,
+# nie aus Selbsteinstufung oder Zeilenzahl. Was keine Liste trifft, ist hoch.
+ADVERSARY_HIGH_RISK_PATTERNS = [
+    r"^core/hooks/",
+    r"^hooks/",
+    r"^core/agents/",
+    r"^scripts/",
+    r"^modules/",
+    r"^setup\.py$",
+    r"^config\.yaml$",
+    r"^\.github/",
+    r"^\.claude-plugin/",
+    r"(^|/)\.env",
+    r"secret",
+]
+ADVERSARY_LOW_RISK_PATTERNS = [
+    r"^docs/",
+    r"^tests?/",
+    r"(^|/)test_[^/]+\.py$",
+    r"^core/commands/[^/]+\.md$",
+    r"^skills/[^/]+/SKILL\.md$",
+    r"(^|/)(CHANGELOG|README|CONTRIBUTING)\.md$",
+    r"(^|/)CLAUDE\.md$",
+    r"(^|/)\.gitignore$",
+]
+ADVERSARY_LOW_RISK_MIN_ROUNDS = 1
+ADVERSARY_HIGH_MIN_ROUNDS = 2
+
+
+def adversary_risk_report() -> dict:
+    """Schwester von `observable_surface_report`: {'risk', 'reason', 'files',
+    'root', 'min_rounds'}. `risk` ist "hoch" oder "niedrig"; `files` die Anzahl.
+    Fail-closed: jeder Fehler, jede Unsicherheit, jede unbekannte Datei ergibt
+    "hoch" mit 2 Runden. Liest nur, schreibt nichts, blockt nichts. Auch ein
+    unerwarteter Fehler ergibt "hoch" (aeusserer Fangschirm)."""
+    try:
+        root = find_worktree_root() or find_project_root()
+    except Exception:
+        root = Path.cwd()
+    root_str = str(root)
+
+    def result(risk: str, reason: str, files: int = 0, rounds: int = 2) -> dict:
+        return {"risk": risk, "reason": reason, "files": files, "root": root_str,
+                "min_rounds": rounds}
+
+    try:
+        # Schritt 1: Form des Config-Blocks. Fehlender Block = Modul-Konstanten.
+        try:
+            from config_loader import load_config
+            raw = load_config().get("adversary_risk", {})
+        except Exception:
+            raw = {}
+        if not isinstance(raw, dict):
+            return result("hoch", "config-invalid")
+        high_patterns = raw.get("high_risk_patterns", ADVERSARY_HIGH_RISK_PATTERNS)
+        low_patterns = raw.get("low_risk_patterns", ADVERSARY_LOW_RISK_PATTERNS)
+        base_branch = raw.get("base_branch")
+        if not _observable_str_list(high_patterns) or not _observable_str_list(low_patterns):
+            return result("hoch", "config-invalid")
+        if base_branch is not None and not isinstance(base_branch, str):
+            return result("hoch", "config-invalid")
+        high_rx = _observable_compile(high_patterns)
+        low_rx = _observable_compile(low_patterns)
+        if high_rx is None or low_rx is None:
+            return result("hoch", "config-invalid")
+
+        # Schritt 2: nur ein ausdrueckliches `true` (bzw. fehlender Schluessel)
+        # laesst die Staffelung zu; alles andere ist streng.
+        if raw.get("enabled", True) is not True:
+            return result("hoch", "disabled")
+
+        # Schritt 3-5: Basis-Stand, Dateiliste, git-Fehler.
+        merge_base, error = _observable_base(root, base_branch or "")
+        if merge_base is None:
+            return result("hoch", error)
+        paths, error = _observable_files(root, merge_base)
+        if paths is None:
+            return result("hoch", error)
+
+        # Schritt 6: leere Liste VOR `all(...)` (all([]) ist True).
+        count = len(paths)
+        if count == 0:
+            return result("hoch", "empty-list")
+
+        # Schritt 7: ein Hochrisiko-Treffer genuegt.
+        for path in paths:
+            if _observable_matches(path, high_rx):
+                return result("hoch", f"{path} trifft hoch", count)
+
+        # Schritt 8: unbekannte Datei -> hoch.
+        for path in paths:
+            if not _observable_matches(path, low_rx):
+                return result("hoch", f"{path} unbekannt", count)
+
+        # Schritt 9: der EINZIGE Weg zu "niedrig". Der Rundenwert gilt nur,
+        # wenn er ein echter int 1..2 ist (bool/Text/Float/0/negativ -> 2).
+        value = raw.get("low_risk_min_rounds", ADVERSARY_LOW_RISK_MIN_ROUNDS)
+        rounds = value if (type(value) is int and 1 <= value <= 2) else 2
+        return result("niedrig", f"alle {count} Dateien nur Text, Doku, Tests", count, rounds)
+    except Exception:
+        return result("hoch", "error")
 
 
 def has_observable_surface() -> "tuple[bool, str]":
