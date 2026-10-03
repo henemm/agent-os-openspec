@@ -33,6 +33,17 @@ dieser Gates war damit unmöglich.
 - Tests: `tests/test_gate_event_excerpt_328.py` (stdin statt Umgebungsvariable, echter `edit_gate`).
   Siehe `docs/specs/fast/fix-328-gate-log-excerpt.md`.
 
+**bash_gate: Aliase über git-Umgebungsvariablen erkennen (#324, Rest aus #299 Teil C)**
+
+`hook_utils._command_env_aliases` sammelt Aliase command-weit aus `GIT_CONFIG_COUNT`/
+`GIT_CONFIG_KEY_<n>`/`GIT_CONFIG_VALUE_<n>`, `GIT_CONFIG_PARAMETERS` und `--config-env` (Wert aus
+der Zeile, sonst aus der Gate-Umgebung, sonst gilt genau dieser Aliasname als `commit`) und reicht
+sie als Parameter bis `_resolve_alias` durch (Rangfolge Repo < Env < `-c`, kein Zustand zwischen
+Aufrufen). `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.ci GIT_CONFIG_VALUE_0=commit git ci -m x`,
+`export …; git ci`, `GIT_CONFIG_PARAMETERS="'alias.ci=commit'" git ci` und
+`X=commit git --config-env=alias.ci=X ci` blocken jetzt; ein Env-Alias auf `status` bleibt frei,
+kaputte Eingaben werden fail-open ignoriert. Tests: `tests/test_bash_gate_env_aliase_324.py`.
+
 **bash_gate: Restlücken der State-Integrity-Prüfung (#299 Teil C: #316, #319)**
 
 - **cd-Kontext (#316):** Nach `cd`/`pushd` nach `.claude` oder `.claude/workflows` gelten bloße

@@ -129,7 +129,65 @@ def _inline_aliases(tokens: "list[str]", i: int) -> "dict[str, str]":
     return found
 
 
-def _resolve_alias(sub: str, inline: "dict[str, str]") -> str:
+def _config_env_aliases(tokens: "list[str]", table: "dict[str, str]") -> "dict[str, str]":
+    """`--config-env=alias.<name>=<VAR>` ab einem `git`-Token (#324).
+
+    Wert aus der Zeilen-Tabelle, sonst aus `os.environ`; unauffindbar gilt
+    `commit` — dann ist genau dieser Aliasname commit-verdaechtig.
+    """
+    found: "dict[str, str]" = {}
+    after_git = False
+    for i, tok in enumerate(tokens):
+        after_git = after_git or _looks_like_git(tok)
+        if not after_git:
+            continue
+        if tok.startswith("--config-env="):
+            spec = tok[len("--config-env="):]
+        elif tok == "--config-env" and i + 1 < len(tokens):
+            spec = tokens[i + 1]
+        else:
+            continue
+        key, sep, var = spec.rpartition("=")
+        if sep and var and key.lower().startswith("alias."):
+            found[key[len("alias."):].lower()] = table.get(var, os.environ.get(var, "commit"))
+    return found
+
+
+def _command_env_aliases(segments: "list[list[str]]") -> "dict[str, str]":
+    """Aliase aus git-Umgebungsvariablen, command-weit ueber alle Segmente (#324).
+
+    `GIT_CONFIG_COUNT`/`KEY_<n>`/`VALUE_<n>`, `GIT_CONFIG_PARAMETERS` und
+    `--config-env`. Bewusst grosszuegig: jede `VAR=wert`-Zuweisung der Zeile
+    zaehlt (Praefix, `env`, `export`, anderes Segment). Fail-open: kaputte
+    Eintraege werden ignoriert, nie eine Exception.
+    """
+    table: "dict[str, str]" = {}
+    for tok in (t for seg in segments for t in seg):
+        if _ENV_ASSIGN_RE.match(tok):
+            name, _, value = tok.partition("=")
+            table[name] = value
+    found: "dict[str, str]" = {}
+    count = table.get("GIT_CONFIG_COUNT", "")
+    numeric = count.isascii() and count.isdigit()  # "²" ist isdigit, aber kein int (F001)
+    for n in range(min(int(count), len(table)) if numeric else 0):
+        key, value = table.get(f"GIT_CONFIG_KEY_{n}"), table.get(f"GIT_CONFIG_VALUE_{n}")
+        if key is not None and value is not None and key.lower().startswith("alias."):
+            found[key[len("alias."):].lower()] = value
+    try:
+        params = shlex.split(table.get("GIT_CONFIG_PARAMETERS", ""))
+    except ValueError:
+        params = []
+    for param in params:
+        key, sep, value = param.partition("=")
+        if sep and key.lower().startswith("alias."):
+            found[key[len("alias."):].lower()] = value
+    for seg in segments:
+        found.update(_config_env_aliases(seg, table))
+    return found
+
+
+def _resolve_alias(sub: str, inline: "dict[str, str]",
+                   env_aliases: "dict[str, str] | None" = None) -> str:
     """Alias-Kette zum echten Unterbefehl aufloesen (#281).
 
     Ergebnis ist das erste Wort des Alias-Werts; ein Shell-Alias (`!...`) bleibt
@@ -137,7 +195,7 @@ def _resolve_alias(sub: str, inline: "dict[str, str]") -> str:
     zerlegt den Rumpf als eigenes Kommando. Eingebaute Kommandos gewinnen in git
     immer gegen gleichnamige Aliase; `commit` ist daher nie ein Alias-Ziel.
     """
-    aliases = {**_repo_aliases(), **inline}
+    aliases = {**_repo_aliases(), **(env_aliases or {}), **inline}  # Repo < Env < -c (#324)
     for _ in range(5):
         value = aliases.get(sub.lower()) if sub != "commit" else None
         if value is None:
@@ -154,7 +212,8 @@ def _resolve_alias(sub: str, inline: "dict[str, str]") -> str:
     return sub
 
 
-def _git_subcommand_after(tokens: "list[str]", i: int) -> "str | None":
+def _git_subcommand_after(tokens: "list[str]", i: int,
+                          env_aliases: "dict[str, str] | None" = None) -> "str | None":
     """Erstes Nicht-Options-Token nach einem `git`-Token (= der Unterbefehl).
 
     Ein Alias wird zum echten Unterbefehl aufgeloest (#281).
@@ -176,7 +235,7 @@ def _git_subcommand_after(tokens: "list[str]", i: int) -> "str | None":
         if tok.startswith("-"):
             i += 1  # `--no-pager`, `--git-dir=...`, `-p`, ...
             continue
-        return _resolve_alias(tok, _inline_aliases(tokens, start))
+        return _resolve_alias(tok, _inline_aliases(tokens, start), env_aliases)
     return None
 
 
@@ -191,7 +250,8 @@ _GIT_CODE_SUBCOMMANDS = {"difftool", "mergetool", "filter-branch"}
 _GIT_CODE_SUBCOMMAND_PAIRS = {("bisect", "run"), ("submodule", "foreach")}
 
 
-def _git_runs_foreign_code(tokens: "list[str]", i: int) -> bool:
+def _git_runs_foreign_code(tokens: "list[str]", i: int,
+                           env_aliases: "dict[str, str] | None" = None) -> bool:
     """Fuehrt dieser git-Aufruf (Unterbefehl-Suche ab Token i) fremden Code aus? (#297)
 
     Gefaehrliche `-c`-Schluessel, Kommando-Unterbefehle, `rebase --exec` und
@@ -203,7 +263,7 @@ def _git_runs_foreign_code(tokens: "list[str]", i: int) -> bool:
         if tokens[j] == "-c" and tokens[j + 1].lower().startswith(_GIT_CODE_CONFIG_KEYS):
             return True
         j += 2 if tokens[j] in _GIT_OPTS_WITH_VALUE else 1
-    sub = _git_subcommand_after(tokens, i)
+    sub = _git_subcommand_after(tokens, i, env_aliases)
     if sub is None:
         return False
     if sub.startswith("!") or sub in _GIT_CODE_SUBCOMMANDS:
@@ -217,14 +277,17 @@ def _git_runs_foreign_code(tokens: "list[str]", i: int) -> bool:
 
 def git_runs_foreign_code(command: str) -> bool:
     """Fuehrt irgendein git-Aufruf im Kommando fremden Code aus? (#297)"""
+    segments = _git_segments(command) or []
+    env_aliases = _command_env_aliases(segments)
     return any(
-        _git_runs_foreign_code(seg, i + 1)
-        for seg in _git_segments(command) or []
+        _git_runs_foreign_code(seg, i + 1, env_aliases)
+        for seg in segments
         for i, tok in enumerate(seg) if _looks_like_git(tok)
     )
 
 
-def _git_subcommand_of_segment(tokens: "list[str]") -> "str | None":
+def _git_subcommand_of_segment(tokens: "list[str]",
+                               env_aliases: "dict[str, str] | None" = None) -> "str | None":
     """Unterbefehl EINES Kommando-Segments, wenn `git` ganz vorn steht.
 
     Streng kopf-gebunden — das ist die Grundlage von `is_pure_git_command`.
@@ -238,12 +301,13 @@ def _git_subcommand_of_segment(tokens: "list[str]") -> "str | None":
         i += 1
     if i >= len(tokens) or not _looks_like_git(tokens[i]):
         return None
-    if _git_runs_foreign_code(tokens, i + 1):
+    if _git_runs_foreign_code(tokens, i + 1, env_aliases):
         return None  # fremder Code: nicht „reines git“ (#297)
-    return _git_subcommand_after(tokens, i + 1)
+    return _git_subcommand_after(tokens, i + 1, env_aliases)
 
 
-def _git_subcommands_in_segment(tokens: "list[str]") -> "list[str]":
+def _git_subcommands_in_segment(tokens: "list[str]",
+                                env_aliases: "dict[str, str] | None" = None) -> "list[str]":
     """Unterbefehle zu JEDEM `git`-Token des Segments, nicht nur zum ersten.
 
     Faengt Wrapper, die wir nicht namentlich kennen (`xargs -I{} git commit`,
@@ -255,7 +319,7 @@ def _git_subcommands_in_segment(tokens: "list[str]") -> "list[str]":
     out: "list[str]" = []
     for i, tok in enumerate(tokens):
         if _looks_like_git(tok):
-            sub = _git_subcommand_after(tokens, i + 1)
+            sub = _git_subcommand_after(tokens, i + 1, env_aliases)
             if sub and sub.startswith("!"):
                 out.extend(git_subcommands(sub[1:], 1))  # Shell-Alias: Rumpf zerlegen
             elif sub:
@@ -476,9 +540,10 @@ def git_subcommands(command: str, depth: int = 0) -> "list[str]":
     segments = _git_segments(command)
     if segments is None:
         return []
+    env_aliases = _command_env_aliases(segments)
     found: "list[str]" = []
     for segment in segments:
-        found.extend(_git_subcommands_in_segment(segment))
+        found.extend(_git_subcommands_in_segment(segment, env_aliases))
         found.extend(_git_nested_subcommands(segment, depth))
     return found
 
@@ -494,7 +559,8 @@ def git_head_subcommands(command: str) -> "list[str]":
     segments = _git_segments(command)
     if segments is None:
         return []
-    return [s for s in (_git_subcommand_of_segment(seg) for seg in segments) if s]
+    env_aliases = _command_env_aliases(segments)
+    return [s for s in (_git_subcommand_of_segment(seg, env_aliases) for seg in segments) if s]
 
 
 def is_git_subcommand(command: str, subcommand: str) -> bool:
