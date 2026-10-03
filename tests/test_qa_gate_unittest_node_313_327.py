@@ -286,3 +286,76 @@ def test_existing_branches_unchanged_pytest_executed_go(tmp_path):
         assert len(text.encode()) >= 100, name
         valid, msg = _validate(_write(tmp_path, name, text))
         assert valid is True, f"{name}: {msg}"
+
+
+# --- Adversary-Befunde F001-F005 (Leitregel: jede rote Evidenz gewinnt) ---------
+
+def _concat(tmp_path: Path, name: str, *fixtures: str) -> Path:
+    return _write(tmp_path, name, "\n".join(_read_fixture(f) for f in fixtures))
+
+
+def test_adv_f001_node_spec_red_then_green_is_failed(tmp_path):
+    """F001: zwei node-Laeufe (Spec), erst rot dann gruen -> False, und umgekehrt."""
+    for order in (("node_spec_red_with_stacktraces.txt", "node_spec_green.txt"),
+                  ("node_spec_green.txt", "node_spec_red_with_stacktraces.txt")):
+        valid, msg = _validate(_concat(tmp_path, "spec_two_runs.txt", *order))
+        assert valid is False, f"{order}: {msg}"
+        assert "FAILED" in msg
+        _assert_recognized(msg)
+
+
+def test_adv_f001_node_tap_red_then_green_is_failed(tmp_path):
+    """F001: zwei node-Laeufe (TAP), erst rot dann gruen -> False, und umgekehrt."""
+    for order in (("node_tap_red.txt", "node_tap_green.txt"),
+                  ("node_tap_green.txt", "node_tap_red.txt")):
+        valid, msg = _validate(_concat(tmp_path, "tap_two_runs.txt", *order))
+        assert valid is False, f"{order}: {msg}"
+        assert "FAILED" in msg
+        _assert_recognized(msg)
+
+
+def test_adv_f002_unittest_green_with_cargo_failed_is_red(tmp_path):
+    """F002: gruener unittest + `test result: FAILED` (cargo) -> False."""
+    text = _read_fixture("unittest_green_verbose.txt") + "test result: FAILED. 1 passed; 1 failed\n"
+    valid, msg = _validate(_write(tmp_path, "ut_cargo.txt", text))
+    assert valid is False, msg
+    assert "FAILED" in msg
+
+
+def test_adv_f002_unittest_green_with_test_failed_marker_is_red(tmp_path):
+    """F002: gruener unittest + `** TEST FAILED **` -> False."""
+    text = _read_fixture("unittest_green_verbose.txt") + "** TEST FAILED **\n"
+    valid, msg = _validate(_write(tmp_path, "ut_marker.txt", text))
+    assert valid is False, msg
+    assert "FAILED" in msg
+
+
+def test_adv_f003_ran_line_without_status_is_not_passed(tmp_path):
+    """F003: abgeschnittener unittest-Lauf (Ran-Zeile ohne Statuszeile) nach
+    einem gruenen Lauf -> False (fail-safe)."""
+    text = _read_fixture("unittest_green_verbose.txt") + "Ran 5 tests in 0.1s\n"
+    valid, msg = _validate(_write(tmp_path, "ut_truncated.txt", text))
+    assert valid is False, msg
+    assert "NOT PASSED" in msg
+
+
+def test_adv_f004_huge_numbers_do_not_raise(tmp_path):
+    """F004: riesige Zahlen werfen nicht und ergeben nie True."""
+    green = _read_fixture("node_spec_green.txt")
+    node_text = green.replace("ℹ fail 0", "ℹ fail " + "9" * 400)
+    ut = _read_fixture("unittest_green_verbose.txt")
+    ut_text = ut.replace("Ran 3 tests", "Ran " + "9" * 5000 + " tests")
+    for name, text in (("node_huge.txt", node_text), ("ut_huge.txt", ut_text)):
+        valid, msg = _validate(_write(tmp_path, name, text))
+        assert valid is not True, f"{name}: {msg}"
+
+
+def test_adv_f005_node_pass_zero_without_skips_not_passed(tmp_path):
+    """F005: `tests 3 / pass 0 / fail 0` ohne skipped/todo -> False NOT PASSED.
+    Synthetisch abgeleitet aus node_spec_green.txt (Zaehlwert ersetzt)."""
+    green = _read_fixture("node_spec_green.txt")
+    assert "ℹ pass 3" in green
+    text = green.replace("ℹ pass 3", "ℹ pass 0")
+    valid, msg = _validate(_write(tmp_path, "node_pass_zero_synthetic.txt", text))
+    assert valid is False, msg
+    assert "NOT PASSED" in msg

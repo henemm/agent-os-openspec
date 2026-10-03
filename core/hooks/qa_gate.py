@@ -149,6 +149,103 @@ def _evaluate_pytest_summary(line: str) -> "tuple[bool, str] | None":
     return None
 
 
+# Python unittest: 'Ran N tests in X.XXXs', danach Statuszeile (#313).
+# Ziffern auf 9 begrenzt: riesige Zahlen gelten als "nicht erkannt" statt zu werfen.
+_UNITTEST_RAN_RE = re.compile(r"(?m)^Ran (\d{1,9}) tests? in [\d.]+s$")
+_UNITTEST_STATUS_RE = re.compile(r"(?m)^(OK|FAILED)(?: \(([^()]*)\))?$")
+_UNITTEST_NO_TESTS_RE = re.compile(r"(?m)^NO TESTS RAN$")
+_UNITTEST_COUNTER_RE = re.compile(r"([a-z][a-z ]*)=(\d{1,9})")
+
+# node --test: Summary-Block im Spec- (ℹ) oder TAP-Reporter (#) (#327).
+_NODE_LINE_RE = re.compile(
+    r"(?m)^(ℹ|#) (tests|suites|pass|fail|cancelled|skipped|todo|duration_ms) (\d{1,9}(?:\.\d+)?)$"
+)
+# Rot-Evidenz, die ein gruenes unittest/node-Ergebnis nicht ueberstimmen darf.
+_CARGO_FAILED_RE = re.compile(r"(?m)^test result: FAILED")
+
+
+def _evaluate_unittest_run(total: int, status: str) -> "tuple[bool, str] | None":
+    """Wertet einen einzelnen unittest-Lauf (Ran-Zeile + Statuszeile) aus."""
+    if status == "NO TESTS RAN" or total == 0:
+        return False, "Tests NOT PASSED: 0 tests executed (nichts gelaufen)"
+    m = _UNITTEST_STATUS_RE.match(status)
+    if not m:  # abgeschnittener Lauf: fail-safe rot
+        return False, "Tests NOT PASSED: unittest-Lauf ohne Abschlusszeile"
+    c = {k.strip(): int(v) for k, v in _UNITTEST_COUNTER_RE.findall(m.group(2) or "")}
+    fails, errs = c.get("failures", 0), c.get("errors", 0)
+    unexp, skipped = c.get("unexpected successes", 0), c.get("skipped", 0)
+    if m.group(1) == "FAILED" or fails or errs or unexp:
+        extra = f", {unexp} unexpected successes" if unexp else ""
+        return False, f"Tests FAILED: {fails} failures, {errs} errors{extra} (unittest)"
+    if skipped > 0 and total - skipped <= 0:
+        return _not_passed_skipped(skipped)
+    suffix = f" ({skipped} skipped)" if skipped else ""
+    return True, f"Tests PASSED: {total} tests (unittest){suffix}"
+
+
+def _evaluate_unittest(content: str) -> "tuple[bool, str] | None":
+    """Wertet alle unittest-Laeufe aus; jede rote Evidenz gewinnt. None = kein unittest."""
+    lines = content.splitlines()
+    results = []
+    for idx, line in enumerate(lines):
+        m = _UNITTEST_RAN_RE.match(line)
+        if not m:
+            continue
+        status = next((l.strip() for l in lines[idx + 1:] if l.strip()), "")
+        verdict = _evaluate_unittest_run(int(m.group(1)), status)
+        if verdict is not None:
+            results.append(verdict)
+    if not results and _UNITTEST_NO_TESTS_RE.search(content):
+        return False, "Tests NOT PASSED: 0 tests executed (nichts gelaufen)"
+    if not results:
+        return None
+    return next((r for r in results if not r[0]), results[-1])
+
+
+def _node_blocks(content: str) -> "list[dict]":
+    """Liefert die Felder ALLER zusammenhaengenden node-Summary-Bloecke."""
+    blocks, current, prefix = [], {}, None
+    for line in content.splitlines():
+        m = _NODE_LINE_RE.match(line)
+        if not m or (prefix is not None and m.group(1) != prefix):
+            if current:
+                blocks.append(current)
+            current, prefix = {}, None
+        if m:
+            prefix = m.group(1)
+            current[m.group(2)] = float(m.group(3))
+    if current:
+        blocks.append(current)
+    return blocks
+
+
+def _evaluate_node_block(block: dict) -> "tuple[bool, str] | None":
+    """Wertet einen node --test-Summary-Block aus. None = unvollstaendig."""
+    if not all(k in block for k in ("tests", "pass", "fail")):
+        return None
+    tests, passed, failed = int(block["tests"]), int(block["pass"]), int(block["fail"])
+    cancelled = int(block.get("cancelled", 0))
+    skipped = int(block.get("skipped", 0)) + int(block.get("todo", 0))
+    if failed > 0 or cancelled > 0:
+        return False, f"Tests FAILED: {failed} failed, {cancelled} cancelled (node --test)"
+    if tests == 0:
+        return False, "Tests NOT PASSED: 0 tests executed (nichts gelaufen)"
+    if passed == 0:
+        if skipped > 0:
+            return _not_passed_skipped(skipped)
+        return False, "Tests NOT PASSED: 0 passed (nichts bestanden)"
+    suffix = f" ({skipped} skipped)" if skipped else ""
+    return True, f"Tests PASSED: {passed} passed (node --test){suffix}"
+
+
+def _evaluate_node_test(content: str) -> "tuple[bool, str] | None":
+    """Wertet alle node --test-Bloecke aus; jede rote Evidenz gewinnt. None = nicht erkannt."""
+    results = [r for r in map(_evaluate_node_block, _node_blocks(content)) if r is not None]
+    if not results:
+        return None
+    return next((r for r in results if not r[0]), results[-1])
+
+
 def validate_test_output(filepath: str, infra: bool = False) -> tuple[bool, str]:
     """Validate test output file. Returns (valid, message)."""
     path = Path(filepath)
@@ -166,9 +263,17 @@ def validate_test_output(filepath: str, infra: bool = False) -> tuple[bool, str]
 
     content = strip_ansi(path.read_text(errors="replace"))
 
-    # Must contain test patterns
+    # unittest / node --test (#313, #327): Rot zuerst, vor allen anderen
+    # Zweigen — sonst gewinnt bei gemischter Ausgabe ein spaeteres Gruen.
+    runner_results = [r for r in (_evaluate_unittest(content), _evaluate_node_test(content))
+                      if r is not None]
+    red = next((r for r in runner_results if not r[0]), None)
+    if red is not None:
+        return red
+
+    # Must contain test patterns (erkannter unittest/node-Block gilt selbst als Beleg)
     matches = sum(1 for p in TEST_PATTERNS if re.search(p, content, re.IGNORECASE))
-    if matches < 2:
+    if matches < 2 and not runner_results:
         return False, f"Doesn't look like test output (matched {matches}/{len(TEST_PATTERNS)} patterns)."
 
     # Check for failures via common patterns
@@ -207,6 +312,13 @@ def validate_test_output(filepath: str, infra: bool = False) -> tuple[bool, str]
             return False, f"Tests FAILED: {go_fails or 1} failed (go test)"
         go_passes = sum(1 for r in go_results if r == "PASS")
         return True, f"Tests PASSED: {go_passes or 'ok'} passed (go test)"
+
+    # Gruenes unittest/node-Ergebnis erst nach Executed/pytest/go (#313, #327).
+    # Vorher cargo-/Marker-Rot pruefen: jede rote Evidenz gewinnt.
+    if runner_results:
+        if _CARGO_FAILED_RE.search(content) or "TEST FAILED" in content:
+            return False, "Tests FAILED: cargo/TEST FAILED-Marker neben gruenem unittest/node-Lauf"
+        return runner_results[0]
 
     # Pattern: "test result: ok" (cargo/rust)
     if "test result: ok" in content:
