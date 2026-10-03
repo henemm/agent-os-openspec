@@ -317,6 +317,21 @@ def get_scope_loc_config() -> tuple[int, list]:
     return max_loc, excludes
 
 
+def get_effort_budget(workflow_type: str) -> "dict | None":
+    """Return the effort budget of a stage (Issue #250, Teil B) or None.
+
+    None when the block is absent or `enabled` is explicitly false. Unknown
+    types (legacy `bug`, `express`) fall back to the values of `feature`.
+    """
+    block = load_config().get("effort_budget")
+    if not isinstance(block, dict) or block.get("enabled") is False:
+        return None
+    stage = block.get(workflow_type)
+    if not isinstance(stage, dict):
+        stage = block.get("feature")
+    return dict(stage) if isinstance(stage, dict) else None
+
+
 # Built-in test path conventions (regex, matched via re.search on the path)
 DEFAULT_TEST_PATH_PATTERNS = [
     r"(^|/)tests?/",
