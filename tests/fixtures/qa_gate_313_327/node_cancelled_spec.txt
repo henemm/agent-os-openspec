@@ -1,0 +1,19 @@
+$ node --test --test-timeout=300 --test-reporter=spec n_timeout.test.mjs
+✔ ok (0.506333ms)
+✖ haengt (300.854083ms)
+✔ danach (1.574083ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 2
+ℹ fail 0
+ℹ cancelled 1
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 376.504166
+
+✖ failing tests:
+
+test at n_timeout.test.mjs:3:1
+✖ haengt (300.854083ms)
+  'test timed out after 300ms'
+EXIT=1

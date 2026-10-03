@@ -1,0 +1,10 @@
+$ python3 -m unittest -v t_green
+test_a (t_green.A.test_a) ... ok
+test_b (t_green.A.test_b) ... ok
+test_c (t_green.A.test_c) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.000s
+
+OK
+EXIT=0

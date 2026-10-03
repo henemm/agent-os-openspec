@@ -1,0 +1,44 @@
+$ node --test --test-reporter=spec n_red.test.mjs
+✔ ok (0.420625ms)
+✖ fail1 (1.373875ms)
+✖ fail2 (0.050542ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 1
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 65.342292
+
+✖ failing tests:
+
+test at n_red.test.mjs:3:1
+✖ fail1 (1.373875ms)
+  AssertionError [ERR_ASSERTION]: 1 == 2
+      at TestContext.<anonymous> (file:///private/tmp/claude-501/-Users-hem-Developer-agent-os-openspec--claude-worktrees-issue-299-teil-b/1cb389b7-93d5-4756-8bdf-dd66dc97f1d8/scratchpad/suites/n_red.test.mjs:3:28)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 2,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at n_red.test.mjs:4:1
+✖ fail2 (0.050542ms)
+  Error: boom
+      at TestContext.<anonymous> (file:///private/tmp/claude-501/-Users-hem-Developer-agent-os-openspec--claude-worktrees-issue-299-teil-b/1cb389b7-93d5-4756-8bdf-dd66dc97f1d8/scratchpad/suites/n_red.test.mjs:4:29)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+EXIT=1

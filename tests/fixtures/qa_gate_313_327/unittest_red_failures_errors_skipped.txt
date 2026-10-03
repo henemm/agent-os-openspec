@@ -1,0 +1,29 @@
+$ python3 -m unittest -v t_red
+test_error (t_red.A.test_error) ... ERROR
+test_fail (t_red.A.test_fail) ... FAIL
+test_ok (t_red.A.test_ok) ... ok
+test_skip (t_red.A.test_skip) ... skipped 'absichtlich'
+
+======================================================================
+ERROR: test_error (t_red.A.test_error)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/claude-501/-Users-hem-Developer-agent-os-openspec--claude-worktrees-issue-299-teil-b/1cb389b7-93d5-4756-8bdf-dd66dc97f1d8/scratchpad/suites/t_red.py", line 5, in test_error
+    def test_error(self): raise RuntimeError("boom")
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: boom
+
+======================================================================
+FAIL: test_fail (t_red.A.test_fail)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/claude-501/-Users-hem-Developer-agent-os-openspec--claude-worktrees-issue-299-teil-b/1cb389b7-93d5-4756-8bdf-dd66dc97f1d8/scratchpad/suites/t_red.py", line 4, in test_fail
+    def test_fail(self): self.assertEqual(1, 2)
+                         ~~~~~~~~~~~~~~~~^^^^^^
+AssertionError: 1 != 2
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.001s
+
+FAILED (failures=1, errors=1, skipped=1)
+EXIT=1

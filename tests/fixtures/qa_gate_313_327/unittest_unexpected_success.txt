@@ -1,0 +1,11 @@
+$ python3 -m unittest -v t_unexpected
+test_ok (t_unexpected.A.test_ok) ... ok
+test_surprise (t_unexpected.A.test_surprise) ... unexpected success
+
+======================================================================
+UNEXPECTED SUCCESS: test_surprise (t_unexpected.A.test_surprise)
+----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+FAILED (unexpected successes=1)
+EXIT=1

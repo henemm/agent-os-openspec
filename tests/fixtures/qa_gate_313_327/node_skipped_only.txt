@@ -1,0 +1,12 @@
+$ node --test --test-reporter=spec n_skipped.test.mjs
+﹣ s1 (0.33675ms) # SKIP
+﹣ s2 (0.053625ms) # SKIP
+ℹ tests 2
+ℹ suites 0
+ℹ pass 0
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 2
+ℹ todo 0
+ℹ duration_ms 58.439083
+EXIT=0
