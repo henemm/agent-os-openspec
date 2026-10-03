@@ -1471,9 +1471,9 @@ def _observable_files(cwd: Path, merge_base: str) -> "tuple[list[str] | None, st
     Quelle 4 (`ls-files --others`) ist Pflicht, sonst erschiene eine neu
     angelegte, noch nicht hinzugefuegte Datei als "keine Aenderung"."""
     sources = (
-        ["diff", "--name-only", f"{merge_base}...HEAD"],
-        ["diff", "--name-only", "--cached"],
-        ["diff", "--name-only"],
+        ["diff", "--name-only", "--no-renames", f"{merge_base}...HEAD"],
+        ["diff", "--name-only", "--no-renames", "--cached"],
+        ["diff", "--name-only", "--no-renames"],
         ["ls-files", "--others", "--exclude-standard"],
     )
     found = set()
