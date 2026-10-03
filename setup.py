@@ -771,7 +771,7 @@ python3 .claude/hooks/workflow.py list
 | `/40-tdd-red` | Phase 5: Write failing tests |
 | `/50-implement` | Phase 6: Implement (make tests green) |
 | `/60-validate` | Phase 7: Validate |
-| `/00-bug` | Analyse a bug (Analysis-First) |
+| `/00-bug` | Pointer to `/00-intake` (bugs: duplicate search, reproduce, pin the cause) |
 | `/01-feature` | Plan a new feature |
 | `/80-workflow` | Manage workflows |
 | `/81-add-artifact` | Register test artifacts |

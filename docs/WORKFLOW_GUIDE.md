@@ -481,7 +481,7 @@ Nützlich für: Prozess-Verbesserungen, Team-Reflektionen, Schätzungs-Kalibrier
 | Command | Phase | Beschreibung |
 |---------|-------|--------------|
 | `/00-intake` | vor 1 | Aufgabe bewerten, Track wählen (bug / feature-fast / feature) |
-| `/00-bug` | — | Bug-Analyse starten (Analysis-First) |
+| `/00-bug` | — | Hinweis auf `/00-intake` (Bugs: Duplikatsuche, Nachstellen, Ursachenbeleg) |
 | `/01-feature` | — | Feature planen (startet feature-planner Agent) |
 | `/10-context` | 1 | Relevanten Kontext sammeln |
 | `/20-analyse` | 2 | Anforderungen analysieren |

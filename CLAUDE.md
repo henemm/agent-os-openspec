@@ -446,7 +446,7 @@ python3 /path/to/agent-os-openspec/setup.py --version
 | Command | Phase | Beschreibung |
 |---------|-------|--------------|
 | `/00-intake` | - | Aufgaben-Klassifikation (Fast Track / voller Prozess) — immer der erste Schritt |
-| `/00-bug` | - | Bug analysieren (Analysis-First, erstellt GitHub Issue) |
+| `/00-bug` | - | Hinweis auf `/00-intake` (Bugs: Duplikatsuche, Nachstellen, Ursachenbeleg) |
 | `/01-feature` | - | Feature planen (startet feature-planner Agent, erstellt GitHub Issue) |
 | `/10-context` | 1 | Relevanten Kontext sammeln |
 | `/20-analyse` | 2 | Anforderungen analysieren |
