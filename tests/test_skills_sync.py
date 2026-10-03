@@ -35,9 +35,9 @@ def test_check_cli_exit_code_zero_when_in_sync():
     assert result.returncode == 0, result.stderr
 
 
-def test_all_sixteen_skills_are_covered_and_legacy_names_ignored():
+def test_all_fifteen_skills_are_covered_and_legacy_names_ignored():
     names = sync_skills.synced_names()
-    assert len(names) == 16, names
+    assert len(names) == 15, names
     for legacy in ("tdd-red", "implement", "validate"):
         assert legacy not in names
 

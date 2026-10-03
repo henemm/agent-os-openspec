@@ -35,11 +35,11 @@ def _run_workflow(tmp_path: Path, args: list, wf_name: str = "legacy-bug"):
     )
 
 
-def _legacy_bug_state(name: str) -> dict:
+def _legacy_bug_state(name: str, phase: str = "phase8_complete") -> dict:
     return {
         "name": name,
         "workflow_type": "bug",
-        "current_phase": "phase8_complete",
+        "current_phase": phase,
         "context_file": "docs/context/x.md",
         "affected_files": [],
         "test_artifacts": [],
@@ -99,7 +99,11 @@ def test_legacy_bug_workflow_json_does_not_crash(tmp_path):
     name = "legacy-bug"
     wf_dir = tmp_path / ".claude" / "workflows"
     wf_dir.mkdir(parents=True)
-    (wf_dir / f"{name}.json").write_text(json.dumps(_legacy_bug_state(name)))
+    # Laufender Alt-Workflow vor dem Abschluss: in phase8_complete wuerde
+    # _validate_transition fuer JEDEN Typ nichts pruefen (Ziel == aktuelle Phase).
+    (wf_dir / f"{name}.json").write_text(
+        json.dumps(_legacy_bug_state(name, phase="phase7_validate"))
+    )
     log_dir = wf_dir / "_log"
     log_dir.mkdir()
     ts = datetime.now().strftime("%Y%m%d%H%M%S")
