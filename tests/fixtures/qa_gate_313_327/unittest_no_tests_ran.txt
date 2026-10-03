@@ -1,0 +1,7 @@
+$ python3 -m unittest -v t_empty
+
+----------------------------------------------------------------------
+Ran 0 tests in 0.000s
+
+NO TESTS RAN
+EXIT=5

@@ -1,0 +1,9 @@
+$ python3 -m unittest -v t_expected
+test_known (t_expected.A.test_known) ... expected failure
+test_ok (t_expected.A.test_ok) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+OK (expected failures=1)
+EXIT=0
