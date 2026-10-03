@@ -93,8 +93,7 @@ Then begin with /10-context.
 **For a bug fix:**
 ```
 This project uses the OpenSpec workflow framework.
-Start a workflow: python3 .claude/hooks/workflow.py start "bug-[short-description]"
-Then use /00-intake: for a bug it checks for duplicates, reproduces the error and pins the cause (file:line) before touching any code.
+Start with /00-intake: for a bug it checks for duplicates, reproduces the error and pins the cause (file:line) before touching any code, then starts the workflow.
 ```
 
 **To check current state (resuming an existing session):**
@@ -154,7 +153,6 @@ between.
 | Command | Phase | Description |
 |---------|-------|-------------|
 | `/00-intake` | — | Classify a task (Fast Track / full process) — always run first |
-| `/00-bug` | — | Pointer to `/00-intake` (bugs: duplicate search, reproduce, pin the cause) |
 | `/01-feature` | — | Plan a new feature (creates GitHub Issue) |
 | `/10-context` | 1 | Collect relevant context |
 | `/20-analyse` | 2 | Analyse requirements |

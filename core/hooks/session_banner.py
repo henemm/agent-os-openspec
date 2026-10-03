@@ -121,11 +121,8 @@ def _repair_hint(label: str, installed: "tuple[Path, str] | None") -> str:
     return f"aktualisieren mit {version}: python3 {setup_py} {label} --refresh-aliases"
 
 
-def stale_alias_lines(root: Path, project: Path) -> "list[str]":
-    """Eine Warnzeile je Scope (~ bzw. Projekt) mit veralteten Alias-Kopien."""
-    from alias_sync import find_stale_aliases
-
-    skills_dir = root / "skills"
+def _alias_scopes(project: Path) -> "list[tuple[str, Path]]":
+    """Scopes (Label, Pfad) fuer Alias-Pruefungen: ~ und, falls verschieden, das Projekt."""
     home = Path.home()
     scopes = [("~", home)]
     try:
@@ -134,6 +131,15 @@ def stale_alias_lines(root: Path, project: Path) -> "list[str]":
         same = False
     if not same:
         scopes.append((str(project), project))
+    return scopes
+
+
+def stale_alias_lines(root: Path, project: Path) -> "list[str]":
+    """Eine Warnzeile je Scope (~ bzw. Projekt) mit veralteten Alias-Kopien."""
+    from alias_sync import find_stale_aliases
+
+    skills_dir = root / "skills"
+    scopes = _alias_scopes(project)
 
     loaded = plugin_version(root)
     try:
@@ -157,12 +163,43 @@ def stale_alias_lines(root: Path, project: Path) -> "list[str]":
     return lines
 
 
+def removed_alias_lines(project: Path) -> "list[str]":
+    """Eine Warnzeile je Scope mit markierten Aliasen entfernter Befehle (#333)."""
+    from alias_sync import find_removed_aliases
+
+    try:
+        installed = installed_plugin()
+    except Exception:
+        installed = None
+
+    lines = []
+    for label, scope in _alias_scopes(project):
+        try:
+            found = find_removed_aliases(scope / ".claude" / "commands")
+        except Exception:
+            continue
+        if not found:
+            continue
+        if installed is None:
+            hint = (f"aufraeumen per --refresh-aliases im Scope {label} "
+                    "(installierte Plugin-Fassung nicht auffindbar)")
+        else:
+            hint = f"aufraeumen mit: python3 {installed[0]} {label} --refresh-aliases"
+        names = ", ".join(p.stem for p in found)
+        lines.append(
+            f"{len(found)} Kurz-Alias(e) entfernter Befehle: {names} "
+            f"(Scope {label}) — {hint}"
+        )
+    return lines
+
+
 def build_message(root: Path, project: Path) -> "str | None":
     version = plugin_version(root)
     if not version:
         return None
     lines = [f"agent-os-openspec {version} aktiv"]
     lines.extend(stale_alias_lines(root, project))
+    lines.extend(removed_alias_lines(project))
     return "\n".join(lines)
 
 

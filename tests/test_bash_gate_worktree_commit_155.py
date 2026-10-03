@@ -73,7 +73,7 @@ def repo_and_worktree(tmp_path):
     worktree = tmp_path / "worktrees" / WF_NAME
     _git(["worktree", "add", str(worktree), "-b", WF_NAME], main)
 
-    # Workflow-State im Hauptrepo. `workflow_type: bug` laesst das
+    # Workflow-State im Hauptrepo. `workflow_type: feature-fast` laesst das
     # Adversary-Gate (5c) passieren, damit die Scope-Erkennung (5d) ueberhaupt
     # erreicht wird — 5c blockt sonst vorher und der Hook endet mit Exit 2.
     wf_dir = main / ".claude" / "workflows"
@@ -81,7 +81,7 @@ def repo_and_worktree(tmp_path):
     (wf_dir / f"{WF_NAME}.json").write_text(json.dumps({
         "name": WF_NAME,
         "current_phase": "phase6_implement",
-        "workflow_type": "bug",
+        "workflow_type": "feature-fast",
     }))
     (worktree / ".claude").mkdir(parents=True, exist_ok=True)
     (worktree / ".claude" / "active_workflow").write_text(WF_NAME)

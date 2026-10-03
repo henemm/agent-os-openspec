@@ -189,8 +189,7 @@ def test_e_all_skills_share_identical_snippet():
     snippet_files = skills_with_snippet()
     # Die 14 hook-nutzenden Skills müssen alle den Snippet tragen (seit 3.25.0
     # inkl. 82-test, 83-user-story und 90-retro, die den Workflow beim
-    # Wiedereinstieg mit `#<N>` von der Platte auflösen; 00-bug ist seit #250 A1
-    # nur noch ein Hinweis auf /00-intake und ruft keinen Workflow mehr auf).
+    # Wiedereinstieg mit `#<N>` von der Platte auflösen).
     assert len(snippet_files) == 14, (
         f"Erwartet 14 Skills mit Hook-Setup-Snippet, gefunden {len(snippet_files)}: "
         f"{snippet_files}"
@@ -205,13 +204,13 @@ def test_e_all_skills_share_identical_snippet():
 def test_e2_non_hook_skills_have_no_snippet():
     """Skills ohne Hook-Aufrufe tragen bewusst keinen Snippet-Block.
 
-    `/01-feature` plant ein Feature, bevor ein Workflow existiert; `/00-bug` ist seit
-    #250 A1 nur noch ein Hinweis auf `/00-intake`. Beide haben keinen Wiedereinstieg.
+    `/01-feature` plant ein Feature, bevor ein Workflow existiert, und hat keinen
+    Wiedereinstieg (`/00-bug` ist seit #333 entfernt).
     """
     all_skills = set(glob.glob(SKILLS_GLOB))
     with_snippet = set(skills_with_snippet())
     without = all_skills - with_snippet
-    assert sorted(Path(p).parent.name for p in without) == ["00-bug", "01-feature"], sorted(without)
+    assert sorted(Path(p).parent.name for p in without) == ["01-feature"], sorted(without)
     for p in without:
         assert "CLAUDE_PLUGIN_ROOT" not in Path(p).read_text(), (
             f"{p} sollte keinen Hook-Setup-Block enthalten"

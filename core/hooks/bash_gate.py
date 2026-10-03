@@ -888,8 +888,8 @@ def main():
         if wf:
             phase = wf.get("current_phase", "")
             if phase in ("phase6_implement", "phase6b_adversary", "phase7_validate"):
-                # Bug + Feature fast-track: no adversary verdict required
-                if wf.get("workflow_type") in ("bug", "feature-fast"):
+                # Feature fast-track: no adversary verdict required
+                if wf.get("workflow_type") == "feature-fast":
                     pass
                 else:
                     verdict = str(wf.get("adversary_verdict", "") or "")

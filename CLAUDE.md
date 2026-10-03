@@ -57,7 +57,7 @@ agent-os-openspec/
 │   │   └── config_loader.py             # Config-Loader (YAML + Local Overrides)
 │   ├── agents/              # Agent-Definitionen (Markdown)
 │   └── commands/            # Slash-Commands (siehe "Slash-Commands Übersicht" unten)
-│       ├── 00-intake.md, 00-bug.md, 01-feature.md
+│       ├── 00-intake.md, 01-feature.md
 │       ├── 10-context.md, 20-analyse.md, 30-write-spec.md
 │       ├── 40-tdd-red.md, 50-implement.md, 60-validate.md
 │       ├── 70-deploy.md, 80-workflow.md, 81-add-artifact.md
@@ -446,7 +446,6 @@ python3 /path/to/agent-os-openspec/setup.py --version
 | Command | Phase | Beschreibung |
 |---------|-------|--------------|
 | `/00-intake` | - | Aufgaben-Klassifikation (Fast Track / voller Prozess) — immer der erste Schritt |
-| `/00-bug` | - | Hinweis auf `/00-intake` (Bugs: Duplikatsuche, Nachstellen, Ursachenbeleg) |
 | `/01-feature` | - | Feature planen (startet feature-planner Agent, erstellt GitHub Issue) |
 | `/10-context` | 1 | Relevanten Kontext sammeln |
 | `/20-analyse` | 2 | Anforderungen analysieren |

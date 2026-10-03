@@ -188,11 +188,10 @@ e2e_scope:
   backend_patterns:
     - '^(src|api|internal|cmd|backend|server)/'
 
-# Bug Fix Fast Track — Lightweight workflow for small, well-understood bugs
-# Activated via: workflow.py start <name> --type bug
-bug_fix:
-  require_tdd: false    # true → TDD-Red-Artefakt auch bei Bug-Workflows erforderlich
-  max_files: 5          # Warnung (kein Block) wenn Fix mehr Dateien berührt
+# Fast Track (workflow.py start <name> --type feature-fast)
+# Alter Schluessel bug_fix.require_tdd wird ein Release lang als Rueckfall gelesen (#333).
+fast_track:
+  require_tdd: false    # true → TDD-Red-Artefakt auch bei Fast-Track-Workflows erforderlich
 
 # Pre-commit Gate — Checks before git commit is allowed
 # Used by bash_gate.py
@@ -277,7 +276,7 @@ adr_gate:
 # blockiert das Gate erneut.
 po_briefing_gate:
   enabled: true
-  # Fast-Track-Workflows (feature-fast, bug) brauchen per Default kein Briefing.
+  # Fast-Track-Workflows (feature-fast) brauchen per Default kein Briefing.
   skip_fast_track: true
   # Wortgrenze für die Pflicht-Abschnitte + Freigabe-Frage. Der po-briefer zielt
   # auf ≤ 120 Wörter; darüber blockt das Gate ("Briefing zu lang").
@@ -306,7 +305,7 @@ precondition_section_gate:
   # block: wie jede andere Format-/Content-Pruefung -> blockt Commit/Phase 8.
   # Ungueltige Werte gelten als warn.
   mode: warn
-  skip_fast_track: true   # Fast Track (bug, feature-fast) wird nicht geprueft
+  skip_fast_track: true   # Fast Track (feature-fast) wird nicht geprueft
 
 # Beobachtbare Oberflaeche (Issue #260) — steuert NUR, ob `/60-validate` die
 # Schlussfrage "Soll ich den Code committen?" stellt. Kein Gate: die Pruefung

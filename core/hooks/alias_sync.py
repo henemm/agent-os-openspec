@@ -129,3 +129,25 @@ def find_stale_aliases(skills_dir: Path, commands_dir: Path,
             continue
         stale.append(name)
     return stale
+
+
+# Befehle, die das Framework entfernt hat (#333). Ihre markierten Kurz-Aliase
+# sind verwaist; `setup.py --refresh-aliases` loescht sie. Bewusst eine feste
+# Liste statt "markierter Alias ohne Skill": ein aelteres Setup wuerde sonst
+# Aliase von Skills loeschen, die nur eine neuere Plugin-Version kennt.
+REMOVED_SKILLS = ("00-bug",)
+
+
+def find_removed_aliases(commands_dir: Path) -> "list[Path]":
+    """Markierte Alias-Dateien entfernter Befehle in `commands_dir`.
+
+    Unmarkierte Dateien gleichen Namens sind projekteigene Befehle — tabu.
+    """
+    if not commands_dir.is_dir():
+        return []
+    found = []
+    for name in REMOVED_SKILLS:
+        target = commands_dir / f"{name}.md"
+        if target.is_file() and is_alias_file(target.read_text()):
+            found.append(target)
+    return found

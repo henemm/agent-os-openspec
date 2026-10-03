@@ -198,7 +198,7 @@ Läuft **bevor Claude eine Datei schreibt oder bearbeitet**. Prüft sequenziell:
 7. Kein Workflow für diese Datei? → BLOCK
 8. Phase < 6 (phase6_implement)? → BLOCK (ohne Override)
 9. Override-Token vorhanden? → ALLOW (überspringt Rest)
-10. Keine RED-Artefakte? → BLOCK (außer bug/feature-fast)
+10. Keine RED-Artefakte? → BLOCK (außer feature-fast)
 11. Spec ohne Acceptance Criteria? → BLOCK
 12. LoC-Delta (Produktiv oder Test, getrennt geprüft) > jeweiliges Limit? → BLOCK
 → ALLOW
@@ -265,7 +265,7 @@ Ein Agent, der beim Validieren denselben Gedankenfluss sieht wie der Implementie
 
 | Agent | Modell | Tools | Kontext, den er bekommt | Wann eingesetzt |
 |-------|--------|-------|-------------------------|-----------------|
-| **bug-intake** | Haiku | Read, Grep, Glob, Bash, Task | User-Symptom + Projekt-Codebase | `/00-bug`, Erstaufnahme |
+| **bug-intake** | Haiku | Read, Grep, Glob, Bash, Task | User-Symptom + Projekt-Codebase | `/00-intake`, Erstaufnahme |
 | **analysis-challenger** | Sonnet | Read, Grep, Glob | Fertige Bug-Analyse (kein Reasoning des Investigators) | Nach Bug-Analyse, Devil's Advocate |
 | **bug-investigator** | Sonnet | Read, Grep, Glob, Bash, Task, Write, Edit | Vollständiger Code-Zugriff + Bug-Kontext | Tiefe Bug-Analyse |
 | **feature-planner** | Sonnet | Read, Grep, Glob, Bash, Task, Write, Edit | Vollständiger Code-Zugriff + Feature-Beschreibung | Phase 1–3 bei Feature-Planung |
@@ -336,12 +336,6 @@ Der aktive Workflow wird über die Umgebungsvariable `OPENSPEC_ACTIVE_WORKFLOW` 
 ---
 
 ## Fast-Track-Varianten
-
-### Bug-Fix (`--type bug`)
-Startet direkt bei Phase 6. Überspringt: Kontext, Analyse, Spec, TDD. Sinnvoll für klare, isolierte Bugs.
-- TDD-Gate übersprungen (konfigurierbar: `bug_fix.require_tdd: false`)
-- Adversary-Check übersprungen
-- Rebase-Gate bleibt aktiv
 
 ### Feature Fast Track (`--type feature-fast`)
 Startet bei Phase 3 (Spec). Überspringt: Kontext, Analyse.
@@ -480,8 +474,7 @@ Nützlich für: Prozess-Verbesserungen, Team-Reflektionen, Schätzungs-Kalibrier
 
 | Command | Phase | Beschreibung |
 |---------|-------|--------------|
-| `/00-intake` | vor 1 | Aufgabe bewerten, Track wählen (bug / feature-fast / feature) |
-| `/00-bug` | — | Hinweis auf `/00-intake` (Bugs: Duplikatsuche, Nachstellen, Ursachenbeleg) |
+| `/00-intake` | vor 1 | Aufgabe bewerten, Track wählen (feature-fast / feature), auch für Bugs |
 | `/01-feature` | — | Feature planen (startet feature-planner Agent) |
 | `/10-context` | 1 | Relevanten Kontext sammeln |
 | `/20-analyse` | 2 | Anforderungen analysieren |
@@ -508,8 +501,7 @@ Das Framework wird über `openspec.yaml` im Projektverzeichnis konfiguriert. Wic
 | `scope_guard.max_loc_delta` | 250 | Maximale hinzugefuegte Lines of Code (Produktivcode) |
 | `scope_guard.max_test_loc_delta` | 500 | Maximale hinzugefuegte Lines of Code (Testcode, eigenes Limit) |
 | `scope_guard.test_path_patterns` | eingebaute Testpfad-Konventionen | Regex-Liste, die Dateien dem Test-Bucket zuordnet |
-| `bug_fix.require_tdd` | false | TDD-Pflicht auch für Bugs |
-| `bug_fix.max_files` | 4 | Maximale geänderte Dateien bei Bugs |
+| `fast_track.require_tdd` | false | TDD-Pflicht auch für Fast Track (`feature-fast`) |
 | `workflow.approval_phrases` | [approved, lgtm, ...] | Freigabe-Keywords (wirken nur in `phase3_spec`) |
 | `workflow.green_phrases` | [go, green ok, tests ok, gruen ok] | GREEN-Keywords (wirken nur in `phase6_implement`/`phase6b_adversary`) |
 | `stop_lock.stop_keywords` | [stop, stopp, ...] | Stopp-Keywords |

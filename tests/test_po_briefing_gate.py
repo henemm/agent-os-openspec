@@ -13,7 +13,7 @@ mehr → Block ("Briefing veraltet"), damit niemand ein Briefing zu einer
 zwischenzeitlich umgeschriebenen Spec abnickt.
 
 Kill-Switch: config.yaml → po_briefing_gate.enabled: false.
-Fast-Track: workflow_type feature-fast/bug → kein Block (Default).
+Fast-Track: workflow_type feature-fast → kein Block (Default).
 
 Muster: Subprozess-Runner + Workflow-JSON-Fixture + echte tmp-Dateien,
 analog tests/test_adr_gate.py.
@@ -287,10 +287,10 @@ def test_10_fast_track_gate_configurable(tmp_path):
     )
 
 
-def test_11_bug_workflow_not_blocked(tmp_path):
-    """Test 11 — Bug-Fast-Track bleibt gateseitig unberührt (Bestandsverhalten)."""
+def test_11_fast_track_workflow_not_blocked(tmp_path):
+    """Test 11 — Fast Track (feature-fast) bleibt gateseitig unberührt (Bestandsverhalten)."""
     _write(tmp_path, REL_SPEC, SPEC_BODY)
-    _make_workflow(tmp_path, workflow_type="bug")
+    _make_workflow(tmp_path, workflow_type="feature-fast")
     result = _run_phase(_env(tmp_path), "phase5_tdd_red", cwd=str(tmp_path))
     assert result.returncode == 0, result.stderr
 

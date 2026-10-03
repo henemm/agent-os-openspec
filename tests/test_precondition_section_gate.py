@@ -358,9 +358,9 @@ def test_ac8_scaffold_renders_precondition_placeholder_section(tmp_path):
 # --- AC-9 -----------------------------------------------------------------------------------
 
 def test_ac9_fast_track_workflow_skips_section_check(tmp_path):
-    """AC-9 — Regressionswächter (heute trivial grün): bug/feature-fast überspringen die
+    """AC-9 — Regressionswächter (heute trivial grün): feature-fast überspringt die
     Prüfung unter mode=block trotz fehlender Sektion."""
-    for wf_type in ("bug", "feature-fast"):
+    for wf_type in ("feature-fast",):
         res, err = _case(tmp_path / wf_type, MISSING, mode="block", wf_type=wf_type)
         assert res["valid"] is True, f"Fast Track ({wf_type}) geblockt: {res} / {err}"
 
