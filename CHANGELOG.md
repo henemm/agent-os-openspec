@@ -15,6 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+**Zwei Stufen statt drei: Stufen-Tabelle in `/00-intake` auf den Code zurückgeschnitten (#254, Teil von #250)**
+
+`/00-intake` dokumentierte Fast Track, Standard und Full Process, der Workflow-State kennt aber nur
+`feature-fast` und `feature`; Standard und Full Process waren mechanisch nie unterscheidbar. Die Tabelle
+versprach außerdem „Adversary: 1 Runde", obwohl `MIN_ROUNDS = 2` für jede Stufe gilt. Gewählt ist die
+Alternative aus #254 (Stufe streichen statt im State nachbauen): zwei Stufen, die Tiefe im vollen
+Prozess (Kontext/Analyse kurz oder getrennt, Modellwahl) bleibt Anweisung nach Score.
+
+- `core/commands/00-intake.md` (+ generierte Skills `00-intake`, `30-write-spec`), `30-write-spec.md`,
+  README und CLAUDE.md: „Standard / Full Process" → „voller Prozess"; Adversary „mindestens 2 Runden".
+- Kein Hook-Code geändert. Tests: `tests/test_intake_two_tracks_254.py`;
+  Siehe `docs/specs/fast/fix-254-zwei-stufen.md`.
+
 **Framework-Entwicklung: Override für `core/hooks/` und `core/agents/` entfällt im laufenden Workflow (#322)**
 
 Nur im Framework-Repo: Läuft ein Workflow ab `phase6_implement`, braucht ein Edit an den
