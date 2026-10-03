@@ -386,3 +386,228 @@ def test_final_loc_survives_commit_and_never_blocks_complete(tmp_path):
         (broken / ".claude" / "workflows" / "_archive" / f"{WF}.json").read_text()
     )
     assert "loc_delta_final" not in archived_broken
+
+
+# ===========================================================================
+# Issue #341: Randfaelle der Abschluss-Zeilenzaehlung und der Rueckfrage
+# Spec: docs/specs/feat-341-aufwandsbremse-randfaelle.md (AC-1 bis AC-7)
+# ===========================================================================
+
+
+def _lines(prefix: str, n: int) -> str:
+    return "".join(f"{prefix}{i} = {i}\n" for i in range(n))
+
+
+def _repo(root: Path) -> str:
+    """Echtes Git-Repo auf Zweig main mit einem Basis-Commit; liefert dessen SHA."""
+    root.mkdir(parents=True, exist_ok=True)
+    _git(root, "init", "-q", "-b", "main")
+    _git(root, "config", "core.quotePath", "true")  # Git-Standard, explizit gegen globale Abweichung
+    (root / "README.md").write_text("start\n")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "base")
+    return _git(root, "rev-parse", "HEAD")
+
+
+def _measure(project: Path, data: dict):
+    """`workflow._final_loc(data)` im Kontext des Repos; Ergebnis als Liste oder None."""
+    _project(project, None, {})
+    result = _py(project, f"""
+        import workflow
+        res = workflow._final_loc({data!r})
+        print(json.dumps(list(res) if res is not None else None))
+    """)
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout.strip().splitlines()[-1])
+
+
+# --- AC-1: Rebase ----------------------------------------------------------
+
+
+def test_final_loc_ignores_main_lines_after_rebase(tmp_path):
+    """AC-1: Nach Rebase auf main zaehlen nur die 10 eigenen Zeilen, nicht die 100 aus main."""
+    repo = tmp_path / "repo"
+    base = _repo(repo)
+
+    _git(repo, "checkout", "-q", "-b", "feature")
+    (repo / "src").mkdir()
+    (repo / "src" / "feature.py").write_text(_lines("f", 10))
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "feature")
+
+    _git(repo, "checkout", "-q", "main")
+    (repo / "lib").mkdir()
+    (repo / "lib" / "main_work.py").write_text(_lines("m", 100))
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "main work")
+
+    _git(repo, "checkout", "-q", "feature")
+    _git(repo, "rebase", "-q", "main")
+    _git(repo, "update-ref", "refs/remotes/origin/main", "main")
+    # Gegenprobe: der alte base_commit ist nach dem Rebase weiterhin Vorfahre von HEAD
+    subprocess.run(["git", "merge-base", "--is-ancestor", base, "HEAD"], cwd=str(repo), check=True)
+
+    assert _measure(repo, {"base_commit": base}) == [10, 0]
+
+
+# --- AC-2: Umbenennung -----------------------------------------------------
+
+
+def test_final_loc_follows_rename_to_new_path(tmp_path):
+    """AC-2: core/hooks/old.py -> tests/test_new.py mit 5 geaenderten Zeilen ergibt (0, 5)."""
+    repo = tmp_path / "repo"
+    _repo(repo)
+    (repo / "core" / "hooks").mkdir(parents=True)
+    original = [f"value_{i} = {i}  # unveraenderte Zeile\n" for i in range(30)]
+    (repo / "core" / "hooks" / "old.py").write_text("".join(original))
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "old file")
+    base = _git(repo, "rev-parse", "HEAD")
+
+    (repo / "tests").mkdir()
+    _git(repo, "mv", "core/hooks/old.py", "tests/test_new.py")
+    changed = list(original)
+    for i in range(5):
+        changed[i] = f"value_{i} = {i * 100}  # geaendert\n"
+    (repo / "tests" / "test_new.py").write_text("".join(changed))
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "rename")
+    # Gegenprobe: Git erkennt die Umbenennung (sonst prueft der Test den Fall nicht)
+    status = _git(repo, "diff", "--name-status", "-M", base, "HEAD")
+    assert status.startswith("R"), status
+
+    assert _measure(repo, {"base_commit": base}) == [0, 5]
+
+
+# --- AC-3: Umlaut-Pfad -----------------------------------------------------
+
+
+def test_final_loc_matches_umlaut_path_as_test(tmp_path):
+    """AC-3: tests/Prüfung_test.py mit 7 Zeilen zaehlt als Test (0, 7), nicht als Code."""
+    repo = tmp_path / "repo"
+    base = _repo(repo)
+    (repo / "tests").mkdir()
+    (repo / "tests" / "Prüfung_test.py").write_text(_lines("p", 7))
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "umlaut")
+    # Gegenprobe: ohne -z quotet Git diesen Pfad (Ausgangslage des Fehlers)
+    assert '"tests/Pr\\303\\274fung_test.py"' in _git(repo, "diff", base, "--numstat")
+
+    assert _measure(repo, {"base_commit": base}) == [0, 7]
+
+
+# --- AC-4 / AC-5: Rueckfrage bei der Freigabe ------------------------------
+
+
+APPROVAL_CONFIG = BUDGET_CONFIG + "po_briefing_gate: {enabled: false}\n"
+
+
+def _spec_phase_project(root: Path, prior_approvals: int) -> Path:
+    """phase3_spec ohne spec_file (ADR-/Briefing-Gate greifen nicht), mit frueheren Freigaben."""
+    root.mkdir(parents=True, exist_ok=True)
+    transitions = [
+        {"from": "phase3_spec", "to": "phase4_approved", "at": "2026-10-03T10:00:00", "trigger": "approval"}
+        for _ in range(prior_approvals)
+    ]
+    return _project(root, APPROVAL_CONFIG, {
+        "workflow_type": "feature",
+        "current_phase": "phase3_spec",
+        "spec_approved": False,
+        "phase_transitions": transitions,
+    })
+
+
+def _listener(project: Path, wrapper: "str | None" = None) -> subprocess.CompletedProcess:
+    """Echter Listener per Subprozess, stdin `{"prompt": "approved"}`."""
+    if wrapper is None:
+        cmd = [sys.executable, str(HOOKS_DIR / "phase_listener.py")]
+    else:
+        prelude = f"import sys; sys.path.insert(0, {str(HOOKS_DIR)!r})\n"
+        cmd = [sys.executable, "-c", prelude + textwrap.dedent(wrapper)]
+    return subprocess.run(
+        cmd, input=json.dumps({"prompt": "approved"}),
+        capture_output=True, text=True, env=_env(project), cwd=str(project),
+    )
+
+
+def _additional_context(stdout: str) -> str:
+    for line in stdout.splitlines():
+        line = line.strip()
+        if line.startswith("{"):
+            out = json.loads(line)
+            return (out.get("hookSpecificOutput") or {}).get("additionalContext") or ""
+    return ""
+
+
+def _assert_approved(project: Path, run: subprocess.CompletedProcess) -> None:
+    state = _state(project)
+    assert state.get("spec_approved") is True, f"{state}\nstdout={run.stdout!r}\nstderr={run.stderr!r}"
+    assert state.get("current_phase") == "phase4_approved", state
+
+
+def test_approval_prints_budget_question(tmp_path):
+    """AC-4: Freigabe, deren Betreten von phase4_approved das Budget reisst -> Rueckfrage im Kontext."""
+    # 3 fruehere + diese Freigabe = 4 Betreten -> phase_reentries 3 > Grenze 2
+    project = _spec_phase_project(tmp_path, prior_approvals=3)
+    run = _listener(project)
+    assert run.returncode == 0, run.stderr
+    _assert_approved(project, run)
+    # Gegenprobe: das Budget IST ueberschritten und protokolliert
+    assert [(e["metric"], e["value"]) for e in _state(project).get("budget_events", [])] == [
+        ("phase_reentries", 3)
+    ]
+    context = _additional_context(run.stdout)
+    assert "RÜCKFRAGE AN DEN PO" in context, f"stdout={run.stdout!r}"
+
+
+def test_approval_within_budget_silent_and_never_blocked(tmp_path):
+    """AC-5: Innerhalb Budget still; wirft die Rueckfragen-Ausgabe, gilt die Freigabe trotzdem."""
+    # (a) innerhalb des Budgets: erste Freigabe
+    quiet = _spec_phase_project(tmp_path / "quiet", prior_approvals=0)
+    run = _listener(quiet)
+    assert run.returncode == 0, run.stderr
+    _assert_approved(quiet, run)
+    assert "RÜCKFRAGE AN DEN PO" not in run.stdout + run.stderr
+    assert not _state(quiet).get("budget_events")
+
+    # (b) Ueberschreitung, aber die Formatierung der Rueckfrage wirft
+    broken = _spec_phase_project(tmp_path / "broken", prior_approvals=3)
+    run = _listener(broken, wrapper="""
+        import workflow
+        if not hasattr(workflow, "format_budget_question"):
+            raise SystemExit("workflow.format_budget_question fehlt")
+        def _boom(*args, **kwargs):
+            raise RuntimeError("Ausgabe der Rueckfrage kaputt")
+        workflow.format_budget_question = _boom
+        import phase_listener
+        phase_listener.main()
+    """)
+    _assert_approved(broken, run)
+    assert run.returncode == 0, run.stderr
+
+
+# --- AC-7: Messfehler ------------------------------------------------------
+
+
+def test_final_loc_error_still_returns_none(tmp_path):
+    """AC-7: Unbekannter base_commit bzw. nicht aufloesbare Basis -> None; Abschluss gelingt."""
+    repo = tmp_path / "repo"
+    _repo(repo)  # kein origin/main
+    (repo / "src").mkdir()
+    (repo / "src" / "x.py").write_text(_lines("x", 3))
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "change")
+
+    assert _measure(repo, {"base_commit": "0" * 40}) is None
+    assert _measure(repo, {}) is None
+
+    _project(repo, BUDGET_CONFIG, {
+        "current_phase": "phase7_validate",
+        "base_commit": "0" * 40,
+        "adversary_verdict": "VERIFIED",
+    })
+    assert _cli(repo, ["write-log"]).returncode == 0
+    done = _complete(repo)
+    assert done.returncode == 0, done.stdout + done.stderr
+    archived = json.loads((repo / ".claude" / "workflows" / "_archive" / f"{WF}.json").read_text())
+    assert "loc_delta_final" not in archived

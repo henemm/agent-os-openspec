@@ -493,6 +493,7 @@ def main():
         deferred_notices.append(override_discarded)
     approval_took_effect = False
     green_took_effect = False
+    budget_note: "str | None" = None
 
     # Approval
     if _matches(message, approval, leading_only=True):
@@ -524,10 +525,13 @@ def main():
                 # deshalb auch dann, wenn hier etwas schiefgeht. Preis: ein echter Fehler
                 # bliebe unsichtbar — darum die Warnung auf stderr statt `pass`.
                 try:
-                    from workflow import record_transition
+                    import workflow as _wf
                     # Beides fuehren, nicht nur phase_log — sonst fehlt der Uebergang
                     # phase3_spec -> phase4_approved in phase_transitions (Issue #111).
-                    record_transition(wf_data, "phase4_approved", "approval")
+                    # Budget-Ueberschreitung als Rueckfrage an Claude (#341).
+                    budget_note = _wf.format_budget_question(
+                        _wf.record_transition(wf_data, "phase4_approved", "approval")
+                    ) or None
                 except Exception as exc:
                     _notify(
                         f"WARNUNG: Phasenwechsel konnte nicht protokolliert werden ({exc}). "
@@ -614,7 +618,7 @@ def main():
 
     # Zuletzt, damit der Vermerk den Zustand NACH einer Freigabe zeigt
     # (phase3_spec -> phase4_approved nennt bereits /40-tdd-red).
-    _finish(_emit_status_note())
+    _finish("\n".join(filter(None, [budget_note, _emit_status_note()])) or None)
 
 
 if __name__ == "__main__":
