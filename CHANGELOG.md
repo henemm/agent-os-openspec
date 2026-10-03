@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scripts/token_report.py` wertet die Claude-Code-Transcripts (inkl. Subagenten) aus: Neu-Tokens je Workflow-Phase und je Akteur, Filter `--branch`/`--since`/`--until`, `--md`. Eigenständiges Werkzeug, kein Hook/Gate. Streaming-Duplikate werden je `message.id` nur einmal gezählt.
 - Grenze: Phasen werden nur aus Bash-Aufrufen `workflow.py phase …` erkannt; Freigabe-Übergänge landen in `vor-workflow`.
 
+**Aufwandsbremse (#250, Teil B)**
+- Budget je Stufe (`effort_budget.<Stufe>`: `max_fix_loops`, `max_phase_reentries`): Überschreitung löst eine Rückfrage an den PO aus statt einer Blockade; kein Phasenwechsel wird verweigert. Ereignisse landen in `budget_events`, `write-log` schreibt `effort_budget_exceeded: <Anzahl>`.
+- Batch-Fenster des `post_implementation_gate` ist stufenabhängig (`batch_window_min`, ohne Config 15 min).
+- `complete` speichert `loc_delta_final`/`loc_delta_test_final` (gemessen gegen `base_commit`, überlebt den Commit); `write-log` nutzt den Wert für `scope_loc_delta`. Messfehler blockieren den Abschluss nie.
+- Kill-Switch: `effort_budget.enabled: false`.
+
 ### Changed
 
 **`/00-intake` ist der einzige Eingang, auch für Bugs (#250, Teil A, Stufe A1)**

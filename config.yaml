@@ -298,6 +298,18 @@ ci_spec_gate:
 adversary_coverage_gate:
   enabled: true
 
+# Aufwandsbremse je Stufe (Issue #250, Teil B)
+# Ueberschreitet ein Workflow Fix-Loops oder Phasen-Wiedereintritte seiner Stufe,
+# gibt `workflow.py phase` eine RUECKFRAGE AN DEN PO aus und protokolliert sie
+# (Gate-Event-Log, hook=effort_budget). Ein Phasenwechsel wird nie verweigert.
+# batch_window_min: Batch-Fenster des post_implementation_gate je Stufe.
+# Nur ein ausdrueckliches `false` schaltet ab (dann 15 min fuer alle Stufen).
+# Unbekannte Typen (Altbestand bug, express) nutzen die Werte von `feature`.
+effort_budget:
+  enabled: true
+  feature-fast: {max_fix_loops: 1, max_phase_reentries: 1, batch_window_min: 30}
+  feature:      {max_fix_loops: 2, max_phase_reentries: 2, batch_window_min: 15}
+
 # Pflichtsektion "## Herkunft der Vorbedingungen" im Adversary-Pruefprotokoll (Issue #286).
 precondition_section_gate:
   enabled: true

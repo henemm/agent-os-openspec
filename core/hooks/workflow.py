@@ -567,7 +567,58 @@ def _log_phase_transition(data: dict, new_phase: str) -> None:
     log.append({"phase": new_phase, "entered_at": now, "exited_at": None, "duration_min": None})
 
 
-def record_transition(data: dict, target: str, trigger: str = "command") -> None:
+def effort_budget_exceeded(data: dict, budget: "dict | None") -> list:
+    """Ueberschrittene Metriken des Stufen-Budgets (Issue #250, Teil B). Reine Funktion.
+
+    `fix_loops` = `fix_loop_iterations`; `phase_reentries` = hoechster Wiedereintritts-
+    zaehler je Phase (Eintraege in `phase_transitions` mit `to == Phase`, minus 1).
+    Ueberschritten heisst strikt groesser als die Grenze.
+    """
+    if not budget:
+        return []
+    entries: dict = {}
+    for t in data.get("phase_transitions", []) or []:
+        to = t.get("to") if isinstance(t, dict) else None
+        if to:
+            entries[to] = entries.get(to, 0) + 1
+    values = {
+        "fix_loops": int(data.get("fix_loop_iterations", 0) or 0),
+        "phase_reentries": max([n - 1 for n in entries.values()] or [0]),
+    }
+    exceeded = []
+    for metric, key in (("fix_loops", "max_fix_loops"), ("phase_reentries", "max_phase_reentries")):
+        limit = budget.get(key)
+        if isinstance(limit, int) and values[metric] > limit:
+            exceeded.append({"metric": metric, "value": values[metric], "limit": limit})
+    return exceeded
+
+
+def _record_budget_events(data: dict) -> list:
+    """Neue Budget-Ueberschreitungen (je Metrik+Wert einmal) ablegen und protokollieren."""
+    try:
+        from config_loader import get_effort_budget
+        stage = data.get("workflow_type") or "feature"
+        exceeded = effort_budget_exceeded(data, get_effort_budget(stage))
+    except Exception:
+        return []  # Budget darf einen Phasenwechsel nie stoeren
+    known = {(e.get("metric"), e.get("value")) for e in data.get("budget_events", [])}
+    new = [e for e in exceeded if (e["metric"], e["value"]) not in known]
+    for event in new:
+        event["stage"] = stage
+        event["at"] = datetime.now().isoformat()
+        data.setdefault("budget_events", []).append(event)
+        try:
+            from hook_utils import log_gate_event
+            log_gate_event(
+                "effort_budget", "workflow",
+                f"Stufe {stage}: {event['metric']} {event['value']} > Grenze {event['limit']}",
+            )
+        except Exception:
+            pass
+    return new
+
+
+def record_transition(data: dict, target: str, trigger: str = "command") -> list:
     """Einen Phasenwechsel vollstaendig protokollieren: `phase_transitions` UND `phase_log`.
 
     Die EINZIGE Stelle, die einen Phasen-WECHSEL aufzeichnet — jeder Aufrufer muss sie
@@ -582,6 +633,9 @@ def record_transition(data: dict, target: str, trigger: str = "command") -> None
     Aufruf BEVOR `data['current_phase']` gesetzt wird — die Ausgangsphase wird von hier
     gelesen. Setzt `current_phase` bewusst NICHT selbst, damit Aufrufer mit Zusatzlogik
     (Fix-Loop-Zaehler, Gate-Pruefungen) die Reihenfolge behalten.
+
+    Gibt neue Ueberschreitungen des Stufen-Budgets zurueck (Issue #250, Teil B); der
+    Wechsel wird dadurch nie verweigert.
     """
     data.setdefault("phase_transitions", []).append({
         "from": data.get("current_phase", "phase0_idle"),
@@ -590,6 +644,7 @@ def record_transition(data: dict, target: str, trigger: str = "command") -> None
         "trigger": trigger,
     })
     _log_phase_transition(data, target)
+    return _record_budget_events(data)
 
 
 # --- ADR Reflection Gate ---
@@ -1040,6 +1095,47 @@ def _start_base_commit() -> "str | None":
     return (head.strip() or None) if head else None
 
 
+def _final_loc(data: dict) -> "tuple[int, int] | None":
+    """Hinzugefuegte Zeilen seit base_commit als (prod, test) (#250 B).
+
+    Gleiche Ausschluesse und Testmuster wie edit_gate._check_loc_delta, misst
+    aber gegen base_commit statt HEAD und ueberlebt damit den Commit.
+    None ohne base_commit oder bei jedem Fehler.
+    """
+    base = data.get("base_commit")
+    if not base:
+        return None
+    try:
+        import subprocess
+        from config_loader import get_scope_loc_config, get_scope_test_loc_config
+        _, exclude_patterns = get_scope_loc_config()
+        _, test_patterns = get_scope_test_loc_config()
+        result = subprocess.run(
+            ["git", "diff", str(base), "--numstat"],
+            cwd=str(_worktree_root_if_any() or find_project_root()),
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode != 0:
+            return None
+        prod_total = 0
+        test_total = 0
+        for line in result.stdout.splitlines():
+            parts = line.split("\t")
+            if len(parts) < 3:
+                continue
+            file_name = parts[2]
+            if any(_re.search(p, file_name) for p in exclude_patterns):
+                continue
+            added = int(parts[0]) if parts[0].isdigit() else 0
+            if any(_re.search(p, file_name) for p in test_patterns):
+                test_total += added
+            else:
+                prod_total += added
+        return (prod_total, test_total)
+    except Exception:
+        return None
+
+
 # --- Commands ---
 
 def cmd_start(args: list[str]) -> None:
@@ -1188,13 +1284,26 @@ def cmd_phase(args: list[str]) -> None:
         print(f"BLOCKED: {error}", file=sys.stderr)
         sys.exit(1)
     current = data.get("current_phase", "phase0_idle")
-    record_transition(data, target, trigger)
-    # Fix-loop counter: re-entering phase6_implement from phase6b_adversary
+    # Fix-loop counter: re-entering phase6_implement from phase6b_adversary.
+    # Vor record_transition, damit die Budget-Pruefung den neuen Stand sieht (#250).
     if target == "phase6_implement" and current == "phase6b_adversary":
         data["fix_loop_iterations"] = data.get("fix_loop_iterations", 0) + 1
+    exceeded = record_transition(data, target, trigger)
     data["current_phase"] = target
     _save_active(data)
     print(f"Set phase to: {target}")
+    _print_budget_question(exceeded)
+
+
+def _print_budget_question(exceeded: list) -> None:
+    """Budget-Ueberschreitung als Anweisung an Claude ausgeben, keine Sperre (#250)."""
+    for event in exceeded or []:
+        print(
+            f"RÜCKFRAGE AN DEN PO: Stufe {event.get('stage')}: {event['metric']} "
+            f"steht bei {event['value']}, Grenze {event['limit']}.\n"
+            f"  Lege dem PO jetzt den Stand vor und frage: weiter, kleiner schneiden "
+            f"oder abbrechen?"
+        )
 
 
 def cmd_set_field(args: list[str]) -> None:
@@ -1362,6 +1471,8 @@ def cmd_write_log(args: list[str]) -> None:
     persisted = "adversary_findings_total" in data
     findings_total = data["adversary_findings_total"] if persisted else "unbekannt"
     files_changed = len(data.get("affected_files", [])) if persisted else "unbekannt"
+    final = _final_loc(data)
+    loc_delta = f"+{final[0]}" if final else data.get("loc_delta_current", "+0")
     lines = [
         f"workflow_id: {name}",
         f"project: {find_project_root().name}",
@@ -1376,7 +1487,8 @@ def cmd_write_log(args: list[str]) -> None:
         f"adversary_findings_total: {findings_total}",
         f"adversary_fix_loop_iterations: {data.get('fix_loop_iterations', 0)}",
         f"scope_files_changed: {files_changed}",
-        f"scope_loc_delta: {data.get('loc_delta_current', '+0')}",
+        f"scope_loc_delta: {loc_delta}",
+        f"effort_budget_exceeded: {len(data.get('budget_events', []))}",
         f"outcome: {outcome}",
     ]
     log_file.write_text("\n".join(lines) + "\n")
@@ -1413,6 +1525,12 @@ def cmd_complete(args: list[str]) -> None:
         print(f"BLOCKED: {error}", file=sys.stderr)
         sys.exit(1)
     data["current_phase"] = "phase8_complete"
+    try:  # #250 B: Messung blockiert den Abschluss nie
+        final = _final_loc(data)
+        if final is not None:
+            data["loc_delta_final"], data["loc_delta_test_final"] = final
+    except Exception:
+        pass
     archive = _archive_dir()
     archive.mkdir(parents=True, exist_ok=True)
     _atomic_write(archive / f"{name}.json", data)

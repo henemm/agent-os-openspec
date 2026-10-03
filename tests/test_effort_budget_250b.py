@@ -317,12 +317,13 @@ def _git(cwd: Path, *args: str) -> str:
 
 
 def _complete(project: Path) -> subprocess.CompletedProcess:
-    """`finish` mit neutralisiertem Adversary-Nachweis (hier nicht Gegenstand der Pruefung)."""
+    """`finish`; neutralisiert Adversary-Nachweis und Phasen-Vorbedingungen (hier nicht Gegenstand der Pruefung; geprueft wird die LoC-Messung beim Abschluss)."""
     return _py(project, """
         import adversary_dialog as ad
         ad.check_dialog_evidence = lambda *a, **k: None
         ad.coverage_gate_enabled = lambda: False
         import workflow
+        workflow._validate_transition = lambda *a, **k: None
         sys.argv = ["workflow.py", "finish"]
         workflow.main()
     """)
