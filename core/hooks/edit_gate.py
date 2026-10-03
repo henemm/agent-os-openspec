@@ -663,9 +663,17 @@ def main():
 
     # 10. RED test artifacts
     if phase in IMPL_PHASES:
-        # Bug + Feature fast-track: TDD gate configurable via openspec.yaml → bug_fix.require_tdd
-        is_fast = workflow.get("workflow_type") in ("bug", "feature-fast")
-        require_tdd = config.get("bug_fix", {}).get("require_tdd", False)
+        # Feature fast-track: TDD gate configurable via openspec.yaml → fast_track.require_tdd.
+        # Rueckfall auf den alten Schluessel bug_fix.require_tdd (ein Release lang, #333).
+        is_fast = workflow.get("workflow_type") == "feature-fast"
+        fast_cfg = config.get("fast_track") or {}
+        legacy_cfg = config.get("bug_fix") or {}
+        if isinstance(fast_cfg, dict) and "require_tdd" in fast_cfg:
+            require_tdd = fast_cfg["require_tdd"]
+        elif isinstance(legacy_cfg, dict):
+            require_tdd = legacy_cfg.get("require_tdd", False)
+        else:
+            require_tdd = False
         if not (is_fast and not require_tdd):
             red_done = workflow.get("red_test_done", False) or workflow.get("ui_test_red_done", False)
             if not red_done:

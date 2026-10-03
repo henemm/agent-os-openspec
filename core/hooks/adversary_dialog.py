@@ -675,7 +675,7 @@ def _verify_examined_file_hashes(scan: str) -> tuple[bool, str]:
 
 PRECONDITION_SECTION = "## Herkunft der Vorbedingungen"
 _PRECONDITION_HEADER_RE = re.compile(r"(?m)^## Herkunft der Vorbedingungen\s*$")
-_FAST_TRACK_TYPES = ("bug", "feature-fast")
+_FAST_TRACK_TYPES = ("feature-fast",)
 # Gueltige "nichts zu pruefen"-Inhalte: Hinweis ohne Sprachprofil (50-implement.md
 # Step 8a) und die drei Leer-Ausgaben von precondition_origins.py (EMPTY_TABLE_HINT
 # sowie die Praefixe der Meldungen ohne Modelldateien bzw. ohne Feldnamen; der
@@ -766,7 +766,7 @@ def _precondition_gate_config() -> dict:
 
 
 def _active_workflow_is_fast_track() -> bool:
-    """workflow_type des aktiven Workflows in ('bug', 'feature-fast').
+    """workflow_type des aktiven Workflows ist 'feature-fast'.
 
     Kein aktiver Workflow oder State nicht lesbar -> False (die Pruefung laeuft).
     """

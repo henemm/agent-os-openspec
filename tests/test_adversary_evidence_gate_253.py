@@ -544,7 +544,7 @@ def test_ac7_override_token_lifts_evidence_block(tmp_path):
     assert "E2E scope:" in r.stderr
 
 
-@pytest.mark.parametrize("wf_type", ["bug", "feature-fast"])
+@pytest.mark.parametrize("wf_type", ["feature-fast"])
 def test_ac7_fast_track_types_exempt_without_token(tmp_path, wf_type):
     proj = _make_project(tmp_path)
     _write_workflow(proj, verdict="VERIFIED:pytest", wf_type=wf_type)

@@ -274,13 +274,13 @@ ERWEITERTE_COMMITS = [
 
 
 def test_erweiterte_schreibweisen_mit_gueltigem_nachweis_nicht_ueberblockiert(tmp_path):
-    """AC-16: ohne Workflow und mit Workflow ohne Verdict-Pflicht (bug) -> Exit 0."""
+    """AC-16: ohne Workflow und mit Workflow ohne Verdict-Pflicht (feature-fast) -> Exit 0."""
     ohne = tmp_path / "ohne_workflow"
     ohne.mkdir()
     _assert_allowed(ERWEITERTE_COMMITS, _sandbox_ohne_workflow(ohne), "AC-16 ohne Workflow")
-    bug = tmp_path / "bug_workflow"
-    bug.mkdir()
-    _assert_allowed(ERWEITERTE_COMMITS, _sandbox(bug, workflow_type="bug"),
+    fast = tmp_path / "fast_workflow"
+    fast.mkdir()
+    _assert_allowed(ERWEITERTE_COMMITS, _sandbox(fast, workflow_type="feature-fast"),
                     "AC-16 Workflow ohne Verdict-Pflicht")
 
 
@@ -317,7 +317,7 @@ def _origin_mit_klon(tmp_path: Path, rueckstand: bool = True) -> Path:
     _git(["clone", str(origin), str(clone)], tmp_path)
     _configure(clone)
     (clone / ".git" / "info" / "exclude").write_text(".claude/\n")
-    _write_workflow(clone, workflow_type="bug")  # 5c laesst bug durch -> 5b isoliert
+    _write_workflow(clone, workflow_type="feature-fast")  # 5c laesst feature-fast durch -> 5b isoliert
     (clone / "sub").mkdir()
     (clone / "sub" / "keep.txt").write_text("k\n")
     _git(["add", "sub/keep.txt"], clone)

@@ -23,7 +23,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **`/00-intake` ist der einzige Eingang, auch für Bugs (#250, Teil A, Stufe A1)**
 - `/00-intake` hat einen Abschnitt „Bugs" vor dem Scoring: Duplikatsuche, Fehler nachstellen, Ursache mit `file:line` belegen (Details: `/20-analyse` Step 2b), STOP-Bedingungen. Ursache bekannt und ≤3 Dateien → Unsicherheit Low; Ursache unklar → mindestens Medium.
-- `/00-bug` ist nur noch ein Hinweis auf `/00-intake`. Der Bug-Schnellweg (`workflow.py start --type bug`, „Manuell testen") entfällt aus den Befehlen; Nachweis ist ein Test, der den Fehler vorher rot zeigt. Die Hooks kennen den Typ `bug` bis A2 weiter.
+- `/00-bug` ist nur noch ein Hinweis auf `/00-intake`. Der Bug-Schnellweg (`workflow.py start --type bug`, „Manuell testen") entfällt aus den Befehlen; Nachweis ist ein Test, der den Fehler vorher rot zeigt.
+
+### Removed
+
+**Workflow-Typ `bug` und `/00-bug` entfernt (#333, #250 Teil A, Stufe A2)**
+- Die Hooks (`workflow.py`, `edit_gate.py`, `bash_gate.py`, `adversary_dialog.py`) kennen den Typ `bug` nicht mehr; er übersprang Spec, TDD-Rot, Gegenprüfung und Briefing. Es gibt nur noch `feature` und `feature-fast`.
+- `workflow.py start <name> --type bug` endet mit Exit 1 und verweist auf `/00-intake` bzw. `--type feature-fast`.
+- Altbestand: Ein Workflow-JSON mit `workflow_type: "bug"` bleibt lesbar, bekommt aber volle Gates wie `feature`. Rezept für laufende Alt-Workflows: `python3 .claude/hooks/workflow.py set-field workflow_type feature-fast`.
+- `config.yaml`: `bug_fix` heißt jetzt `fast_track.require_tdd`; `bug_fix.max_files` (nie gelesen) entfällt. `edit_gate.py` liest ein Release lang `bug_fix.require_tdd` als Rückfall, wenn `fast_track.require_tdd` fehlt.
+- `/00-bug` gelöscht (`core/commands/`, `skills/`, `.claude/commands/`). Verwaiste, markierte Kurz-Aliase `00-bug.md` meldet der Sitzungs-Banner; `setup.py --refresh-aliases` löscht sie (`alias_sync.REMOVED_SKILLS`, `find_removed_aliases`). Eigene, unmarkierte Dateien bleiben unberührt.
 
 **Zwei Stufen statt drei: Stufen-Tabelle in `/00-intake` auf den Code zurückgeschnitten (#254, Teil von #250)**
 

@@ -382,9 +382,9 @@ def test_ac6_partially_staged_file_blocks_index_commit(tmp_path, command, expect
     assert expected_rc == 0 or (PARTIAL in r.stderr and MOD_B in r.stderr), r.stderr
 
 
-@pytest.mark.parametrize("setup", ["feature", "bug", "feature-fast", "no-head", "worktree",
+@pytest.mark.parametrize("setup", ["feature", "feature-fast", "no-head", "worktree",
                                    "git-failure"],
-                         ids=["a-feature", "a-bug", "a-feature-fast", "a-no-head", "g-worktree",
+                         ids=["a-feature", "a-feature-fast", "a-no-head", "g-worktree",
                               "a-git-failure"])
 def test_ac7_start_records_base_commit(tmp_path, setup):
     env = None
@@ -397,7 +397,7 @@ def test_ac7_start_records_base_commit(tmp_path, setup):
         expected = None if setup in ("no-head", "git-failure") else _sha(cwd)
     if setup == "git-failure":  # F102: start scheitert nie an git, base_commit = null
         env = _failing_git_env(tmp_path, cwd, "*", NO_REPO_MSG)
-    wf_type = setup if setup in ("bug", "feature-fast") else "feature"
+    wf_type = setup if setup == "feature-fast" else "feature"
     r = _run("workflow.py", ["start", WF, "--type", wf_type], cwd, env)
     assert r.returncode == 0, r.stderr
     state = _state(state_root)
@@ -716,7 +716,7 @@ def test_ac12_kill_switch_only_covers_new_coverage(tmp_path, case, expected_rc, 
 
 @pytest.mark.parametrize("block,relief", [
     ("coverage", "token"), ("partial", "token"), ("git-error", "token"),
-    ("coverage", "bug"), ("coverage", "feature-fast"),
+    ("coverage", "feature-fast"),
     ("coverage", "phase5_tdd_red"), ("coverage", "phase8_complete"),
 ])
 def test_ac13_commit_block_lifted_by_token_fast_track_or_phase(tmp_path, block, relief):
@@ -734,7 +734,7 @@ def test_ac13_commit_block_lifted_by_token_fast_track_or_phase(tmp_path, block, 
     if relief == "token":
         _write_override_token(proj)
     else:
-        key = "workflow_type" if relief in ("bug", "feature-fast") else "current_phase"
+        key = "workflow_type" if relief == "feature-fast" else "current_phase"
         _write(proj, f".claude/workflows/{WF}.json", json.dumps({**_state(proj), key: relief}))
     after = _gate(proj, env=env)
     assert after.returncode == 0, f"({block}/{relief}) {after.stderr}"

@@ -985,7 +985,7 @@ def _check_po_briefing(data: dict) -> "str | None":
     skip_fast = True
     if isinstance(cfg, dict) and cfg.get("skip_fast_track") is False:
         skip_fast = False
-    if skip_fast and data.get("workflow_type") in ("feature-fast", "bug"):
+    if skip_fast and data.get("workflow_type") == "feature-fast":
         return None
 
     # 3. Ohne Spec kein Briefing-Gate (ein anderes Gate greift dann zuerst).
@@ -1054,10 +1054,6 @@ def _not_approved_msg() -> str:
 
 def _validate_transition(data: dict, target: str) -> str | None:
     """Validate phase transition prerequisites. Returns error message or None."""
-    # Bug fast-track: no prerequisites enforced
-    if data.get("workflow_type") == "bug":
-        return None
-
     # Feature fast-track: only spec approval gate enforced
     if data.get("workflow_type") == "feature-fast":
         tgt_idx_ff = PHASES.index(target) if target in PHASES else -1
@@ -1165,10 +1161,14 @@ def cmd_start(args: list[str]) -> None:
             name_args.append(args[i])
             i += 1
     if not name_args:
-        print("Usage: workflow.py start <name> [--type feature|bug|feature-fast]", file=sys.stderr)
+        print("Usage: workflow.py start <name> [--type feature|feature-fast]", file=sys.stderr)
         sys.exit(1)
-    if workflow_type not in ("feature", "bug", "feature-fast"):
-        print(f"Unknown workflow type: {workflow_type!r}. Valid: feature, bug, feature-fast", file=sys.stderr)
+    if workflow_type == "bug":
+        print("Typ `bug` wurde entfernt (#333). Fehler laufen über /00-intake; "
+              "Kleinkram über `--type feature-fast`.", file=sys.stderr)
+        sys.exit(1)
+    if workflow_type not in ("feature", "feature-fast"):
+        print(f"Unknown workflow type: {workflow_type!r}. Valid: feature, feature-fast", file=sys.stderr)
         sys.exit(1)
     name = name_args[0]
     _validate_name(name)
@@ -1179,13 +1179,7 @@ def cmd_start(args: list[str]) -> None:
     data = _new_workflow(name)
     data["workflow_type"] = workflow_type
     data["base_commit"] = _start_base_commit()  # #259: Basis-Kandidat fuer Phase 8
-    if workflow_type == "bug":
-        # Fast-track: start at phase6, bypass spec and TDD gates
-        data["current_phase"] = "phase6_implement"
-        data["spec_approved"] = True
-        data["red_test_done"] = True
-        _log_phase_transition(data, "phase6_implement")
-    elif workflow_type == "feature-fast":
+    if workflow_type == "feature-fast":
         # Fast-track for small features: skip context/analyse, start at spec
         data["current_phase"] = "phase3_spec"
         data["red_test_done"] = True  # inline TDD during implementation
@@ -1194,9 +1188,7 @@ def cmd_start(args: list[str]) -> None:
         _log_phase_transition(data, "phase1_context")
     _atomic_write(wf_file, data)
     _set_active(name)
-    if workflow_type == "bug":
-        type_note = " [BUG fast-track → phase6_implement]"
-    elif workflow_type == "feature-fast":
+    if workflow_type == "feature-fast":
         type_note = " [FEATURE fast-track → phase3_spec]"
     else:
         type_note = ""
@@ -1722,7 +1714,7 @@ def _retro_hints(data: dict, log: dict, total_min: float, longest_phase: str,
     if phases_skipped:
         hints.append(f"  ℹ  Uebersprungene Phasen: {', '.join(phases_skipped)}")
     if not data.get("red_test_done") and not data.get("ui_test_red_done"):
-        if data.get("workflow_type") not in ("bug", "feature-fast"):
+        if data.get("workflow_type") != "feature-fast":
             hints.append("  ⚠  Kein TDD-RED-Artefakt registriert — "
                          "TDD-Disziplin nicht nachweisbar.")
     if not hints:
@@ -1811,7 +1803,7 @@ def cmd_retro(args: list[str]) -> None:
     print()
     print("QUALITAETS-SIGNALE")
     print(sep)
-    tdd_str = "✓ bestaetigt" if tdd_ok else ("– (fast-track)" if wf_type in ("bug", "feature-fast") else "✗ fehlend")
+    tdd_str = "✓ bestaetigt" if tdd_ok else ("– (fast-track)" if wf_type == "feature-fast" else "✗ fehlend")
     print(f"  TDD RED Artefakte:     {tdd_str}")
     print(f"  Adversary-Verdict:     {verdict}")
     print(f"  Fix-Loop-Iterationen:  {fix_loops}")
