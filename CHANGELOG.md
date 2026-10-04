@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **#350:** Kurz-Befehle robust gegen unerwartete Dateien: `alias_sync.find_aliases`, `find_stale_aliases` und `find_removed_aliases` überspringen unlesbare Dateien (nicht UTF-8, Rechte entzogen) über den Helfer `_read_or_none`, statt abzustürzen — `--remove-aliases`/`--refresh-aliases` laufen durch, der Session-Banner verliert die Warnung nicht mehr; eine unlesbare Datei wird nie gelöscht und steht unter `Kept:`. Die Kept-Liste zeigt nur echte Dateien (keine Verzeichnisse, keine hängenden Symlinks); `--global` ohne `--remove-aliases` warnt auf stderr. `_frontmatter_close` erkennt Frontmatter mit CRLF oder Leerzeichen hinter `---`, der Marker landet hinter dem Frontmatter.
 - **#313/#327:** `qa_gate` erkennt die Ausgabe von `python3 -m unittest` und `node --test` (Spec- und TAP-Reporter); rote Läufe gewinnen vor jedem anderen Zweig — jede rote Evidenz gewinnt, auch bei zwei node-Läufen und gegenüber cargo/Marker; Größen-Gate unverändert.
 
 ## [3.35.0] - 2026-10-03
