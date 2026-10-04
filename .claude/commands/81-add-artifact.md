@@ -1,8 +1,8 @@
-<!-- openspec-alias: do-not-treat-as-legacy-duplicate -->
 ---
 description: "Register a test artifact in the workflow"
 disable-model-invocation: true
 ---
+<!-- openspec-alias: do-not-treat-as-legacy-duplicate -->
 
 # Add Test Artifact
 

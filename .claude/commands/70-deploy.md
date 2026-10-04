@@ -1,8 +1,8 @@
-<!-- openspec-alias: do-not-treat-as-legacy-duplicate -->
 ---
 description: "Deploy to production"
 disable-model-invocation: true
 ---
+<!-- openspec-alias: do-not-treat-as-legacy-duplicate -->
 
 # Deploy to Production
 

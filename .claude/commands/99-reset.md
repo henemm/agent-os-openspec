@@ -1,8 +1,8 @@
-<!-- openspec-alias: do-not-treat-as-legacy-duplicate -->
 ---
 description: "Reset or complete the current workflow"
 disable-model-invocation: true
 ---
+<!-- openspec-alias: do-not-treat-as-legacy-duplicate -->
 
 # Reset Workflow
 
