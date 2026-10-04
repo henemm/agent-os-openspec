@@ -1002,8 +1002,9 @@ def generate_command_aliases(project_path: Path) -> None:
 
     For every skill under FRAMEWORK_ROOT/skills/ that has a SKILL.md, write a
     command file so that `/name` behaves like `/agent-os-openspec:name`. Each
-    generated file carries a marker on its first line so migrate_to_plugin.py
-    does not mistake it for a legacy duplicate.
+    generated file carries a marker on the first line after its frontmatter
+    (#251; keeps the frontmatter parseable) so migrate_to_plugin.py does not
+    mistake it for a legacy duplicate.
 
     Two alias strategies, depending on the target skill's
     `disable-model-invocation` frontmatter:
@@ -1020,7 +1021,7 @@ def generate_command_aliases(project_path: Path) -> None:
 
     Overwrite rules per target file:
       - missing            → create
-      - marker first line  → update (overwrite)
+      - marker (old or new position) → update (overwrite)
       - no marker          → skip (assumed project-specific custom command)
 
     KNOWN ISSUE (#87): Claude Code resolves same-named commands from
@@ -1119,6 +1120,26 @@ def refresh_command_aliases(scope_path: Path) -> None:
     )
 
 
+def remove_command_aliases(scope_path: Path) -> None:
+    """Loescht markierte Framework-Aliase in <scope>/.claude/commands/ (#251).
+
+    Nur Dateien mit Alias-Marker werden geloescht; projekteigene (unmarkierte)
+    Befehle bleiben stehen und werden als `Kept:` gemeldet. Legt nie etwas an.
+    """
+    sys.path.insert(0, str(FRAMEWORK_ROOT / "core" / "hooks"))
+    from alias_sync import find_aliases
+
+    commands_dir = scope_path / ".claude" / "commands"
+    aliases = find_aliases(commands_dir)
+    for path in aliases:
+        path.unlink()
+        print(f"  Removed: {path.name}")
+    kept = sorted(commands_dir.glob("*.md")) if commands_dir.is_dir() else []
+    for path in kept:
+        print(f"  Kept: {path.name}")
+    print(f"Command aliases: {len(aliases)} removed, {len(kept)} kept.")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Install or update OpenSpec Framework for a project",
@@ -1213,6 +1234,22 @@ Available modules:
     )
 
     parser.add_argument(
+        "--remove-aliases",
+        action="store_true",
+        help=(
+            "Remove marked command aliases from .claude/commands/ (never "
+            "creates files; unmarked project commands are kept)"
+        )
+    )
+
+    parser.add_argument(
+        "--global",
+        action="store_true",
+        dest="global_scope",
+        help="With --remove-aliases: act on ~/.claude/commands/ instead of the project"
+    )
+
+    parser.add_argument(
         "--version", "-v",
         action="version",
         version=f"OpenSpec Framework {FRAMEWORK_VERSION}"
@@ -1227,6 +1264,11 @@ Available modules:
         sys.exit(1)
 
     # Command aliases mode
+    if args.remove_aliases:
+        scope = Path.home() if args.global_scope else project_path
+        remove_command_aliases(scope)
+        return
+
     if args.refresh_aliases:
         refresh_command_aliases(project_path)
         return

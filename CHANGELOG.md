@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+**Kurz-Befehle: Marker hinter das Frontmatter und Entfernen-Werkzeug (#251, fasst #238 und #244)**
+- `alias_sync.alias_content` setzt den Alias-Marker als erste Zeile hinter das Frontmatter (Weiterleitung und Vollkopie); das Frontmatter ist parsbar, die Befehlsauswahl zeigt die echte Beschreibung statt des Markers (#238). `is_alias_file` erkennt alte (Zeile 1) und neue Position; Altformat-Kopien gelten als veraltet und werden per `--refresh-aliases` angehoben. Die 15 versionierten Kopien in `.claude/commands/` sind neu erzeugt.
+- `setup.py <pfad> --remove-aliases [--global]` löscht ausschließlich markierte Kurz-Befehle in `.claude/commands/` (mit `--global` im Home-Verzeichnis), meldet `Removed:`/`Kept:` je Datei, legt nie etwas an (#244). Neu: `alias_sync.find_aliases`.
+- Grenzen: #242 („Unknown command" im Worktree) nicht reproduziert und nicht Teil der Änderung, daher keine globale Ablage; die Fußzeilen-Prüfung (`expected_footer_command`) und ein Prüfmodus `--check` entfallen (Drift prüft `tests/test_repo_own_aliases_147.py`); vorhandene doppelte Kopien auf einem Rechner werden mit dem neuen Werkzeug aufgeräumt, nicht vom Repo.
+
 ### Fixed
 
 - **#313/#327:** `qa_gate` erkennt die Ausgabe von `python3 -m unittest` und `node --test` (Spec- und TAP-Reporter); rote Läufe gewinnen vor jedem anderen Zweig — jede rote Evidenz gewinnt, auch bei zwei node-Läufen und gegenüber cargo/Marker; Größen-Gate unverändert.

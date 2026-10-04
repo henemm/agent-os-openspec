@@ -1,8 +1,8 @@
-<!-- openspec-alias: do-not-treat-as-legacy-duplicate -->
 ---
 description: "Manage workflows"
 disable-model-invocation: true
 ---
+<!-- openspec-alias: do-not-treat-as-legacy-duplicate -->
 
 # Workflow Management
 

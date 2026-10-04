@@ -26,6 +26,21 @@ def _skill_names():
     )
 
 
+def _first_line_after_frontmatter(content: str) -> str:
+    """Erste Zeile nach dem schliessenden `---` (Marker-Position seit #251)."""
+    lines = content.split("\n")
+    assert lines[0] == "---", f"Datei beginnt nicht mit Frontmatter: {lines[0]!r}"
+    close = lines.index("---", 1)
+    return lines[close + 1]
+
+
+def _full_copy(skill_text: str) -> str:
+    """Erwartete Vollkopie: SKILL.md mit Marker direkt hinter dem Frontmatter."""
+    lines = skill_text.split("\n")
+    close = lines.index("---", 1)
+    return "\n".join(lines[:close + 1] + [MARKER] + lines[close + 1:])
+
+
 def _is_model_invocable(name: str) -> bool:
     skill_text = (setup.FRAMEWORK_ROOT / "skills" / name / "SKILL.md").read_text()
     return "disable-model-invocation: true" not in skill_text
@@ -50,9 +65,9 @@ def test_generates_alias_file_per_skill_with_marker_and_redirect(tmp_path):
         alias = commands_dir / f"{name}.md"
         assert alias.exists(), f"Alias-Datei fehlt: {name}.md"
         content = alias.read_text()
-        # Erste Zeile ist exakt der Marker
-        assert content.splitlines()[0] == MARKER, (
-            f"Erste Zeile von {name}.md ist nicht der Marker"
+        # Erste Zeile nach dem Frontmatter ist exakt der Marker (#251)
+        assert _first_line_after_frontmatter(content) == MARKER, (
+            f"Erste Zeile nach dem Frontmatter von {name}.md ist nicht der Marker"
         )
         if _is_model_invocable(name):
             # Redirect-Zeile vorhanden
@@ -62,7 +77,7 @@ def test_generates_alias_file_per_skill_with_marker_and_redirect(tmp_path):
         else:
             # Voller SKILL.md-Inhalt eingebettet, kein Redirect (kein Skill-Tool-Aufruf noetig)
             skill_text = (setup.FRAMEWORK_ROOT / "skills" / name / "SKILL.md").read_text()
-            assert content == f"{MARKER}\n{skill_text}"
+            assert content == _full_copy(skill_text)
             assert f"/agent-os-openspec:{name} $ARGUMENTS" not in content
 
 
@@ -76,7 +91,7 @@ def test_updates_existing_marker_file(tmp_path):
     setup.generate_command_aliases(tmp_path)
 
     content = stale.read_text()
-    assert content.splitlines()[0] == MARKER
+    assert _first_line_after_frontmatter(content) == MARKER
     assert "/agent-os-openspec:10-context $ARGUMENTS" in content
     assert "veralteter inhalt" not in content
 
@@ -91,10 +106,10 @@ def test_updates_existing_marker_file_for_disabled_model_invocation_skill(tmp_pa
     setup.generate_command_aliases(tmp_path)
 
     content = stale.read_text()
-    assert content.splitlines()[0] == MARKER
+    assert _first_line_after_frontmatter(content) == MARKER
     assert "veralteter inhalt" not in content
     skill_text = (setup.FRAMEWORK_ROOT / "skills" / "70-deploy" / "SKILL.md").read_text()
-    assert content == f"{MARKER}\n{skill_text}"
+    assert content == _full_copy(skill_text)
 
 
 def test_skips_custom_command_without_marker(tmp_path):
@@ -130,7 +145,7 @@ def test_refresh_updates_existing_stale_marker_file(tmp_path):
     setup.refresh_command_aliases(tmp_path)
 
     content = stale.read_text()
-    assert content.splitlines()[0] == MARKER
+    assert _first_line_after_frontmatter(content) == MARKER
     assert "/agent-os-openspec:10-context $ARGUMENTS" in content
     assert "veralteter inhalt" not in content
 

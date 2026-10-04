@@ -40,24 +40,65 @@ def embeds_full_skill(skill_text: str) -> bool:
     return "disable-model-invocation: true" in skill_text
 
 
+def _frontmatter_close(lines: "list[str]") -> "int | None":
+    """Index des schliessenden `---`, wenn die Datei mit Frontmatter beginnt."""
+    if not lines or lines[0] != "---":
+        return None
+    try:
+        return lines.index("---", 1)
+    except ValueError:
+        return None
+
+
 def alias_content(name: str, skill_text: str) -> str:
-    """Soll-Inhalt der Alias-Datei fuer Skill `name`."""
+    """Soll-Inhalt der Alias-Datei fuer Skill `name`.
+
+    Der Marker steht direkt hinter dem Frontmatter (#251): stuende er davor,
+    waere das Frontmatter nicht parsbar und die Befehlsauswahl zeigte den
+    Marker statt der Beschreibung (#238).
+    """
     if embeds_full_skill(skill_text):
-        return f"{ALIAS_MARKER}\n{skill_text}"
+        lines = skill_text.split("\n")
+        close = _frontmatter_close(lines)
+        if close is None:
+            return f"{ALIAS_MARKER}\n{skill_text}"
+        return "\n".join(lines[:close + 1] + [ALIAS_MARKER] + lines[close + 1:])
     return (
-        f"{ALIAS_MARKER}\n"
         "---\n"
         f"description: Kurz-Alias für /agent-os-openspec:{name}\n"
         "---\n"
+        f"{ALIAS_MARKER}\n"
         "\n"
         f"/agent-os-openspec:{name} $ARGUMENTS\n"
     )
 
 
 def is_alias_file(text: str) -> bool:
-    """True, wenn die Datei vom Framework erzeugt wurde (Marker in Zeile 1)."""
-    first_line = text.splitlines()[0] if text else ""
-    return first_line.startswith(_MARKER_PREFIX)
+    """True, wenn die Datei vom Framework erzeugt wurde.
+
+    Erkannt werden zwei Positionen: alt (Zeile 1) und neu (erste Zeile nach
+    einem am Dateianfang stehenden, geschlossenen Frontmatter). Ein Marker an
+    anderer Stelle zaehlt nicht.
+    """
+    lines = text.splitlines()
+    if not lines:
+        return False
+    if lines[0].startswith(_MARKER_PREFIX):
+        return True
+    close = _frontmatter_close(lines)
+    if close is None or close + 1 >= len(lines):
+        return False
+    return lines[close + 1].startswith(_MARKER_PREFIX)
+
+
+def find_aliases(commands_dir: Path) -> "list[Path]":
+    """Alle markierten Alias-Dateien in `commands_dir`, sortiert."""
+    if not commands_dir.is_dir():
+        return []
+    return sorted(
+        p for p in commands_dir.glob("*.md")
+        if p.is_file() and is_alias_file(p.read_text())
+    )
 
 
 def alias_version(text: str) -> "str | None":
