@@ -42,11 +42,19 @@ def embeds_full_skill(skill_text: str) -> bool:
 
 def _frontmatter_close(lines: "list[str]") -> "int | None":
     """Index des schliessenden `---`, wenn die Datei mit Frontmatter beginnt."""
-    if not lines or lines[0] != "---":
+    if not lines or lines[0].rstrip() != "---":
         return None
+    for index in range(1, len(lines)):
+        if lines[index].rstrip() == "---":
+            return index
+    return None
+
+
+def _read_or_none(path: Path) -> "str | None":
+    """Dateiinhalt, oder None wenn nicht lesbar (Rechte, kein UTF-8; #350)."""
     try:
-        return lines.index("---", 1)
-    except ValueError:
+        return path.read_text()
+    except (OSError, UnicodeDecodeError):
         return None
 
 
@@ -95,10 +103,14 @@ def find_aliases(commands_dir: Path) -> "list[Path]":
     """Alle markierten Alias-Dateien in `commands_dir`, sortiert."""
     if not commands_dir.is_dir():
         return []
-    return sorted(
-        p for p in commands_dir.glob("*.md")
-        if p.is_file() and is_alias_file(p.read_text())
-    )
+    found = []
+    for p in commands_dir.glob("*.md"):
+        if not p.is_file():
+            continue
+        text = _read_or_none(p)
+        if text is not None and is_alias_file(text):
+            found.append(p)
+    return sorted(found)
 
 
 def alias_version(text: str) -> "str | None":
@@ -160,10 +172,13 @@ def find_stale_aliases(skills_dir: Path, commands_dir: Path,
         target = commands_dir / f"{name}.md"
         if not target.is_file():
             continue
-        actual = target.read_text()
-        if not is_alias_file(actual):
+        actual = _read_or_none(target)
+        if actual is None or not is_alias_file(actual):
             continue
-        expected = alias_content(name, (skills_dir / name / "SKILL.md").read_text())
+        skill_text = _read_or_none(skills_dir / name / "SKILL.md")
+        if skill_text is None:
+            continue
+        expected = alias_content(name, skill_text)
         if actual == expected:
             continue
         if is_newer_than(actual, loaded_version):
@@ -189,6 +204,9 @@ def find_removed_aliases(commands_dir: Path) -> "list[Path]":
     found = []
     for name in REMOVED_SKILLS:
         target = commands_dir / f"{name}.md"
-        if target.is_file() and is_alias_file(target.read_text()):
+        if not target.is_file():
+            continue
+        text = _read_or_none(target)
+        if text is not None and is_alias_file(text):
             found.append(target)
     return found

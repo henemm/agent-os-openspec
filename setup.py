@@ -1134,7 +1134,9 @@ def remove_command_aliases(scope_path: Path) -> None:
     for path in aliases:
         path.unlink()
         print(f"  Removed: {path.name}")
-    kept = sorted(commands_dir.glob("*.md")) if commands_dir.is_dir() else []
+    kept = sorted(
+        p for p in commands_dir.glob("*.md") if p.is_file()
+    ) if commands_dir.is_dir() else []
     for path in kept:
         print(f"  Kept: {path.name}")
     print(f"Command aliases: {len(aliases)} removed, {len(kept)} kept.")
@@ -1262,6 +1264,10 @@ Available modules:
     if not project_path.exists():
         print(f"ERROR: Project path does not exist: {project_path}")
         sys.exit(1)
+
+    if args.global_scope and not args.remove_aliases:
+        print("WARNING: --global wirkt nur zusammen mit --remove-aliases "
+              "und wird ignoriert.", file=sys.stderr)
 
     # Command aliases mode
     if args.remove_aliases:
