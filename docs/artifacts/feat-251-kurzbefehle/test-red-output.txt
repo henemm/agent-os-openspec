@@ -1,0 +1,329 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.14.6, pytest-9.1.1, pluggy-1.6.0 -- /private/tmp/claude-501/-Users-hem-Developer-agent-os-openspec--claude-worktrees-issue-250/435dd97a-9b42-4e5c-a4a5-ef163e92ec0d/scratchpad/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/hem/Developer/agent-os-openspec/.claude/worktrees/issue-250
+collecting ... collected 10 items
+
+tests/test_alias_marker_position_251.py::test_redirect_frontmatter_parses_and_marker_follows_it FAILED [ 10%]
+tests/test_alias_marker_position_251.py::test_full_copy_frontmatter_parses_and_marker_follows_it FAILED [ 20%]
+tests/test_alias_marker_position_251.py::test_old_marker_in_line_one_still_recognized_and_stale FAILED [ 30%]
+tests/test_alias_marker_position_251.py::test_refresh_lifts_old_format_to_new_position FAILED [ 40%]
+tests/test_alias_marker_position_251.py::test_repo_copies_carry_marker_in_new_position FAILED [ 50%]
+tests/test_alias_remove_251.py::test_unmarked_file_untouched_by_detection_refresh_and_remove FAILED [ 60%]
+tests/test_alias_remove_251.py::test_remove_deletes_marked_and_reports_removed_and_kept FAILED [ 70%]
+tests/test_alias_remove_251.py::test_remove_without_marked_files_is_noop FAILED [ 80%]
+tests/test_alias_remove_251.py::test_remove_global_targets_home_commands_dir FAILED [ 90%]
+tests/test_alias_remove_251.py::test_migrate_to_plugin_keeps_project_commands_with_new_marker_files PASSED [100%]
+
+=================================== FAILURES ===================================
+____________ test_redirect_frontmatter_parses_and_marker_follows_it ____________
+
+    def test_redirect_frontmatter_parses_and_marker_follows_it():
+        skill_text = (SKILLS_DIR / REDIRECT_SKILL / "SKILL.md").read_text()
+        assert not alias_sync.embeds_full_skill(skill_text), (
+            "Testvoraussetzung: der Skill muss eine Weiterleitung erzeugen"
+        )
+        content = alias_sync.alias_content(REDIRECT_SKILL, skill_text)
+    
+>       meta, first_after = _split_frontmatter(content)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_alias_marker_position_251.py:84: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+text = '<!-- openspec-alias: do-not-treat-as-legacy-duplicate -->\n---\ndescription: Kurz-Alias für /agent-os-openspec:50-implement\n---\n\n/agent-os-openspec:50-implement $ARGUMENTS\n'
+
+    def _split_frontmatter(text: str):
+        """(Frontmatter-Dict, erste Zeile nach dem schliessenden `---`, Rest ab dort).
+    
+        Scheitert der Test hier, beginnt die Datei nicht mit einem geschlossenen
+        Frontmatter — genau der Mangel aus #238.
+        """
+        lines = text.split("\n")
+>       assert lines[0] == "---", (
+            f"Datei beginnt nicht mit '---', sondern mit {lines[0]!r} — "
+            "das Frontmatter ist so nicht parsbar (#238)"
+        )
+E       AssertionError: Datei beginnt nicht mit '---', sondern mit '<!-- openspec-alias: do-not-treat-as-legacy-duplicate -->' — das Frontmatter ist so nicht parsbar (#238)
+E       assert '<!-- openspe...duplicate -->' == '---'
+E         
+E         - ---
+E         + <!-- openspec-alias: do-not-treat-as-legacy-duplicate -->
+
+tests/test_alias_marker_position_251.py:47: AssertionError
+___________ test_full_copy_frontmatter_parses_and_marker_follows_it ____________
+
+    def test_full_copy_frontmatter_parses_and_marker_follows_it():
+        skill_text = (SKILLS_DIR / FULL_COPY_SKILL / "SKILL.md").read_text()
+        assert alias_sync.embeds_full_skill(skill_text), (
+            "Testvoraussetzung: der Skill muss eine Vollkopie erzeugen"
+        )
+        skill_meta, _ = _split_frontmatter(skill_text)
+    
+        content = alias_sync.alias_content(FULL_COPY_SKILL, skill_text)
+>       meta, first_after = _split_frontmatter(content)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_alias_marker_position_251.py:104: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+text = '<!-- openspec-alias: do-not-treat-as-legacy-duplicate -->\n---\ndescription: "Deploy to production"\ndisable-model-in...ndem `---` —, und die ⚙-Zeile ist immer die allerletzte Zeile der Nachricht, auch wenn die übrigen Zeilen entfallen.\n'
+
+    def _split_frontmatter(text: str):
+        """(Frontmatter-Dict, erste Zeile nach dem schliessenden `---`, Rest ab dort).
+    
+        Scheitert der Test hier, beginnt die Datei nicht mit einem geschlossenen
+        Frontmatter — genau der Mangel aus #238.
+        """
+        lines = text.split("\n")
+>       assert lines[0] == "---", (
+            f"Datei beginnt nicht mit '---', sondern mit {lines[0]!r} — "
+            "das Frontmatter ist so nicht parsbar (#238)"
+        )
+E       AssertionError: Datei beginnt nicht mit '---', sondern mit '<!-- openspec-alias: do-not-treat-as-legacy-duplicate -->' — das Frontmatter ist so nicht parsbar (#238)
+E       assert '<!-- openspe...duplicate -->' == '---'
+E         
+E         - ---
+E         + <!-- openspec-alias: do-not-treat-as-legacy-duplicate -->
+
+tests/test_alias_marker_position_251.py:47: AssertionError
+____________ test_old_marker_in_line_one_still_recognized_and_stale ____________
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-308/test_old_marker_in_line_one_st0')
+
+    def test_old_marker_in_line_one_still_recognized_and_stale(tmp_path):
+        commands = tmp_path / ".claude" / "commands"
+        commands.mkdir(parents=True)
+        for name in (REDIRECT_SKILL, FULL_COPY_SKILL):
+            skill_text = (SKILLS_DIR / name / "SKILL.md").read_text()
+            old = _old_format(name, skill_text)
+            (commands / f"{name}.md").write_text(old)
+            assert alias_sync.is_alias_file(old), f"Altformat {name} gilt nicht als generiert"
+    
+        stale = alias_sync.find_stale_aliases(SKILLS_DIR, commands)
+    
+>       assert sorted(stale) == sorted([REDIRECT_SKILL, FULL_COPY_SKILL]), (
+            f"Altformat-Dateien muessen als veraltet gemeldet werden, gemeldet: {stale}"
+        )
+E       AssertionError: Altformat-Dateien muessen als veraltet gemeldet werden, gemeldet: []
+E       assert [] == ['50-implement', '70-deploy']
+E         
+E         Right contains 2 more items, first extra item: '50-implement'
+E         
+E         Full diff:
+E         + []
+E         - [
+E         -     '50-implement',
+E         -     '70-deploy',
+E         - ]
+
+tests/test_alias_marker_position_251.py:132: AssertionError
+________________ test_refresh_lifts_old_format_to_new_position _________________
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-308/test_refresh_lifts_old_format_0')
+
+    def test_refresh_lifts_old_format_to_new_position(tmp_path):
+        project = tmp_path / "project"
+        commands = project / ".claude" / "commands"
+        commands.mkdir(parents=True)
+        names = (REDIRECT_SKILL, FULL_COPY_SKILL)
+        for name in names:
+            skill_text = (SKILLS_DIR / name / "SKILL.md").read_text()
+            (commands / f"{name}.md").write_text(_old_format(name, skill_text))
+    
+        env = dict(os.environ, HOME=str(tmp_path / "home"))
+        (tmp_path / "home").mkdir()
+        result = subprocess.run(
+            [sys.executable, str(SETUP_PY), str(project), "--refresh-aliases"],
+            capture_output=True, text=True, env=env, cwd=str(tmp_path),
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+    
+        for name in names:
+            skill_text = (SKILLS_DIR / name / "SKILL.md").read_text()
+            text = (commands / f"{name}.md").read_text()
+            assert text == alias_sync.alias_content(name, skill_text)
+>           _, first_after = _split_frontmatter(text)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_alias_marker_position_251.py:160: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+text = '<!-- openspec-alias: do-not-treat-as-legacy-duplicate -->\n---\ndescription: Kurz-Alias für /agent-os-openspec:50-implement\n---\n\n/agent-os-openspec:50-implement $ARGUMENTS\n'
+
+    def _split_frontmatter(text: str):
+        """(Frontmatter-Dict, erste Zeile nach dem schliessenden `---`, Rest ab dort).
+    
+        Scheitert der Test hier, beginnt die Datei nicht mit einem geschlossenen
+        Frontmatter — genau der Mangel aus #238.
+        """
+        lines = text.split("\n")
+>       assert lines[0] == "---", (
+            f"Datei beginnt nicht mit '---', sondern mit {lines[0]!r} — "
+            "das Frontmatter ist so nicht parsbar (#238)"
+        )
+E       AssertionError: Datei beginnt nicht mit '---', sondern mit '<!-- openspec-alias: do-not-treat-as-legacy-duplicate -->' — das Frontmatter ist so nicht parsbar (#238)
+E       assert '<!-- openspe...duplicate -->' == '---'
+E         
+E         - ---
+E         + <!-- openspec-alias: do-not-treat-as-legacy-duplicate -->
+
+tests/test_alias_marker_position_251.py:47: AssertionError
+________________ test_repo_copies_carry_marker_in_new_position _________________
+
+    def test_repo_copies_carry_marker_in_new_position():
+        copies = sorted(COMMANDS_DIR.glob("*.md"))
+        assert len(copies) == 15, f"Erwartet 15 versionierte Kopien, gefunden {len(copies)}"
+    
+        assert alias_sync.find_stale_aliases(SKILLS_DIR, COMMANDS_DIR) == []
+    
+        wrong = []
+        for path in copies:
+            text = path.read_text()
+            try:
+                _, first_after = _split_frontmatter(text)
+            except AssertionError:
+                wrong.append(path.name)
+                continue
+            if first_after != alias_sync.ALIAS_MARKER:
+                wrong.append(path.name)
+>       assert wrong == [], f"Marker nicht in neuer Position: {wrong}"
+E       AssertionError: Marker nicht in neuer Position: ['00-intake.md', '01-feature.md', '10-context.md', '20-analyse.md', '30-write-spec.md', '40-tdd-red.md', '50-implement.md', '60-validate.md', '70-deploy.md', '80-workflow.md', '81-add-artifact.md', '82-test.md', '83-user-story.md', '90-retro.md', '99-reset.md']
+E       assert ['00-intake.m...-red.md', ...] == []
+E         
+E         Left contains 15 more items, first extra item: '00-intake.md'
+E         
+E         Full diff:
+E         - []
+E         + [
+E         +     '00-intake.md',...
+E         
+E         ...Full output truncated (15 lines hidden), use '-vv' to show
+
+tests/test_alias_marker_position_251.py:185: AssertionError
+_________ test_unmarked_file_untouched_by_detection_refresh_and_remove _________
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-308/test_unmarked_file_untouched_b0')
+home = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-308/test_unmarked_file_untouched_b0/home')
+
+    def test_unmarked_file_untouched_by_detection_refresh_and_remove(tmp_path, home):
+        project = tmp_path / "project"
+        commands = _commands(project)
+        # Gleichnamig mit einem Skill, damit refresh die Datei ueberhaupt betrachtet.
+        custom = commands / "70-deploy.md"
+        custom.write_text(CUSTOM_WITH_MARKER_TEXT)
+        plain = commands / "radar.md"
+        plain.write_text(CUSTOM_PLAIN)
+        before_custom = custom.read_bytes()
+        before_plain = plain.read_bytes()
+    
+        assert alias_sync.is_alias_file(CUSTOM_WITH_MARKER_TEXT) is False
+        assert alias_sync.is_alias_file(CUSTOM_PLAIN) is False
+    
+        refresh = _run_setup(home, str(project), "--refresh-aliases")
+        assert refresh.returncode == 0, refresh.stdout + refresh.stderr
+        assert custom.read_bytes() == before_custom
+        assert plain.read_bytes() == before_plain
+    
+        remove = _run_setup(home, str(project), "--remove-aliases")
+>       assert remove.returncode == 0, remove.stdout + remove.stderr
+E       AssertionError: usage: setup.py [-h] [--module MODULES] [--update] [--force] [--skip-hooks]
+E                         [--plugin-mode] [--command-aliases] [--refresh-aliases]
+E                         [--version]
+E                         project_path
+E         setup.py: error: unrecognized arguments: --remove-aliases
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['/private/tmp/claude-501/-Users-hem-Developer-agent-os-openspec--claude-worktrees-issue-250/435dd97a-9b42-4e5c-a4a5-ef163e92ec0d/scratchpad/venv/bin/python', '/Users/hem/Developer/agent-os-openspec/.claude/worktrees/issue-250/setup.py', '/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-308/test_unmarked_file_untouched_b0/project', '--remove-aliases'], returncode=2, stdout='', stderr='usage: setup.py [-h] [--module MODULES] [--update] [--force] [--skip-hooks]\n                [--plugin-mode] [--command-aliases] [--refresh-aliases]\n                [--version]\n                project_path\nsetup.py: error: unrecognized arguments: --remove-aliases\n').returncode
+
+tests/test_alias_remove_251.py:113: AssertionError
+___________ test_remove_deletes_marked_and_reports_removed_and_kept ____________
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-308/test_remove_deletes_marked_and0')
+home = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-308/test_remove_deletes_marked_and0/home')
+
+    def test_remove_deletes_marked_and_reports_removed_and_kept(tmp_path, home):
+        project = tmp_path / "project"
+        commands = _commands(project)
+        new_marked = commands / "10-context.md"
+        new_marked.write_text(_new_format_redirect("10-context"))
+        old_marked = commands / "20-analyse.md"
+        old_marked.write_text(_old_format_redirect("20-analyse"))
+        full_copy = commands / "70-deploy.md"
+        full_copy.write_text(
+            f"{MARKER}\n" + (SKILLS_DIR / "70-deploy" / "SKILL.md").read_text()
+        )
+        custom = commands / "radar.md"
+        custom.write_text(CUSTOM_PLAIN)
+    
+        result = _run_setup(home, str(project), "--remove-aliases")
+>       assert result.returncode == 0, result.stdout + result.stderr
+E       AssertionError: usage: setup.py [-h] [--module MODULES] [--update] [--force] [--skip-hooks]
+E                         [--plugin-mode] [--command-aliases] [--refresh-aliases]
+E                         [--version]
+E                         project_path
+E         setup.py: error: unrecognized arguments: --remove-aliases
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['/private/tmp/claude-501/-Users-hem-Developer-agent-os-openspec--claude-worktrees-issue-250/435dd97a-9b42-4e5c-a4a5-ef163e92ec0d/scratchpad/venv/bin/python', '/Users/hem/Developer/agent-os-openspec/.claude/worktrees/issue-250/setup.py', '/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-308/test_remove_deletes_marked_and0/project', '--remove-aliases'], returncode=2, stdout='', stderr='usage: setup.py [-h] [--module MODULES] [--update] [--force] [--skip-hooks]\n                [--plugin-mode] [--command-aliases] [--refresh-aliases]\n                [--version]\n                project_path\nsetup.py: error: unrecognized arguments: --remove-aliases\n').returncode
+
+tests/test_alias_remove_251.py:135: AssertionError
+___________________ test_remove_without_marked_files_is_noop ___________________
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-308/test_remove_without_marked_fil0')
+home = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-308/test_remove_without_marked_fil0/home')
+
+    def test_remove_without_marked_files_is_noop(tmp_path, home):
+        # (a) Bereich ohne .claude/commands/
+        bare = tmp_path / "bare"
+        bare.mkdir()
+        result = _run_setup(home, str(bare), "--remove-aliases")
+>       assert result.returncode == 0, result.stdout + result.stderr
+E       AssertionError: usage: setup.py [-h] [--module MODULES] [--update] [--force] [--skip-hooks]
+E                         [--plugin-mode] [--command-aliases] [--refresh-aliases]
+E                         [--version]
+E                         project_path
+E         setup.py: error: unrecognized arguments: --remove-aliases
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['/private/tmp/claude-501/-Users-hem-Developer-agent-os-openspec--claude-worktrees-issue-250/435dd97a-9b42-4e5c-a4a5-ef163e92ec0d/scratchpad/venv/bin/python', '/Users/hem/Developer/agent-os-openspec/.claude/worktrees/issue-250/setup.py', '/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-308/test_remove_without_marked_fil0/bare', '--remove-aliases'], returncode=2, stdout='', stderr='usage: setup.py [-h] [--module MODULES] [--update] [--force] [--skip-hooks]\n                [--plugin-mode] [--command-aliases] [--refresh-aliases]\n                [--version]\n                project_path\nsetup.py: error: unrecognized arguments: --remove-aliases\n').returncode
+
+tests/test_alias_remove_251.py:156: AssertionError
+_________________ test_remove_global_targets_home_commands_dir _________________
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-308/test_remove_global_targets_hom0')
+home = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-308/test_remove_global_targets_hom0/home')
+
+    def test_remove_global_targets_home_commands_dir(tmp_path, home):
+        home_commands = _commands(home)
+        home_alias = home_commands / "50-implement.md"
+        home_alias.write_text(_new_format_redirect("50-implement"))
+    
+        project = tmp_path / "project"
+        project_commands = _commands(project)
+        project_alias = project_commands / "50-implement.md"
+        project_alias.write_text(_new_format_redirect("50-implement"))
+    
+        result = _run_setup(home, str(project), "--remove-aliases", "--global")
+>       assert result.returncode == 0, result.stdout + result.stderr
+E       AssertionError: usage: setup.py [-h] [--module MODULES] [--update] [--force] [--skip-hooks]
+E                         [--plugin-mode] [--command-aliases] [--refresh-aliases]
+E                         [--version]
+E                         project_path
+E         setup.py: error: unrecognized arguments: --remove-aliases --global
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['/private/tmp/claude-501/-Users-hem-Developer-agent-os-openspec--claude-worktrees-issue-250/435dd97a-9b42-4e5c-a4a5-ef163e92ec0d/scratchpad/venv/bin/python', '/Users/hem/Developer/agent-os-openspec/.claude/worktrees/issue-250/setup.py', '/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-308/test_remove_global_targets_hom0/project', '--remove-aliases', '--global'], returncode=2, stdout='', stderr='usage: setup.py [-h] [--module MODULES] [--update] [--force] [--skip-hooks]\n                [--plugin-mode] [--command-aliases] [--refresh-aliases]\n                [--version]\n                project_path\nsetup.py: error: unrecognized arguments: --remove-aliases --global\n').returncode
+
+tests/test_alias_remove_251.py:187: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_alias_marker_position_251.py::test_redirect_frontmatter_parses_and_marker_follows_it
+FAILED tests/test_alias_marker_position_251.py::test_full_copy_frontmatter_parses_and_marker_follows_it
+FAILED tests/test_alias_marker_position_251.py::test_old_marker_in_line_one_still_recognized_and_stale
+FAILED tests/test_alias_marker_position_251.py::test_refresh_lifts_old_format_to_new_position
+FAILED tests/test_alias_marker_position_251.py::test_repo_copies_carry_marker_in_new_position
+FAILED tests/test_alias_remove_251.py::test_unmarked_file_untouched_by_detection_refresh_and_remove
+FAILED tests/test_alias_remove_251.py::test_remove_deletes_marked_and_reports_removed_and_kept
+FAILED tests/test_alias_remove_251.py::test_remove_without_marked_files_is_noop
+FAILED tests/test_alias_remove_251.py::test_remove_global_targets_home_commands_dir
+========================= 9 failed, 1 passed in 1.62s ==========================
