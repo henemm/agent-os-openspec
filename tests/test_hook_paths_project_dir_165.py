@@ -38,6 +38,12 @@ def _make_project(tmp_path: Path, name: str = "My Project") -> Path:
     return proj
 
 
+# Copy-Modus kopiert alle core/hooks/*.py; seit #279 verlangt die Erzeugung jede
+# in hooks/hooks.json registrierte Datei.
+ALL_CORE_HOOKS = [p.name for p in (Path(__file__).resolve().parent.parent
+                                   / "core" / "hooks").glob("*.py")]
+
+
 def _install_hook_files(proj: Path, *names: str) -> None:
     for n in names:
         (proj / ".claude" / "hooks" / n).write_text("# hook\n")
@@ -65,8 +71,7 @@ def _settings_with(*commands: str, event: str = "PreToolUse") -> dict:
 def test_generated_commands_use_project_dir_placeholder(tmp_path):
     """Kein erzeugtes Hook-Kommando ist cwd-relativ."""
     proj = _make_project(tmp_path)
-    _install_hook_files(proj, "edit_gate.py", "bash_gate.py", "post_bash.py",
-                        "phase_listener.py")
+    _install_hook_files(proj, *ALL_CORE_HOOKS)
 
     setup_mod.generate_settings_json(proj, modules=[])
 
@@ -81,7 +86,7 @@ def test_generated_commands_use_project_dir_placeholder(tmp_path):
 def test_generated_commands_bake_in_no_absolute_project_path(tmp_path):
     """Der Projektpfad wird nicht eingebacken — sonst bricht Verschieben."""
     proj = _make_project(tmp_path)
-    _install_hook_files(proj, "edit_gate.py")
+    _install_hook_files(proj, *ALL_CORE_HOOKS)
 
     setup_mod.generate_settings_json(proj, modules=[])
 
@@ -93,7 +98,7 @@ def test_generated_commands_bake_in_no_absolute_project_path(tmp_path):
 def test_generated_commands_quote_the_placeholder(tmp_path):
     """Ordner mit Leerzeichen: der Platzhalter steht in Anfuehrungszeichen."""
     proj = _make_project(tmp_path, name="Meditationstimer iOS")
-    _install_hook_files(proj, "phase_listener.py")
+    _install_hook_files(proj, *ALL_CORE_HOOKS)
 
     setup_mod.generate_settings_json(proj, modules=[])
 

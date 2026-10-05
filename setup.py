@@ -21,6 +21,7 @@ This tool:
 import argparse
 import json
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -377,26 +378,49 @@ def install_module(project_path: Path, module_name: str):
     return True
 
 
-def generate_settings_json(project_path: Path, modules: list):
-    """Generate .claude/settings.json with v3 consolidated hook configuration.
+_PLUGIN_HOOK_CMD_RE = re.compile(r"^\$\{CLAUDE_PLUGIN_ROOT\}/core/hooks/(\S+\.py)(.*)$")
 
-    v3 Architecture: 4 hook entries instead of ~41.
-    Each consolidated hook handles all checks internally with short-circuit logic.
-    Module hooks are appended after core hooks.
+# Modul-Hooks (modules/<name>/config.yaml -> hooks:) haengen an diese Gruppen an.
+_MODULE_HOOK_SLOTS = {
+    "edit_write": ("PreToolUse", "Edit|Write|MultiEdit", 5),
+    "bash": ("PreToolUse", "Bash", 300),
+    "post_bash": ("PostToolUse", "Bash", 5),
+    "user_prompt": ("UserPromptSubmit", None, 5),
+}
+
+
+def copy_mode_hooks(project_path: Path, modules: list) -> dict:
+    """Hook-Registrierung fuer den Copy-Modus, abgeleitet aus hooks/hooks.json (#279).
+
+    Vorher fuehrte setup.py eine eigene Liste mit 4 der Kern-Hooks; Worktree-
+    Pflicht, Secrets-Guard, Egress-Guard, Edit-Verify und die Events
+    SessionStart/SessionEnd fehlten im Copy-Modus still. Jetzt gibt es eine
+    Quelle: jeder Eintrag aus hooks.json wird auf die kopierte Datei
+    umgeschrieben (`python3 "${CLAUDE_PROJECT_DIR}/.claude/hooks/x.py" [args]`,
+    Issue #165). Fehlt eine kopierte Datei, bricht die Erzeugung ab — ein
+    halber Schutz, der wie ein ganzer aussieht, ist das, was #279 beseitigt.
     """
     hooks_dir = project_path / ".claude" / "hooks"
+    plugin_hooks = json.loads((FRAMEWORK_ROOT / "hooks" / "hooks.json").read_text())["hooks"]
 
-    # v3 Core hooks — 1 hook per event type
-    CORE_EDIT_WRITE = ["edit_gate.py"]
-    CORE_BASH = ["bash_gate.py"]
-    CORE_POST_BASH = ["post_bash.py"]
-    CORE_USER_PROMPT = ["phase_listener.py"]
+    def project_command(hook_name: str, args: str = "") -> str:
+        if not (hooks_dir / hook_name).exists():
+            raise FileNotFoundError(
+                f".claude/hooks/{hook_name} fehlt — in hooks/hooks.json registriert, aber nicht kopiert"
+            )
+        return f'python3 "{PROJECT_DIR_PLACEHOLDER}/.claude/hooks/{hook_name}"{args}'
 
-    # Append module hooks from module configs
-    module_edit = []
-    module_bash = []
-    module_post_bash = []
-    module_user_prompt = []
+    result: dict = {}
+    for event, groups in plugin_hooks.items():
+        result[event] = []
+        for group in groups:
+            entries = []
+            for hook in group["hooks"]:
+                match = _PLUGIN_HOOK_CMD_RE.match(hook["command"])
+                if not match:
+                    raise ValueError(f"hooks.json: unbekanntes Kommando-Format: {hook['command']}")
+                entries.append({**hook, "command": project_command(match.group(1), match.group(2))})
+            result[event].append({**group, "hooks": entries})
 
     for module_name in modules:
         module_config_path = MODULES_DIR / module_name / "config.yaml"
@@ -405,86 +429,80 @@ def generate_settings_json(project_path: Path, modules: list):
         try:
             import yaml
             with open(module_config_path, 'r') as f:
-                module_config = yaml.safe_load(f) or {}
-            module_hooks = module_config.get("hooks", {})
-            module_edit.extend(module_hooks.get("edit_write", []))
-            module_bash.extend(module_hooks.get("bash", []))
-            module_post_bash.extend(module_hooks.get("post_bash", []))
-            module_user_prompt.extend(module_hooks.get("user_prompt", []))
-            print(f"  Loaded module hooks from: {module_name}")
+                module_hooks = (yaml.safe_load(f) or {}).get("hooks", {}) or {}
         except Exception as e:
             print(f"  WARNING: Could not load hooks from {module_name}: {e}")
+            continue
+        for slot, (event, matcher, timeout) in _MODULE_HOOK_SLOTS.items():
+            names = [n for n in module_hooks.get(slot, []) if (hooks_dir / n).exists()]
+            if not names:
+                continue
+            groups = result.setdefault(event, [])
+            group = next((g for g in groups if g.get("matcher") == matcher), None)
+            if group is None:
+                group = {"matcher": matcher, "hooks": []} if matcher else {"hooks": []}
+                groups.append(group)
+            group["hooks"].extend(
+                {"type": "command", "command": project_command(n), "timeout": timeout}
+                for n in names
+            )
+        print(f"  Loaded module hooks from: {module_name}")
+    return result
 
-    def collect_hooks(order: list) -> list:
-        """Hook-Kommando-Pfade, verankert an ${CLAUDE_PROJECT_DIR} (Issue #165).
 
-        Hook-Kommandos laufen im AKTUELLEN Arbeitsverzeichnis der Sitzung, nicht
-        im Projekt-Root (https://code.claude.com/docs/en/hooks). Ein relativer
-        Pfad zeigt deshalb ins Leere, sobald die Sitzung in einem Unterordner
-        steht; ein eingebackener absoluter Pfad bricht beim Verschieben oder
-        Umbenennen des Projekts. Der Platzhalter loest beides. Die doppelten
-        Anfuehrungszeichen sind Pflicht — Projektordner duerfen Leerzeichen
-        enthalten (z.B. "Meditationstimer iOS").
-        """
-        result = []
-        for hook_name in order:
-            hook_path = hooks_dir / hook_name
-            if hook_path.exists():
-                result.append(f'"{PROJECT_DIR_PLACEHOLDER}/.claude/hooks/{hook_name}"')
-        return result
+def merge_missing_copy_mode_hooks(project_path: Path, modules: list) -> list:
+    """`--update` im Copy-Modus: fehlende Framework-Hooks in settings.json nachtragen (#279).
 
-    edit_write_hooks = collect_hooks(CORE_EDIT_WRITE + module_edit)
-    bash_hooks = collect_hooks(CORE_BASH + module_bash)
-    post_bash_hooks = collect_hooks(CORE_POST_BASH + module_post_bash)
-    user_prompt_hooks = collect_hooks(CORE_USER_PROMPT + module_user_prompt)
+    Bestehende Eintraege (eigene Hooks, Rechte, geaenderte Timeouts) bleiben
+    unangetastet; ergaenzt wird nur, was im Event noch nicht vorkommt. Ein Hook
+    gilt als vorhanden, wenn ein Kommando des Events `.claude/hooks/<datei>`
+    mit denselben Argumenten aufruft — egal in welcher Schreibweise.
+    Rueckgabe: die ergaenzten Kommandos (leer = nichts zu tun).
+    """
+    settings_path = project_path / ".claude" / "settings.json"
+    try:
+        settings = json.loads(settings_path.read_text()) if settings_path.exists() else {}
+        wanted = copy_mode_hooks(project_path, modules)
+    except (OSError, ValueError) as e:
+        print(f"  WARNING: Hook-Registrierung nicht abgeglichen: {e}")
+        return []
 
+    def key(command: str) -> "tuple[str, str] | None":
+        m = re.search(r'\.claude/hooks/(\S+?\.py)"?(.*)$', command)
+        return (m.group(1), m.group(2).strip()) if m else None
+
+    hooks = settings.setdefault("hooks", {})
+    added = []
+    for event, groups in wanted.items():
+        existing_groups = hooks.setdefault(event, [])
+        present = {key(h.get("command", "")) for g in existing_groups for h in g.get("hooks", [])}
+        for group in groups:
+            missing = [h for h in group["hooks"] if key(h["command"]) not in present]
+            if not missing:
+                continue
+            target = next((g for g in existing_groups
+                           if g.get("matcher") == group.get("matcher")), None)
+            if target is None:
+                target = {k: v for k, v in group.items() if k != "hooks"}
+                target["hooks"] = []
+                existing_groups.append(target)
+            target.setdefault("hooks", []).extend(missing)
+            added += [f"{event}: {h['command']}" for h in missing]
+    if added:
+        settings_path.write_text(json.dumps(settings, indent=2) + "\n")
+    return added
+
+
+def generate_settings_json(project_path: Path, modules: list):
+    """Generate .claude/settings.json for copy mode — same hooks as the plugin (#279)."""
     settings = {
         "permissions": {
             "allow": ["Bash", "WebSearch", "WebFetch"],
             "deny": [],
             "ask": []
         },
-        "hooks": {
-            "PreToolUse": [],
-            "PostToolUse": [],
-            "UserPromptSubmit": []
-        }
+        "hooks": copy_mode_hooks(project_path, modules),
     }
-
-    if edit_write_hooks:
-        settings["hooks"]["PreToolUse"].append({
-            "matcher": "Edit|Write",
-            "hooks": [
-                {"type": "command", "command": f"python3 {h}", "timeout": 5}
-                for h in edit_write_hooks
-            ]
-        })
-
-    if bash_hooks:
-        settings["hooks"]["PreToolUse"].append({
-            "matcher": "Bash",
-            "hooks": [
-                {"type": "command", "command": f"python3 {h}", "timeout": 300}
-                for h in bash_hooks
-            ]
-        })
-
-    if post_bash_hooks:
-        settings["hooks"]["PostToolUse"].append({
-            "matcher": "Bash",
-            "hooks": [
-                {"type": "command", "command": f"python3 {h}", "timeout": 5}
-                for h in post_bash_hooks
-            ]
-        })
-
-    if user_prompt_hooks:
-        settings["hooks"]["UserPromptSubmit"].append({
-            "hooks": [
-                {"type": "command", "command": f"python3 {h}", "timeout": 5}
-                for h in user_prompt_hooks
-            ]
-        })
 
     settings_path = project_path / ".claude" / "settings.json"
     with open(settings_path, 'w') as f:
@@ -973,6 +991,9 @@ def update_project(project_path: Path, modules: list, force: bool = False):
             "last_updated": datetime.now().isoformat(),
             "installed_modules": modules,
         }
+        if hooks_dst.exists():
+            for entry in merge_missing_copy_mode_hooks(project_path, modules):
+                new_files.append(f"hook registration: {entry}")
     with open(version_file, 'w') as f:
         json.dump(version_info, f, indent=2)
 
