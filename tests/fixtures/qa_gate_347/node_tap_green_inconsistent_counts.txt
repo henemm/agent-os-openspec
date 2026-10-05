@@ -1,0 +1,22 @@
+TAP version 13
+# Subtest: reports TEST FAILED marker only when xcodebuild fails
+ok 1 - reports TEST FAILED marker only when xcodebuild fails
+  ---
+  duration_ms: 1.015589
+  type: 'test'
+  ...
+# Subtest: second
+ok 2 - second
+  ---
+  duration_ms: 0.222368
+  type: 'test'
+  ...
+1..2
+# tests 7
+# suites 0
+# pass 2
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 102.209292

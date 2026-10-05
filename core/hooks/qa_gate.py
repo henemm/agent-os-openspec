@@ -162,6 +162,11 @@ _NODE_LINE_RE = re.compile(
 )
 # Rot-Evidenz, die ein gruenes unittest/node-Ergebnis nicht ueberstimmen darf.
 _CARGO_FAILED_RE = re.compile(r"(?m)^test result: FAILED")
+# xcodebuild-Marker in seiner echten Form `** TEST FAILED **` (#347 F101): ein
+# Testname oder Docstring, der die Worte nur erwaehnt, ist keine Rot-Evidenz —
+# auch nicht am Zeilenanfang (unittest -v druckt den Docstring dort).
+_TEST_FAILED_MARKER_RE = re.compile(r"(?m)^\s*\*\* TEST FAILED \*\*")
+_NODE_COUNTS = ("pass", "fail", "cancelled", "skipped", "todo")
 
 
 def _evaluate_unittest_run(total: int, status: str) -> "tuple[bool, str] | None":
@@ -211,6 +216,10 @@ def _node_blocks(content: str) -> "list[dict]":
             if current:
                 blocks.append(current)
             current, prefix = {}, None
+        if m and m.group(2) in current:
+            # Feld erneut: neuer Block, auch ohne Trennzeile (#347 F102)
+            blocks.append(current)
+            current = {}
         if m:
             prefix = m.group(1)
             current[m.group(2)] = float(m.group(3))
@@ -223,6 +232,14 @@ def _evaluate_node_block(block: dict) -> "tuple[bool, str] | None":
     """Wertet einen node --test-Summary-Block aus. None = unvollstaendig."""
     if not all(k in block for k in ("tests", "pass", "fail")):
         return None
+    # Plausibilitaet (#347 F104): Zaehlfelder ganzzahlig, Summe stimmt — sonst
+    # ist der Block nicht echt node-erzeugt, fail-safe rot.
+    counters = {k: v for k, v in block.items() if k != "duration_ms"}
+    if any(v != int(v) for v in counters.values()):
+        return False, "Tests NOT PASSED: node-Summary mit nicht ganzzahligem Zaehler (unplausibel)"
+    if all(k in block for k in _NODE_COUNTS) and \
+            int(block["tests"]) != sum(int(block[k]) for k in _NODE_COUNTS):
+        return False, "Tests NOT PASSED: node-Summary, tests != pass+fail+cancelled+skipped+todo"
     tests, passed, failed = int(block["tests"]), int(block["pass"]), int(block["fail"])
     cancelled = int(block.get("cancelled", 0))
     skipped = int(block.get("skipped", 0)) + int(block.get("todo", 0))
@@ -316,7 +333,7 @@ def validate_test_output(filepath: str, infra: bool = False) -> tuple[bool, str]
     # Gruenes unittest/node-Ergebnis erst nach Executed/pytest/go (#313, #327).
     # Vorher cargo-/Marker-Rot pruefen: jede rote Evidenz gewinnt.
     if runner_results:
-        if _CARGO_FAILED_RE.search(content) or "TEST FAILED" in content:
+        if _CARGO_FAILED_RE.search(content) or _TEST_FAILED_MARKER_RE.search(content):
             return False, "Tests FAILED: cargo/TEST FAILED-Marker neben gruenem unittest/node-Lauf"
         return runner_results[0]
 
