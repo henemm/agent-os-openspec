@@ -49,7 +49,7 @@ def _setup():
 
 _setup()
 
-from hook_utils import find_project_root, log_gate_event  # noqa: E402
+from hook_utils import find_project_root, log_gate_event, strip_heredoc_bodies  # noqa: E402
 from override_token import has_valid_token  # noqa: E402
 
 try:
@@ -448,7 +448,10 @@ def find_unsafe_redirects(tool_name: str, tool_input: dict, cfg: dict, root: Pat
     command = tool_input.get("command", "")
     if not command:
         return []
-    targets = _shell_write_targets(command)
+    # Reine Daten-Heredocs: ein dort nur zitiertes '>' ist kein Schreibziel
+    # (#269). hook_utils.strip_heredoc_bodies ist fail-closed (#357): im
+    # Zweifel bleibt der Befehl unveraendert und wird komplett gescannt.
+    targets = _shell_write_targets(strip_heredoc_bodies(command))
     # Zeilenfortsetzung (`cmd \\<NL>> /ziel`): bash loest sie vor der Auswertung
     # auf. Rein ADDITIV beide Lesarten scannen — ein Zusammenziehen allein
     # verfaelscht gequotete Heredoc-Koerper (Pruefrunde 2, #276).

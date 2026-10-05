@@ -1,7 +1,6 @@
 """Issue #276: Guards schlagen an, wo nichts geschrieben wird (fasst #269, #256③).
 
-1. secret_egress_guard: Gegenproben — die Heredoc-Lockerung (#269) wurde nach zwei
-   Pruefrunden zurueckgenommen, siehe TestEgressHeredocBody und #357.
+1. secret_egress_guard: Gegenproben zur Heredoc-Entlastung (#269), umgesetzt in #357.
 2. Wiedereinstieg: die Befehle nutzen `workflow.py find` statt eines Python-Schnipsels,
    den bash_gate als Marker-Manipulation blockte.
 Die Gegenproben (echte Schreibvorgaenge bleiben blockiert) sind der eigentliche
@@ -63,10 +62,10 @@ def _gate(project: Path, command: str) -> subprocess.CompletedProcess:
 # --- 1. Heredoc-Koerper im Egress-Guard (#269) ---
 
 class TestEgressHeredocBody:
-    """Die Heredoc-Lockerung (#269) ist NICHT umgesetzt: zwei unabhaengige
-    Pruefrunden fanden jeweils echte Schreibvorgaenge, die durchrutschten. Der
-    Guard scannt weiter den ganzen Befehl; ein neuer Entwurf folgt in #357.
-    Diese Gegenproben muessen jede kuenftige Lockerung ueberstehen."""
+    """Gegenproben fuer die Heredoc-Entlastung (#269). Die ersten zwei Entwuerfe
+    fielen in unabhaengigen Pruefrunden durch; umgesetzt ist sie seit #357 ueber
+    das fail-closed hook_utils.strip_heredoc_bodies. Diese Faelle muessen jede
+    Aenderung daran ueberstehen (Fall D selbst: tests/test_heredoc_strip_357.py)."""
 
     def test_real_redirect_on_opener_line_still_blocked(self, project):
         cmd = "cat > /etc/boese.txt <<'MD'\nnur text\nMD"
