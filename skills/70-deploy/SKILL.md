@@ -3,11 +3,13 @@ description: "Deploy to production"
 disable-model-invocation: true
 ---
 
-# Deploy to Production
+# Deploy
 
-Deploy the current main branch to production.
+Bringt den aktuellen Stand von `main` live — mit **genau dem Ablauf, den dieses Projekt
+festgelegt hat**. Das Framework kennt deine Plattform nicht und rät sie nicht.
 
-**CUSTOMIZE THIS FILE for your project's deployment setup!**
+> Der Ablauf steht in der Projekt-Config unter `deploy:` (`command`, `verify`, `rollback`).
+> Fehlt er, führt dieser Befehl **nichts** aus, sondern fragt ihn einmal ab (Step 2).
 
 ## Setup
 
@@ -38,84 +40,51 @@ Das `status`-Kommando ist der eigentliche Wiedereinstiegs-Check: Es zeigt die Qu
 
 **Ohne Argument** geht es direkt mit den Pre-Flight-Checks weiter.
 
-## Pre-Flight Checks
-
-Before deploying, verify:
+## Step 1: Vorabprüfungen (plattformunabhängig)
 
 ```bash
-# Current branch
 git branch --show-current
-
-# Uncommitted changes?
 git status --porcelain
-
-# Main is up to date with remote?
 git fetch origin main
 git log HEAD..origin/main --oneline
 ```
 
-**STOP if:**
-- Uncommitted changes exist -> Commit or stash first
-- Main is behind origin -> Run `git pull` first
-- Tests are failing -> Fix tests first
+**STOPP, wenn:**
+- es nicht committete Änderungen gibt → erst committen
+- der Stand hinter `origin/main` liegt → erst nachziehen
+- Tests rot sind → erst reparieren (Testbefehl des Projekts ausführen)
 
-## Deployment Steps
-
-### Option A: Git-based Deployment
+## Step 2: Deploy-Ablauf des Projekts lesen
 
 ```bash
-# Ensure on main
-git checkout main
-
-# Push to main (if not already)
-git push origin main
-
-# Merge to production branch
-git checkout production
-git merge main --no-edit
-git push origin production
-
-# Return to main
-git checkout main
+$WF deploy-config
 ```
 
-### Option B: Direct Deployment (customize for your platform)
+**`DEPLOY_CONFIGURED=no`:** Nichts deployen und nichts raten — auch nicht aus Beispielen
+oder aus dem, was „üblich“ ist. Stattdessen:
 
-**For Vercel:**
-```bash
-vercel --prod
-```
+1. Prüfe, ob das Projekt seinen Ablauf schon beschreibt (`CLAUDE.md`, `docs/`, Skripte wie
+   `deploy*.sh`). Gefundenes ist ein **Vorschlag**, keine Freigabe.
+2. Stelle dem PO genau diese drei Fragen (Vorschlag aus 1 mitgeben, falls vorhanden):
+   - Wie kommt der Stand live? → `command`
+   - Woran sieht man, dass er live ist? → `verify`
+   - Wie geht es zurück, falls nicht? → `rollback`
+3. Trage die bestätigten Antworten in die Projekt-Config (`config.yaml` bzw. `openspec.yaml`)
+   unter `deploy:` ein, committe sie und beginne `/70-deploy` erneut bei Step 1.
+   Ohne Antwort endet der Befehl hier.
 
-**For Google Cloud Run:**
-```bash
-gcloud builds submit --config=cloudbuild.yaml
-```
+**`DEPLOY_CONFIGURED=yes`:** weiter mit Step 3.
 
-**For AWS:**
-```bash
-aws ecs update-service --cluster <cluster> --service <service> --force-new-deployment
-```
+## Step 3: Deploy ausführen
 
-**For Heroku:**
-```bash
-git push heroku main
-```
+Führe die `command`-Zeilen aus der Ausgabe von Step 2 **wörtlich und in dieser Reihenfolge**
+aus. Bricht ein Befehl ab: STOPP, Fehlermeldung an den PO, nicht improvisieren.
 
-## Post-Deployment Verification
+## Step 4: Nachprüfung
 
-1. **Check deployment status** (platform-specific)
-2. **Verify application is running:**
-   - Open production URL
-   - Check health endpoint
-   - Verify key functionality
-
-3. **Monitor logs for errors:**
-   ```bash
-   # Example for various platforms
-   # vercel logs
-   # gcloud run services logs read <service>
-   # heroku logs --tail
-   ```
+Führe die `verify`-Zeilen aus. Erst wenn sie erfolgreich sind, ist der Deploy erledigt.
+Schlägt die Nachprüfung fehl: Ergebnis an den PO und die `rollback`-Zeilen **vorschlagen**
+(nicht ungefragt ausführen — außer der PO hat das für dieses Projekt ausdrücklich festgelegt).
 
 ## Haupt-Ordner nachziehen (nach gemergtem PR)
 
@@ -132,28 +101,6 @@ python3 ${_H}/session_singleton_guard.py sync-main
 Der Guard lässt in dieser Session genau diesen Befehl durch. Er zieht per `git fetch` +
 `git merge --ff-only` nach und bricht mit klarer Meldung ab (nichts geändert), wenn der Ordner
 Änderungen an versionierten Dateien hat, die Historie abweicht oder kein Upstream existiert.
-
-## Rollback (if needed)
-
-```bash
-# Git-based rollback
-git checkout production
-git revert HEAD
-git push origin production
-```
-
-## Configuration
-
-Customize this template by updating:
-- Deployment commands for your platform
-- Production URL
-- Health check endpoints
-- Log viewing commands
-- Rollback procedures
-
----
-
-**Note:** This is a template. Copy to your project and customize for your specific deployment setup.
 
 ## Versions-Marker (Pflicht)
 

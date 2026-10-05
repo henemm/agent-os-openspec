@@ -227,8 +227,10 @@ Erstelle eine Zusammenfassung:
 ### Autonomen Weiterlauf prüfen (PFLICHT, vor der Ausgabe)
 
 Existiert im Projekt ein `/70-deploy` (eigene `.claude/commands/70-deploy.md` oder Skill) UND
-dokumentiert das Projekt selbst — in dessen `CLAUDE.md` oder direkt in `70-deploy.md` —
-explizit, dass Deploy **ohne Freigabe-Halt autonom** läuft (Formulierungen wie "läuft
+steht in der Projekt-Config `deploy.autonomous: true` (Ausgabe von
+`$WF deploy-config`) — oder dokumentiert das Projekt selbst, in
+dessen `CLAUDE.md` oder direkt in `70-deploy.md`, explizit, dass Deploy **ohne Freigabe-Halt
+autonom** läuft (Formulierungen wie "läuft
 autonom", "kein Freigabe-Halt", "ohne manuelle Ausführung")? Dann ist das bindende
 Projekt-Policy — nicht erneut zur Diskussion stellen und nicht darauf warten, dass der
 User `/70-deploy` selbst eintippt. Das gilt auch dann, wenn "eigentlich" an dieser Stelle

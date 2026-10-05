@@ -197,6 +197,19 @@ e2e_scope:
   backend_patterns:
     - '^(src|api|internal|cmd|backend|server)/'
 
+# Deploy (#81) — gelesen von /70-deploy ueber `workflow.py deploy-config`.
+# Ohne `command` UND `verify` fuehrt /70-deploy nichts aus, sondern fragt den PO
+# nach dem Ablauf und traegt ihn hier ein. Jeder Wert: ein Befehl oder eine Liste.
+#   command:  wie kommt der Stand live (z.B. "./scripts/deploy.sh")
+#   verify:   woran sieht man, dass er live ist (z.B. "./scripts/verify-live.sh /")
+#   rollback: wie geht es zurueck (optional, empfohlen)
+#   autonomous: true — /60-validate darf /70-deploy ohne Freigabe-Halt anstossen
+deploy:
+  command: ""
+  verify: ""
+  rollback: ""
+  autonomous: false
+
 # Fast Track (workflow.py start <name> --type feature-fast)
 # Alter Schluessel bug_fix.require_tdd wird ein Release lang als Rueckfall gelesen (#333).
 fast_track:
