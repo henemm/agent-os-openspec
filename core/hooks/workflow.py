@@ -1703,6 +1703,16 @@ def cmd_deploy_config(args: list[str]) -> None:
         else:
             print(f"{key}: (nicht gesetzt)")
     print(f"autonomous: {'true' if block.get('autonomous') is True else 'false'}")
+    if not configured:
+        # #372: eine Root-config.yaml nur mit `deploy:` gilt als App-Config und
+        # wird uebergangen — sonst traegt /70-deploy dort ein und dreht sich im Kreis.
+        try:
+            from config_loader import skipped_app_config_note
+            note = skipped_app_config_note()
+        except Exception:
+            note = ""
+        if note:
+            print(f"HINWEIS: {note}")
 
 def cmd_find(args: list[str]) -> None:
     """Laufende Workflows zu einer Issue-Nummer (Wiedereinstieg nach /clear, #276).

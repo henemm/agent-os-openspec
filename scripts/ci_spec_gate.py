@@ -28,7 +28,7 @@ Exit 0 = frei, 1 = blockiert (Report auf stdout).
 
 Escape: Commit-Trailer `Spec-Gate: skip <Grund>` — sichtbar in der Historie und
 im PR, im Gegensatz zu einem stillen Config-Flip. Kill-Switch:
-config.yaml → `ci_spec_gate.enabled: false`.
+openspec.yaml bzw. config.yaml → `ci_spec_gate.enabled: false`.
 """
 
 import argparse
@@ -90,14 +90,78 @@ def _load_hook_module(root: Path, name: str):
     return None
 
 
+# Kopie von config_loader.PLUGIN_CONFIG_KEYS — Drift-Test in tests/test_app_config_yaml_372.py
+# (Fallback, falls config_loader nicht importierbar ist, #372).
+_FALLBACK_PLUGIN_KEYS = frozenset({
+    "framework", "workflow", "specs", "strict_code_gate", "secrets_guard",
+    "secret_egress_guard", "credentials_guard", "dependency_dir_guard",
+    "fast_track", "pre_commit", "stop_lock", "override_token", "tdd",
+    "adversary_gate", "adversary_risk", "adversary_coverage_gate", "adr_gate",
+    "po_briefing_gate", "ci_spec_gate", "session_banner", "effort_budget",
+    "precondition_section_gate", "precondition_origins", "observable_surface",
+    "scope_guard", "spec_validation", "bash_gate", "e2e_scope", "claude_md",
+    "protected_paths", "always_allowed", "home_assistant", "ios_swiftui",
+    "bug_fix", "e2e_tests", "output_specs",
+})
+_MAX_PROBE_BYTES = 256 * 1024
+_TOP_LEVEL_KEY_RE = re.compile(r"^[\"']?([A-Za-z_][\w-]*)[\"']?\s*:", re.MULTILINE)
+
+
+def _find_config_file(root: Path) -> "Path | None":
+    """Config-Datei wie `config_loader` auflösen (#372).
+
+    Bevorzugt `config_loader.find_config_file`; ohne importierbare Hooks
+    (Gate standalone in einem Konsumenten-Projekt) greift ein lokaler Resolver
+    mit derselben Reihenfolge: openspec.yaml, config.yaml (nur mit
+    Plugin-Block), .openspec.yaml — jeweils Root vor `.claude/`.
+    """
+    loader = _load_hook_module(root, "config_loader")
+    finder = getattr(loader, "find_config_file", None) if loader else None
+    if finder is not None:
+        try:
+            return finder(root)
+        except Exception:
+            pass
+    keys = getattr(loader, "PLUGIN_CONFIG_KEYS", None) or _FALLBACK_PLUGIN_KEYS
+    for name in ("openspec.yaml", "config.yaml", ".openspec.yaml"):
+        candidate = root / name
+        if candidate.exists():
+            if name != "config.yaml":
+                return candidate
+            text = ""
+            try:
+                if candidate.is_file():  # kein FIFO/Ordner lesen
+                    with open(candidate, "r", errors="ignore") as fh:
+                        text = fh.read(_MAX_PROBE_BYTES + 1)
+            except OSError:
+                text = ""
+            big = len(text) > _MAX_PROBE_BYTES
+            text = text[:_MAX_PROBE_BYTES]
+            found = _TOP_LEVEL_KEY_RE.findall(text)
+            if not big:  # grosse Datei: kein YAML-Parse, nur Regex
+                try:
+                    import yaml  # type: ignore
+                    data = yaml.safe_load(text)
+                    if isinstance(data, dict):
+                        found = [str(k) for k in data]
+                except Exception:
+                    pass
+            if any(k in keys for k in found):
+                return candidate
+        candidate = root / ".claude" / name
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def _config(root: Path, section_name: str = "ci_spec_gate") -> dict:
-    """Lies einen flachen Abschnitt (Default `ci_spec_gate:`) aus config.yaml —
-    ohne PyYAML-Zwang.
+    """Lies einen flachen Abschnitt (Default `ci_spec_gate:`) aus der
+    Projekt-Config (openspec.yaml / config.yaml, #372) — ohne PyYAML-Zwang.
 
     Reicht für flache Schalter; fehlt PyYAML, greift der Mini-Parser.
     """
-    path = root / "config.yaml"
-    if not path.exists():
+    path = _find_config_file(root)
+    if path is None:
         return {}
     text = path.read_text()
     try:
@@ -282,7 +346,7 @@ def main() -> int:
 
     cfg = _config(root)
     if cfg.get("enabled") is False:
-        print("Spec-Gate: per config.yaml deaktiviert (ci_spec_gate.enabled: false).")
+        print("Spec-Gate: per Projekt-Config deaktiviert (ci_spec_gate.enabled: false).")
         return 0
 
     if args.changed_files is not None:
@@ -338,7 +402,7 @@ def main() -> int:
         print("=" * 60)
         print(
             "Diese Prüfung läuft serverseitig, weil lokale Hooks abschaltbar sind.\n"
-            "Kill-Switch fürs ganze Projekt: config.yaml → ci_spec_gate.enabled: false"
+            "Kill-Switch fürs ganze Projekt: openspec.yaml/config.yaml → ci_spec_gate.enabled: false"
         )
         return 1
 

@@ -8,10 +8,16 @@ All hooks import this to get consistent config access.
 Supports:
 - openspec.yaml / config.yaml - Main configuration
 - settings.local.json - Local overrides (NOT in git, for credentials etc.)
+
+Eine `config.yaml` direkt im Projekt-Root zaehlt nur als Plugin-Config, wenn sie
+mindestens einen Plugin-Block enthaelt (`is_plugin_config()`, Issue #372) — sonst
+ist es vermutlich die Config der App selbst und wird uebergangen.
+`openspec.yaml`, `.openspec.yaml` und alles unter `.claude/` gelten ungeprueft.
 """
 
 import os
 import json
+import re
 import sys
 from pathlib import Path
 from functools import lru_cache
@@ -27,6 +33,67 @@ except ImportError:
 
 # Config file search order
 CONFIG_NAMES = ["openspec.yaml", "config.yaml", ".openspec.yaml"]
+
+# Issue #372: Eine `config.yaml` im Projekt-Root kann der App gehoeren (Fundfall:
+# Go-Dienst mit Bot-Token). Sie gilt nur dann als Plugin-Config, wenn sie einen
+# dieser unverwechselbaren Plugin-Bloecke enthaelt.
+PLUGIN_CONFIG_KEYS = frozenset({
+    "framework", "workflow", "specs", "strict_code_gate", "secrets_guard",
+    "secret_egress_guard", "credentials_guard", "dependency_dir_guard",
+    "fast_track", "pre_commit", "stop_lock", "override_token", "tdd",
+    "adversary_gate", "adversary_risk", "adversary_coverage_gate", "adr_gate",
+    "po_briefing_gate", "ci_spec_gate", "session_banner", "effort_budget",
+    "precondition_section_gate", "precondition_origins", "observable_surface",
+    "scope_guard", "spec_validation", "bash_gate", "e2e_scope", "claude_md",
+    "protected_paths", "always_allowed", "home_assistant", "ios_swiftui",
+    "bug_fix", "e2e_tests", "output_specs",
+})
+
+# Namen, die auch eine App-Config plausibel verwendet — allein qualifizieren
+# sie eine Datei NICHT als Plugin-Config (#372).
+GENERIC_CONFIG_KEYS = frozenset({"project", "agents", "deploy", "modules", "hooks"})
+
+# Obergrenze fuer die Plugin-Erkennung: groessere Dateien nur per Regex auf
+# den ersten 256 KB, ohne YAML-Parse (#372).
+_MAX_PROBE_BYTES = 256 * 1024
+
+_TOP_LEVEL_KEY_RE = re.compile(r"^[\"']?([A-Za-z_][\w-]*)[\"']?\s*:", re.MULTILINE)
+
+
+def is_plugin_config(path: Path) -> bool:
+    """True, wenn `path` mindestens einen Plugin-Block auf oberster Ebene hat.
+
+    Schluessel kommen aus PyYAML (deckt auch Flow-/JSON-Stil ab); ist YAML
+    kaputt oder PyYAML fehlt, greift ein Regex auf Spalte-0-Schluessel.
+    Wirft nie — unlesbar heisst False.
+    """
+    try:
+        p = Path(path)
+        if not p.is_file():  # FIFO/Geraet/Ordner: nicht lesen, sonst haengt der Hook
+            return False
+        with open(p, "r", errors="ignore") as fh:
+            text = fh.read(_MAX_PROBE_BYTES + 1)
+    except Exception:
+        return False
+    keys: "set[str] | None" = None
+    if len(text) > _MAX_PROBE_BYTES:
+        text = text[:_MAX_PROBE_BYTES]  # grosse Datei: kein YAML-Parse, nur Regex
+    elif yaml is not None:
+        try:
+            data = yaml.safe_load(text)
+            if isinstance(data, dict):
+                keys = {str(k) for k in data}
+        except Exception:
+            keys = None
+    if keys is None:
+        keys = set(_TOP_LEVEL_KEY_RE.findall(text))
+    return bool(keys & PLUGIN_CONFIG_KEYS)
+
+
+def _is_root_app_config(root: Path, candidate: Path) -> bool:
+    """True fuer eine `config.yaml` direkt im Root ohne Plugin-Block (#372)."""
+    return candidate == root / "config.yaml" and not is_plugin_config(candidate)
+
 
 # Local override file (should be in .gitignore)
 LOCAL_OVERRIDE_NAMES = ["settings.local.json", ".settings.local.json"]
@@ -57,7 +124,8 @@ def find_project_root() -> Path:
     while current != current.parent:
         # Check for config files
         for config_name in CONFIG_NAMES:
-            if (current / config_name).exists():
+            candidate = current / config_name
+            if candidate.exists() and not _is_root_app_config(current, candidate):
                 return current
             if (current / ".claude" / config_name).exists():
                 return current
@@ -76,15 +144,54 @@ def _find_config_file(root: Path) -> "Path | None":
 
     Bewusst NICHT gecacht: `config_source_note()` fragt damit einen zweiten
     Baum ab, waehrend `load_config()` seinen eigenen behaelt.
+    Eine Root-`config.yaml` ohne Plugin-Block wird uebergangen (#372).
     """
     for config_name in CONFIG_NAMES:
         candidate = root / config_name
-        if candidate.exists():
+        if candidate.exists() and not _is_root_app_config(root, candidate):
             return candidate
         candidate = root / ".claude" / config_name
         if candidate.exists():
             return candidate
     return None
+
+
+# Oeffentlicher Name fuer Werkzeuge ausserhalb der Hooks (scripts/ci_spec_gate.py).
+find_config_file = _find_config_file
+
+
+def _skipped_app_config(root: Path) -> "Path | None":
+    """Root-`config.yaml`, die als App-Config uebergangen wurde, sonst None (#372)."""
+    try:
+        candidate = root / "config.yaml"
+        if candidate.exists() and _is_root_app_config(root, candidate):
+            return candidate
+    except Exception:
+        pass
+    return None
+
+
+def skipped_app_config_note(root: "Path | None" = None) -> str:
+    """Hinweis auf eine uebergangene Root-`config.yaml`, sonst "" (#372).
+
+    Nur, wenn die Datei sonst tatsaechlich gewirkt haette — gewinnt ohnehin
+    `openspec.yaml` (Root oder `.claude/`), ist ihr Uebergehen belanglos.
+    Wirft nie.
+    """
+    try:
+        root = root if root is not None else find_project_root()
+        skipped = _skipped_app_config(root)
+        if skipped is None:
+            return ""
+        effective = _find_config_file(root)
+        if effective in (root / "openspec.yaml", root / ".claude" / "openspec.yaml"):
+            return ""
+        return (
+            f"{skipped} übergangen — keine Plugin-Schlüssel (App-Config?). "
+            "Plugin-Einstellungen gehören in openspec.yaml"
+        )
+    except Exception:
+        return ""
 
 
 def config_source_note() -> str:
@@ -106,6 +213,9 @@ def config_source_note() -> str:
         main_root = find_project_root()
         effective = _find_config_file(main_root)
         parts = [f"Grenzen aus: {effective or '<eingebaute Voreinstellung>'}"]
+        skipped_note = skipped_app_config_note(main_root)
+        if skipped_note:
+            parts.append(skipped_note)
 
         from hook_utils import find_worktree_root
         worktree = find_worktree_root()

@@ -44,6 +44,14 @@ status: required       # Values: draft, active, deprecated
 - [ ] **Architektur-Entscheidung (ADR)** - Sektion `## Architektur-Entscheidung (ADR)` mit ADR-Nr. + Rationale
 - [ ] **Changelog** - Mindestens Initial-Eintrag
 
+**ADR-Feld (hart, Regel wie `workflow.py::check_adr_content`):** Sektion = Überschrift
+`##` oder `###` `Architektur-Entscheidung (ADR)` (Groß-/Kleinschreibung egal). Ist sie
+vorhanden, nimm den Wert der Zeile `**ADR-Nr.:**`, entferne jeden `[...]`-Klammertext und
+prüfe den Rest: ausgefüllt nur, wenn er `ADR-<Ziffern>` (z. B. `ADR-0007`) oder das Wort
+`keine`/`none` enthält. Fehlt die Zeile, ist der Wert leer oder steht noch der Platzhalter
+`[ADR-NNNN oder "keine"]` da → `[ERROR]`. Grund: das Freigabe-Gate (`_check_adr`) blockt
+`approved` dann hart. Fehlt die Sektion ganz → nur `[WARN]` (Grandfathering, kein Block).
+
 ### 3. No Placeholders
 
 Suche und melde:

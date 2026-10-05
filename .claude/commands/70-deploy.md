@@ -70,8 +70,10 @@ oder aus dem, was „üblich“ ist. Stattdessen:
    - Wie kommt der Stand live? → `command`
    - Woran sieht man, dass er live ist? → `verify`
    - Wie geht es zurück, falls nicht? → `rollback`
-3. Trage die bestätigten Antworten in die Projekt-Config (`config.yaml` bzw. `openspec.yaml`)
-   unter `deploy:` ein, committe sie und beginne `/70-deploy` erneut bei Step 1.
+3. Trage die bestätigten Antworten in `openspec.yaml` unter `deploy:` ein, committe sie und
+   beginne `/70-deploy` erneut bei Step 1. Eine Root-`config.yaml` zählt nur, wenn sie einen
+   Plugin-Block enthält (#372) — `deploy:` allein reicht dort nicht; eine `HINWEIS:`-Zeile
+   der Ausgabe nennt eine so übergangene Datei.
    Ohne Antwort endet der Befehl hier.
 
 **`DEPLOY_CONFIGURED=yes`:** weiter mit Step 3.

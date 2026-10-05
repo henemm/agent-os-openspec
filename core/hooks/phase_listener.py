@@ -494,6 +494,7 @@ def main():
     approval_took_effect = False
     green_took_effect = False
     budget_note: "str | None" = None
+    block_note: "str | None" = None
 
     # Approval
     if _matches(message, approval, leading_only=True):
@@ -515,7 +516,15 @@ def main():
             except Exception:
                 briefing_err = None
             if adr_err or briefing_err:
-                _notify(f"Freigabe blockiert: {adr_err or briefing_err}")
+                # Alle Gründe nennen, und zwar auch Claude (additionalContext),
+                # nicht nur dem Nutzer — sonst kann niemand die Spec reparieren (#372).
+                reasons = [r for r in (adr_err, briefing_err) if r]
+                _notify("Freigabe blockiert: " + " | ".join(reasons))
+                block_note = (
+                    "Freigabe blockiert — spec_approved NICHT gesetzt, Workflow bleibt "
+                    "in phase3_spec. Grund: " + " | ".join(reasons) + " — Spec bzw. "
+                    "Briefing korrigieren, dann den Nutzer erneut um Freigabe bitten."
+                )
                 # spec_approved NICHT setzen, current_phase bleibt phase3_spec
             else:
                 wf_data["spec_approved"] = True
@@ -618,7 +627,7 @@ def main():
 
     # Zuletzt, damit der Vermerk den Zustand NACH einer Freigabe zeigt
     # (phase3_spec -> phase4_approved nennt bereits /40-tdd-red).
-    _finish("\n".join(filter(None, [budget_note, _emit_status_note()])) or None)
+    _finish("\n".join(filter(None, [block_note, budget_note, _emit_status_note()])) or None)
 
 
 if __name__ == "__main__":

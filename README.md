@@ -52,7 +52,7 @@ cd /path/to/your/project
 python3 /path/to/agent-os-openspec/setup.py . --command-aliases
 ```
 
-Optional domain modules (iOS/SwiftUI, Home Assistant) are enabled per project via `config.yaml` — see [Available Modules](#available-modules).
+Optional domain modules (iOS/SwiftUI, Home Assistant) are enabled per project via `openspec.yaml` — see [Available Modules](#available-modules). A root `config.yaml` also works, but only if it contains a framework block; one with nothing but `modules:` (or `project`/`agents`/`deploy`/`hooks`) is treated as an app config and skipped (#372).
 
 ### Option B — As Framework Files Copied into Your Project
 
@@ -289,7 +289,7 @@ Every block any hook issues is appended to `.claude/gate-events.jsonl` — hook,
 
 ## Configuration
 
-Customize `openspec.yaml` in your project root:
+Customize `openspec.yaml` in your project root. A root-level `config.yaml` is only read as framework config if it contains at least one framework block (e.g. `adr_gate:`, `scope_guard:`); otherwise it is assumed to belong to your app and skipped (#372).
 
 ```yaml
 framework:
