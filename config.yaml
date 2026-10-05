@@ -174,6 +174,15 @@ secret_egress_guard:
 credentials_guard:
   patterns: []
 
+# Dependency Dir Guard (#293) — bash_gate.py Schritt 4c, gilt auch ohne Workflow.
+# Blockt rm/rmdir/rimraf/mv/find -delete gegen den Ordner selbst oder seinen ganzen
+# Inhalt (`x/*`); tiefere Pfade wie node_modules/.cache bleiben erlaubt. In Worktrees
+# ist node_modules oft ein Symlink auf den geteilten Ordner. Ausweg: Override-Token.
+# Liste MUSS mit DEFAULT_DEPENDENCY_DIRS in bash_gate.py uebereinstimmen.
+dependency_dir_guard:
+  enabled: true
+  dirs: [node_modules, .venv, venv, vendor, bower_components, .pnpm-store]
+
 # E2E Scope Detection — Classifies commits by scope for downstream E2E routing
 # Used by bash_gate.py (step 5c) — writes e2e_scope to workflow state, never blocks
 # Scope values: docs-only | frontend-only | backend | full-stack

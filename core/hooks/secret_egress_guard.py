@@ -49,7 +49,7 @@ def _setup():
 
 _setup()
 
-from hook_utils import find_project_root, log_gate_event  # noqa: E402
+from hook_utils import find_project_root, log_gate_event, strip_heredoc_bodies  # noqa: E402
 from override_token import has_valid_token  # noqa: E402
 
 try:
@@ -448,7 +448,10 @@ def find_unsafe_redirects(tool_name: str, tool_input: dict, cfg: dict, root: Pat
     command = tool_input.get("command", "")
     if not command:
         return []
-    targets = _shell_write_targets(command)
+    # Heredoc-Koerper sind stdin-DATEN: ein darin nur zitiertes '>' ist kein
+    # Schreibziel (#276/#269). Die Oeffner-Zeile (echtes Ziel) bleibt im Scan,
+    # Koerper hinter einem Interpreter (bash/python <<EOF) ebenfalls.
+    targets = _shell_write_targets(strip_heredoc_bodies(command))
     unsafe = []
     for t in targets:
         if _is_outside_safe_zone(t, root, cfg, scratchpad_dir) and t not in unsafe:

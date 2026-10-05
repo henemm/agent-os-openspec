@@ -412,7 +412,178 @@ def _has_real_redirect(command: str) -> bool:
     return False
 
 
+# --- Nachweislich lesender Python-Code (Issue #276, Befund #256③) ---------
+# `python3 -c` galt pauschal als schreibend; damit blockte 3a/3b auch reine
+# Lese-Schnipsel, u.a. den Wiedereinstiegs-Schritt aus /50-implement Step 0.
+# Umkehr der Beweislast statt Verengung: Ein Schnipsel gilt NUR dann als
+# lesend, wenn sein AST ausschliesslich aus erlaubten Modulen und harmlosen
+# Aufrufen besteht. Parse-Fehler, Shell-Expansion ($, `), unbekannte Importe,
+# dynamischer Zugriff (getattr/exec/__x__) und jede Schreib-API -> schreibend.
+_PY_RO_MODULES = frozenset({
+    "json", "glob", "re", "os", "os.path", "sys", "pathlib", "collections",
+    "datetime", "time", "itertools", "functools", "textwrap", "pprint",
+    "hashlib", "math", "statistics", "fnmatch", "string", "typing", "csv",
+    "difflib", "dataclasses", "enum", "shlex",
+})
+_PY_DANGEROUS_NAMES = frozenset({
+    "exec", "eval", "compile", "getattr", "setattr", "delattr", "globals",
+    "locals", "vars", "breakpoint", "input", "memoryview",
+})
+_PY_DANGEROUS_ATTRS = frozenset({
+    "write", "writelines", "write_text", "write_bytes", "touch", "unlink",
+    "remove", "removedirs", "rename", "renames", "rmdir", "mkdir", "makedirs",
+    "rmtree", "chmod", "lchmod", "chown", "lchown", "symlink", "symlink_to",
+    "link", "link_to", "hardlink_to", "truncate", "system", "popen", "fork",
+    "forkpty", "kill", "killpg", "dump", "dump_all", "safe_dump", "utime",
+    "mkfifo", "mknod", "setxattr", "removexattr", "fdopen", "dup2",
+    "sendfile", "modules", "putenv", "unsetenv", "copytree", "copyfile",
+    "copymode", "copystat", "chroot", "startfile", "ftruncate", "pwrite",
+    "pwritev", "writev", "copy_file_range", "splice", "chflags", "lchflags",
+    "copy_into", "move_into",
+})
+_PY_DANGEROUS_ATTR_RE = re.compile(r"^(exec|spawn|posix_spawn|_)")
+_PY_RO_OPEN_MODES = frozenset({"r", "rb", "rt", "br", "tr"})
+
+
+def _py_open_is_readonly(call, is_attr: bool) -> bool:
+    """open(path[, 'r'|'rb']) bzw. Path.open(['r'|'rb']) — sonst schreibend."""
+    import ast
+    mode_idx = 0 if is_attr else 1
+    if len(call.args) > mode_idx + 1 or any(isinstance(a, ast.Starred) for a in call.args):
+        return False
+    modes = []
+    if len(call.args) > mode_idx:
+        modes.append(call.args[mode_idx])
+    for kw in call.keywords:
+        if kw.arg == "mode":
+            modes.append(kw.value)
+        elif kw.arg not in ("encoding", "errors", "newline"):
+            return False
+    return all(isinstance(m, ast.Constant) and m.value in _PY_RO_OPEN_MODES for m in modes)
+
+
+def _python_is_readonly(code: str, shell_expanded: bool = True) -> bool:
+    """True NUR, wenn der Python-Code nachweislich nichts schreibt (fail-closed).
+
+    `shell_expanded=False` nur fuer Heredocs mit gequotetem Endwort — dort
+    expandiert die Shell nichts, ein `$` ist dann z.B. Regex-Text.
+    """
+    import ast
+    if shell_expanded and ("$" in code or "`" in code):
+        return False  # Shell-Expansion kann Code einschleusen
+    try:
+        tree = ast.parse(code)
+    except (SyntaxError, ValueError):
+        return False
+    vetted_open = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            f = node.func
+            if isinstance(f, ast.Name) and f.id == "open":
+                if not _py_open_is_readonly(node, is_attr=False):
+                    return False
+                vetted_open.add(id(f))
+            elif isinstance(f, ast.Attribute) and f.attr == "open":
+                if not _py_open_is_readonly(node, is_attr=True):
+                    return False
+                vetted_open.add(id(f))
+            elif isinstance(f, ast.Attribute) and f.attr in ("replace", "copy", "move"):
+                # dict.copy() ist harmlos, Path.copy(t)/move(t) nicht. replace nur
+                # auf einem String-Literal: os.replace(src, dst) hat dieselbe Form
+                # wie str.replace(a, b) und ueberlebt jedes Modul-Alias.
+                n = len(node.args)
+                if f.attr == "replace":
+                    harmless = isinstance(f.value, ast.Constant) and isinstance(f.value.value, str)
+                else:
+                    harmless = n == 0
+                if not harmless or node.keywords:
+                    return False
+                vetted_open.add(id(f))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            if any(a.name not in _PY_RO_MODULES for a in node.names):
+                return False
+        elif isinstance(node, ast.ImportFrom):
+            if node.level or node.module not in _PY_RO_MODULES:
+                return False
+            for a in node.names:
+                if a.name == "*" or a.name in _PY_DANGEROUS_ATTRS \
+                        or a.name in ("open", "replace", "copy", "move") \
+                        or _PY_DANGEROUS_ATTR_RE.match(a.name):
+                    return False
+        elif isinstance(node, ast.Name):
+            if node.id in _PY_DANGEROUS_NAMES or node.id.startswith("__"):
+                return False
+            if node.id == "open" and id(node) not in vetted_open:
+                return False  # Alias: o = open; o(f, 'w')
+        elif isinstance(node, ast.Attribute):
+            if node.attr in _PY_DANGEROUS_ATTRS or _PY_DANGEROUS_ATTR_RE.match(node.attr):
+                return False
+            if node.attr in ("open", "replace", "copy", "move") and id(node) not in vetted_open:
+                return False
+    return True
+
+
+_PY_INTERP_RE = re.compile(r"^(?:.*/)?python(?:3(?:\.\d+)?)?$")
+
+
+def _neutralize_readonly_python(command: str) -> str:
+    """Ersetzt nachweislich lesende Python-Schnipsel durch einen Platzhalter.
+
+    Erfasst `python3 -c CODE` und `python3 [-] [args] <<'END'` mit GEQUOTETEM
+    Endwort (ungequotet expandiert die Shell den Koerper). Alles andere bleibt
+    unveraendert und wird wie bisher bewertet. Verschachtelte Shell/eval und
+    shlex-Fehler -> Original (konservativ).
+    """
+    if "python" not in command:
+        return command
+    if re.search(r"\b(?:ba|z|da|k)?sh\s+-c\b|\beval\b", command):
+        return command
+    # 1. Heredoc-Koerper hinter einem Python-Oeffner mit gequotetem Endwort.
+    lines = command.split("\n")
+    out, i, changed = [], 0, False
+    while i < len(lines):
+        line = lines[i]
+        out.append(line)
+        m = re.search(r"<<-?\s*(['\"])([A-Za-z_][A-Za-z0-9_]*)\1", line)
+        if (m and re.search(r"\bpython3?(?:\.\d+)?\b", line)
+                and not re.search(r"\b(node|perl|ruby|php|(?:ba|z|da|k)?sh)\b", line)
+                and line.count("<<") == 1):
+            dash, marker = m.group(0).startswith("<<-"), m.group(2)
+            body, j = [], i + 1
+            while j < len(lines) and (lines[j].lstrip("\t") if dash else lines[j]) != marker:
+                body.append(lines[j])
+                j += 1
+            if j < len(lines) and _python_is_readonly("\n".join(body), shell_expanded=False):
+                out.append(lines[j])  # Terminator, Koerper entfaellt
+                i, changed = j + 1, True
+                continue
+        i += 1
+    cmd = "\n".join(out) if changed else command
+    # 2. `python3 [flags] -c CODE`
+    if "-c" not in cmd:
+        return cmd
+    try:
+        tokens = shlex.split(cmd, posix=True)
+    except ValueError:
+        return cmd
+    replaced = False
+    for k, tok in enumerate(tokens):
+        if not _PY_INTERP_RE.match(tok):
+            continue
+        n = k + 1
+        while n < len(tokens) and tokens[n].startswith("-") and tokens[n] != "-c" \
+                and tokens[n] in ("-I", "-E", "-s", "-S", "-B", "-u", "-q", "-O", "-OO"):
+            n += 1
+        if n + 1 < len(tokens) and tokens[n] == "-c" and _python_is_readonly(tokens[n + 1]):
+            tokens[n] = "PY_READONLY"
+            tokens[n + 1] = "PY_READONLY"
+            replaced = True
+    return " ".join(tokens) if replaced else cmd
+
+
 def _has_write_indicator(command: str) -> bool:
+    command = _neutralize_readonly_python(command)
     for p in WRITE_INDICATORS:
         if re.search(p, command):
             return True
@@ -718,6 +889,113 @@ def _require_dialog_evidence(wf: dict, verdict: str, command: str) -> None:
     )
 
 
+# --- Abhaengigkeits-Ordner (Issue #293) ---
+
+DEFAULT_DEPENDENCY_DIRS = [
+    "node_modules", ".venv", "venv", "vendor", "bower_components", ".pnpm-store",
+]
+_DELETE_COMMANDS = frozenset({"rm", "rmdir", "unlink", "rimraf", "trash", "trash-put"})
+_PKG_RUNNERS = frozenset({"npx", "pnpx", "bunx"})
+_CMD_PREFIXES = frozenset({"sudo", "command", "nice", "nohup", "time", "env", "exec"})
+
+
+def _dependency_dirs(config: dict) -> "list[str] | None":
+    """Konfigurierte Ordnernamen, None wenn der Guard abgeschaltet ist."""
+    block_cfg = (config or {}).get("dependency_dir_guard") or {}
+    if not isinstance(block_cfg, dict):
+        block_cfg = {}
+    if block_cfg.get("enabled") is False:
+        return None
+    dirs = block_cfg.get("dirs", DEFAULT_DEPENDENCY_DIRS)
+    return [str(d) for d in dirs] if isinstance(dirs, list) else DEFAULT_DEPENDENCY_DIRS
+
+
+def _dep_target(arg: str, dirs: "list[str]") -> "str | None":
+    """Der Ordner selbst oder sein gesamter Inhalt (`x/`, `x/*`, `x/.`) — nicht tiefer.
+
+    `rm -rf node_modules/.cache` bleibt erlaubt: ein Cache-Reset trifft nicht
+    die Abhaengigkeiten. Symlink-Aufloesung ist bewusst NICHT Voraussetzung.
+    """
+    path = arg.strip("'\"")
+    for suffix in ("/*", "/.", "/"):
+        while path.endswith(suffix) and len(path) > len(suffix):
+            path = path[: -len(suffix)]
+    base = path.rsplit("/", 1)[-1]
+    return base if base in dirs else None
+
+
+def _segment_dep_hit(seg: "list[str]", dirs: "list[str]") -> "str | None":
+    i = 0
+    while i < len(seg) and (re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", seg[i])
+                            or seg[i] in _CMD_PREFIXES):
+        i += 1
+    if i >= len(seg):
+        return None
+    head = seg[i].rsplit("/", 1)[-1]
+    args = seg[i + 1:]
+    if head in _PKG_RUNNERS:
+        rest = [a for a in args if not a.startswith("-")]
+        if rest and rest[0].rsplit("/", 1)[-1].split("@")[0] in ("rimraf", "del-cli", "trash-cli"):
+            args = args[args.index(rest[0]) + 1:]
+            head = "rimraf"
+        else:
+            return None
+    if head in _DELETE_COMMANDS:
+        targets = [a for a in args if not a.startswith("-")]
+    elif head == "mv":
+        plain = [a for a in args if not a.startswith("-")]
+        targets = plain[:-1]  # letzte Angabe ist das Ziel
+    elif head == "find" and any(a in ("-delete", "-exec", "-execdir") for a in args):
+        targets = []
+        for a in args:
+            if a.startswith("-") or a in ("(", "!"):
+                break
+            targets.append(a)
+        # `find . -name node_modules -exec rm -rf {} +` / `-delete`
+        for k, a in enumerate(args[:-1]):
+            if a in ("-name", "-iname", "-path") and _dep_target(args[k + 1], dirs):
+                targets.append(args[k + 1])
+    else:
+        return None
+    for t in targets:
+        hit = _dep_target(t, dirs)
+        if hit:
+            return hit
+    return None
+
+
+def _deletes_dependency_dir(command: str, config: dict) -> "str | None":
+    """Name des Abhaengigkeits-Ordners, den das Kommando loescht/verschiebt, sonst None."""
+    dirs = _dependency_dirs(config)
+    if not dirs or not any(d in command for d in dirs):
+        return None
+    nested = re.search(r"\b(?:ba|z|da|k)?sh\s+-c\b|\beval\b|\bxargs\b", command)
+    segments = None if nested else _git_segments(command)
+    if segments is None:
+        # Verschachtelte Shell / nicht zerlegbar: konservativer Roh-Scan.
+        names = "|".join(re.escape(d) for d in dirs)
+        m = re.search(
+            rf"\b(?:rm|rmdir|unlink|rimraf|trash|mv)\b[^;&|\n]*?(?<![\w.-])({names})(?:/\*?|/\.)?"
+            r"(?=$|[\s'\";&|)])",
+            command,
+        )
+        return m.group(1) if m else None
+    for seg in segments:
+        hit = _segment_dep_hit(seg, dirs)
+        if hit:
+            return hit
+    return None
+
+
+def _any_override_token() -> bool:
+    try:
+        from override_token import has_valid_token
+        name = get_active_workflow_name()
+        return has_valid_token(name) if name else has_valid_token()
+    except Exception:
+        return False
+
+
 # --- Main ---
 
 def main():
@@ -834,6 +1112,21 @@ def main():
         cred_type = _contains_hardcoded_credentials(command, config)
         if cred_type:
             block(f"BLOCKED: Hardcoded {cred_type} detected. Use env vars or secrets.env instead.")
+
+    # 4c. Abhaengigkeits-Ordner (#293): Schutz, kein Workflow-Zwang — gilt
+    #     auch ohne Workflow. In Worktrees ist node_modules oft ein Symlink auf
+    #     den geteilten Ordner; ein `rm -rf` trifft dann alle Sitzungen.
+    dep_hit = _deletes_dependency_dir(scan_cmd, config)
+    if dep_hit and not _any_override_token():
+        block(
+            f"BLOCKED: Abhaengigkeits-Ordner '{dep_hit}' wird geloescht oder verschoben.\n"
+            "  In Worktrees ist er oft ein Symlink auf den GETEILTEN Ordner im Haupt-Repo —\n"
+            "  das Loeschen traefe alle Worktrees und Sitzungen.\n"
+            "  Stattdessen in place neu installieren: `npm ci` / `npm install`,\n"
+            "  `pnpm install --force`, `pip install --force-reinstall -r requirements.txt`,\n"
+            "  `composer install`. Bewusst gewollt? User tippt 'override'.\n"
+            "  Ordnerliste: config.yaml -> dependency_dir_guard.dirs (Kill-Switch: enabled: false)."
+        )
 
     # 5. Git commit gates (tokenbasiert, Issue #1431 — Erwaehnung ist kein Aufruf)
     if workflow_enforced and is_git_subcommand(command, "commit"):
