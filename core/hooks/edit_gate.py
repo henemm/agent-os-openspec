@@ -39,7 +39,7 @@ from pathlib import Path
 # --- Defaults (overridable via config.yaml) ---
 
 # Code-Klassifikation: eine Quelle fuer TDD-Gate und Nachweis-Gate (#259).
-from hook_utils import CODE_EXTENSIONS, ALWAYS_ALLOWED_DIRS, ALWAYS_ALLOWED_PATTERNS  # noqa: E402
+from hook_utils import CODE_EXTENSIONS, ALWAYS_ALLOWED_DIRS, ALWAYS_ALLOWED_PATTERNS, is_colocated_test_file  # noqa: E402
 
 PROTECTED_STATE_FILES = [
     ".claude/workflows/", "workflow_state.json", "user_override_token.json",
@@ -610,6 +610,10 @@ def main():
     for p in allowed_patterns:
         if re.search(p, file_path, re.IGNORECASE):
             allow()
+
+    # 2c. Testdatei neben dem Code (#335: `foo_test.go`, `test_x.py`, `x.test.ts`)
+    if is_colocated_test_file(file_path):
+        allow()
 
     # 3. Not a code file
     ext = Path(file_path).suffix.lower()

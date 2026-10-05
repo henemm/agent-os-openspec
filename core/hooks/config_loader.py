@@ -361,6 +361,7 @@ DEFAULT_TEST_PATH_PATTERNS = [
     r"(^|/)__tests__/",
     r"[^/]*\.test\.[jt]sx?$",
     r"[^/]*\.spec\.[jt]sx?$",
+    r"[^/]*_test\.go$",  # #335: Go-Tests liegen neben dem Code
 ]
 
 
