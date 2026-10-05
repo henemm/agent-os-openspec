@@ -169,3 +169,39 @@ def test_fake_git_file_is_not_a_worktree(repo, tmp_path):
     r = subprocess.run([sys.executable, str(HOOKS_DIR / "secrets_guard.py")], input=payload,
                        capture_output=True, text=True, env=env, cwd=str(fake))
     assert r.returncode == 2, "Muster des Haupt-Ordners (_key) gelten weiter"
+
+
+# --- Pruefrunde 2 ---
+
+def test_oversized_branch_config_is_ignored_fast(repo):
+    import time
+    main, wt = repo
+    narrowed = MAIN_CFG.replace('    - "_key"\n', '    - "private_key"\n')
+    junk = "junk:\n" + "".join(f"  - {{k{i}: [a, b, c, d, e]}}\n" for i in range(8000))
+    (wt / "openspec.yaml").write_text(narrowed + junk)
+    assert (wt / "openspec.yaml").stat().st_size > 64 * 1024
+    start = time.monotonic()
+    assert _read(wt, wt / ".env").returncode == 2
+    assert time.monotonic() - start < 2.0
+    assert _hook("secrets_guard.py", wt, "cat notes_key.txt").returncode == 2, \
+        "zu grosse Zweig-Config wirkt nicht — Muster des Haupt-Ordners gelten"
+
+
+def test_forged_git_file_pointing_into_main_is_rejected(repo, tmp_path):
+    main, wt = repo
+    forged = tmp_path / "forged"
+    forged.mkdir()
+    (forged / ".git").write_text(f"gitdir: {main}/.git/worktrees/bogus\n")
+    (forged / "openspec.yaml").write_text("secrets_guard:\n  sensitive_patterns: [private_key]\n"
+                                          "  always_blocked: [private_key]\n")
+    (forged / "notes_key.txt").write_text("x\n")
+    r = _hook("secrets_guard.py", forged, f"cat {main}/notes_key.txt")
+    assert r.returncode == 2, "gefaelschter Worktree darf die Haupt-Muster nicht ersetzen"
+
+
+def test_overflow_pattern_dropped_individually(repo):
+    main, wt = repo
+    (wt / "openspec.yaml").write_text(
+        "secrets_guard:\n  sensitive_patterns: ['a{4294967296}', 'private_key']\n")
+    assert _hook("secrets_guard.py", wt, "cat notes_key.txt").returncode == 0, \
+        "gueltiges Zweig-Muster wirkt trotz eines ueberlaufenden Nachbarn"

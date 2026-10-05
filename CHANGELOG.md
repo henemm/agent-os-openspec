@@ -16,7 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Grundmuster entscheiden zuerst:** Wirkt ein Zweig-Abschnitt, prüfen `secrets_guard` und `bash_gate` erst allein gegen die Grundmuster. Erst danach kommen die Zweig-Muster dran. Ein absichtlich langsames Muster (ReDoS) oder ein Muster, das abstürzt (z. B. `!!binary`), kann die Blockade von `.env` & Co. damit nicht mehr verhindern.
   - **Fehlerhafte Muster:** Ein Muster, das sich nicht auswerten lässt, blockiert, statt mit Exit 1 durchzulassen.
   - **Zulässige Zweig-Muster:** nur Text, höchstens 200 Zeichen.
-  - **Nur echte Worktrees:** Es zählt nur ein Worktree dieses Repos. Ein beliebiger Ordner mit `.git`-Datei als CWD reicht nicht.
+  - **Nur echte Worktrees:** Es zählt nur ein registrierter Worktree dieses Repos. Das gitdir muss existieren, unter `.git/worktrees/` liegen und auf diesen Worktree zurückverweisen. Ein Ordner mit gefälschter `.git`-Datei reicht nicht.
+  - **Größengrenze:** Eine Zweig-Config über 64 KB wird für secrets_guard ignoriert und pro Hook-Lauf nur einmal eingelesen. Ein riesiges YAML könnte sonst den 5-s-Timeout des Hooks auslösen, bevor die Grundmuster prüfen.
   - **Bewusste Folge:** Ein Zweig-Abschnitt ersetzt auch projekteigene Zusätze des Haupt-Ordners (z. B. ein eigenes `\.p12$`). Übrig bleibt die eingebaute Untergrenze.
   - **Haupt-Ordner-Sitzungen:** unverändert.
   - **Tests:** `tests/test_secrets_guard_worktree_292.py`.

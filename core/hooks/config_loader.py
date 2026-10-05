@@ -305,7 +305,7 @@ def secrets_guard_patterns(config: "dict | None" = None) -> "tuple[list, list]":
                     continue
                 try:
                     re.compile(p)
-                except (re.error, TypeError):
+                except Exception:  # re.error, TypeError, OverflowError (a{4294967296})
                     continue
                 valid.append(p)
             return base + [p for p in valid if p not in base]
@@ -317,6 +317,10 @@ def secrets_guard_patterns(config: "dict | None" = None) -> "tuple[list, list]":
 
 
 _MAX_BRANCH_PATTERN_LEN = 200
+# Groessere Zweig-Configs werden fuer secrets_guard ignoriert: YAML-Parsen kostet
+# rein in Python ~1,7 s je 230 KB, und der Hook hat 5 s — ein Timeout liesse den
+# Zugriff durch, BEVOR die Grundmuster pruefen (Pruefrunde 2 zu #292).
+_MAX_BRANCH_CONFIG_BYTES = 64 * 1024
 
 
 def secrets_guard_floor() -> "tuple[list, list] | None":
@@ -335,6 +339,32 @@ def secrets_guard_floor() -> "tuple[list, list] | None":
     return list(SECRETS_SENSITIVE_PATTERNS), list(SECRETS_ALWAYS_BLOCKED)
 
 
+def _is_genuine_worktree_of(worktree: Path, main_root: Path) -> bool:
+    """Ist `worktree` ein echter, registrierter Worktree des Repos unter `main_root`?
+
+    Die `.git`-Datei allein beweist nichts (sie ist frei faelschbar). Verlangt:
+    das dort genannte gitdir existiert, liegt unter `<main>/.git/worktrees/`
+    und verweist seinerseits (Datei `gitdir`) zurueck auf genau diesen Worktree.
+    """
+    try:
+        text = (worktree / ".git").read_text(errors="ignore")
+        line = next((l for l in text.splitlines() if l.startswith("gitdir:")), "")
+        gitdir = Path(line.split(":", 1)[1].strip())
+        if not gitdir.is_absolute():
+            gitdir = worktree / gitdir
+        gitdir = gitdir.resolve()
+        main_git = (main_root / ".git").resolve()
+        if gitdir.parent != main_git / "worktrees" or not gitdir.is_dir():
+            return False
+        back = Path((gitdir / "gitdir").read_text(errors="ignore").strip())
+        if not back.is_absolute():
+            back = gitdir / back
+        return back.resolve() == (worktree / ".git").resolve()
+    except Exception:
+        return False
+
+
+@lru_cache(maxsize=1)
 def _worktree_secrets_section() -> "dict | None":
     """secrets_guard-Abschnitt der Worktree-Config, wenn er von dem des Haupt-Ordners abweicht."""
     from hook_utils import find_worktree_root
@@ -353,10 +383,17 @@ def _worktree_secrets_section() -> "dict | None":
         linked, main_r = linked.resolve(), main_root.resolve()
         if not (main_r == linked or linked in main_r.parents):
             return None
+        if not _is_genuine_worktree_of(worktree, linked):
+            return None
     except OSError:
         return None
     local = _find_config_file(worktree)
     if local is None:
+        return None
+    try:
+        if not local.is_file() or local.stat().st_size > _MAX_BRANCH_CONFIG_BYTES:
+            return None
+    except OSError:
         return None
     section = (yaml.safe_load(local.read_text()) or {}).get("secrets_guard")
     if not isinstance(section, dict):
