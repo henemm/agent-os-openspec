@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.37.0] - 2026-10-05
+
 ### Changed
 
 - **#81:** `/70-deploy` ist keine unausgefüllte Vorlage mehr.
@@ -3774,6 +3776,8 @@ python3 /home/hem/agent-os-openspec/migrate_to_plugin.py /path/to/project --appl
 
 ## [Unreleased]
 
+## [3.37.0] - 2026-10-05
+
 ### Added — gregor_zwanzig Improvement Bundle (from production experience)
 
 **Session Singleton Guard** (`session_singleton_guard.py`)
@@ -4180,6 +4184,8 @@ adversary_gate, adversary_verdict_guard, claude_md_protection, docs_location_gua
 ---
 
 ## [Unreleased]
+
+## [3.37.0] - 2026-10-05
 
 ### Added - Agent Orchestration & Model Strategy (from gregor_zwanzig)
 
