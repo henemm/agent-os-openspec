@@ -1,6 +1,7 @@
 """Issue #276: Guards schlagen an, wo nichts geschrieben wird (fasst #269, #256③).
 
-1. secret_egress_guard: ein '>' im Heredoc-KOERPER ist zitierter Text, kein Ziel.
+1. secret_egress_guard: Gegenproben — die Heredoc-Lockerung (#269) wurde nach zwei
+   Pruefrunden zurueckgenommen, siehe TestEgressHeredocBody und #357.
 2. Wiedereinstieg: die Befehle nutzen `workflow.py find` statt eines Python-Schnipsels,
    den bash_gate als Marker-Manipulation blockte.
 Die Gegenproben (echte Schreibvorgaenge bleiben blockiert) sind der eigentliche
@@ -62,10 +63,10 @@ def _gate(project: Path, command: str) -> subprocess.CompletedProcess:
 # --- 1. Heredoc-Koerper im Egress-Guard (#269) ---
 
 class TestEgressHeredocBody:
-    def test_case_d_quoted_redirect_in_body_allowed(self, project):
-        cmd = "cat > notizen.md <<'MD'\nBeispiel: echo hallo > /etc/boese.txt\nMD"
-        r = _egress(project, cmd)
-        assert r.returncode == 0, r.stderr
+    """Die Heredoc-Lockerung (#269) ist NICHT umgesetzt: zwei unabhaengige
+    Pruefrunden fanden jeweils echte Schreibvorgaenge, die durchrutschten. Der
+    Guard scannt weiter den ganzen Befehl; ein neuer Entwurf folgt in #357.
+    Diese Gegenproben muessen jede kuenftige Lockerung ueberstehen."""
 
     def test_real_redirect_on_opener_line_still_blocked(self, project):
         cmd = "cat > /etc/boese.txt <<'MD'\nnur text\nMD"
@@ -110,9 +111,24 @@ def test_unclosed_heredoc_fails_closed(project):
     assert _egress(project, f"cat <<EOF\necho x > {_OUT}").returncode == 2
 
 
-def test_dash_heredoc_with_tab_terminator_still_strips(project):
-    cmd = "cat > notizen.md <<-'MD'\n\tBeispiel: echo x > /etc/boese.txt\n\tMD"
-    assert _egress(project, cmd).returncode == 0
+# Zweite Pruefrunde (2026-10-05): bash schreibt in jedem Fall wirklich.
+_ROUND2_CASES = {
+    "backslash_nl_quoted_body": f"cat <<'EOF'\nfoo\\\nEOF\necho hi > {_OUT}\nEOF",
+    "dash_marker_literal": f"cat << -EOF\ndata\n-EOF\necho hi > {_OUT}\nEOF",
+    "hash_midword": f"echo a#b <<EOF\ncat <<X\nEOF\necho hi > {_OUT}\nX",
+    "cr_marker": f"cat <<EOF\r\ndata\nEOF\r\necho hi > {_OUT}\nEOF",
+    "arith_dollar_bracket": f"echo $[ 1 << y ]\necho hi > {_OUT}\ny",
+    "param_expansion": f"echo ${{x:-<<EOF}}\necho hi > {_OUT}\nEOF",
+    "source_stdin": f"source /dev/stdin <<'EOF'\necho hi > {_OUT}\nEOF",
+    "eval_cmdsubst": f"eval $(cat <<'EOF'\necho hi > {_OUT}\nEOF\n)",
+    "pipe_next_line": f"cat <<'EOF' |\necho hi > {_OUT}\nEOF\nbash",
+}
+
+
+@pytest.mark.parametrize("name", sorted(_ROUND2_CASES))
+def test_round2_real_writes_are_blocked(project, name):
+    r = _egress(project, _ROUND2_CASES[name])
+    assert r.returncode == 2, f"{name}: rc={r.returncode} {r.stderr}"
 
 
 # --- 2. Wiedereinstieg ohne Python-Schnipsel (#256③) ---
