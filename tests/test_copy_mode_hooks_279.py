@@ -149,3 +149,25 @@ def test_update_registers_per_matcher_and_widens_legacy_edit_group(copy_project)
     edit_cmds = [h["command"] for h in groups["Edit|Write|MultiEdit"]["hooks"]]
     assert sum("edit_gate.py" in c for c in edit_cmds) == 1
     assert any("secrets_guard.py" in h["command"] for h in groups["Read"]["hooks"])
+
+
+@pytest.mark.parametrize("legacy_hooks", [
+    ["python3 .claude/hooks/edit_gate.py"],                     # rein, neben neuer Gruppe
+    ["python3 .claude/hooks/edit_gate.py", "./my-lint.sh"],     # gemischt
+])
+def test_no_double_registration_with_legacy_edit_group(copy_project, legacy_hooks):
+    """Pruefrunde 2: Alt-Gruppe `Edit|Write` neben bzw. statt der neuen Gruppe."""
+    path = copy_project / ".claude" / "settings.json"
+    path.write_text(json.dumps({"hooks": {"PreToolUse": [
+        {"matcher": "Edit|Write", "hooks": [{"type": "command", "command": c}
+                                           for c in legacy_hooks]},
+        {"matcher": "Edit|Write|MultiEdit", "hooks": [
+            {"type": "command", "command": "python3 .claude/hooks/tdd_enforcement.py"}]},
+    ]}}))
+    assert _install(copy_project, "--update").returncode == 0
+    groups = _settings(copy_project)["hooks"]["PreToolUse"]
+    edit_like = [h["command"] for g in groups if g.get("matcher") in ("Edit|Write",
+                 "Edit|Write|MultiEdit") for h in g["hooks"]]
+    for name in ("edit_gate.py", "tdd_enforcement.py", "worktree_write_guard.py"):
+        assert sum(name in c for c in edit_like) == 1, (name, edit_like)
+    assert sum(g.get("matcher") == "Edit|Write|MultiEdit" for g in groups) == 1

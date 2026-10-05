@@ -59,7 +59,8 @@ def test_other_commands_unaffected(project, cmd):
 
 # --- Pruefrunde 1 (F3): git akzeptiert Praefixe langer Optionen ---
 
-@pytest.mark.parametrize("cmd", ["git merge --cont", "git merge --conti",
+@pytest.mark.parametrize("cmd", ["git merge --con", "git merge --cont", "git merge --conti",
+                                 "git merge --abort; git merge --con",
                                  'git merge "--continue"', "git merge --no-edit --continue"])
 def test_option_prefixes_need_verdict(project, cmd):
     r = _gate(project, cmd)
@@ -93,6 +94,7 @@ def test_merge_change_set_excludes_files_brought_in_from_main(tmp_path, monkeypa
     _git(["add", "-A"], repo)
     _git(["commit", "-qm", "main"], repo)
     _git(["checkout", "-q", "feat"], repo)
+    _git(["update-ref", "refs/remotes/origin/main", "main"], repo)
     subprocess.run(["git", "merge", "main"], cwd=str(repo), capture_output=True)
     (repo / "conf.txt").write_text("resolved\n")
     _git(["add", "conf.txt"], repo)
@@ -104,3 +106,33 @@ def test_merge_change_set_excludes_files_brought_in_from_main(tmp_path, monkeypa
     names = {Path(f).name for f in files or []}
     assert err is None
     assert "upstream.py" not in names, names
+
+
+def test_merge_of_own_stash_is_measured_against_head(tmp_path, monkeypatch):
+    """Pruefrunde 2: das Merge-Ziel waehlt der Agent. Ein Merge, dessen MERGE_HEAD
+    nicht aus origin/main stammt (hier: eigener Stash), darf eigenen Code nicht
+    aus der Abdeckungspruefung nehmen."""
+    repo = tmp_path / "s"
+    repo.mkdir()
+    _git(["init", "-q", "-b", "main"], repo)
+    _git(["config", "user.email", "t@example.invalid"], repo)
+    _git(["config", "user.name", "T"], repo)
+    _git(["config", "commit.gpgsign", "false"], repo)
+    (repo / "a.py").write_text("a = 1\n")
+    _git(["add", "-A"], repo)
+    _git(["commit", "-qm", "base"], repo)
+    _git(["update-ref", "refs/remotes/origin/main", "main"], repo)
+    (repo / "a.py").write_text("a = 2\n")
+    (repo / "new.py").write_text("n = 1\n")
+    _git(["add", "-A"], repo)
+    _git(["stash", "-q"], repo)
+    subprocess.run(["git", "merge", "--no-ff", "--no-commit", "stash@{0}"],
+                   cwd=str(repo), capture_output=True)
+
+    sys.path.insert(0, str(HOOKS_DIR))
+    import bash_gate
+    monkeypatch.setattr(bash_gate, "_measurement_root", lambda: repo)
+    for cmd in ("git merge --continue", "git commit -m x"):
+        files, _, err = bash_gate._commit_change_set(cmd)
+        names = {Path(f).name for f in files or []}
+        assert err is None and {"a.py", "new.py"} <= names, (cmd, names)

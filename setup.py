@@ -472,7 +472,11 @@ def merge_missing_copy_mode_hooks(project_path: Path, modules: list) -> list:
               ".claude/settings.json bitte pruefen")
         return []
     if json.dumps(settings, sort_keys=True) != before:
-        settings_path.write_text(json.dumps(settings, indent=2) + "\n")
+        try:
+            settings_path.write_text(json.dumps(settings, indent=2) + "\n")
+        except OSError as e:
+            print(f"  WARNING: .claude/settings.json nicht schreibbar ({e})")
+            return []
     return added
 
 
@@ -503,14 +507,21 @@ def _merge_hook_entries(settings: dict, wanted: dict) -> list:
                or not all(isinstance(h, dict) for h in g.get("hooks", []))
                for g in existing_groups):
             raise ValueError(f"'hooks.{event}' enthaelt eine ungueltige Gruppe")
+        matchers = {g.get("matcher") for g in existing_groups}
         for g in existing_groups:
             new_matcher = _LEGACY_MATCHERS.get(g.get("matcher"))
-            if new_matcher and g.get("hooks") and all(key(h) for h in g["hooks"]):
+            if (new_matcher and new_matcher not in matchers
+                    and g.get("hooks") and all(key(h) for h in g["hooks"])):
                 g["matcher"] = new_matcher
+                matchers.add(new_matcher)
         for group in groups:
             target = next((g for g in existing_groups
                            if g.get("matcher") == group.get("matcher")), None)
-            present = {key(h) for h in (target or {}).get("hooks", [])}
+            # Eine verbliebene Alt-Gruppe (gemischt oder neben der neuen) zaehlt mit —
+            # sonst liefe derselbe Hook bei Edit/Write zweimal.
+            legacy = [old for old, new in _LEGACY_MATCHERS.items() if new == group.get("matcher")]
+            present = {key(h) for g in existing_groups
+                       if g is target or g.get("matcher") in legacy for h in g.get("hooks", [])}
             missing = [h for h in group["hooks"] if key(h) not in present]
             if not missing:
                 continue

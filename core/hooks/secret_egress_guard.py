@@ -399,7 +399,7 @@ def _is_outside_safe_zone(target: str, root: Path, cfg: dict,
             p = Path.cwd() / p
         unresolved = str(p)
         resolved = str(p.resolve())
-    except (OSError, ValueError):
+    except (OSError, ValueError, RuntimeError):  # RuntimeError: Symlink-Schleife (3.11)
         return False  # nicht als Pfad interpretierbar -> fail-open, wie der Rest der Datei
     root_str = str(root.resolve())
     if resolved == root_str or resolved.startswith(root_str + os.sep):
@@ -465,7 +465,7 @@ def _system_alias_forms(unresolved: str, resolved: str) -> "list[str]":
             continue
         try:
             real = str(candidate.resolve())
-        except (OSError, ValueError):
+        except (OSError, ValueError, RuntimeError):
             continue
         if resolved == real or resolved.startswith(real + os.sep):
             forms.append(str(candidate) + resolved[len(real):])

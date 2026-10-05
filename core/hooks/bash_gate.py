@@ -506,9 +506,10 @@ def _creates_commit(command: str) -> bool:
     """
     if is_git_subcommand(command, "commit"):
         return True
-    # git akzeptiert eindeutige Praefixe langer Optionen: `--cont` == `--continue`.
+    # git akzeptiert eindeutige Praefixe langer Optionen: `--con` == `--continue`
+    # (`--co` ist mehrdeutig, `--commit`).
     return (is_git_subcommand(command, "merge")
-            and re.search(r"(?<![^\s\"'])--cont(?:i(?:n(?:u(?:e)?)?)?)?(?![^\s;&|)\"'])", command) is not None)
+            and re.search(r"(?<![^\s\"'])--con(?:t(?:i(?:n(?:u(?:e)?)?)?)?)?(?![^\s;&|)\"'])", command) is not None)
 
 
 def _commit_content_files(staged_list: list, measure_root: Path, command: str) -> list:
@@ -676,7 +677,14 @@ def _commit_change_set(command: str) -> "tuple[list | None, list, str | None]":
         # zaehlte jede per `git merge origin/main` hereingeholte Datei als eigene
         # Aenderung, die der Dialog binden muesste (dieselbe Menge wie Phase 8
         # gegen merge-base).
-        base = "MERGE_HEAD" if has("MERGE_HEAD") else "HEAD"
+        # Nur wenn MERGE_HEAD aus origin/main stammt: das Merge-Ziel waehlt der Agent
+        # selbst (`git stash; git merge --no-commit stash@{0}` versteckte sonst eigenen
+        # Code). Sonst gegen HEAD — die groessere Menge.
+        base = "HEAD"
+        if has("MERGE_HEAD") and run_git(
+                ["merge-base", "--is-ancestor", "MERGE_HEAD", "origin/main"], top,
+                probe=True) is not None:
+            base = "MERGE_HEAD"
         staged = git_names(["diff", "--cached", *DIFF_NAMES, *([base] if base != "HEAD" else [])],
                            top)  # leer = leerer Index
         files = index = code_files(staged, top)

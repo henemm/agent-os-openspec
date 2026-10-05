@@ -128,3 +128,15 @@ def test_top_level_root_symlink_counts(tmp_path):
     if not links:
         pytest.skip("kein root-eigener Symlink unter / auf diesem System")
     assert seg._is_system_symlink(links[0]) is True
+
+
+def test_symlink_loop_does_not_open_the_guard(tmp_path):
+    """Pruefrunde 2 (vorbestehend): RuntimeError bei Symlink-Schleife (Python 3.11)."""
+    (tmp_path / "l1").symlink_to(tmp_path / "l2")
+    (tmp_path / "l2").symlink_to(tmp_path / "l1")
+    project = tmp_path / "project"
+    project.mkdir()
+    cfg = {"extra_allowed_write_dirs": [], "redirect_guard_enabled": True}
+    hits = seg.find_unsafe_redirects(
+        "Bash", {"command": f"echo hi > /etc/rv_evil; echo > {tmp_path}/l1/x"}, cfg, project)
+    assert any("/etc/rv_evil" in h for h in hits), hits
