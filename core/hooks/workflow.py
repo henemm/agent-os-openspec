@@ -1670,6 +1670,40 @@ def cmd_list(args: list[str]) -> None:
         print(f"  {name}: {PHASE_NAMES.get(phase, phase)}{marker}")
 
 
+def _deploy_steps(value) -> "list[str]":
+    """`deploy.<feld>` als Liste von Befehlen (String oder Liste von Strings)."""
+    if isinstance(value, str):
+        return [value.strip()] if value.strip() else []
+    if isinstance(value, list):
+        return [str(v).strip() for v in value if str(v).strip()]
+    return []
+
+
+def cmd_deploy_config(args: list[str]) -> None:
+    """Deploy-Ablauf des Projekts aus `deploy:` in der Projekt-Config (#81). Rein lesend.
+
+    Ausgabe immer mit Rueckgabecode 0; `DEPLOY_CONFIGURED=yes` nur, wenn
+    `command` UND `verify` gesetzt sind — ohne Nachpruefung gilt ein Deploy
+    nicht als beschrieben. `/70-deploy` verzweigt auf dieser Zeile.
+    """
+    try:
+        from config_loader import load_config
+        block = load_config().get("deploy") or {}
+    except Exception:
+        block = {}
+    if not isinstance(block, dict):
+        block = {}
+    steps = {k: _deploy_steps(block.get(k)) for k in ("command", "verify", "rollback")}
+    configured = bool(steps["command"] and steps["verify"])
+    print(f"DEPLOY_CONFIGURED={'yes' if configured else 'no'}")
+    for key in ("command", "verify", "rollback"):
+        if steps[key]:
+            for line in steps[key]:
+                print(f"{key}: {line}")
+        else:
+            print(f"{key}: (nicht gesetzt)")
+    print(f"autonomous: {'true' if block.get('autonomous') is True else 'false'}")
+
 def cmd_find(args: list[str]) -> None:
     """Laufende Workflows zu einer Issue-Nummer (Wiedereinstieg nach /clear, #276).
 
@@ -2061,6 +2095,7 @@ COMMANDS = {
     "abandon": cmd_abandon,
     "list": cmd_list,
     "find": cmd_find,
+    "deploy-config": cmd_deploy_config,
     "retro-list": cmd_retro_list,
     "sessions": cmd_sessions,
     "observable-surface": cmd_observable_surface,

@@ -5,6 +5,18 @@ All notable changes to the Agent OS + OpenSpec Framework will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **#81:** `/70-deploy` ist keine unausgefüllte Vorlage mehr.
+  - **Ablauf aus der Projekt-Config:** Der Befehl liest den Deploy-Ablauf aus dem neuen Block `deploy:` (`command`, `verify`, `rollback`, `autonomous`). Dafür gibt es den neuen, rein lesenden Befehl `workflow.py deploy-config` (`DEPLOY_CONFIGURED=yes|no`).
+  - **Ausführung:** Er macht die plattformunabhängigen Vorabprüfungen (Branch, offene Änderungen, Rückstand zu `origin/main`, Tests) und führt dann genau die konfigurierten Befehle aus. Danach folgt die Nachprüfung; schlägt sie fehl, schlägt er den Rollback vor.
+  - **Ohne Konfiguration** (oder ohne `verify`) wird nichts ausgeführt: Der Befehl stellt dem PO drei Fragen und trägt die Antworten ein, statt zu raten. Die Plattform-Beispiele (Vercel, Heroku, Cloud Run, AWS, `production`-Zweig) sind entfernt.
+  - **Autonomer Weiterlauf:** `/60-validate` erkennt ihn zusätzlich über `deploy.autonomous: true`.
+  - **Migration:** Projekte mit eigener, angepasster `70-deploy.md` behalten diese, denn die Kurzbefehl-Werkzeuge ersetzen nur unveränderte Kopien. Ein leerer `deploy:`-Block steht in der `config.yaml`-Vorlage.
+  - **Tests:** `tests/test_deploy_config_81.py`.
+
 ## [3.36.1] - 2026-10-05
 
 ### Fixed
