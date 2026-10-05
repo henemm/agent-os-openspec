@@ -305,15 +305,36 @@ def get_ac_format_required_since() -> "str | None":
     return load_config().get("spec_validation", {}).get("ac_format_required_since")
 
 
+# Workflow documents the framework itself writes (/10-context, /30-write-spec,
+# po-briefer). A framework convention, not a project decision — so they never
+# count as production code, without any project config (Issue #294).
+DEFAULT_LOC_EXCLUDE_PATTERNS = [
+    r"^docs/(specs|context|briefings)/",
+]
+
+
+def with_default_loc_excludes(patterns: list, scope: "dict | None" = None) -> list:
+    """Prepend DEFAULT_LOC_EXCLUDE_PATTERNS to project patterns (Issue #294).
+
+    Additive: a project's own `loc_exclude_patterns` never drops the defaults.
+    Opt-out only via `scope_guard.exclude_framework_docs: false`.
+    """
+    if isinstance(scope, dict) and scope.get("exclude_framework_docs") is False:
+        return list(patterns)
+    return DEFAULT_LOC_EXCLUDE_PATTERNS + [p for p in patterns
+                                           if p not in DEFAULT_LOC_EXCLUDE_PATTERNS]
+
+
 def get_scope_loc_config() -> tuple[int, list]:
     """Return (max_loc_delta, loc_exclude_patterns) from config.
 
-    Defaults: (250, []) when scope_guard section is absent.
+    Defaults: (250, DEFAULT_LOC_EXCLUDE_PATTERNS) when scope_guard section is
+    absent. Project patterns are added to the defaults, not replacing them.
     """
     cfg = load_config()
     scope = cfg.get("scope_guard", {})
     max_loc = int(scope.get("max_loc_delta", 250))
-    excludes = list(scope.get("loc_exclude_patterns", []))
+    excludes = with_default_loc_excludes(list(scope.get("loc_exclude_patterns", [])), scope)
     return max_loc, excludes
 
 

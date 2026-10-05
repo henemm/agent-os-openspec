@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **#294:** Das LoC-Gate (`edit_gate._check_loc_delta`) und die Abschlussmessung (`loc_delta_final`) zählen die Workflow-Dokumente des Frameworks nicht mehr als Produktivcode: `config_loader.DEFAULT_LOC_EXCLUDE_PATTERNS` (`^docs/(specs|context|briefings)/`) gilt ohne Projekt-Config und wird von eigenen `loc_exclude_patterns` ergänzt, nicht ersetzt. Abschalten: `scope_guard.exclude_framework_docs: false`. Nur Pfade ab Repo-Wurzel, `src/docs/specs/…` bleibt Produktivcode.
 - **#350:** Kurz-Befehle robust gegen unerwartete Dateien: `alias_sync.find_aliases`, `find_stale_aliases` und `find_removed_aliases` überspringen unlesbare Dateien (nicht UTF-8, Rechte entzogen) über den Helfer `_read_or_none`, statt abzustürzen — `--remove-aliases`/`--refresh-aliases` laufen durch, der Session-Banner verliert die Warnung nicht mehr; eine unlesbare Datei wird nie gelöscht und steht unter `Kept:`. Die Kept-Liste zeigt nur echte Dateien (keine Verzeichnisse, keine hängenden Symlinks); `--global` ohne `--remove-aliases` warnt auf stderr. `_frontmatter_close` erkennt Frontmatter mit CRLF oder Leerzeichen hinter `---`, der Marker landet hinter dem Frontmatter.
 - **#313/#327:** `qa_gate` erkennt die Ausgabe von `python3 -m unittest` und `node --test` (Spec- und TAP-Reporter); rote Läufe gewinnen vor jedem anderen Zweig — jede rote Evidenz gewinnt, auch bei zwei node-Läufen und gegenüber cargo/Marker; Größen-Gate unverändert.
 
