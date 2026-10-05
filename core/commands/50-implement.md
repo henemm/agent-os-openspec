@@ -282,6 +282,12 @@ Standardpfad oben. Ein gruener Testlauf aktualisiert nur `last_test_run` — er 
 oeffnet keinen Commit. Aendert ein spaeterer Fix (auch ein Auto-Fix in `/60-validate`) eine zitierte
 Datei, braucht es einen neuen Dialog.
 
+**Aufsetzen auf main nach dem VERIFIED (#289):** `stamp` haelt zusaetzlich einen `## Prüfbasis`-Block
+fest (merge-base mit `origin/main` und je Datei einen Fingerabdruck der eigenen Aenderung). Aendert
+main eine gebundene Datei, gilt der Nachweis nach Rebase/Merge weiter, solange die eigene Aenderung
+samt 3 Kontextzeilen gleich bleibt. Beruehrt main genau diese Stellen, ist ein neuer Dialog noetig —
+deshalb moeglichst **vor** dem Adversary-Dialog auf main aufsetzen.
+
 **Gate-Wirkung (#259):** Der Hash-Block muss zudem die Aenderungsmenge abdecken — am Commit-Gate jede
 Code-Datei des entstehenden Commits, in Phase 8 jede seit der Basis (`base_commit` bzw.
 `merge-base(origin/main, HEAD)`) geaenderte Code-Datei, also genau die `required-files`-Liste. Eine

@@ -658,6 +658,8 @@ def _verify_examined_file_hashes(scan: str) -> tuple[bool, str]:
             "Kein Datei-Hash-Block (## Geprüfte Dateien) im Artifact "
             "gefunden. Re-run dialog."
         )
+    rebase = None          # lazy: '## Prüfbasis'-Block erst bei Abweichung lesen
+    rebased_ok: set = set()
     for expected_hash, rel_path in entries:
         full = _resolve_hash_path(rel_path)
         try:
@@ -668,9 +670,160 @@ def _verify_examined_file_hashes(scan: str) -> tuple[bool, str]:
                 "(nicht mehr lesbar). Re-run dialog."
             )
         if actual_hash != expected_hash:
-            return False, f"Prüfling seit dem Dialog geändert: {rel_path}. Re-run dialog."
+            if rel_path in rebased_ok:
+                continue
+            if rebase is None:
+                rebase = _parse_review_base_section(scan)
+            if rebase and _own_change_survived_rebase(rel_path, rebase):
+                rebased_ok.add(rel_path)
+                continue
+            return False, (
+                f"Prüfling seit dem Dialog geändert: {rel_path}. Re-run dialog. "
+                "(Nach Aufsetzen auf main gilt der Nachweis weiter, wenn sich nur die "
+                "Basis geändert hat und die eigene Änderung samt 3 Kontextzeilen gleich "
+                "geblieben ist — hier nicht der Fall, #289.)"
+            )
     return True, ""
 
+
+# --- Aufsetzen auf main (Issue #289) ---
+#
+# Der Hash bindet die GANZE Datei. Holt der Zweig nach dem VERIFIED main ein
+# (Rebase/Merge, von bash_gate 5b erzwungen) und hat main eine gebundene Datei
+# geaendert, passte der Hash nie mehr — ohne dass sich an der eigenen Aenderung
+# etwas geaendert hat. Daher haelt der Stempel zusaetzlich die Basis
+# (merge-base origin/main) und je Datei einen Fingerabdruck der EIGENEN
+# Aenderung fest: Unified-Diff Basis -> Datei mit 3 Kontextzeilen, ohne
+# Hunk-Kopf (Zeilennummern verschieben sich legitim). Akzeptiert wird eine
+# Abweichung nur, wenn (1) die Basis vorwaerts gerueckt ist (alte Basis ist
+# Vorfahre der neuen), (2) main die Datei dazwischen tatsaechlich geaendert hat
+# und (3) der Fingerabdruck gegen die NEUE Basis gleich ist. Upstream-Aenderungen
+# in Kontextnaehe, verschobene eigene Zeilen oder jede eigene Nacharbeit
+# aendern den Fingerabdruck -> neuer Dialog wie bisher (fail-closed).
+
+REVIEW_BASE_SECTION = "## Prüfbasis"
+_REVIEW_BASE_HEADER_RE = re.compile(r"(?m)^## Prüfbasis\s*$")
+_REVIEW_BASE_LINE_RE = re.compile(r"(?m)^-\s*base:\s*([0-9a-f]{7,64})\s*$")
+_REVIEW_DELTA_LINE_RE = re.compile(r"(?m)^-\s*delta:([0-9a-f]{64})\s+(.+?)\s*$")
+
+
+def _git_out(args: "list[str]", cwd) -> "str | None":
+    try:
+        proc = subprocess.run(["git", *args], cwd=str(cwd), capture_output=True,
+                              timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    return proc.stdout.decode("utf-8", errors="surrogateescape")
+
+
+def _review_base(top: str) -> "str | None":
+    out = _git_out(["merge-base", "origin/main", "HEAD"], top)
+    out = (out or "").strip()
+    return out if re.fullmatch(r"[0-9a-f]{7,64}", out) else None
+
+
+def _rel_to_top(rel_path: str, top: str) -> "str | None":
+    full = os.path.realpath(str(_resolve_hash_path(rel_path)))
+    rel = os.path.relpath(full, top)
+    return None if rel.startswith("..") or os.path.isabs(rel) else rel
+
+
+def _blob_text(base: str, git_rel: str, top: str) -> "str | None":
+    """Inhalt der Datei in `base`; '' wenn sie dort nicht existiert, None bei Fehler."""
+    exists = _git_out(["cat-file", "-e", f"{base}:{git_rel}"], top)
+    if exists is None:
+        return "" if _git_out(["rev-parse", "--verify", "-q", f"{base}^{{commit}}"], top) else None
+    return _git_out(["show", f"{base}:{git_rel}"], top)
+
+
+def _own_change_digest(base: str, rel_path: str, top: str) -> "str | None":
+    """Fingerabdruck der eigenen Aenderung an `rel_path` gegenueber `base`."""
+    import difflib
+    git_rel = _rel_to_top(rel_path, top)
+    if git_rel is None:
+        return None
+    old = _blob_text(base, git_rel, top)
+    if old is None:
+        return None
+    try:
+        new = _resolve_hash_path(rel_path).read_bytes().decode("utf-8", errors="surrogateescape")
+    except OSError:
+        return None
+    lines = [ln for ln in difflib.unified_diff(old.splitlines(), new.splitlines(),
+                                               lineterm="", n=3)
+             if not ln.startswith(("---", "+++", "@@"))]
+    payload = "\n".join(lines).encode("utf-8", errors="surrogateescape")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def render_review_base_section(base: str, deltas: dict) -> str:
+    lines = [REVIEW_BASE_SECTION, "", f"- base: {base}"]
+    for path in sorted(deltas):
+        lines.append(f"- delta:{deltas[path]}  {path}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _parse_review_base_section(scan: str) -> "dict | None":
+    """{'base', 'deltas'} aus dem '## Prüfbasis'-Block HINTER dem letzten Hash-Block."""
+    hash_headers = list(_EXAMINED_FILES_HEADER_RE.finditer(scan))
+    headers = list(_REVIEW_BASE_HEADER_RE.finditer(scan))
+    if not hash_headers or not headers or headers[-1].start() < hash_headers[-1].start():
+        return None
+    rest = scan[headers[-1].end():]
+    nxt = re.search(r"(?m)^##\s", rest)
+    body = rest[:nxt.start()] if nxt else rest
+    base = _REVIEW_BASE_LINE_RE.search(body)
+    if not base:
+        return None
+    return {"base": base.group(1),
+            "deltas": {p: h for h, p in _REVIEW_DELTA_LINE_RE.findall(body)}}
+
+
+def _own_change_survived_rebase(rel_path: str, rebase: dict) -> bool:
+    expected = rebase["deltas"].get(rel_path)
+    old_base = rebase["base"]
+    if not expected:
+        return False
+    try:
+        top = git_toplevel(_hash_root())
+    except ChangeSetError:
+        return False
+    if not top:
+        return False
+    new_base = _review_base(top)
+    if not new_base or new_base.startswith(old_base) or old_base.startswith(new_base):
+        return False  # Basis unveraendert: jede Abweichung ist eigene Nacharbeit
+    if _git_out(["merge-base", "--is-ancestor", old_base, new_base], top) is None:
+        return False  # keine Vorwaertsbewegung entlang main
+    git_rel = _rel_to_top(rel_path, top)
+    if git_rel is None:
+        return False
+    before, after = _blob_text(old_base, git_rel, top), _blob_text(new_base, git_rel, top)
+    if before is None or after is None or before == after:
+        return False  # main hat die Datei nicht angefasst -> Abweichung ist eigene
+    return _own_change_digest(new_base, rel_path, top) == expected
+
+
+def _review_base_block(hashes: dict) -> str:
+    """'## Prüfbasis'-Block fuer den Stempel; '' ohne Git/origin/main (best-effort)."""
+    try:
+        top = git_toplevel(_hash_root())
+    except ChangeSetError:
+        return ""
+    if not top:
+        return ""
+    base = _review_base(top)
+    if not base:
+        return ""
+    deltas = {}
+    for rel in hashes:
+        d = _own_change_digest(base, rel, top)
+        if d:
+            deltas[rel] = d
+    return render_review_base_section(base, deltas) if deltas else ""
 
 # --- Herkunft der Vorbedingungen (Issue #286) ---
 
@@ -819,6 +972,9 @@ def stamp_dialog_artifact(artifact_path: str) -> tuple[bool, str]:
         return False, f"Keine der referenzierten Dateien war lesbar: {', '.join(files)}"
 
     section = render_examined_files_section(hashes)
+    base_block = _review_base_block(hashes)  # #289: Basis + eigene Aenderung
+    if base_block:
+        section += "\n" + base_block
     path.write_text(content.rstrip("\n") + "\n\n" + section)
 
     msg = f"{len(hashes)} Datei(en) gehasht und in {artifact_path} gespeichert."

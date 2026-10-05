@@ -1171,7 +1171,9 @@ def main():
                         # --autostash: vorgemerkte Dateien ueberleben den Rebase (#284)
                         block(
                             f"BLOCKED — Branch ist {behind} Commit(s) hinter origin/main.\n"
-                            "Bitte erst: git fetch origin && git rebase --autostash origin/main"
+                            "Bitte erst: git fetch origin && git rebase --autostash origin/main\n"
+                            "Ein gestempelter Adversary-Nachweis bleibt dabei gueltig, solange main\n"
+                            "die eigene Aenderung samt 3 Kontextzeilen nicht beruehrt (#289)."
                         )
                 # fetch returncode != 0 → kein Netz → silent skip
             except (subprocess.TimeoutExpired, OSError, ValueError):
