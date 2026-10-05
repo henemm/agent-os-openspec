@@ -61,7 +61,7 @@ cards:
 
 For each entry in `test_targets`:
 ```bash
-python3 tools/lovelace_screenshot.py "<url>" /tmp/test.png <width> 900
+python3 tools/lovelace_screenshot.py "<url>" docs/artifacts/<workflow>/test.png <width> 900
 python3 tools/mark_test_complete.py "<url>" <width>
 ```
 
