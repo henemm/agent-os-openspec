@@ -112,8 +112,10 @@ Task (general-purpose/sonnet, run_in_background: true): "Du bist der spec-writer
 
 Dispatche den **spec-validator/Haiku** zur Validierung:
 
+**Im Vordergrund starten (`run_in_background: false`, #83):** Das Ergebnis wird sofort gebraucht, der Orchestrator hat währenddessen nichts zu tun. Hintergrund-Starts kurzlebiger Prüfagenten ohne Worktree-Isolation kamen wiederholt ohne Bericht zurück — Nachfordern oder Doppelstart kostete jedes Mal eine volle Runde.
+
 ```
-Task (general-purpose/haiku, run_in_background: true): "Du bist der spec-validator Agent.
+Task (general-purpose/haiku, run_in_background: false): "Du bist der spec-validator Agent.
 
   Validiere die Spec: docs/specs/[category]/[entity].md
   Pruefe alle Required Fields, Sections, Placeholders.

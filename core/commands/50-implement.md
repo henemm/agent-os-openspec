@@ -85,8 +85,10 @@ ScheduleWakeup(1200, "Implementierung Rückfall [50-implement], nur im /loop-Kon
 
 Dispatche einen **Explore/Haiku Subagenten** um den Implementierungs-Kontext zu laden:
 
+**Im Vordergrund starten (`run_in_background: false`, #83):** Das Ergebnis wird sofort gebraucht, der Orchestrator hat währenddessen nichts zu tun. Hintergrund-Starts kurzlebiger Prüfagenten ohne Worktree-Isolation kamen wiederholt ohne Bericht zurück — Nachfordern oder Doppelstart kostete jedes Mal eine volle Runde.
+
 ```
-Task (Explore/haiku, run_in_background: true): "Lies folgende Dateien und fasse den relevanten Kontext
+Task (Explore/haiku, run_in_background: false): "Lies folgende Dateien und fasse den relevanten Kontext
   zusammen:
   - Spec: [spec_file_path]
   - Betroffene Dateien: [affected_files]
