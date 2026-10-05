@@ -19,7 +19,9 @@ HOOKS_DIR = REPO_ROOT / "core" / "hooks"
 
 def _project(tmp_path: Path, deploy_yaml: str) -> Path:
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
-    (tmp_path / "config.yaml").write_text(deploy_yaml)
+    # openspec.yaml statt config.yaml: eine Root-config.yaml nur mit `deploy:`
+    # gilt seit #372 als App-Config und wird uebergangen.
+    (tmp_path / "openspec.yaml").write_text(deploy_yaml)
     return tmp_path
 
 

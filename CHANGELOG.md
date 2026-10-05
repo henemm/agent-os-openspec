@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **#372 (App-`config.yaml` als Plugin-Config gelesen):** Hat die App eines Projekts selbst eine `config.yaml` im Root (Fundprojekt: Go-Dienst, gitignored, mit Bot-Token), las das Plugin sie als Projekt-Config. Ein gleichnamiger App-Schlüssel hätte ein Gate umkonfiguriert.
+  - **Neu:** Eine `config.yaml` direkt im Projekt-Root gilt nur noch als Plugin-Config, wenn sie mindestens einen Plugin-Block enthält (`config_loader.PLUGIN_CONFIG_KEYS`, z. B. `framework`, `workflow`, `scope_guard`, `adr_gate`). Allgemeine Namen (`project`, `agents`, `deploy`, `modules`, `hooks`) reichen allein nicht. `openspec.yaml`, `.openspec.yaml` und alles unter `.claude/` bleiben ungeprüft gültig; die Suchreihenfolge ist unverändert.
+  - **Projektwurzel:** Auch `find_project_root()` übergeht eine solche App-Datei beim Hochlaufen.
+  - **Sichtbar:** `config_source_note()` und `workflow.py deploy-config` (Zeile `HINWEIS:` bei `DEPLOY_CONFIGURED=no`) nennen eine übergangene Datei und verweisen auf `openspec.yaml`. Gewinnt `openspec.yaml` ohnehin, bleibt der Hinweis aus.
+  - **`/70-deploy`:** trägt den `deploy:`-Block jetzt in `openspec.yaml` ein.
+  - **Robust:** Erkannt wird nur an regulären Dateien; über 256 KB nur per Regex auf dem Dateianfang, ohne YAML-Parse.
+  - **Migration:** Jede aus dem Template entstandene `config.yaml` enthält Plugin-Blöcke und wirkt weiter. Betroffen ist nur eine Root-`config.yaml`, die ausschließlich allgemeine Namen setzt (etwa nur `deploy:`). Dann in `openspec.yaml` umbenennen.
+  - **CI-Spec-Gate:** `scripts/ci_spec_gate.py` las den Kill-Switch nur aus `config.yaml` und kannte die von `setup.py` erzeugte `openspec.yaml` nicht. Jetzt löst es die Datei wie `config_loader` auf, mit eigenständigem Fallback.
+- **#372 (Freigabe-Sperre unsichtbar):** Scheitert `approved` am ADR- oder Briefing-Gate, bekommt jetzt auch Claude den Grund (`additionalContext`), nicht nur der Nutzer. Scheitern beide, werden beide genannt. Der spec-validator wertet ein vorhandenes, aber leeres `ADR-Nr.`-Feld als `[ERROR]`, weil es die Freigabe hart blockiert.
+- **Tests:** `tests/test_app_config_yaml_372.py`.
+
 ## [3.38.0] - 2026-10-05
 
 ### Fixed
