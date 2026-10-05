@@ -281,10 +281,11 @@ oeffnet keinen Commit. Aendert ein spaeterer Fix (auch ein Auto-Fix in `/60-vali
 Datei, braucht es einen neuen Dialog.
 
 **Aufsetzen auf main nach dem VERIFIED (#289):** `stamp` haelt zusaetzlich einen `## Prüfbasis`-Block
-fest (merge-base mit `origin/main` und je Datei einen Fingerabdruck der eigenen Aenderung). Aendert
-main eine gebundene Datei, gilt der Nachweis nach Rebase/Merge weiter, solange die eigene Aenderung
-samt 3 Kontextzeilen gleich bleibt. Beruehrt main genau diese Stellen, ist ein neuer Dialog noetig —
-deshalb moeglichst **vor** dem Adversary-Dialog auf main aufsetzen.
+fest (merge-base mit `origin/main`, der gepruefte Stand je Datei als Git-Blob). Aendert main eine
+gebundene Datei, gilt der Nachweis nach Rebase/Merge weiter, solange der 3-Wege-Merge (gepruefte
+Aenderung auf die neue Basis) konfliktfrei ist und exakt den aktuellen Stand ergibt. Bei Konflikt oder
+eigener Nacharbeit ist ein neuer Dialog noetig — deshalb moeglichst **vor** dem Adversary-Dialog auf
+main aufsetzen.
 
 **Gate-Wirkung (#259):** Der Hash-Block muss zudem die Aenderungsmenge abdecken — am Commit-Gate jede
 Code-Datei des entstehenden Commits, in Phase 8 jede seit der Basis (`base_commit` bzw.

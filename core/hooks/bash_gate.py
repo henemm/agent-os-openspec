@@ -991,18 +991,35 @@ def main():
                     cwd=os.getcwd(), capture_output=True, timeout=10
                 )
                 if fetch.returncode == 0:
+                    # Laufender Merge: Rueckstand gegen MERGE_HEAD messen (#352)
+                    basis = "HEAD"
+                    try:
+                        mh = subprocess.run(
+                            ["git", "rev-parse", "-q", "--verify", "MERGE_HEAD"],
+                            cwd=os.getcwd(), capture_output=True, text=True, timeout=5
+                        )
+                        if mh.returncode == 0 and mh.stdout.strip():
+                            basis = "MERGE_HEAD"
+                    except (subprocess.TimeoutExpired, OSError):
+                        basis = "HEAD"
                     behind_result = subprocess.run(
-                        ["git", "rev-list", "--count", "HEAD..origin/main"],
+                        ["git", "rev-list", "--count", f"{basis}..origin/main"],
                         cwd=os.getcwd(), capture_output=True, text=True, timeout=5
                     )
                     behind = int(behind_result.stdout.strip() or "0")
+                    if behind > 0 and basis == "MERGE_HEAD":
+                        block(
+                            "BLOCKED — Merge bringt origin/main nicht vollständig herein "
+                            f"({behind} Commit(s) fehlen).\n"
+                            "Bitte erst: git fetch origin && git merge origin/main"
+                        )
                     if behind > 0:
                         # --autostash: vorgemerkte Dateien ueberleben den Rebase (#284)
                         block(
                             f"BLOCKED — Branch ist {behind} Commit(s) hinter origin/main.\n"
                             "Bitte erst: git fetch origin && git rebase --autostash origin/main\n"
-                            "Ein gestempelter Adversary-Nachweis bleibt dabei gueltig, solange main\n"
-                            "die eigene Aenderung samt 3 Kontextzeilen nicht beruehrt (#289)."
+                            "Ein gestempelter Adversary-Nachweis bleibt dabei gueltig, solange sich\n"
+                            "die eigene Aenderung konfliktfrei auf main setzen laesst (#289)."
                         )
                 # fetch returncode != 0 → kein Netz → silent skip
             except (subprocess.TimeoutExpired, OSError, ValueError):
