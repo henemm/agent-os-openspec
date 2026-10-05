@@ -84,8 +84,9 @@ _PLACEHOLDER_RE = re.compile(
 # jedes echte node-Test-Artefakt als "gefaelscht" blockt (Issue #73).
 # Die Fehler-Evidenz-Pruefung (_FAILURE_RE) laeuft weiter auf dem
 # Original-Inhalt, denn '# fail 3' ist echte Evidenz.
+# Der spec-Reporter schreibt dieselben Zeilen mit 'ℹ' statt '#' (Issue #349).
 _TAP_SUMMARY_RE = re.compile(
-    r"(?m)^#\s*(tests|suites|pass|fail|cancelled|skipped|todo|duration_ms)\b.*$"
+    r"(?m)^[#ℹ]\s*(tests|suites|pass|fail|cancelled|skipped|todo|duration_ms)\b.*$"
 )
 
 # --- Zitierter Fremdinhalt (Issue #262) ------------------------------------

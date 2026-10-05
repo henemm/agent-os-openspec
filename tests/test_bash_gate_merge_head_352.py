@@ -14,7 +14,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from test_bash_gate_erkennung_299 import _configure, _gate, _git, _origin_mit_klon  # noqa: E402
+from test_bash_gate_erkennung_299 import (  # noqa: E402
+    _configure, _gate, _git, _origin_mit_klon, _write_workflow,
+)
 
 
 def _count(repo: Path, rng: str) -> int:
@@ -113,5 +115,70 @@ def test_rev_parse_fehler_faellt_auf_head_zurueck(tmp_path, monkeypatch):
     assert "Traceback" not in proc.stderr, f"AC-4: Gate stuerzt ab: {proc.stderr!r}"
     assert proc.returncode == 2 and "hinter origin/main" in proc.stderr, (
         f"AC-4: ohne verwertbares MERGE_HEAD muss Basis HEAD gelten: "
+        f"rc={proc.returncode} stderr={proc.stderr!r}"
+    )
+
+
+def test_rev_parse_timeout_faellt_auf_head_zurueck(tmp_path, monkeypatch):
+    """AC-4: `rev-parse MERGE_HEAD` laeuft in den Timeout (except-Zweig) -> Basis HEAD.
+
+    Ein git-Stellvertreter vorn im PATH reicht alles ans echte git durch, nur
+    `rev-parse ... MERGE_HEAD` schlaeft laenger als der 5s-Timeout des Gates.
+    Ohne den inneren except-Zweig wuerde TimeoutExpired vom aeusseren
+    `except ... pass` geschluckt -> Exit 0 statt Block; der Test waere rot.
+    """
+    clone = _laufender_merge(tmp_path)
+    real_git = shutil.which("git")
+    assert real_git, "git nicht gefunden"
+
+    shim_dir = tmp_path / "shim"
+    shim_dir.mkdir()
+    shim = shim_dir / "git"
+    shim.write_text(
+        "#!/bin/bash\n"
+        'is_rev_parse=0; has_merge_head=0\n'
+        'for a in "$@"; do\n'
+        '  [ "$a" = "rev-parse" ] && is_rev_parse=1\n'
+        '  [ "$a" = "MERGE_HEAD" ] && has_merge_head=1\n'
+        "done\n"
+        # exec: der vom Timeout getoetete Prozess ist sleep selbst, keine Enkel halten die Pipe
+        'if [ "$is_rev_parse" = 1 ] && [ "$has_merge_head" = 1 ]; then exec sleep 7; fi\n'
+        f'exec "{real_git}" "$@"\n'
+    )
+    shim.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{shim_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    assert shutil.which("git") == str(shim), "Vorbedingung: Shim muss vorn im PATH stehen"
+    assert _count(clone, "HEAD..origin/main") > 0  # Basis HEAD muss blocken, sonst Test leer
+
+    proc = _gate("git commit -m x", clone)
+    assert "Traceback" not in proc.stderr, f"AC-4: Gate stuerzt ab: {proc.stderr!r}"
+    assert proc.returncode == 2 and "hinter origin/main" in proc.stderr, (
+        f"AC-4: nach Timeout von rev-parse MERGE_HEAD muss Basis HEAD gelten: "
+        f"rc={proc.returncode} stderr={proc.stderr!r}"
+    )
+    assert "git rebase --autostash origin/main" in proc.stderr, (
+        f"AC-4: Basis HEAD liefert die --autostash-Meldung: {proc.stderr!r}"
+    )
+
+
+def test_abschliessender_merge_im_worktree_wird_durchgelassen(tmp_path):
+    """AC-1 im `git worktree add`-Worktree: MERGE_HEAD liegt worktree-lokal."""
+    clone = _origin_mit_klon(tmp_path)
+    _git(["commit", "-m", "lokal"], clone)
+    wt = tmp_path / "wt"
+    _git(["worktree", "add", "-b", "wt-zweig", str(wt), "HEAD"], clone)
+    _write_workflow(wt, workflow_type="feature-fast")
+    _git(["fetch", "origin"], wt)
+    assert _count(wt, "HEAD..origin/main") > 0, "Vorbedingung: Worktree muss hinter origin/main liegen"
+    _git(["merge", "--no-commit", "--no-ff", "origin/main"], wt)
+    assert _git(["rev-parse", "-q", "--verify", "MERGE_HEAD"], wt, check=False).returncode == 0
+    assert _git(["rev-parse", "-q", "--verify", "MERGE_HEAD"], clone, check=False).returncode != 0, (
+        "Vorbedingung: MERGE_HEAD muss worktree-lokal sein, nicht im Hauptklon"
+    )
+    assert _count(wt, "MERGE_HEAD..origin/main") == 0
+
+    proc = _gate("git commit -m x", wt)
+    assert proc.returncode == 0 and "hinter origin/main" not in proc.stderr, (
+        f"AC-1 #352 (Worktree): abschliessender Merge-Commit wird von 5b geblockt: "
         f"rc={proc.returncode} stderr={proc.stderr!r}"
     )
