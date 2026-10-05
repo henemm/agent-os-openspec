@@ -1,0 +1,7 @@
+test_marker (test_doc.T.test_marker)
+TEST FAILED marker in docstring must not flip a green run ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+OK

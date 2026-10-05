@@ -312,6 +312,11 @@ po_briefing_gate:
 ci_spec_gate:
   enabled: true
 
+# Session-Banner (#185): warnt beim Start, wenn der Haupt-Ordner hinter seinem
+# Upstream liegt (git fetch mit 3 s Timeout; offline = keine Zeile).
+session_banner:
+  behind_check: true
+
 # Abdeckungspruefung des Adversary-Nachweises (Issue #259)
 # Commit-Gate und Phase 8 verlangen, dass das Dialog-Protokoll jede Code-Datei
 # der Aenderungsmenge zitiert und hasht (`adversary_dialog.py required-files`).

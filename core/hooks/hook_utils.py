@@ -1259,6 +1259,25 @@ ALWAYS_ALLOWED_PATTERNS = [
 ]
 
 
+# Testdateien NEBEN dem Code (#335): Go legt `foo_test.go` ins selbe Package,
+# JS/TS kennen `*.test.*`/`*.spec.*`. Test-ORDNER deckt ALWAYS_ALLOWED_DIRS.
+# Bewusst eng und case-sensitiv, nur Konventionen, die der Name verlaesslich
+# traegt: Go baut `*_test.go` nie ins Programm. Python-Namen (`test_*.py`,
+# `*_test.py`) bewusst NICHT — `test_lock_guard.py` ist ein echter Hook,
+# `ab_test.py` ein Feature; Python-Tests liegen in `tests/`. `test_helpers.go`
+# bleibt Produktivcode. Gilt zusaetzlich zu always_allowed_patterns.
+TEST_FILE_PATTERNS = [
+    r"(^|/)[^/]+_test\.go$",
+    r"(^|/)[^/]+\.(test|spec)\.[cm]?[jt]sx?$",
+]
+
+
+def is_colocated_test_file(file_path: str) -> bool:
+    """Testdatei nach Dateinamen-Konvention (TEST_FILE_PATTERNS)?"""
+    path = str(file_path).replace("\\", "/")
+    return any(re.search(p, path) for p in TEST_FILE_PATTERNS)
+
+
 def is_gated_code_path(file_path: str, config: "dict | None" = None) -> bool:
     """Ist das eine Code-Datei nach der TDD-Gate-Definition (edit_gate.py 2/2b/3)?
 
@@ -1281,6 +1300,8 @@ def is_gated_code_path(file_path: str, config: "dict | None" = None) -> bool:
     if any(d.rstrip("/") in parts for d in allowed_dirs):
         return False
     if any(re.search(p, file_path, re.IGNORECASE) for p in allowed_patterns):
+        return False
+    if is_colocated_test_file(file_path):
         return False
     return Path(file_path).suffix.lower() in code_ext
 

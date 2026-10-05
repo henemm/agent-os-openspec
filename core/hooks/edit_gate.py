@@ -39,7 +39,7 @@ from pathlib import Path
 # --- Defaults (overridable via config.yaml) ---
 
 # Code-Klassifikation: eine Quelle fuer TDD-Gate und Nachweis-Gate (#259).
-from hook_utils import CODE_EXTENSIONS, ALWAYS_ALLOWED_DIRS, ALWAYS_ALLOWED_PATTERNS  # noqa: E402
+from hook_utils import CODE_EXTENSIONS, ALWAYS_ALLOWED_DIRS, ALWAYS_ALLOWED_PATTERNS, is_colocated_test_file  # noqa: E402
 
 PROTECTED_STATE_FILES = [
     ".claude/workflows/", "workflow_state.json", "user_override_token.json",
@@ -635,6 +635,11 @@ def main():
     # 5. Stop-lock
     if _is_stop_locked():
         block("BLOCKED: Stop-lock active.")
+
+    # 5b. Testdatei neben dem Code (#335: `foo_test.go`, `x.test.ts`) — erst NACH
+    # Infrastruktur (4) und Stop-Lock (5): ein Testname macht einen Hook nicht frei.
+    if is_colocated_test_file(file_path):
+        allow()
 
     # 6. Find workflow for file
     workflow = _read_active_workflow()

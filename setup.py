@@ -54,6 +54,7 @@ SCRIPTS_DIR = FRAMEWORK_ROOT / "scripts"
 sys.path.insert(0, str(CORE_DIR / "hooks"))
 from alias_sync import (  # noqa: E402
     ALIAS_MARKER,
+    _read_or_none,
     alias_content,
     embeds_full_skill,
     is_alias_file,
@@ -1116,7 +1117,10 @@ def generate_command_aliases(project_path: Path) -> None:
             created += 1
             continue
 
-        if is_alias_file(target.read_text()):
+        existing = _read_or_none(target)  # unlesbar (Rechte, kein UTF-8): nie ueberschreiben (#353)
+        if existing is None:
+            skipped.append(f"{name}.md (unlesbar)")
+        elif is_alias_file(existing):
             target.write_text(content)
             updated += 1
         else:
@@ -1127,7 +1131,7 @@ def generate_command_aliases(project_path: Path) -> None:
         f"{len(skipped)} skipped."
     )
     for name in skipped:
-        print(f"  SKIPPED (custom command exists): {name}")
+        print(f"  SKIPPED (custom command exists or unreadable): {name}")
 
     if project_path.resolve() == Path.home().resolve():
         full_content_names = [

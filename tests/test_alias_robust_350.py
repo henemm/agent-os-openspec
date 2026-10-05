@@ -258,3 +258,18 @@ def test_ohne_geschlossenes_frontmatter_unveraendert():
         result = alias_sync.alias_content("10-context", skill_text)
         assert result.startswith(MARKER)
         assert result == f"{MARKER}\n{skill_text}"
+
+
+# --- #353: --command-aliases (Anlegen) uebersteht unlesbare Dateien ---
+
+def test_command_aliases_skips_unreadable_file(home, tmp_path):
+    proj = tmp_path / "proj"
+    cmds = proj / ".claude" / "commands"
+    cmds.mkdir(parents=True)
+    bad = cmds / "50-implement.md"
+    bad.write_bytes(BAD_BYTES)
+    r = _run_setup(home, str(proj), "--command-aliases")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert bad.read_bytes() == BAD_BYTES, "unlesbare Datei nie ueberschreiben"
+    assert "50-implement.md (unlesbar)" in r.stdout
+    assert (cmds / "60-validate.md").exists(), "die uebrigen Aliase entstehen trotzdem"
