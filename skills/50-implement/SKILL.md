@@ -197,6 +197,7 @@ Wenn das Ergebnis so stimmt, schreibe `go`.
 - Du darfst NICHT selbst entscheiden ob Auffaelligkeiten relevant sind
 - Du darfst NICHT "go" simulieren oder die Freigabe umgehen
 - Der User gibt frei mit: "go", "weiter", "tests ok", "green ok"
+- Freigaben nie über den Auswahldialog (`AskUserQuestion`) einholen, nur als Textzeile: der `phase_listener` sieht ausschließlich getippte Nachrichten, eine im Dialog geklickte Freigabe wirkt nicht und der PO muss sie erneut tippen (#183)
 
 ### Step 7: Update Workflow State to Adversary Phase
 
