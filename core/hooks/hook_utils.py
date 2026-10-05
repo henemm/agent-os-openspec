@@ -956,7 +956,8 @@ SECRETS_FREETEXT_FLAGS = {"-m", "--message", "--body", "--title", "-F"}
 #    Befehl UNVERAENDERT (fail-closed).
 # 2. POSITIVLISTE statt Negativliste: Entfernt wird ein Body nur, wenn das
 #    Kommando, das ihn liest, ein reiner Daten-Konsument ist
-#    (_HEREDOC_SAFE_CONSUMERS); bei "$(cat <<'E'" auch das aeussere Kommando.
+#    (_HEREDOC_SAFE_CONSUMERS), und nur ausserhalb von Subshell und $(...):
+#    bash 3.2 beendet eine Ersetzung schon an einer ")" im Body (#365).
 #    Jede Pipe im uebrigen Befehl muss ebenfalls in einen solchen Konsumenten
 #    fuehren. Eine Liste "gefaehrlicher" Programme ist nie vollstaendig
 #    ($SHELL, sed e, s\h ...).
@@ -988,8 +989,6 @@ _HEREDOC_REDEFINE_RE = re.compile(
     r"\b[A-Za-z_][\w.-]*\s*\(\s*\)|\b(?:function|alias|shopt|enable|hash)\b|"
     r"\bgit\b[^\n;&|]*\s(?:-c\b|--config-env\b|--exec-path\b)"
 )
-# Aeussere Kommandos fuer die Form `cmd ... "$(cat <<'E'"` (Argument-Text).
-_HEREDOC_SAFE_OUTER = frozenset({"git", "gh", "echo", "printf"})
 
 
 class _HeredocUnsure(Exception):
@@ -1018,7 +1017,6 @@ def _heredoc_bodies(command: str) -> "list[tuple[int, int, bool]]":
     """
     n = len(command)
     stack = ["code"]          # "code" | "sub" (Subshell) | "subst" ($(...)) | "dq"
-    subst_ok: "list[bool]" = []  # je offener "subst"/"sub"-Ebene
     pending: "list[tuple[str, bool, bool, bool, int]]" = []  # marker, dash, quoted, ok, depth
     bodies: "list[tuple[int, int, bool]]" = []
     word_start = True
@@ -1068,13 +1066,9 @@ def _heredoc_bodies(command: str) -> "list[tuple[int, int, bool]]":
             if nxt == "(":
                 if command.startswith("$((", i):
                     raise _HeredocUnsure  # Arithmetik
-                # Harmlos nur als Argument-Text: '"$(' hinter Leerraum, davor in
-                # derselben Zeile ein Befehlswort aus _HEREDOC_SAFE_OUTER.
-                ok = False
-                if top == "dq" and i >= 2 and command[i - 1] == '"' and command[i - 2] in " \t":
-                    head = command[command.rfind("\n", 0, i) + 1:i - 1]
-                    ok = _segment_command_word(head) in _HEREDOC_SAFE_OUTER
-                subst_ok.append(ok and all(subst_ok))
+                # Heredoc-Bodies in $(...) werden nie entfernt (#365): bash 3.2
+                # beendet die Ersetzung an einer unausgeglichenen ")" im Body
+                # und fuehrt die Folgezeilen als Befehle aus.
                 stack.append("subst")
                 i += 2
                 word_start = True
@@ -1117,15 +1111,12 @@ def _heredoc_bodies(command: str) -> "list[tuple[int, int, bool]]":
             if command.startswith("((", i):
                 raise _HeredocUnsure
             stack.append("sub")
-            subst_ok.append(False)
             i += 1
             word_start = True
             continue
         if c == ")":
             if len(stack) > 1:
                 closed = stack.pop()
-                if subst_ok:
-                    subst_ok.pop()
                 word_start = closed == "sub"  # nach $(...) geht das Wort weiter
             else:
                 word_start = True
@@ -1145,7 +1136,9 @@ def _heredoc_bodies(command: str) -> "list[tuple[int, int, bool]]":
             quoted = m.group(5) is None
             line_head = command[command.rfind("\n", 0, i) + 1:i]
             consumer = _segment_command_word(line_head)
-            ok = all(subst_ok) and consumer in _HEREDOC_SAFE_CONSUMERS
+            # Nur auf oberster Ebene: hier ist "dq" nie oben, also heisst
+            # len(stack) > 1, dass eine Subshell oder $(...) offen ist.
+            ok = len(stack) == 1 and consumer in _HEREDOC_SAFE_CONSUMERS
             pending.append((name, m.group(1) == "-", quoted, ok, len(stack)))
             i = m.end()
             word_start = True

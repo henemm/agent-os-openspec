@@ -17,6 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Migration:** Projekte mit eigener, angepasster `70-deploy.md` behalten diese, denn die Kurzbefehl-Werkzeuge ersetzen nur unveränderte Kopien. Ein leerer `deploy:`-Block steht in der `config.yaml`-Vorlage.
   - **Tests:** `tests/test_deploy_config_81.py`.
 
+### Fixed
+
+- **#365:** `hook_utils.strip_heredoc_bodies` entfernt einen Heredoc-Body in einer Befehlsersetzung (`--body "$(cat <<'EOF' … )"`) nicht mehr aus dem Scan.
+  - **Vorher:** bash 3.2 (`/bin/bash`, `/bin/sh` auf macOS) beendet die Ersetzung an einer unausgeglichenen `)` im Body (z. B. `y)"`) und führt die folgenden Body-Zeilen als Befehle aus. Der Scanner hatte sie als Daten entfernt, `bash_gate` und `secrets_guard` sahen sie nicht.
+  - **Jetzt:** Ein Body innerhalb `$( … )` bleibt immer im Scan. Damit ist die ganze Klasse geschlossen, nicht nur die Schreibweise `y)"`. Die nicht mehr nötige Liste der äußeren Kommandos (`git`, `gh`, `echo`, `printf`) ist entfernt. Heredocs außerhalb von Ersetzungen verhalten sich wie bisher.
+  - **Preis:** `gh pr/issue …` mit Gate-Wörtern (geschützter Pfad, Marker, `.env`) im Text eines solchen Heredocs kann jetzt blocken (Messung: 11 von 120 gemergten PR-Texten). Ausweg: `--body-file`. `git commit -m` ist über den Git-Schnellpfad nicht betroffen.
+  - **Tests:** `tests/test_heredoc_strip_357.py` (Angriff mit `y)"` gegen beide Hooks per stdin), Differenztest-Generator in `tests/heredoc_bash_oracle.py` erzeugt Klammer-/Quote-Zeilen im Body jetzt unmaskiert.
+
 ## [3.36.1] - 2026-10-05
 
 ### Fixed
