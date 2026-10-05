@@ -967,12 +967,27 @@ def main():
     except Exception:
         pass
 
-    if _references_sensitive_file(scan_cmd, sensitive_patterns) and _outputs_content(scan_cmd):
-        if _references_sensitive_file(scan_cmd, always_blocked):
-            block("BLOCKED: Secrets guard — sensitive credentials/keys.")
-        staging = (_root / ".claude" / "staging").exists()
-        if not staging:
-            block("BLOCKED: Secrets guard — .env file. Enable staging mode with: touch .claude/staging")
+    def _secrets_check(sensitive: list, always: list) -> None:
+        if _references_sensitive_file(scan_cmd, sensitive) and _outputs_content(scan_cmd):
+            if _references_sensitive_file(scan_cmd, always):
+                block("BLOCKED: Secrets guard — sensitive credentials/keys.")
+            staging = (_root / ".claude" / "staging").exists()
+            if not staging:
+                block("BLOCKED: Secrets guard — .env file. Enable staging mode with: touch .claude/staging")
+
+    # #292: wirken Zweig-Muster, entscheiden zuerst die Grundmuster allein.
+    try:
+        from config_loader import secrets_guard_floor
+        floor = secrets_guard_floor()
+    except Exception:
+        floor = None
+    if floor is not None:
+        _secrets_check(*floor)
+    try:
+        _secrets_check(sensitive_patterns, always_blocked)
+    except Exception as exc:  # fehlerhaftes Muster: blockieren statt Exit 1 (fail-closed)
+        block(f"BLOCKED: Secrets guard — Muster nicht auswertbar ({type(exc).__name__}); "
+              "secrets_guard-Abschnitt der Config pruefen.")
 
     # 4b. Hardcoded credentials in command
     if not _is_whitelisted(command):

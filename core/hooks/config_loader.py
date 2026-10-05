@@ -299,6 +299,10 @@ def secrets_guard_patterns(config: "dict | None" = None) -> "tuple[list, list]":
         def floor(base: list, branch) -> list:
             valid = []
             for p in branch if isinstance(branch, list) else []:
+                # Nur Text-Muster begrenzter Laenge: `!!binary` liefert bytes, die
+                # re.compile annimmt, re.search auf str aber mit TypeError quittiert.
+                if not isinstance(p, str) or len(p) > _MAX_BRANCH_PATTERN_LEN:
+                    continue
                 try:
                     re.compile(p)
                 except (re.error, TypeError):
@@ -312,6 +316,25 @@ def secrets_guard_patterns(config: "dict | None" = None) -> "tuple[list, list]":
     return sensitive, always
 
 
+_MAX_BRANCH_PATTERN_LEN = 200
+
+
+def secrets_guard_floor() -> "tuple[list, list] | None":
+    """Eingebaute Grundmuster, wenn ein Worktree-Abschnitt wirkt — sonst None (#292).
+
+    Die Hooks pruefen damit ZUERST allein gegen die Grundmuster: ein Muster aus
+    dem Zweig (ReDoS, Absturz) kann die Entscheidung ueber .env & Co. dann nicht
+    mehr verhindern. Ohne Worktree-Abschnitt bleibt alles wie bisher.
+    """
+    try:
+        if not _worktree_secrets_section():
+            return None
+    except Exception:
+        return None
+    from hook_utils import SECRETS_ALWAYS_BLOCKED, SECRETS_SENSITIVE_PATTERNS
+    return list(SECRETS_SENSITIVE_PATTERNS), list(SECRETS_ALWAYS_BLOCKED)
+
+
 def _worktree_secrets_section() -> "dict | None":
     """secrets_guard-Abschnitt der Worktree-Config, wenn er von dem des Haupt-Ordners abweicht."""
     from hook_utils import find_worktree_root
@@ -321,6 +344,14 @@ def _worktree_secrets_section() -> "dict | None":
         return None
     try:
         if worktree.resolve() == main_root.resolve():
+            return None
+        # Nur ein echter Worktree DIESES Repos — nicht jeder Ordner mit einer
+        # `.git`-Datei, in dem die CWD gerade steht.
+        linked = find_main_repo_from_worktree(worktree)
+        if linked is None:
+            return None
+        linked, main_r = linked.resolve(), main_root.resolve()
+        if not (main_r == linked or linked in main_r.parents):
             return None
     except OSError:
         return None

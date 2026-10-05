@@ -112,3 +112,60 @@ def test_helper_floor_and_validity(repo):
     assert set(data["base"]) <= set(data["s"])
     assert "custom_x" in data["s"] and "(" not in data["s"] and "_key" not in data["s"]
     assert data["a"] == ["_key"], "ohne always_blocked im Zweig gilt die Haupt-Ordner-Liste"
+
+
+# --- Pruefrunde 1: Zweig-Muster duerfen die Grundmuster nie aushebeln ---
+
+BAD_BRANCH_CFGS = {
+    "binary_always": "framework:\n  enabled: true\nsecrets_guard:\n  always_blocked: [!!binary YQ==]\n",
+    "binary_sensitive": "framework:\n  enabled: true\nsecrets_guard:\n  sensitive_patterns: [!!binary YQ==]\n",
+    "redos_always": "secrets_guard:\n  always_blocked: ['(a|a)+Z']\n",
+    "redos_sensitive": "secrets_guard:\n  sensitive_patterns: ['(a|aa)+$Z']\n",
+}
+LONG = "a" * 44
+
+
+def _read(cwd, path):
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("CLAUDE_PROJECT_DIR", "CLAUDE_TOOL_INPUT", "CLAUDE_TOOL_NAME",
+                        "OPENSPEC_FRAMEWORK", "OPENSPEC_ENV", "OPENSPEC_ACTIVE_WORKFLOW")}
+    payload = json.dumps({"tool_name": "Read", "tool_input": {"file_path": str(path)}})
+    return subprocess.run([sys.executable, str(HOOKS_DIR / "secrets_guard.py")], input=payload,
+                          capture_output=True, text=True, env=env, cwd=str(cwd), timeout=10)
+
+
+@pytest.mark.parametrize("name", sorted(BAD_BRANCH_CFGS))
+def test_bad_branch_pattern_never_opens_floor_files(repo, name):
+    main, wt = repo
+    (wt / "openspec.yaml").write_text(BAD_BRANCH_CFGS[name])
+    assert _read(wt, wt / ".env").returncode == 2
+    assert _read(wt, wt / f"{LONG}/../.env").returncode == 2
+    for hook in ("secrets_guard.py", "bash_gate.py"):
+        for cmd in ("cat .env", f"cat {LONG} .env", f"cat {LONG} credentials.json",
+                    "cat README credentials.json"):
+            r = subprocess.run(
+                [sys.executable, str(HOOKS_DIR / hook)],
+                input=json.dumps({"tool_name": "Bash", "tool_input": {"command": cmd}}),
+                capture_output=True, text=True, timeout=10, cwd=str(wt),
+                env={k: v for k, v in os.environ.items()
+                     if k not in ("CLAUDE_PROJECT_DIR", "CLAUDE_TOOL_INPUT", "CLAUDE_TOOL_NAME",
+                                  "OPENSPEC_FRAMEWORK", "OPENSPEC_ENV",
+                                  "OPENSPEC_ACTIVE_WORKFLOW")})
+            assert r.returncode == 2, (name, hook, cmd, r.returncode, r.stderr[-300:])
+
+
+def test_fake_git_file_is_not_a_worktree(repo, tmp_path):
+    """Ein Ordner mit `.git`-Datei ist nur dann ein Worktree, wenn er zu DIESEM Repo gehoert."""
+    main, wt = repo
+    fake = tmp_path / "fake"
+    fake.mkdir()
+    (fake / ".git").write_text("gitdir: /nonexistent\n")
+    (fake / "openspec.yaml").write_text("secrets_guard:\n  sensitive_patterns: [private_key]\n")
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("CLAUDE_TOOL_INPUT", "CLAUDE_TOOL_NAME", "OPENSPEC_FRAMEWORK",
+                        "OPENSPEC_ENV", "OPENSPEC_ACTIVE_WORKFLOW")}
+    env["CLAUDE_PROJECT_DIR"] = str(main)
+    payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": f"cat {main}/notes_key.txt"}})
+    r = subprocess.run([sys.executable, str(HOOKS_DIR / "secrets_guard.py")], input=payload,
+                       capture_output=True, text=True, env=env, cwd=str(fake))
+    assert r.returncode == 2, "Muster des Haupt-Ordners (_key) gelten weiter"

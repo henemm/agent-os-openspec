@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Jetzt:** Ein Worktree darf die secrets_guard-Muster seines Zweigs selbst setzen. Das gilt nur, wenn sein Abschnitt von dem des Haupt-Ordners abweicht. Der neue gemeinsame Helfer `config_loader.secrets_guard_patterns` wird von `secrets_guard` und `bash_gate` gleichermaßen genutzt.
   - **Untergrenze:** Die eingebauten Grundmuster bleiben in jedem Zweig aktiv: `.env`, `credentials.json`, Service-Account-Dateien, private Keys, `.pem`, `.key` und `*.secret.*`. Der Zweig ersetzt nur die projekteigenen Zusatzmuster.
   - **Was der Zweig nicht kann:** `enabled` wird nie aus dem Worktree gelesen, eine ungültige Regex aus dem Worktree wird verworfen, und Grenzwerte (#153) bleiben beim Haupt-Ordner.
+  - **Grundmuster entscheiden zuerst:** Wirkt ein Zweig-Abschnitt, prüfen `secrets_guard` und `bash_gate` erst allein gegen die Grundmuster. Erst danach kommen die Zweig-Muster dran. Ein absichtlich langsames Muster (ReDoS) oder ein Muster, das abstürzt (z. B. `!!binary`), kann die Blockade von `.env` & Co. damit nicht mehr verhindern.
+  - **Fehlerhafte Muster:** Ein Muster, das sich nicht auswerten lässt, blockiert, statt mit Exit 1 durchzulassen.
+  - **Zulässige Zweig-Muster:** nur Text, höchstens 200 Zeichen.
+  - **Nur echte Worktrees:** Es zählt nur ein Worktree dieses Repos. Ein beliebiger Ordner mit `.git`-Datei als CWD reicht nicht.
+  - **Bewusste Folge:** Ein Zweig-Abschnitt ersetzt auch projekteigene Zusätze des Haupt-Ordners (z. B. ein eigenes `\.p12$`). Übrig bleibt die eingebaute Untergrenze.
   - **Haupt-Ordner-Sitzungen:** unverändert.
   - **Tests:** `tests/test_secrets_guard_worktree_292.py`.
 
