@@ -269,6 +269,74 @@ def load_config() -> dict:
     return config
 
 
+def secrets_guard_patterns(config: "dict | None" = None) -> "tuple[list, list]":
+    """(sensitive_patterns, always_blocked) fuer secrets_guard UND bash_gate (#292).
+
+    Grundsatz wie bei allen Grenzen (#153): die Config kommt aus dem Haupt-Ordner.
+    Einzige Ausnahme: ein Worktree darf die secrets_guard-MUSTER seines Zweigs
+    selbst setzen — sonst blockt eine im Zweig bereits verengte Liste weiter mit
+    der alten, breiten Fassung harmlose Dateinamen (grep, ls, wc).
+
+    Damit eine Sitzung den Schutz im eigenen Zweig nicht abschalten kann, bleiben
+    die eingebauten Grundmuster (hook_utils.SECRETS_*: .env, credentials.json,
+    private Keys, .pem, .key, *.secret.*) immer Teil der Liste; der Zweig ersetzt
+    nur die projekteigenen Zusatzmuster. `enabled` wird nie aus dem Worktree
+    gelesen. Ungueltige Regex aus dem Worktree werden verworfen. Wirft nie.
+    """
+    from hook_utils import SECRETS_ALWAYS_BLOCKED, SECRETS_SENSITIVE_PATTERNS
+    base_sensitive, base_always = list(SECRETS_SENSITIVE_PATTERNS), list(SECRETS_ALWAYS_BLOCKED)
+    try:
+        cfg = (config if config is not None else load_config()).get("secrets_guard") or {}
+    except Exception:
+        cfg = {}
+    sensitive = list(cfg.get("sensitive_patterns", base_sensitive))
+    always = list(cfg.get("always_blocked", base_always))
+    try:
+        override = _worktree_secrets_section()
+    except Exception:
+        override = None
+    if override:
+        def floor(base: list, branch) -> list:
+            valid = []
+            for p in branch if isinstance(branch, list) else []:
+                try:
+                    re.compile(p)
+                except (re.error, TypeError):
+                    continue
+                valid.append(p)
+            return base + [p for p in valid if p not in base]
+        if "sensitive_patterns" in override:
+            sensitive = floor(base_sensitive, override["sensitive_patterns"])
+        if "always_blocked" in override:
+            always = floor(base_always, override["always_blocked"])
+    return sensitive, always
+
+
+def _worktree_secrets_section() -> "dict | None":
+    """secrets_guard-Abschnitt der Worktree-Config, wenn er von dem des Haupt-Ordners abweicht."""
+    from hook_utils import find_worktree_root
+    main_root = find_project_root()
+    worktree = find_worktree_root()
+    if worktree is None or yaml is None:
+        return None
+    try:
+        if worktree.resolve() == main_root.resolve():
+            return None
+    except OSError:
+        return None
+    local = _find_config_file(worktree)
+    if local is None:
+        return None
+    section = (yaml.safe_load(local.read_text()) or {}).get("secrets_guard")
+    if not isinstance(section, dict):
+        return None
+    main_file = _find_config_file(main_root)
+    main_section = {}
+    if main_file is not None:
+        main_section = (yaml.safe_load(main_file.read_text()) or {}).get("secrets_guard") or {}
+    return section if section != main_section else None
+
+
 def load_local_overrides(root: Path) -> dict | None:
     """
     Load local override settings.

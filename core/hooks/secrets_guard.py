@@ -72,10 +72,16 @@ _NESTED_SHELL_RE = re.compile(r"\b(?:ba|z|da|k)?sh\s+-c\b|\beval\b")
 
 def _get_config() -> dict:
     cfg = load_config().get("secrets_guard", {})
+    try:
+        from config_loader import secrets_guard_patterns  # Zweig-Muster mit Untergrenze (#292)
+        sensitive, always = secrets_guard_patterns()
+    except Exception:
+        sensitive = cfg.get("sensitive_patterns", _DEFAULT_SENSITIVE)
+        always = cfg.get("always_blocked", _DEFAULT_ALWAYS_BLOCKED)
     return {
         "enabled": cfg.get("enabled", True),
-        "sensitive_patterns": cfg.get("sensitive_patterns", _DEFAULT_SENSITIVE),
-        "always_blocked": cfg.get("always_blocked", _DEFAULT_ALWAYS_BLOCKED),
+        "sensitive_patterns": sensitive,
+        "always_blocked": always,
     }
 
 

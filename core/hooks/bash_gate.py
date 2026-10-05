@@ -961,6 +961,11 @@ def main():
     # 4. Secrets guard
     sensitive_patterns = config.get("secrets_guard", {}).get("sensitive_patterns", SENSITIVE_PATTERNS)
     always_blocked = config.get("secrets_guard", {}).get("always_blocked", ALWAYS_BLOCKED_SECRETS)
+    try:
+        from config_loader import secrets_guard_patterns  # Zweig-Muster mit Untergrenze (#292)
+        sensitive_patterns, always_blocked = secrets_guard_patterns(config)
+    except Exception:
+        pass
 
     if _references_sensitive_file(scan_cmd, sensitive_patterns) and _outputs_content(scan_cmd):
         if _references_sensitive_file(scan_cmd, always_blocked):
