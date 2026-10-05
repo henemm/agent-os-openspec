@@ -506,7 +506,9 @@ def _creates_commit(command: str) -> bool:
     """
     if is_git_subcommand(command, "commit"):
         return True
-    return is_git_subcommand(command, "merge") and "--continue" in command
+    # git akzeptiert eindeutige Praefixe langer Optionen: `--cont` == `--continue`.
+    return (is_git_subcommand(command, "merge")
+            and re.search(r"(?<![^\s\"'])--cont(?:i(?:n(?:u(?:e)?)?)?)?(?![^\s;&|)\"'])", command) is not None)
 
 
 def _commit_content_files(staged_list: list, measure_root: Path, command: str) -> list:
@@ -617,6 +619,11 @@ def _commit_form(command: str) -> "tuple[bool, bool, bool, bool]":
     commits = [seg[seg.index("commit") + 1:] for seg in (_git_segments(command) or [])
                if "commit" in seg and any(_looks_like_git(t) for t in seg[:seg.index("commit")])]
     if not commits:
+        merges = [seg for seg in (_git_segments(command) or [])
+                  if "merge" in seg and any(_looks_like_git(t) for t in seg[:seg.index("merge")])]
+        if merges and _creates_commit(command):
+            # `git merge --continue` (#355) committet den Index — ohne -a, Pfade, --amend
+            return False, False, "add" in git_subcommands(command), False
         return True, True, True, True
     all_files = pathspec = amend = False
     for args in commits:
@@ -665,10 +672,16 @@ def _commit_change_set(command: str) -> "tuple[list | None, list, str | None]":
         top = git_toplevel(_measurement_root())
         if top is None:
             return None, [], None
-        staged = git_names(["diff", "--cached", *DIFF_NAMES], top)  # leer = leerer Index
+        # Laufender Merge (#355): gegen MERGE_HEAD messen, nicht gegen HEAD — sonst
+        # zaehlte jede per `git merge origin/main` hereingeholte Datei als eigene
+        # Aenderung, die der Dialog binden muesste (dieselbe Menge wie Phase 8
+        # gegen merge-base).
+        base = "MERGE_HEAD" if has("MERGE_HEAD") else "HEAD"
+        staged = git_names(["diff", "--cached", *DIFF_NAMES, *([base] if base != "HEAD" else [])],
+                           top)  # leer = leerer Index
         files = index = code_files(staged, top)
-        if (all_files or pathspec or with_add or not staged) and has("HEAD"):
-            files = files + git_code_files(["diff", *DIFF_NAMES, "HEAD", "--"], top)
+        if (all_files or pathspec or with_add or not staged) and has(base):
+            files = files + git_code_files(["diff", *DIFF_NAMES, base, "--"], top)
         if amend and has("HEAD~1"):  # Vereinigung: --amend vergroessert die Menge nur
             files = files + git_code_files(["diff", *DIFF_NAMES, "HEAD~1", "--"], top) \
                 + git_code_files(["diff", "--cached", *DIFF_NAMES, "HEAD~1", "--"], top)

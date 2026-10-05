@@ -446,14 +446,14 @@ def _system_alias_forms(unresolved: str, resolved: str) -> "list[str]":
     """Das aufgeloeste Ziel plus seine Schreibweisen ueber System-Symlinks (#239, #245).
 
     Fuer jeden Vorfahren X des lexikalisch normalisierten Pfads, der ein
-    System-Symlink ist (root gehoert, Elternordner nicht fuer alle beschreibbar —
-    `/tmp`, `/var`, `/etc` auf macOS), und dessen Ziel das aufgeloeste Ziel
+    System-Symlink ist (direkt unter `/`, root-eigen — `/tmp`, `/var`, `/etc`
+    auf macOS), und dessen Ziel das aufgeloeste Ziel
     enthaelt, ist `X + Rest` eine gleichwertige Schreibweise: sie loest exakt
     auf `resolved` auf. Ein `..` aendert daran nichts — es wird vorher
     lexikalisch aufgeloest, die Form muss trotzdem auf das echte Ziel zeigen.
 
-    Symlinks, die der Agent selbst anlegen kann (eigene Ordner, /tmp mit
-    Sticky-Bit), zaehlen bewusst NICHT: `/tmp/link -> /etc` ergaebe sonst die
+    Symlinks, die der Agent selbst anlegen kann (alles unterhalb von `/`),
+    zaehlen bewusst NICHT: `/tmp/link -> /etc` ergaebe sonst die
     Schreibweise `/tmp/link/passwd` und das Muster `^/tmp/` waere ein
     Generalschluessel. Folge: ein solches Ziel wird blockiert, wenn nur seine
     Symlink-Schreibweise, nicht aber sein echter Ort auf das Muster passt.
@@ -473,11 +473,17 @@ def _system_alias_forms(unresolved: str, resolved: str) -> "list[str]":
 
 
 def _is_system_symlink(path: Path) -> bool:
-    """Symlink, den nur root anlegen konnte und den niemand sonst umbiegen kann."""
+    """Symlink direkt unter `/`, root-eigen — die macOS-Form `/tmp`, `/var`, `/etc`.
+
+    Nur die oberste Ebene: tiefer liegende Symlinks kann ein Agent selbst anlegen
+    (`/tmp/x -> /`, als root auch in jedem Ordner), und ein Pfad UNTER einem
+    solchen Symlink (`/tmp/x/bin`) fuehrte `lstat` ueber den fremden Link auf
+    ein root-eigenes Ziel. Unter `/` anlegen kann nur root.
+    """
     try:
-        if not path.is_symlink():
+        if path.parent != Path(path.anchor) or not path.is_symlink():
             return False
-        return path.lstat().st_uid == 0 and not path.parent.stat().st_mode & 0o002
+        return path.lstat().st_uid == 0
     except (OSError, ValueError):
         return False
 

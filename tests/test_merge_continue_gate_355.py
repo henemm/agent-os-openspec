@@ -55,3 +55,52 @@ def test_commit_creating_commands_need_verdict(project, cmd):
 def test_other_commands_unaffected(project, cmd):
     r = _gate(project, cmd)
     assert r.returncode == 0, (cmd, r.stderr)
+
+
+# --- Pruefrunde 1 (F3): git akzeptiert Praefixe langer Optionen ---
+
+@pytest.mark.parametrize("cmd", ["git merge --cont", "git merge --conti",
+                                 'git merge "--continue"', "git merge --no-edit --continue"])
+def test_option_prefixes_need_verdict(project, cmd):
+    r = _gate(project, cmd)
+    assert r.returncode == 2 and "Adversary verdict" in r.stderr, (cmd, r.stderr)
+
+
+# --- Pruefrunde 1 (F4): im Merge zaehlen nur eigene Aenderungen ---
+
+def _git(args, cwd):
+    subprocess.run(["git", *args], cwd=str(cwd), check=True, capture_output=True, text=True)
+
+
+def test_merge_change_set_excludes_files_brought_in_from_main(tmp_path, monkeypatch):
+    repo = tmp_path / "r"
+    repo.mkdir()
+    _git(["init", "-q", "-b", "main"], repo)
+    _git(["config", "user.email", "t@example.invalid"], repo)
+    _git(["config", "user.name", "T"], repo)
+    _git(["config", "commit.gpgsign", "false"], repo)
+    (repo / "conf.txt").write_text("base\n")
+    _git(["add", "-A"], repo)
+    _git(["commit", "-qm", "base"], repo)
+    _git(["checkout", "-qb", "feat"], repo)
+    (repo / "own.py").write_text("x = 1\n")
+    (repo / "conf.txt").write_text("feat\n")
+    _git(["add", "-A"], repo)
+    _git(["commit", "-qm", "feat"], repo)
+    _git(["checkout", "-q", "main"], repo)
+    (repo / "upstream.py").write_text("y = 2\n")
+    (repo / "conf.txt").write_text("main\n")
+    _git(["add", "-A"], repo)
+    _git(["commit", "-qm", "main"], repo)
+    _git(["checkout", "-q", "feat"], repo)
+    subprocess.run(["git", "merge", "main"], cwd=str(repo), capture_output=True)
+    (repo / "conf.txt").write_text("resolved\n")
+    _git(["add", "conf.txt"], repo)
+
+    sys.path.insert(0, str(HOOKS_DIR))
+    import bash_gate
+    monkeypatch.setattr(bash_gate, "_measurement_root", lambda: repo)
+    files, partial, err = bash_gate._commit_change_set("git merge --continue")
+    names = {Path(f).name for f in files or []}
+    assert err is None
+    assert "upstream.py" not in names, names

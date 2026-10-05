@@ -90,3 +90,41 @@ def test_case_is_not_folded(tmp_path):
     project.mkdir()
     upper = str(allowed).replace("allowed", "ALLOWED")
     assert _outside(f"{upper}/x.log", project, ["^" + str(allowed) + "/"]) is True
+
+
+# --- Pruefrunde 1 (F1): Symlink-Kette und root-Agent ---
+
+def test_path_below_agent_symlink_to_root_is_blocked(tmp_path):
+    """`<dir>/x -> /` und dann `<dir>/x/etc/...`: lstat von `<dir>/x/etc` landete
+    ueber den fremden Link auf einem root-eigenen Ziel."""
+    (tmp_path / "x").symlink_to("/")
+    project = tmp_path / "project"
+    project.mkdir()
+    pattern = "^" + str(tmp_path) + "/"
+    assert _outside(f"{tmp_path}/x/etc/evil.conf", project, [pattern]) is True
+    assert _outside(f"{tmp_path}/x/usr/bin/evil", project, [pattern]) is True
+    for top in Path("/").iterdir():  # z.B. /bin -> usr/bin (Linux), /etc -> private/etc (macOS)
+        if top.is_symlink():
+            assert _outside(f"{tmp_path}/x/{top.name}/evil", project, [pattern]) is True, top
+
+
+def test_symlink_in_private_dir_is_no_alias_even_for_root(tmp_path):
+    """Ein root-Agent legt jeden Symlink root-eigen an — nur `/`-Ebene zaehlt."""
+    d = tmp_path / "d"
+    d.mkdir()
+    d.chmod(0o755)
+    (d / "link").symlink_to(tmp_path / "secret")
+    (tmp_path / "secret").mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    assert seg._is_system_symlink(d / "link") is False
+    assert _outside(f"{d}/link/passwd", project, ["^" + str(d) + "/"]) is True
+
+
+def test_top_level_root_symlink_counts(tmp_path):
+    """Die macOS-Form: Symlink direkt unter `/`. Hier: jeder vorhandene Top-Level-Link."""
+    import pytest
+    links = [p for p in Path("/").iterdir() if p.is_symlink() and p.lstat().st_uid == 0]
+    if not links:
+        pytest.skip("kein root-eigener Symlink unter / auf diesem System")
+    assert seg._is_system_symlink(links[0]) is True

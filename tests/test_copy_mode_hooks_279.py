@@ -118,3 +118,34 @@ def test_update_adds_missing_hooks_and_keeps_own(copy_project):
 
     _install(copy_project, "--update")
     assert _settings(copy_project) == new, "zweites Update aendert nichts"
+
+
+# --- Pruefrunde 1 (F5, F6) ---
+
+@pytest.mark.parametrize("content", ['{"hooks": null}', '{"hooks": []}', '[]',
+                                     '{"hooks": {"PreToolUse": {}}}',
+                                     '{"hooks": {"PreToolUse": ["x"]}}',
+                                     '{"hooks": {"PreToolUse": [{"hooks": ["x"]}]}}'])
+def test_update_survives_odd_settings(copy_project, content):
+    path = copy_project / ".claude" / "settings.json"
+    path.write_text(content)
+    r = _install(copy_project, "--update")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "WARNING: Hook-Registrierung nicht abgeglichen" in r.stdout
+    assert path.read_text() == content, "unerwartete Struktur bleibt unangetastet"
+
+
+def test_update_registers_per_matcher_and_widens_legacy_edit_group(copy_project):
+    path = copy_project / ".claude" / "settings.json"
+    path.write_text(json.dumps({"hooks": {"PreToolUse": [
+        {"matcher": "Edit|Write", "hooks": [
+            {"type": "command", "command": "python3 .claude/hooks/edit_gate.py"}]},
+        {"matcher": "Bash", "hooks": [
+            {"type": "command", "command": "python3 .claude/hooks/secrets_guard.py"}]},
+    ]}}))
+    assert _install(copy_project, "--update").returncode == 0
+    groups = {g.get("matcher"): g for g in _settings(copy_project)["hooks"]["PreToolUse"]}
+    assert "Edit|Write" not in groups, "Alt-Gruppe auf MultiEdit angehoben"
+    edit_cmds = [h["command"] for h in groups["Edit|Write|MultiEdit"]["hooks"]]
+    assert sum("edit_gate.py" in c for c in edit_cmds) == 1
+    assert any("secrets_guard.py" in h["command"] for h in groups["Read"]["hooks"])

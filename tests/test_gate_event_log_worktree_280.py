@@ -198,3 +198,16 @@ def test_project_dir_main_repo_with_cwd_in_its_worktree_logs_to_worktree(
 
     assert len(_lines(worktree / LOG_REL)) == 1
     assert _lines(main / LOG_REL) == []
+
+
+def test_project_dir_subfolder_of_main_logs_to_worktree(repo_and_worktree, monkeypatch):
+    """Pruefrunde 1 (F7): CLAUDE_PROJECT_DIR auf einen Unterordner des Haupt-Repos."""
+    main, worktree = repo_and_worktree
+    (main / "sub").mkdir()
+    monkeypatch.chdir(worktree)
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(main / "sub"))
+
+    assert _real_block("BLOCKED: F7 probe") == 2
+
+    assert len(_lines(worktree / LOG_REL)) == 1
+    assert _lines(main / "sub" / LOG_REL) == []

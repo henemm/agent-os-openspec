@@ -454,42 +454,72 @@ def merge_missing_copy_mode_hooks(project_path: Path, modules: list) -> list:
     """`--update` im Copy-Modus: fehlende Framework-Hooks in settings.json nachtragen (#279).
 
     Bestehende Eintraege (eigene Hooks, Rechte, geaenderte Timeouts) bleiben
-    unangetastet; ergaenzt wird nur, was im Event noch nicht vorkommt. Ein Hook
-    gilt als vorhanden, wenn ein Kommando des Events `.claude/hooks/<datei>`
-    mit denselben Argumenten aufruft — egal in welcher Schreibweise.
+    unangetastet; ergaenzt wird nur, was in der Gruppe mit demselben Matcher
+    noch fehlt. Ein Hook gilt als vorhanden, wenn ein Kommando der Gruppe
+    `.claude/hooks/<datei>` mit denselben Argumenten aufruft — egal in welcher
+    Schreibweise. Eine unerwartete Struktur bricht das Update nicht ab, sondern
+    hinterlaesst eine Warnung und eine unveraenderte Datei.
     Rueckgabe: die ergaenzten Kommandos (leer = nichts zu tun).
     """
     settings_path = project_path / ".claude" / "settings.json"
     try:
         settings = json.loads(settings_path.read_text()) if settings_path.exists() else {}
+        before = json.dumps(settings, sort_keys=True)
         wanted = copy_mode_hooks(project_path, modules)
-    except (OSError, ValueError) as e:
-        print(f"  WARNING: Hook-Registrierung nicht abgeglichen: {e}")
+        added = _merge_hook_entries(settings, wanted)
+    except Exception as e:  # nie das ganze Update abbrechen (Struktur unbekannt)
+        print(f"  WARNING: Hook-Registrierung nicht abgeglichen ({type(e).__name__}: {e}) — "
+              ".claude/settings.json bitte pruefen")
         return []
+    if json.dumps(settings, sort_keys=True) != before:
+        settings_path.write_text(json.dumps(settings, indent=2) + "\n")
+    return added
 
-    def key(command: str) -> "tuple[str, str] | None":
-        m = re.search(r'\.claude/hooks/(\S+?\.py)"?(.*)$', command)
+
+# Vor #279 registrierte der Copy-Modus Edit-Hooks unter "Edit|Write" — MultiEdit
+# blieb dort ungeprueft. Gruppen, die NUR Framework-Hooks enthalten, werden auf
+# den Plugin-Matcher angehoben.
+_LEGACY_MATCHERS = {"Edit|Write": "Edit|Write|MultiEdit"}
+
+
+def _merge_hook_entries(settings: dict, wanted: dict) -> list:
+    if not isinstance(settings, dict):
+        raise ValueError("settings.json ist kein JSON-Objekt")
+    hooks = settings.setdefault("hooks", {})
+    if not isinstance(hooks, dict):
+        raise ValueError("'hooks' ist kein JSON-Objekt")
+
+    def key(hook) -> "tuple[str, str] | None":
+        command = hook.get("command", "") if isinstance(hook, dict) else ""
+        m = re.search(r'\.claude/hooks/(\S+?\.py)"?(.*)$', command or "")
         return (m.group(1), m.group(2).strip()) if m else None
 
-    hooks = settings.setdefault("hooks", {})
     added = []
     for event, groups in wanted.items():
         existing_groups = hooks.setdefault(event, [])
-        present = {key(h.get("command", "")) for g in existing_groups for h in g.get("hooks", [])}
+        if not isinstance(existing_groups, list):
+            raise ValueError(f"'hooks.{event}' ist keine Liste")
+        if any(not isinstance(g, dict) or not isinstance(g.get("hooks", []), list)
+               or not all(isinstance(h, dict) for h in g.get("hooks", []))
+               for g in existing_groups):
+            raise ValueError(f"'hooks.{event}' enthaelt eine ungueltige Gruppe")
+        for g in existing_groups:
+            new_matcher = _LEGACY_MATCHERS.get(g.get("matcher"))
+            if new_matcher and g.get("hooks") and all(key(h) for h in g["hooks"]):
+                g["matcher"] = new_matcher
         for group in groups:
-            missing = [h for h in group["hooks"] if key(h["command"]) not in present]
-            if not missing:
-                continue
             target = next((g for g in existing_groups
                            if g.get("matcher") == group.get("matcher")), None)
+            present = {key(h) for h in (target or {}).get("hooks", [])}
+            missing = [h for h in group["hooks"] if key(h) not in present]
+            if not missing:
+                continue
             if target is None:
                 target = {k: v for k, v in group.items() if k != "hooks"}
                 target["hooks"] = []
                 existing_groups.append(target)
             target.setdefault("hooks", []).extend(missing)
             added += [f"{event}: {h['command']}" for h in missing]
-    if added:
-        settings_path.write_text(json.dumps(settings, indent=2) + "\n")
     return added
 
 

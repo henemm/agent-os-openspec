@@ -862,8 +862,11 @@ def _gate_events_root() -> Path:
     if worktree is not None:
         try:
             main = find_main_repo_from_worktree(worktree)
-            if main is not None and main.resolve() == project.resolve():
-                return worktree
+            if main is not None:
+                main_r, project_r = main.resolve(), project.resolve()
+                # Projekt = Haupt-Repo oder ein Unterordner davon
+                if project_r == main_r or main_r in project_r.parents:
+                    return worktree
         except OSError:
             pass
     return project
