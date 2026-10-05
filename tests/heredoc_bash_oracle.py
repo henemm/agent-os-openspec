@@ -41,10 +41,17 @@ class Gen:
         else:
             self.lines.append((text, None, role))
 
-    def body(self, marker, k):
+    def body(self, marker, k, paren_p=0.10):
         r = self.rng
         for _ in range(k):
             c = r.random()
+            if c < paren_p:
+                # #365: unmaskierte `)` vor ungerader `"`-Zahl — bash 3.2 beendet
+                # daran ein umschliessendes "$( ... )" vor dem Heredoc-Ende.
+                self.lines.append((r.choice(['y)"', 'a) b"', '1) x"']), None, "body"))
+                self.probe_line("body")  # die Folgezeile, die bash 3.2 dann ausfuehrt
+                continue
+            c = (c - paren_p) / (1 - paren_p)  # bestehende Zweige behalten ihre Anteile
             if c < 0.55:
                 self.probe_line("body")
             elif c < 0.95:
@@ -173,7 +180,7 @@ def make_snippet(rng):
         else:
             g.add(line, probe=True, role="opener")
         for mk, dash in markers:
-            g.body(mk, rng.randint(0, 3))
+            g.body(mk, rng.randint(0, 3), 0.5 if '"$(' in op else 0.10)  # #365
             g.terminator(mk, dash)
         for c in closers:
             if c in ("cat", "bash", "true"):
