@@ -36,6 +36,11 @@ Sicherheits-Paket aus der Backlog-Triage vom 2026-10-05:
   - **Tests:** `tests/test_egress_path_compare_252.py`.
 - **#300 (`post_implementation_gate`):** Ein Lock im Alt-Format (ohne `workflow_created`) galt bei einem Workflow ohne `created` als dieselbe Instanz (`None == None`). Ein passender Marker wirkte dann als Freigabe. Jetzt wird ein solcher Lock verworfen. Ein vom Gate selbst geschriebener Lock bleibt gültig, also kein Fail-open.
 - **#295 (Testläufe im echten Gate-Log):** Stand die CWD in einem Worktree, schrieb `log_gate_event` dorthin, auch wenn `CLAUDE_PROJECT_DIR` auf ein anderes Projekt zeigte. Das betraf jeden Test mit `tmp_path`-Projekt: Ein voller Testlauf aus einem Worktree hängte 24 Zeilen ans echte Log und verfälschte `gate_audit` (relevant für die Neumessung #361). Jetzt zählt der Worktree nur, wenn er zum Projekt gehört (Haupt-Repo oder ein Unterordner davon); #280 bleibt erhalten. Nachmessung: voller Lauf aus einem Worktree, 0 Zeilen.
+- **#365:** `hook_utils.strip_heredoc_bodies` entfernt einen Heredoc-Body in einer Befehlsersetzung (`--body "$(cat <<'EOF' … )"`) nicht mehr aus dem Scan.
+  - **Vorher:** bash 3.2 (`/bin/bash`, `/bin/sh` auf macOS) beendet die Ersetzung an einer unausgeglichenen `)` im Body (z. B. `y)"`) und führt die folgenden Body-Zeilen als Befehle aus. Der Scanner hatte sie als Daten entfernt, `bash_gate` und `secrets_guard` sahen sie nicht.
+  - **Jetzt:** Ein Body innerhalb `$( … )` bleibt immer im Scan. Damit ist die ganze Klasse geschlossen, nicht nur die Schreibweise `y)"`. Die nicht mehr nötige Liste der äußeren Kommandos (`git`, `gh`, `echo`, `printf`) ist entfernt. Heredocs außerhalb von Ersetzungen verhalten sich wie bisher.
+  - **Preis:** `gh pr/issue …` mit Gate-Wörtern (geschützter Pfad, Marker, `.env`) im Text eines solchen Heredocs kann jetzt blocken (Messung: 11 von 120 gemergten PR-Texten). Ausweg: `--body-file`. `git commit -m` ist über den Git-Schnellpfad nicht betroffen.
+  - **Tests:** `tests/test_heredoc_strip_357.py` (Angriff mit `y)"` gegen beide Hooks per stdin), Differenztest-Generator in `tests/heredoc_bash_oracle.py` erzeugt Klammer-/Quote-Zeilen im Body jetzt unmaskiert.
 
 ## [3.36.1] - 2026-10-05
 

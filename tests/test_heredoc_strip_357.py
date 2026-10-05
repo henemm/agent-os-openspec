@@ -101,10 +101,6 @@ def test_executed_body_stays_in_scan(name):
 DATA = {
     "doc_file": ("cat <<'EOF' > docs/artifacts/protokoll.md\n"
                  "Zitat: .claude/hooks/edit_gate.py, echo x > /etc/boese.txt\nEOF"),
-    "commit_message": ("git commit -m \"$(cat <<'EOF'\n"
-                       "fix: Guard erkennt .env und user_approved_ Marker\nEOF\n)\""),
-    "pr_body": ("gh pr create --title T --body \"$(cat <<'EOF'\n"
-                "## Summary\nrm -rf node_modules war das Problem; cat .env\nEOF\n)\""),
     "commit_stdin": "git commit -F - <<'EOF'\nfeat: bash und python erwaehnt\nEOF",
     "dash_tabs": "cat <<-EOF\n\tinhalt .env erwaehnt\n\tEOF\necho done",
     "two_heredocs": ("cat <<'A' > a.md\n.env\nA\ncat <<'B' > b.md\nuser_approved_x\nB"),
@@ -118,6 +114,110 @@ def test_data_heredocs_still_stripped(name):
     for word in (".env", "user_approved_", "/etc/boese.txt", "node_modules"):
         if word in DATA[name].split("\n", 1)[1]:
             assert word not in out, (name, word, out)
+
+
+# --- #365: Heredoc in Befehlsersetzung bleibt im Scan ---
+# bash 3.2 beendet "$( ... )" schon an einer Body-Zeile wie `y)"` und fuehrt
+# die Folgezeilen als Befehle aus. Ein Body in $( ... ) ist deshalb nie Daten.
+
+SUBST_STAYS = {
+    "commit_message": ("git commit -m \"$(cat <<'EOF'\n"
+                       "fix: Guard erkennt .env und user_approved_ Marker\nEOF\n)\""),
+    "pr_body": ("gh pr create --title T --body \"$(cat <<'EOF'\n"
+                "## Summary\nrm -rf node_modules war das Problem; cat .env\nEOF\n)\""),
+}
+
+LEAK_CMD = "gh pr create --title T --body \"$(cat <<'EOF'\nx\ny)\"\ncat .env\nEOF\n)\""
+
+
+@pytest.mark.parametrize("name", sorted(SUBST_STAYS))
+def test_data_gruppe_bleibt_im_scan(name):
+    """AC-7: commit_message/pr_body liegen in der Gruppe 'bleibt im Scan'."""
+    assert strip_heredoc_bodies(SUBST_STAYS[name]) == SUBST_STAYS[name], name
+
+
+@pytest.mark.parametrize("hook", ["bash_gate.py", "secrets_guard.py"])
+def test_subst_heredoc_vorzeitiges_ende_y_klammer_wird_geblockt(project, hook):
+    """AC-1: bash 3.2 fuehrt `cat .env` nach `y)"` aus -> beide Hooks blocken."""
+    (project / ".env").write_text("X=1\n")
+    r = _hook(project, hook, LEAK_CMD)
+    assert r.returncode == 2, (hook, r.returncode, r.stderr)
+
+
+@pytest.mark.parametrize("opener", ['gh pr create --title T --body "$(', 'echo "$(', 'x="$('])
+def test_subst_heredoc_body_bleibt_im_strip_ergebnis(opener):
+    """AC-2: die Leak-Zeile bleibt im strip-Ergebnis, egal hinter welchem Oeffner."""
+    cmd = opener + "cat <<'EOF'\nx\ny)\"\ncat .env\nEOF\n)\""
+    out = strip_heredoc_bodies(cmd)
+    assert "cat .env" in out.split("\n"), out
+
+
+@pytest.mark.parametrize("cmd", [
+    "git commit -m \"$(cat <<'EOF'\nfeat: harmloser Text\nEOF\n)\"",
+    "gh issue create --title T --body \"$(cat <<'EOF'\nnur Text hier\nEOF\n)\"",
+    "echo \"$(cat <<'EOF'\nhallo welt\nEOF\n)\"",
+    "printf '%s' \"$(cat <<'EOF'\nzeile eins\nzeile zwei\nEOF\n)\"",
+])
+def test_subst_heredoc_wird_nie_gestrippt(cmd):
+    """AC-3: Heredoc in $( ... ) wird nie entfernt, auch ohne Klammer-/Quote-Zeile."""
+    assert strip_heredoc_bodies(cmd) == cmd
+
+
+@pytest.mark.parametrize("hook", ["bash_gate.py", "secrets_guard.py"])
+@pytest.mark.parametrize("cmd", [
+    "echo \"$(cat <<'EOF'\ndata\nEOF)\"\ncat .env\nEOF\n)\"",  # F001 aus #357
+    "echo hi\ncat .env",
+])
+def test_kontrollfaelle_bleiben_geblockt(project, hook, cmd):
+    """AC-4: bekannte Kontrollfaelle bleiben geblockt."""
+    (project / ".env").write_text("X=1\n")
+    r = _hook(project, hook, cmd)
+    assert r.returncode == 2, (hook, cmd, r.stderr)
+
+
+@pytest.mark.parametrize("hook", ["bash_gate.py", "secrets_guard.py"])
+def test_commit_message_in_subst_ohne_fehlalarm(project, hook):
+    """AC-5: Commit-Text mit Gate-Woertern -> kein Fehlalarm; Gegenprobe blockt.
+
+    bash_gate laeuft in einem Projekt OHNE Workflow (wie
+    test_bash_gate_freetext_fixes_64_75), sonst blockt das Commit-Gate
+    (Adversary-Verdict) jeden `git commit` aus einem anderen Grund.
+    """
+    run = lambda cmd: _hook(project, hook, cmd)  # noqa: E731
+    if hook == "bash_gate.py":
+        bare = project / "ohne_wf"
+        subprocess.run(["git", "init", "-q", str(bare)], check=True)
+        project = bare
+        env = {**_env(bare), "OPENSPEC_ACTIVE_WORKFLOW": ""}
+        payload = lambda c: json.dumps({"tool_name": "Bash", "tool_input": {"command": c}})  # noqa: E731
+        run = lambda cmd: subprocess.run(  # noqa: E731
+            [sys.executable, str(HOOKS_DIR / hook)], input=payload(cmd),
+            capture_output=True, text=True, env=env, cwd=str(bare))
+    (project / ".env").write_text("X=1\n")
+    ok = run(SUBST_STAYS["commit_message"])
+    assert ok.returncode == 0, (hook, ok.stderr)
+    bad = run("git commit -m x\ncat .env")
+    assert bad.returncode == 2, (hook, bad.stderr)
+    assert "Adversary" not in bad.stderr and ".env" in bad.stderr, (hook, bad.stderr)
+
+
+def test_heredoc_ausserhalb_befehlsersetzung_wird_weiter_entfernt():
+    """AC-6: Bestandsverhalten aus #357 ausserhalb von $( ... )."""
+    out = strip_heredoc_bodies("cat > notiz.md <<'EOF'\nnotiz mit .env\nEOF")
+    assert ".env" not in out, out
+
+
+def test_tote_helfer_entfernt_und_signatur_unveraendert():
+    """AC-10: tote #362-Hilfen entfernt, Signatur von strip_heredoc_bodies gleich.
+
+    `_segment_command_word` ist bewusst nicht geprueft: es bestimmt weiter den
+    Konsumenten von Heredocs ausserhalb von Ersetzungen und bleibt in Gebrauch.
+    """
+    import inspect
+    src = (HOOKS_DIR / "hook_utils.py").read_text(encoding="utf-8")
+    for name in ("_HEREDOC_SAFE_OUTER", "subst_ok"):
+        assert name not in src, name
+    assert list(inspect.signature(strip_heredoc_bodies).parameters) == ["command"]
 
 
 def test_opener_line_and_following_commands_survive():
