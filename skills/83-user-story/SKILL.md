@@ -28,25 +28,7 @@ Das Argument dieses Befehls ist normalerweise ein **Thema** (`/83-user-story Kal
 **Besteht das Argument nur aus einer Nummer** (`/83-user-story #1761`)? Dann ist ein laufender Workflow gemeint — löse ihn von der Platte auf, statt zu raten:
 
 ```bash
-ISSUE=42   # die übergebene Nummer (ohne #)
-python3 - "$ISSUE" <<'PY'
-import sys, json, glob, re, os
-issue = sys.argv[1].lstrip('#')
-pat = re.compile(rf'(^|[-_]){re.escape(issue)}([-_]|$)')
-hits = []
-for f in glob.glob('.claude/workflows/*.json'):
-    name = os.path.basename(f)[:-5]
-    if pat.search(name):
-        d = json.load(open(f))
-        hits.append((name, d.get('current_phase'), d.get('spec_file') or 'Not created', d.get('adversary_verdict'), d.get('affected_files', [])))
-if not hits:
-    print(f'KEIN laufender Workflow fuer #{issue} (evtl. abgeschlossen -> .claude/workflows/_archive/).')
-else:
-    for name, ph, spec, verd, aff in hits:
-        print(f'GEFUNDEN: {name} | Phase={ph} | Spec={spec} | Verdict={verd}')
-        if aff: print(f'  affected_files: {", ".join(aff)}')
-    print('\nNAME=' + hits[0][0])
-PY
+$WF find 42   # die übergebene Nummer
 ```
 
 **PFLICHT direkt danach** — Workflow wirklich aktivieren (nicht nur die Zeile oben lesen). Ein reines `export OPENSPEC_ACTIVE_WORKFLOW=...` reicht NICHT: Shell-State überlebt keinen Bash-Tool-Aufruf, und in Worktree-Sessions ignoriert `resolve_active_workflow()` die Env-Var ohnehin (Issue #58):

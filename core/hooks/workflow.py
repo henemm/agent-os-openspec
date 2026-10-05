@@ -1670,6 +1670,35 @@ def cmd_list(args: list[str]) -> None:
         print(f"  {name}: {PHASE_NAMES.get(phase, phase)}{marker}")
 
 
+def cmd_find(args: list[str]) -> None:
+    """Laufende Workflows zu einer Issue-Nummer (Wiedereinstieg nach /clear, #276).
+
+    Rein lesend. Ersetzt den frueheren Python-Heredoc in /50-implement Step 0,
+    den bash_gate als Marker-Manipulation blockte (Feldname + State-Pfad).
+    """
+    if not args:
+        print("Usage: workflow.py find <issue-nummer>", file=sys.stderr)
+        sys.exit(1)
+    issue = args[0].lstrip("#")
+    pat = _re.compile(rf"(^|[-_]){_re.escape(issue)}([-_]|$)")
+    wf_dir = _workflows_dir()
+    hits = []
+    for f in sorted(wf_dir.glob("*.json")) if wf_dir.exists() else []:
+        if not pat.search(f.stem):
+            continue
+        d = _read_workflow(f)
+        hits.append((f.stem, d.get("current_phase"), d.get("spec_file") or "Not created",
+                     d.get("adversary_verdict"), d.get("affected_files") or []))
+    if not hits:
+        print(f"KEIN laufender Workflow fuer #{issue} "
+              "(evtl. abgeschlossen -> .claude/workflows/_archive/).")
+        return
+    for name, ph, spec, verd, aff in hits:
+        print(f"GEFUNDEN: {name} | Phase={ph} | Spec={spec} | Verdict={verd}")
+        if aff:
+            print(f"  affected_files: {', '.join(aff)}")
+    print("\nNAME=" + hits[0][0])
+
 def _retro_load_log(name: str) -> dict:
     """Load execution log YAML for a workflow by name. Returns {} if not found."""
     log_dir = find_project_root() / ".claude" / "workflows" / "_log"
@@ -2031,6 +2060,7 @@ COMMANDS = {
     "finish": cmd_complete,
     "abandon": cmd_abandon,
     "list": cmd_list,
+    "find": cmd_find,
     "retro-list": cmd_retro_list,
     "sessions": cmd_sessions,
     "observable-surface": cmd_observable_surface,

@@ -1,8 +1,8 @@
 """Issue #276: Guards schlagen an, wo nichts geschrieben wird (fasst #269, #256③).
 
 1. secret_egress_guard: ein '>' im Heredoc-KOERPER ist zitierter Text, kein Ziel.
-2. bash_gate: ein nachweislich lesender Python-Schnipsel ist kein Schreibvorgang —
-   der Wiedereinstiegs-Schritt aus /50-implement Step 0 laeuft durch.
+2. Wiedereinstieg: die Befehle nutzen `workflow.py find` statt eines Python-Schnipsels,
+   den bash_gate als Marker-Manipulation blockte.
 Die Gegenproben (echte Schreibvorgaenge bleiben blockiert) sind der eigentliche
 Nachweis.
 """
@@ -20,7 +20,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 HOOKS_DIR = REPO_ROOT / "core" / "hooks"
 sys.path.insert(0, str(HOOKS_DIR))
 
-import bash_gate  # noqa: E402
 
 
 def _clean_env(project: Path) -> dict:
@@ -84,85 +83,59 @@ class TestEgressHeredocBody:
         assert _egress(project, "echo hallo > /etc/boese.txt").returncode == 2
 
 
-# --- 2. Lesende Kommandos im bash_gate (#256③) ---
+# --- 2. Wiedereinstieg ohne Python-Schnipsel (#256③) ---
+#
+# Statt eine Python-Lese-Erkennung ins Sicherheits-Gate zu bauen, nutzen die
+# Befehle den lesenden CLI-Aufruf `workflow.py find` — die Gate-Logik bleibt
+# unveraendert streng (`python3 -c` zaehlt weiter pauschal als schreibend).
 
-def _step0_command() -> str:
-    md = (REPO_ROOT / "core" / "commands" / "50-implement.md").read_text()
-    m = re.search(r"```bash\n(ISSUE=42.*?)```", md, re.S)
-    assert m, "Step-0-Block in 50-implement.md nicht gefunden"
-    return m.group(1)
-
-
-class TestBashGateReadOnlyPython:
-    def test_documented_step0_command_passes(self, project):
-        r = _gate(project, _step0_command())
-        assert r.returncode == 0, r.stderr
-
-    def test_readonly_python_c_listing_workflows_passes(self, project):
-        cmd = ("python3 -c \"import glob,json; "
-               "[print(json.load(open(f)).get('adversary_verdict')) "
-               "for f in glob.glob('.claude/workflows/*.json')]\"")
-        r = _gate(project, cmd)
-        assert r.returncode == 0, r.stderr
-
-    @pytest.mark.parametrize("cmd", [
-        "python3 -c \"open('.claude/user_approved_x','w').write('1')\"",
-        "python3 -c \"import pathlib; pathlib.Path('.claude/user_approved_x').touch()\"",
-        "python3 -c \"import os; os.remove('.claude/user_approved_x')\"",
-        "cd .claude && touch user_approved_x",
-        "cd .claude && python3 -c \"open('user_approved_x','w')\"",
-        "touch .claude/user_approved_x",
-        "python3 - <<'PY'\nopen('.claude/user_approved_x', 'w').write('1')\nPY",
-        # ungequotetes Endwort: die Shell expandiert den Koerper -> nicht entlastet
-        "python3 - <<PY\nprint('$(touch .claude/user_approved_x)')\nPY",
-        "python3 -c \"getattr(__builtins__, 'op'+'en')('.claude/user_approved_x', 'w')\"",
-    ])
-    def test_marker_writes_stay_blocked(self, project, cmd):
-        r = _gate(project, cmd)
-        assert r.returncode == 2 and "Marker" in r.stderr, (cmd, r.stderr)
-
-    @pytest.mark.parametrize("cmd", [
-        "python3 -c \"import json; json.dump({}, open('.claude/workflows/fix-42-x.json', 'w'))\"",
-        "python3 -c \"import shutil; shutil.copy('a', '.claude/workflows/fix-42-x.json')\"",
-        "python3 -c \"import glob; print(glob.glob('.claude/workflows/*.json'))\" "
-        "> .claude/workflows/fix-42-x.json",
-    ])
-    def test_state_writes_stay_blocked(self, project, cmd):
-        r = _gate(project, cmd)
-        assert r.returncode == 2, (cmd, r.stderr)
+COMMANDS_DIR = REPO_ROOT / "core" / "commands"
+FIND_RE = re.compile(r"python3 \.claude/hooks/workflow\.py find 42")
 
 
-class TestReadonlyClassifier:
-    @pytest.mark.parametrize("code", [
-        "open('m', 'w')", "open('m', mode='a')", "open('m', 'r+')",
-        "o = open; o('m', 'w')", "x = [open][0]",
-        "import shutil", "import subprocess", "import io", "from os import *",
-        "from os import remove", "import os; f = os.remove; f('x')",
-        "import os; os.replace('a', 'b')", "import os; m = os; m.replace('a', 'b')",
-        "from pathlib import Path; Path('a').replace('b')",
-        "from pathlib import Path; Path('a').open('w')",
-        "from pathlib import Path; Path('a').write_text('x')",
-        "import os; os.__dict__", "import sys; sys.modules['os']",
-        "exec('1')", "eval('1')", "__import__('os')",
-        "import os; os.system('x')", "import os; os.execv('x', [])",
-        "open('x', **k)", "open('x', *m)",
-        "print('$(rm x)')", "kaputt(",
-    ])
-    def test_writing_or_unclear_code_is_not_readonly(self, code):
-        assert not bash_gate._python_is_readonly(code), code
+def _commands_with_reentry():
+    return sorted(p for p in COMMANDS_DIR.glob("*.md") if FIND_RE.search(p.read_text()))
 
-    @pytest.mark.parametrize("code", [
-        "import json, glob; [print(json.load(open(f))) for f in glob.glob('*.json')]",
-        "print('abc'.replace('a', 'b'))",
-        "d = {}; e = d.copy()",
-        "from pathlib import Path; print(Path('x').read_text())",
-        "open('x', 'rb').read()",
-        "from os.path import join",
-    ])
-    def test_reading_code_is_readonly(self, code):
-        assert bash_gate._python_is_readonly(code), code
 
-    def test_dollar_in_quoted_heredoc_body_is_fine(self):
-        code = "import re\nprint(re.compile(r'x$'))"
-        assert bash_gate._python_is_readonly(code, shell_expanded=False)
-        assert not bash_gate._python_is_readonly(code)
+def test_no_command_uses_python_snippet_for_reentry():
+    """/90-retro sucht bewusst im ARCHIV (eigener Fall, nicht Teil von #276)."""
+    paths = list(COMMANDS_DIR.glob("*.md")) + list((REPO_ROOT / "skills").glob("*/SKILL.md"))
+    for p in paths:
+        if "90-retro" in str(p):
+            continue
+        assert "glob.glob('.claude/workflows" not in p.read_text(), p
+
+
+def test_step0_of_50_implement_uses_find():
+    assert FIND_RE.search((COMMANDS_DIR / "50-implement.md").read_text())
+    assert len(_commands_with_reentry()) >= 12
+
+
+def test_find_command_passes_gate(project):
+    r = _gate(project, "python3 .claude/hooks/workflow.py find 42")
+    assert r.returncode == 0, r.stderr
+
+
+def test_find_resolves_workflow(project):
+    env = _clean_env(project)
+    env["OPENSPEC_ACTIVE_WORKFLOW"] = ""
+    r = subprocess.run([sys.executable, str(HOOKS_DIR / "workflow.py"), "find", "#42"],
+                       capture_output=True, text=True, env=env, cwd=str(project))
+    assert r.returncode == 0, r.stderr
+    assert "GEFUNDEN: fix-42-x | Phase=phase6_implement" in r.stdout
+    assert r.stdout.rstrip().endswith("NAME=fix-42-x")
+    r2 = subprocess.run([sys.executable, str(HOOKS_DIR / "workflow.py"), "find", "4"],
+                        capture_output=True, text=True, env=env, cwd=str(project))
+    assert "KEIN laufender Workflow" in r2.stdout
+
+
+@pytest.mark.parametrize("cmd", [
+    "python3 -c \"open('.claude/user_approved_x','w').write('1')\"",
+    "python3 -c \"import pathlib; pathlib.Path('.claude/user_approved_x').touch()\"",
+    "cd .claude && touch user_approved_x",
+    "touch .claude/user_approved_x",
+    "python3 - <<'PY'\nopen('.claude/user_approved_x', 'w').write('1')\nPY",
+])
+def test_marker_writes_stay_blocked(project, cmd):
+    r = _gate(project, cmd)
+    assert r.returncode == 2 and "Marker" in r.stderr, (cmd, r.stderr)

@@ -22,25 +22,7 @@ WF="python3 ${_H}/workflow.py"
 **Wurde dieser Befehl als `/60-validate #<N>` aufgerufen** (typisch nach einem `/clear`)? Dann löse zuerst den Workflow von der Platte auf — der komplette State überlebt jeden `/clear` und jeden Worktree:
 
 ```bash
-ISSUE=42   # die übergebene Nummer (ohne #)
-python3 - "$ISSUE" <<'PY'
-import sys, json, glob, re, os
-issue = sys.argv[1].lstrip('#')
-pat = re.compile(rf'(^|[-_]){re.escape(issue)}([-_]|$)')
-hits = []
-for f in glob.glob('.claude/workflows/*.json'):
-    name = os.path.basename(f)[:-5]
-    if pat.search(name):
-        d = json.load(open(f))
-        hits.append((name, d.get('current_phase'), d.get('spec_file') or 'Not created', d.get('adversary_verdict'), d.get('affected_files', [])))
-if not hits:
-    print(f'KEIN laufender Workflow fuer #{issue} (evtl. abgeschlossen -> .claude/workflows/_archive/).')
-else:
-    for name, ph, spec, verd, aff in hits:
-        print(f'GEFUNDEN: {name} | Phase={ph} | Spec={spec} | Verdict={verd}')
-        if aff: print(f'  affected_files: {", ".join(aff)}')
-    print('\nNAME=' + hits[0][0])
-PY
+$WF find 42   # die übergebene Nummer
 ```
 
 **PFLICHT direkt danach** — Workflow wirklich aktivieren (nicht nur die Zeile oben lesen). Ein reines `export OPENSPEC_ACTIVE_WORKFLOW=...` reicht NICHT: Shell-State überlebt keinen Bash-Tool-Aufruf, und in Worktree-Sessions ignoriert `resolve_active_workflow()` die Env-Var ohnehin (Issue #58):
