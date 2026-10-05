@@ -77,6 +77,12 @@ EXECUTED_BODIES = {
     "pipe_to_composed_var": f"X=s; Y=h; cat <<'E' | $X$Y\n{REAL}\nE",
     "written_then_executed": f"cat > x <<'E'\n{REAL}\nE\nchmod +x x; ./x",
     "unknown_consumer": f"mystery-tool <<'E'\n{REAL}\nE",
+    # Pruefrunde 2 (Code-Lesen): gelistete Konsumenten umdefiniert/umkonfiguriert.
+    "function_shadows_cat": f"cat() {{ bash; }}; cat <<'E'\n{REAL}\nE",
+    "function_keyword": f"function cat {{ bash; }}; cat <<'E'\n{REAL}\nE",
+    "alias_cat": f"shopt -s expand_aliases; alias cat=bash\ncat <<'E'\n{REAL}\nE",
+    "git_alias_shell": f"git -c alias.x='!sh' x <<'E'\n{REAL}\nE",
+    "less_pager": f"less <<'E'\n{REAL}\nE",
 }
 
 

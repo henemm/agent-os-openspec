@@ -961,7 +961,12 @@ SECRETS_FREETEXT_FLAGS = {"-m", "--message", "--body", "--title", "-F"}
 #    fuehren. Eine Liste "gefaehrlicher" Programme ist nie vollstaendig
 #    ($SHELL, sed e, s\h ...).
 # 3. Zusaetzlich (Verteidigung in der Tiefe): Interpreter-Namen, ./ und
-#    chmod im uebrigen Befehl, ungequotetes Endwort mit $ oder ` im Body.
+#    chmod im uebrigen Befehl, Umdefinitionen gelisteter Konsumenten
+#    (Funktion, Alias, git -c), ungequotetes Endwort mit $ oder ` im Body.
+# Bekannte Grenze: Schreibt ein Heredoc eine Datei, die ein spaeterer Befehl
+# ausfuehrt (make, Git-Hook, Testlauf), sieht der Guard den Inhalt nicht. Das
+# geht ebenso in zwei getrennten Aufrufen und ist fuer keinen Text-Guard
+# erkennbar; das Schreibziel selbst bleibt auf der Oeffner-Zeile sichtbar.
 _HEREDOC_MARKER_RE = re.compile(
     r"<<(-?)[ \t]*(?:'([A-Za-z_][A-Za-z0-9_]*)'|\"([A-Za-z_][A-Za-z0-9_]*)\"|"
     r"\\([A-Za-z_][A-Za-z0-9_]*)|([A-Za-z_][A-Za-z0-9_]*))(?=$|[\s;&|)<>])"
@@ -975,8 +980,14 @@ _HEREDOC_INTERPRETER_RE = re.compile(
 _HEREDOC_SAFE_CONSUMERS = frozenset({
     "cat", "tee", "git", "gh", "wc", "grep", "head", "tail", "sort", "uniq",
     "tr", "cut", "column", "diff", "cmp", "base64", "md5sum", "sha256sum",
-    "shasum", "jq", "less", "more",
+    "shasum", "jq",
 })
+# Umdefinitionen und Konfiguration, die einen gelisteten Konsumenten in einen
+# Ausfuehrer verwandeln (Funktion `cat(){ bash; }`, Alias, `git -c alias.x=!sh`).
+_HEREDOC_REDEFINE_RE = re.compile(
+    r"\b[A-Za-z_][\w.-]*\s*\(\s*\)|\b(?:function|alias|shopt|enable|hash)\b|"
+    r"\bgit\b[^\n;&|]*\s(?:-c\b|--config-env\b|--exec-path\b)"
+)
 # Aeussere Kommandos fuer die Form `cmd ... "$(cat <<'E'"` (Argument-Text).
 _HEREDOC_SAFE_OUTER = frozenset({"git", "gh", "echo", "printf"})
 
@@ -1182,7 +1193,8 @@ def strip_heredoc_bodies(command: str) -> str:
         return command
     # Ausfuehrende Konsumenten irgendwo im uebrigen Befehl (Pipe auf der
     # Folgezeile, eval $(...), source /dev/stdin, ./skript ...).
-    if _HEREDOC_INTERPRETER_RE.search(residual) or not _residual_pipes_safe(residual):
+    if (_HEREDOC_INTERPRETER_RE.search(residual) or _HEREDOC_REDEFINE_RE.search(residual)
+            or not _residual_pipes_safe(residual)):
         return command
     return residual
 
