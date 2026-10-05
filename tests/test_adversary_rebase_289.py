@@ -1,10 +1,10 @@
 """Issue #289: Aufsetzen auf main entwertet den Adversary-Nachweis nicht mehr.
 
-Der Stempel haelt zusaetzlich die Basis (merge-base origin/main) und einen
-Fingerabdruck der eigenen Aenderung fest. Eine Hash-Abweichung gilt nur dann als
+Der Stempel legt den geprueften Stand als Git-Blob ab und haelt die Basis
+(merge-base origin/main) fest. Eine Hash-Abweichung gilt nur dann als
 unschaedlich, wenn main die Datei zwischen alter und neuer Basis geaendert hat
-und die eigene Aenderung (samt 3 Kontextzeilen) gleich geblieben ist.
-Alles andere blockt wie bisher.
+und der 3-Wege-Merge (alte Basis -> Pruefstand auf neue Basis) konfliktfrei
+exakt den aktuellen Stand ergibt. Alles andere blockt wie bisher.
 """
 
 import subprocess
@@ -134,12 +134,29 @@ def test_extra_change_elsewhere_after_rebase_blocks(repo):
     assert not ok
 
 
-def test_upstream_change_next_to_own_change_requires_new_dialog(repo):
-    """Konservativ: main aendert eine Kontextzeile -> neuer Dialog noetig."""
+def test_upstream_change_on_same_line_requires_new_dialog(repo):
+    """main aendert genau die eigene Zeile: die Konfliktaufloesung ist ungeprueft."""
     art = _stamped_artifact(repo)
-    _advance_main(repo, lambda ls: ls.__setitem__(31, "line_32 = 'upstream nah'"))
+    _git(repo, "checkout", "-q", "main")
+    lines = list(LINES)
+    lines[29] = "line_30 = 'upstream'"
+    lines[2] = "line_3 = 'upstream'"  # Datei weicht danach vom Pruefstand ab
+    _write(repo, lines)
+    _git(repo, "update-ref", "refs/remotes/origin/main", _commit(repo, "upstream"))
+    _git(repo, "checkout", "-q", "feature")
+    # Konflikt von Hand zugunsten der eigenen Zeile aufgeloest
+    _git(repo, "rebase", "-q", "-X", "theirs", "main")
+    assert "eigene Aenderung" in (repo / "gate.py").read_text()
     ok, _ = _valid(art)
     assert not ok
+
+
+def test_adjacent_upstream_change_merges_cleanly(repo):
+    """Nicht ueberlappend: Git-Merge-Semantik, Ergebnis = neue Basis + Pruefstand."""
+    art = _stamped_artifact(repo)
+    _advance_main(repo, lambda ls: ls.__setitem__(31, "line_32 = 'upstream nah'"))
+    ok, msg = _valid(art)
+    assert ok, msg
 
 
 def test_rebase_without_upstream_change_to_file_does_not_mask_rework(repo):
@@ -177,3 +194,92 @@ def test_stamp_without_origin_main_has_no_review_base(repo):
     ok, msg = stamp_dialog_artifact(str(art))
     assert ok, msg
     assert "## Prüfbasis" not in art.read_text()
+
+
+# --- Befunde der unabhaengigen Pruefung (Review 2026-10-05) ---------------
+# Gegen die erste Fassung (Fingerabdruck ohne Zeilennummern) alle rot; die
+# exakte 3-Wege-Rekonstruktion muss sie blocken.
+
+def _upstream_far(ls):
+    ls[2] = "line_3 = 'upstream'"
+
+
+def test_review_line_starting_with_plusplus_is_detected(repo):
+    art = _stamped_artifact(repo)
+    _advance_main(repo, _upstream_far)
+    p = repo / "gate.py"
+    p.write_text(p.read_text().replace(
+        "line_30 = 'eigene Aenderung'\n",
+        "line_30 = 'eigene Aenderung'\n++(print('ungeprueft'))\n"))
+    ok, _ = _valid(art)
+    assert not ok
+
+
+WINDOW = ["    a = 1", "    b = 2", "    c = 3", "    ORIG", "    d = 4", "    e = 5", "    f = 6"]
+
+
+def test_review_own_change_moved_to_identical_context_is_detected(tmp_path, monkeypatch):
+    r = tmp_path / "r"
+    r.mkdir()
+    _git(r, "init", "-q", "-b", "main")
+    for k, v in (("user.email", "t@x.invalid"), ("user.name", "T"), ("commit.gpgsign", "false")):
+        _git(r, "config", k, v)
+    base = (["def first():"] + WINDOW + ["", "", "def admin_only():"] + WINDOW
+            + [f"x{i} = {i}" for i in range(20)])
+    (r / "gate.py").write_text("\n".join(base) + "\n")
+    _git(r, "update-ref", "refs/remotes/origin/main", _commit(r, "base"))
+    _git(r, "checkout", "-q", "-b", "feature")
+    own = list(base)
+    own[4] = "    OWN"
+    (r / "gate.py").write_text("\n".join(own) + "\n")
+    _commit(r, "own")
+    monkeypatch.setattr(adversary_dialog, "_hash_root", lambda: r)
+    monkeypatch.chdir(r)
+    art = r / "dialog.md"
+    art.write_text("Confirmation:\n  AC: AC-1\n  Code reference: gate.py:5\n"
+                   "  Status: CONFIRMED\n\n" + ROUNDS + "## Verdict\n**VERIFIED**\n")
+    assert stamp_dialog_artifact(str(art))[0]
+    _git(r, "checkout", "-q", "main")
+    up = list(base)
+    up[-1] = "x19 = 'upstream'"
+    (r / "gate.py").write_text("\n".join(up) + "\n")
+    _git(r, "update-ref", "refs/remotes/origin/main", _commit(r, "up"))
+    _git(r, "checkout", "-q", "feature")
+    _git(r, "rebase", "-q", "main")
+    moved = list(up)
+    moved[14] = "    OWN"  # eigene Aenderung jetzt in admin_only()
+    (r / "gate.py").write_text("\n".join(moved) + "\n")
+    ok, _ = _valid(art)
+    assert not ok
+
+
+def test_review_crlf_conversion_is_detected(repo):
+    art = _stamped_artifact(repo)
+    _advance_main(repo, _upstream_far)
+    p = repo / "gate.py"
+    p.write_bytes(p.read_bytes().replace(b"\n", b"\r\n"))
+    ok, _ = _valid(art)
+    assert not ok
+
+
+def test_review_unicode_separator_turned_newline_is_detected(repo):
+    p = repo / "gate.py"
+    p.write_text(p.read_text().replace(
+        "line_30 = 'eigene Aenderung'", "line_30 = 'eigene Aenderung'  # note\x1cprint('x')"))
+    _commit(repo, "own2")
+    art = _stamped_artifact(repo)
+    _advance_main(repo, _upstream_far)
+    p.write_text(p.read_text().replace("\x1cprint", "\nprint"))
+    ok, _ = _valid(art)
+    assert not ok
+
+
+def test_review_missing_blob_fails_closed(repo):
+    """Blob nicht mehr im Objektspeicher (z. B. gc) -> kein Durchlass."""
+    art = _stamped_artifact(repo)
+    text = art.read_text()
+    import re as _re
+    art.write_text(_re.sub(r"blob:[0-9a-f]{40}", "blob:" + "0" * 40, text))
+    _advance_main(repo, _upstream_far)
+    ok, _ = _valid(art)
+    assert not ok

@@ -83,6 +83,38 @@ class TestEgressHeredocBody:
         assert _egress(project, "echo hallo > /etc/boese.txt").returncode == 2
 
 
+# Befunde der unabhaengigen Pruefung (2026-10-05): falsch erkannte Heredoc-
+# Oeffner durften echte Befehle danach nicht aus dem Scan entfernen. Jeder Fall
+# schreibt in bash wirklich nach /var/tmp/... und muss blocken.
+_OUT = "/var/tmp/egress_review_target"
+_MISPARSE_CASES = {
+    "opener_in_double_quotes": f'echo "<<EOF"\necho x > {_OUT}',
+    "opener_in_comment": f'echo hi # <<EOF\necho x > {_OUT}',
+    "arithmetic_shift": f'n=1; echo $((1<<n))\necho x > {_OUT}',
+    "backslash_quoted_marker": f'cat <<E\\OF\nbody\nEOF\necho x > {_OUT}',
+    "line_continuation_redirect": f'cat <<EOF \\\n> {_OUT}\nhello\nEOF',
+    "opener_inside_interpreter_body": f'python3 - <<EOF\ns = "<<FOO"\nEOF\necho x > {_OUT}',
+    "quoted_marker_with_suffix": f'cat <<"EOF"x\nb\nEOF\nEOFx\necho x > {_OUT}',
+}
+
+
+@pytest.mark.parametrize("name", sorted(_MISPARSE_CASES))
+def test_real_redirect_after_misparsed_heredoc_is_blocked(project, name):
+    r = _egress(project, _MISPARSE_CASES[name])
+    assert r.returncode == 2, f"{name}: rc={r.returncode} {r.stderr}"
+
+
+def test_unclosed_heredoc_fails_closed(project):
+    """Kein Endwort: bash wuerde den Rest als Daten schlucken — der Guard rechnet
+    trotzdem nicht damit und prueft den unveraenderten Befehl (fail-closed)."""
+    assert _egress(project, f"cat <<EOF\necho x > {_OUT}").returncode == 2
+
+
+def test_dash_heredoc_with_tab_terminator_still_strips(project):
+    cmd = "cat > notizen.md <<-'MD'\n\tBeispiel: echo x > /etc/boese.txt\n\tMD"
+    assert _egress(project, cmd).returncode == 0
+
+
 # --- 2. Wiedereinstieg ohne Python-Schnipsel (#256③) ---
 #
 # Statt eine Python-Lese-Erkennung ins Sicherheits-Gate zu bauen, nutzen die

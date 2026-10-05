@@ -49,7 +49,7 @@ def _setup():
 
 _setup()
 
-from hook_utils import find_project_root, log_gate_event, strip_heredoc_bodies  # noqa: E402
+from hook_utils import find_project_root, log_gate_event  # noqa: E402
 from override_token import has_valid_token  # noqa: E402
 
 try:
@@ -440,6 +440,84 @@ def _is_outside_safe_zone(target: str, root: Path, cfg: dict,
     return True
 
 
+_HEREDOC_MARKER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_HEREDOC_INTERPRETER_RE = re.compile(r"\b(python3?|node|perl|ruby|php|(?:ba|z|da|k)?sh)\b")
+
+
+def _heredoc_openers(line: str) -> "list[tuple[str, bool]] | None":
+    """Heredoc-Oeffner einer Kommandozeile wie bash sie sieht; None = unsicher.
+
+    Tokenisiert mit shlex (Quotes, Backslashes, Kommentare wie die Shell):
+    `"<<EOF"` und `# <<EOF` oeffnen nichts, `<<E\\OF` hat das Endwort EOF.
+    Alles, was sich nicht sicher einordnen laesst (Arithmetik, kaputte Quotes,
+    Zeilenfortsetzung, ungewoehnliche Operatoren), liefert None.
+    """
+    if "<<" not in line:
+        return []
+    if line.rstrip().endswith("\\"):
+        return None
+    try:
+        lex = shlex.shlex(line, posix=True, punctuation_chars=True)
+        tokens = list(lex)
+    except ValueError:
+        return None
+    openers = []
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        if "((" in tok or "))" in tok:
+            return None  # $((1<<n)) / (( )): Shift, kein Heredoc
+        if tok in ("<<", "<<-"):
+            nxt = tokens[i + 1] if i + 1 < len(tokens) else ""
+            dash = tok == "<<-"
+            if nxt == "-":
+                dash, i = True, i + 1
+                nxt = tokens[i + 1] if i + 1 < len(tokens) else ""
+            elif nxt.startswith("-"):
+                dash, nxt = True, nxt[1:]
+            if not _HEREDOC_MARKER_RE.fullmatch(nxt):
+                return None
+            openers.append((nxt, dash))
+            i += 2
+            continue
+        if "<<" in tok and tok != "<<<" and set(tok) <= set("();<>|&"):
+            return None  # unbekannter Operator mit '<<'
+        i += 1
+    return openers
+
+
+def _strip_data_heredocs(command: str) -> str:
+    """Entfernt Heredoc-Koerper, die reine stdin-DATEN sind (#276/#269).
+
+    Fail-closed: bei jeder Unsicherheit (s. _heredoc_openers, nie geschlossenes
+    Heredoc) bleibt der Befehl unveraendert. Koerper hinter einem Interpreter
+    bleiben im Scan und werden nicht nach weiteren Oeffnern durchsucht.
+    Bewusst eine eigene, strengere Fassung statt hook_utils.strip_heredoc_bodies
+    (Review 2026-10-05: deren Regex kennt keine Quotes/Kommentare/Arithmetik).
+    """
+    if "<<" not in command:
+        return command
+    out = []
+    pending: "list[tuple[str, bool, bool]]" = []  # (marker, dash, keep_body)
+    for line in command.split("\n"):
+        if pending:
+            marker, dash, keep = pending[0]
+            if (line.lstrip("\t") if dash else line) == marker:
+                pending.pop(0)
+            elif keep:
+                out.append(line)
+            continue
+        openers = _heredoc_openers(line)
+        if openers is None:
+            return command
+        keep = bool(_HEREDOC_INTERPRETER_RE.search(line))
+        pending.extend((m, d, keep) for m, d in openers)
+        out.append(line)
+    if pending:
+        return command
+    return "\n".join(out)
+
+
 def find_unsafe_redirects(tool_name: str, tool_input: dict, cfg: dict, root: Path,
                           scratchpad_dir: "str | None" = None) -> "list[str]":
     """Schreibziele ausserhalb der Sicherheitszone, nur fuer Bash-Kommandos (Issue #97)."""
@@ -451,7 +529,9 @@ def find_unsafe_redirects(tool_name: str, tool_input: dict, cfg: dict, root: Pat
     # Heredoc-Koerper sind stdin-DATEN: ein darin nur zitiertes '>' ist kein
     # Schreibziel (#276/#269). Die Oeffner-Zeile (echtes Ziel) bleibt im Scan,
     # Koerper hinter einem Interpreter (bash/python <<EOF) ebenfalls.
-    targets = _shell_write_targets(strip_heredoc_bodies(command))
+    # Zeilenfortsetzung wie bash vorab aufloesen: `cat <<EOF \\<NL>> /ziel` (Review 2026-10-05)
+    command = command.replace("\\\n", "")
+    targets = _shell_write_targets(_strip_data_heredocs(command))
     unsafe = []
     for t in targets:
         if _is_outside_safe_zone(t, root, cfg, scratchpad_dir) and t not in unsafe:

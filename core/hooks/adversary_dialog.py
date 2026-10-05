@@ -674,14 +674,14 @@ def _verify_examined_file_hashes(scan: str) -> tuple[bool, str]:
                 continue
             if rebase is None:
                 rebase = _parse_review_base_section(scan)
-            if rebase and _own_change_survived_rebase(rel_path, rebase):
+            if rebase and _own_change_survived_rebase(rel_path, expected_hash, rebase):
                 rebased_ok.add(rel_path)
                 continue
             return False, (
                 f"Prüfling seit dem Dialog geändert: {rel_path}. Re-run dialog. "
                 "(Nach Aufsetzen auf main gilt der Nachweis weiter, wenn sich nur die "
-                "Basis geändert hat und die eigene Änderung samt 3 Kontextzeilen gleich "
-                "geblieben ist — hier nicht der Fall, #289.)"
+                "Basis geändert hat und neue Basis + geprüfte Änderung konfliktfrei "
+                "exakt den aktuellen Stand ergeben — hier nicht der Fall, #289.)"
             )
     return True, ""
 
@@ -691,83 +691,63 @@ def _verify_examined_file_hashes(scan: str) -> tuple[bool, str]:
 # Der Hash bindet die GANZE Datei. Holt der Zweig nach dem VERIFIED main ein
 # (Rebase/Merge, von bash_gate 5b erzwungen) und hat main eine gebundene Datei
 # geaendert, passte der Hash nie mehr — ohne dass sich an der eigenen Aenderung
-# etwas geaendert hat. Daher haelt der Stempel zusaetzlich die Basis
-# (merge-base origin/main) und je Datei einen Fingerabdruck der EIGENEN
-# Aenderung fest: Unified-Diff Basis -> Datei mit 3 Kontextzeilen, ohne
-# Hunk-Kopf (Zeilennummern verschieben sich legitim). Akzeptiert wird eine
-# Abweichung nur, wenn (1) die Basis vorwaerts gerueckt ist (alte Basis ist
-# Vorfahre der neuen), (2) main die Datei dazwischen tatsaechlich geaendert hat
-# und (3) der Fingerabdruck gegen die NEUE Basis gleich ist. Upstream-Aenderungen
-# in Kontextnaehe, verschobene eigene Zeilen oder jede eigene Nacharbeit
-# aendern den Fingerabdruck -> neuer Dialog wie bisher (fail-closed).
+# etwas geaendert hat.
+#
+# Loesung ohne Heuristik: `stamp` legt den gepruefen Inhalt als Git-Blob ab
+# (`git hash-object -w`) und haelt die Basis fest (merge-base origin/main).
+# Bei einer Hash-Abweichung wird das ERWARTETE Ergebnis exakt rekonstruiert:
+# 3-Wege-Merge (`git merge-file`) von alter Basis -> geprueftem Stand auf die
+# neue Basis. Nur wenn der Merge konfliktfrei ist und Byte fuer Byte der
+# aktuellen Datei entspricht, gilt der Nachweis weiter. Zusaetzlich: Basis
+# vorwaerts gerueckt (alte Basis Vorfahre der neuen), main hat die Datei
+# dazwischen geaendert, und der Blob passt zum sha256 im Hash-Block. Jeder
+# Fehler, fehlende Blob (gc) oder Zweifel -> neuer Dialog (fail-closed).
 
 REVIEW_BASE_SECTION = "## Prüfbasis"
 _REVIEW_BASE_HEADER_RE = re.compile(r"(?m)^## Prüfbasis\s*$")
 _REVIEW_BASE_LINE_RE = re.compile(r"(?m)^-\s*base:\s*([0-9a-f]{7,64})\s*$")
-_REVIEW_DELTA_LINE_RE = re.compile(r"(?m)^-\s*delta:([0-9a-f]{64})\s+(.+?)\s*$")
+_REVIEW_BLOB_LINE_RE = re.compile(r"(?m)^-\s*blob:([0-9a-f]{40,64})\s+(.+?)\s*$")
 
 
-def _git_out(args: "list[str]", cwd) -> "str | None":
+def _git_bytes(args: "list[str]", cwd, stdin: "bytes | None" = None) -> "bytes | None":
     try:
-        proc = subprocess.run(["git", *args], cwd=str(cwd), capture_output=True,
-                              timeout=30)
+        proc = subprocess.run(["git", *args], cwd=str(cwd), input=stdin,
+                              capture_output=True, timeout=30)
     except (OSError, subprocess.SubprocessError):
         return None
-    if proc.returncode != 0:
-        return None
-    return proc.stdout.decode("utf-8", errors="surrogateescape")
+    return proc.stdout if proc.returncode == 0 else None
 
 
 def _review_base(top: str) -> "str | None":
-    out = _git_out(["merge-base", "origin/main", "HEAD"], top)
-    out = (out or "").strip()
+    out = (_git_bytes(["merge-base", "origin/main", "HEAD"], top) or b"").decode().strip()
     return out if re.fullmatch(r"[0-9a-f]{7,64}", out) else None
 
 
 def _rel_to_top(rel_path: str, top: str) -> "str | None":
     full = os.path.realpath(str(_resolve_hash_path(rel_path)))
     rel = os.path.relpath(full, top)
-    return None if rel.startswith("..") or os.path.isabs(rel) else rel
+    return None if rel == ".." or rel.startswith(".." + os.sep) or os.path.isabs(rel) else rel
 
 
-def _blob_text(base: str, git_rel: str, top: str) -> "str | None":
-    """Inhalt der Datei in `base`; '' wenn sie dort nicht existiert, None bei Fehler."""
-    exists = _git_out(["cat-file", "-e", f"{base}:{git_rel}"], top)
-    if exists is None:
-        return "" if _git_out(["rev-parse", "--verify", "-q", f"{base}^{{commit}}"], top) else None
-    return _git_out(["show", f"{base}:{git_rel}"], top)
-
-
-def _own_change_digest(base: str, rel_path: str, top: str) -> "str | None":
-    """Fingerabdruck der eigenen Aenderung an `rel_path` gegenueber `base`."""
-    import difflib
-    git_rel = _rel_to_top(rel_path, top)
-    if git_rel is None:
+def _blob_at(base: str, git_rel: str, top: str) -> "bytes | None":
+    """Inhalt der Datei in `base`; b'' wenn sie dort nicht existiert, None bei Fehler."""
+    if _git_bytes(["rev-parse", "--verify", "-q", f"{base}^{{commit}}"], top) is None:
         return None
-    old = _blob_text(base, git_rel, top)
-    if old is None:
-        return None
-    try:
-        new = _resolve_hash_path(rel_path).read_bytes().decode("utf-8", errors="surrogateescape")
-    except OSError:
-        return None
-    lines = [ln for ln in difflib.unified_diff(old.splitlines(), new.splitlines(),
-                                               lineterm="", n=3)
-             if not ln.startswith(("---", "+++", "@@"))]
-    payload = "\n".join(lines).encode("utf-8", errors="surrogateescape")
-    return hashlib.sha256(payload).hexdigest()
+    if _git_bytes(["cat-file", "-e", f"{base}:{git_rel}"], top) is None:
+        return b""
+    return _git_bytes(["cat-file", "blob", f"{base}:{git_rel}"], top)
 
 
-def render_review_base_section(base: str, deltas: dict) -> str:
+def render_review_base_section(base: str, blobs: dict) -> str:
     lines = [REVIEW_BASE_SECTION, "", f"- base: {base}"]
-    for path in sorted(deltas):
-        lines.append(f"- delta:{deltas[path]}  {path}")
+    for path in sorted(blobs):
+        lines.append(f"- blob:{blobs[path]}  {path}")
     lines.append("")
     return "\n".join(lines)
 
 
 def _parse_review_base_section(scan: str) -> "dict | None":
-    """{'base', 'deltas'} aus dem '## Prüfbasis'-Block HINTER dem letzten Hash-Block."""
+    """{'base', 'blobs'} aus dem '## Prüfbasis'-Block HINTER dem letzten Hash-Block."""
     hash_headers = list(_EXAMINED_FILES_HEADER_RE.finditer(scan))
     headers = list(_REVIEW_BASE_HEADER_RE.finditer(scan))
     if not hash_headers or not headers or headers[-1].start() < hash_headers[-1].start():
@@ -779,13 +759,31 @@ def _parse_review_base_section(scan: str) -> "dict | None":
     if not base:
         return None
     return {"base": base.group(1),
-            "deltas": {p: h for h, p in _REVIEW_DELTA_LINE_RE.findall(body)}}
+            "blobs": {p: oid for oid, p in _REVIEW_BLOB_LINE_RE.findall(body)}}
 
 
-def _own_change_survived_rebase(rel_path: str, rebase: dict) -> bool:
-    expected = rebase["deltas"].get(rel_path)
+def _merge3(ours: bytes, base: bytes, theirs: bytes) -> "bytes | None":
+    """`git merge-file -p ours base theirs`; None bei Konflikt oder Fehler."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        paths = []
+        for name, data in (("ours", ours), ("base", base), ("theirs", theirs)):
+            fp = os.path.join(d, name)
+            with open(fp, "wb") as fh:
+                fh.write(data)
+            paths.append(fp)
+        try:
+            proc = subprocess.run(["git", "merge-file", "-p", *paths],
+                                  capture_output=True, timeout=30)
+        except (OSError, subprocess.SubprocessError):
+            return None
+    return proc.stdout if proc.returncode == 0 else None
+
+
+def _own_change_survived_rebase(rel_path: str, expected_hash: str, rebase: dict) -> bool:
+    oid = rebase["blobs"].get(rel_path)
     old_base = rebase["base"]
-    if not expected:
+    if not oid:
         return False
     try:
         top = git_toplevel(_hash_root())
@@ -793,18 +791,26 @@ def _own_change_survived_rebase(rel_path: str, rebase: dict) -> bool:
         return False
     if not top:
         return False
+    reviewed = _git_bytes(["cat-file", "blob", oid], top)
+    if reviewed is None or hashlib.sha256(reviewed).hexdigest() != expected_hash:
+        return False  # Blob fehlt (gc) oder passt nicht zum gestempelten Hash
     new_base = _review_base(top)
     if not new_base or new_base.startswith(old_base) or old_base.startswith(new_base):
         return False  # Basis unveraendert: jede Abweichung ist eigene Nacharbeit
-    if _git_out(["merge-base", "--is-ancestor", old_base, new_base], top) is None:
+    if _git_bytes(["merge-base", "--is-ancestor", old_base, new_base], top) is None:
         return False  # keine Vorwaertsbewegung entlang main
     git_rel = _rel_to_top(rel_path, top)
     if git_rel is None:
         return False
-    before, after = _blob_text(old_base, git_rel, top), _blob_text(new_base, git_rel, top)
+    before, after = _blob_at(old_base, git_rel, top), _blob_at(new_base, git_rel, top)
     if before is None or after is None or before == after:
         return False  # main hat die Datei nicht angefasst -> Abweichung ist eigene
-    return _own_change_digest(new_base, rel_path, top) == expected
+    try:
+        current = _resolve_hash_path(rel_path).read_bytes()
+    except OSError:
+        return False
+    expected = _merge3(after, before, reviewed)
+    return expected is not None and expected == current
 
 
 def _review_base_block(hashes: dict) -> str:
@@ -818,12 +824,21 @@ def _review_base_block(hashes: dict) -> str:
     base = _review_base(top)
     if not base:
         return ""
-    deltas = {}
+    blobs = {}
     for rel in hashes:
-        d = _own_change_digest(base, rel, top)
-        if d:
-            deltas[rel] = d
-    return render_review_base_section(base, deltas) if deltas else ""
+        if _rel_to_top(rel, top) is None:
+            continue
+        try:
+            data = _resolve_hash_path(rel).read_bytes()
+        except OSError:
+            continue
+        if hashlib.sha256(data).hexdigest() != hashes[rel]:
+            continue
+        oid = (_git_bytes(["hash-object", "-w", "--stdin"], top, stdin=data) or b"").decode().strip()
+        if re.fullmatch(r"[0-9a-f]{40,64}", oid):
+            blobs[rel] = oid
+    return render_review_base_section(base, blobs) if blobs else ""
+
 
 # --- Herkunft der Vorbedingungen (Issue #286) ---
 
