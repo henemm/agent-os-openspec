@@ -848,6 +848,30 @@ def _framework_version() -> str:
     return _FRAMEWORK_VERSION_CACHE[0]
 
 
+def _gate_events_root() -> Path:
+    """Wurzel fuer das Gate-Event-Log: der eigene Worktree (#280) — aber nur,
+    wenn er zum Projekt gehoert (#295).
+
+    Laeuft ein Hook mit `CLAUDE_PROJECT_DIR` auf ein fremdes Projekt (jeder
+    Test mit tmp_path-Projekt), waehrend die CWD in einem Worktree dieses
+    Repositories steht, gewann bisher der Worktree: Testlaeufe schrieben
+    Blockaden ins echte Log und verfaelschten die Auswertung (gate_audit).
+    """
+    project = find_project_root()
+    worktree = find_worktree_root()
+    if worktree is not None:
+        try:
+            main = find_main_repo_from_worktree(worktree)
+            if main is not None:
+                main_r, project_r = main.resolve(), project.resolve()
+                # Projekt = Haupt-Repo oder ein Unterordner davon
+                if project_r == main_r or main_r in project_r.parents:
+                    return worktree
+        except OSError:
+            pass
+    return project
+
+
 def log_gate_event(hook: str, tool: str, reason: str, command_excerpt: str = "") -> None:
     """Eine Blockade als JSON-Zeile anhaengen. Schlaegt niemals sichtbar fehl.
 
@@ -856,8 +880,7 @@ def log_gate_event(hook: str, tool: str, reason: str, command_excerpt: str = "")
     nicht ermittelbar), framework_version (leer wenn nicht ermittelbar).
     """
     try:
-        root = find_worktree_root() or find_project_root()
-        path = root / GATE_EVENTS_RELATIVE_PATH
+        path = _gate_events_root() / GATE_EVENTS_RELATIVE_PATH
         reason_line = (reason or "").strip().splitlines()[0] if reason else ""
         event = {
             "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),

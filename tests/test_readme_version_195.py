@@ -117,3 +117,21 @@ class TestRepositoryState:
         assert row.search(result.stdout), (
             "release_check fuehrt keine README-Pruefung aus:\n" + result.stdout
         )
+
+
+class TestClaudeMdVersion279:
+    """#279 Befund 2: der Versions-Header der CLAUDE.md driftete unbemerkt."""
+
+    def test_match(self):
+        ok, _ = release_check.check_claude_md_version("3.36.1", "**Version**: 3.36.1\n")
+        assert ok
+
+    def test_drift_blocks(self):
+        ok, detail = release_check.check_claude_md_version("3.37.0", "**Version**: 3.36.1\n")
+        assert not ok and "3.36.1" in detail
+
+    def test_repo_claude_md_matches_plugin_json(self):
+        version = release_check.plugin_manifest()["version"]
+        ok, detail = release_check.check_claude_md_version(
+            version, release_check.CLAUDE_MD.read_text())
+        assert ok, detail

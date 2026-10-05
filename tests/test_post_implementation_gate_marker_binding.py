@@ -238,3 +238,38 @@ class TestAC7GreenApprovalWithoutLockWritesNoMarker:
         assert wf_state.get("green_approved") is True, (
             "GREEN-Freigabe selbst bleibt im State wirksam, nur das Gate entsperrt sich nicht automatisch"
         )
+
+
+class TestIssue300MissingIdentity:
+    """#300: Lock im Alt-Format (ohne workflow_created) trifft auf Workflow ohne
+    `created` — None == None durfte nicht als 'dieselbe Instanz' gelten."""
+
+    def _project_without_created(self, tmp_path):
+        project, wf = _make_project(tmp_path)
+        wf_file = project / ".claude" / "workflows" / f"{wf}.json"
+        data = json.loads(wf_file.read_text())
+        del data["created"]
+        wf_file.write_text(json.dumps(data))
+        return project, wf
+
+    def test_legacy_lock_with_matching_marker_is_not_an_approval(self, tmp_path):
+        project, wf = self._project_without_created(tmp_path)
+        _lock_path(project, wf).write_text(json.dumps({"workflow": wf, "created": 1000.0}))
+        marker = _write_marker(project, wf, "1000.0")
+
+        _run_gate(project, wf)
+
+        assert not marker.exists(), "Marker eines nicht zuordenbaren Locks gilt nicht"
+        lock = json.loads(_lock_path(project, wf).read_text())
+        assert lock["created"] != 1000.0, "Alt-Lock muss durch frischen Lock ersetzt sein"
+
+    def test_gate_still_works_for_workflow_without_created(self, tmp_path):
+        """Kein Fail-open: der vom Gate selbst geschriebene Lock bleibt gueltig."""
+        import time
+        project, wf = self._project_without_created(tmp_path)
+        assert _run_gate(project, wf).returncode == 0  # legt Lock an
+        lock = json.loads(_lock_path(project, wf).read_text())
+        lock["created"] = time.time() - 10 * 3600  # Batch-Fenster sicher abgelaufen
+        _lock_path(project, wf).write_text(json.dumps(lock))
+        r = _run_gate(project, wf)
+        assert r.returncode == 2 and "BLOCKED" in r.stderr, r.stderr

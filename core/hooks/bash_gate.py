@@ -497,6 +497,21 @@ def _is_amend(command: str) -> bool:
     return re.search(r"(?<!\S)--amend(?!\S)", command) is not None
 
 
+def _creates_commit(command: str) -> bool:
+    """Erzeugt der Befehl einen Commit, der durch die Commit-Gates muss?
+
+    `git commit` und der Abschluss eines Merges per `git merge --continue` (#355):
+    der eine fuehrt intern genau den anderen aus. Ueber-Erkennung (`--continue`
+    gehoert zu einem anderen Segment) heisst nur, dass zusaetzlich geprueft wird.
+    """
+    if is_git_subcommand(command, "commit"):
+        return True
+    # git akzeptiert eindeutige Praefixe langer Optionen: `--con` == `--continue`
+    # (`--co` ist mehrdeutig, `--commit`).
+    return (is_git_subcommand(command, "merge")
+            and re.search(r"(?<![^\s\"'])--con(?:t(?:i(?:n(?:u(?:e)?)?)?)?)?(?![^\s;&|)\"'])", command) is not None)
+
+
 def _commit_content_files(staged_list: list, measure_root: Path, command: str) -> list:
     """Dateien, die der ENTSTEHENDE Commit enthaelt.
 
@@ -605,6 +620,11 @@ def _commit_form(command: str) -> "tuple[bool, bool, bool, bool]":
     commits = [seg[seg.index("commit") + 1:] for seg in (_git_segments(command) or [])
                if "commit" in seg and any(_looks_like_git(t) for t in seg[:seg.index("commit")])]
     if not commits:
+        merges = [seg for seg in (_git_segments(command) or [])
+                  if "merge" in seg and any(_looks_like_git(t) for t in seg[:seg.index("merge")])]
+        if merges and _creates_commit(command):
+            # `git merge --continue` (#355) committet den Index — ohne -a, Pfade, --amend
+            return False, False, "add" in git_subcommands(command), False
         return True, True, True, True
     all_files = pathspec = amend = False
     for args in commits:
@@ -653,10 +673,23 @@ def _commit_change_set(command: str) -> "tuple[list | None, list, str | None]":
         top = git_toplevel(_measurement_root())
         if top is None:
             return None, [], None
-        staged = git_names(["diff", "--cached", *DIFF_NAMES], top)  # leer = leerer Index
+        # Laufender Merge (#355): gegen MERGE_HEAD messen, nicht gegen HEAD — sonst
+        # zaehlte jede per `git merge origin/main` hereingeholte Datei als eigene
+        # Aenderung, die der Dialog binden muesste (dieselbe Menge wie Phase 8
+        # gegen merge-base).
+        # Nur wenn MERGE_HEAD aus origin/main stammt: das Merge-Ziel waehlt der Agent
+        # selbst (`git stash; git merge --no-commit stash@{0}` versteckte sonst eigenen
+        # Code). Sonst gegen HEAD — die groessere Menge.
+        base = "HEAD"
+        if has("MERGE_HEAD") and run_git(
+                ["merge-base", "--is-ancestor", "MERGE_HEAD", "origin/main"], top,
+                probe=True) is not None:
+            base = "MERGE_HEAD"
+        staged = git_names(["diff", "--cached", *DIFF_NAMES, *([base] if base != "HEAD" else [])],
+                           top)  # leer = leerer Index
         files = index = code_files(staged, top)
-        if (all_files or pathspec or with_add or not staged) and has("HEAD"):
-            files = files + git_code_files(["diff", *DIFF_NAMES, "HEAD", "--"], top)
+        if (all_files or pathspec or with_add or not staged) and has(base):
+            files = files + git_code_files(["diff", *DIFF_NAMES, base, "--"], top)
         if amend and has("HEAD~1"):  # Vereinigung: --amend vergroessert die Menge nur
             files = files + git_code_files(["diff", *DIFF_NAMES, "HEAD~1", "--"], top) \
                 + git_code_files(["diff", "--cached", *DIFF_NAMES, "HEAD~1", "--"], top)
@@ -876,7 +909,7 @@ def main():
         and not git_runs_foreign_code(command)    # Shell-Alias, `-c core.pager=…` (#297)
     ):
         git_only = True  # fail-open: exakt das bisherige Verhalten
-    if git_only and not is_git_subcommand(command, "commit") and not redirect_hit:
+    if git_only and not _creates_commit(command) and not redirect_hit:
         allow()
 
     # 3a. Approval-/Erfolgs-Marker: deny by default, kein Bash-Weg erlaubt.
@@ -958,7 +991,7 @@ def main():
         )
 
     # 5. Git commit gates (tokenbasiert, Issue #1431 — Erwaehnung ist kein Aufruf)
-    if workflow_enforced and is_git_subcommand(command, "commit"):
+    if workflow_enforced and _creates_commit(command):
         import subprocess
 
         # Gemessen wird im Arbeitsbaum, nicht im Hauptrepo (Issue #155).

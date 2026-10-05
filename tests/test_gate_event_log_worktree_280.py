@@ -164,3 +164,50 @@ def test_previously_leaky_suites_do_not_touch_the_real_log():
         "Testlauf hat Zeilen an das echte Gate-Event-Log angehaengt "
         f"(vorher {before}, nachher {after})"
     )
+
+
+# --- #295: fremdes Projekt (CLAUDE_PROJECT_DIR) bei CWD im Worktree ---
+
+def test_foreign_project_dir_does_not_log_into_cwd_worktree(
+    repo_and_worktree, tmp_path, monkeypatch
+):
+    """Jeder Test mit tmp_path-Projekt, der aus einem Worktree laeuft, schrieb
+    bisher ins echte Worktree-Log (#295). Das Log gehoert zum Projekt."""
+    main, worktree = repo_and_worktree
+    other = tmp_path / "other_project"
+    other.mkdir()
+    monkeypatch.chdir(worktree)
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(other))
+
+    assert _real_block("BLOCKED: #295 probe") == 2
+
+    assert _lines(worktree / LOG_REL) == []
+    assert _lines(main / LOG_REL) == []
+    assert len(_lines(other / LOG_REL)) == 1
+
+
+def test_project_dir_main_repo_with_cwd_in_its_worktree_logs_to_worktree(
+    repo_and_worktree, monkeypatch
+):
+    """#280 bleibt: Sitzung im Haupt-Ordner gestartet, Arbeit im eigenen Worktree."""
+    main, worktree = repo_and_worktree
+    monkeypatch.chdir(worktree)
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(main))
+
+    assert _real_block("BLOCKED: #280 probe") == 2
+
+    assert len(_lines(worktree / LOG_REL)) == 1
+    assert _lines(main / LOG_REL) == []
+
+
+def test_project_dir_subfolder_of_main_logs_to_worktree(repo_and_worktree, monkeypatch):
+    """Pruefrunde 1 (F7): CLAUDE_PROJECT_DIR auf einen Unterordner des Haupt-Repos."""
+    main, worktree = repo_and_worktree
+    (main / "sub").mkdir()
+    monkeypatch.chdir(worktree)
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(main / "sub"))
+
+    assert _real_block("BLOCKED: F7 probe") == 2
+
+    assert len(_lines(worktree / LOG_REL)) == 1
+    assert _lines(main / "sub" / LOG_REL) == []

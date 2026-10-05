@@ -207,6 +207,8 @@ class TestPrGate:
 
     def _write_readme(self, repo: Path, version: str) -> None:
         (repo / "README.md").write_text(f"**Version**: {version} · [Changelog](CHANGELOG.md)\n")
+        # Seit #279 prueft das Gate auch den Versions-Header der CLAUDE.md.
+        (repo / "CLAUDE.md").write_text(f"# Projekt\n\n**Version**: {version}\n")
 
     def _commit_and_push_base(self, repo: Path, version: str) -> None:
         self._write_manifest(repo, version)
@@ -226,6 +228,7 @@ class TestPrGate:
         monkeypatch.setattr(release_check, "PLUGIN_JSON", repo / ".claude-plugin" / "plugin.json")
         monkeypatch.setattr(release_check, "CHANGELOG", repo / "CHANGELOG.md")
         monkeypatch.setattr(release_check, "README", repo / "README.md")
+        monkeypatch.setattr(release_check, "CLAUDE_MD", repo / "CLAUDE.md")
         monkeypatch.setattr(release_check, "check_skills_sync",
                             lambda: (True, "stub – nicht Teil dieses Tests"))
 
