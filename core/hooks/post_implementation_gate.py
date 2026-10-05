@@ -151,8 +151,11 @@ def main() -> None:
     # Lock VOR der Marker-Prüfung lesen: der Marker gilt nur für genau diesen Lauf (#134)
     lock = _read_lock(lock_path)
 
-    # Lock einer frueheren Lebensdauer eines gleichnamigen Workflows zaehlt nicht (#134)
-    if lock is not None and lock.get("workflow_created") != workflow.get("created"):
+    # Lock einer frueheren Lebensdauer eines gleichnamigen Workflows zaehlt nicht (#134).
+    # Ein Lock ohne den Schluessel (Alt-Format vor #134) ist nicht zuordenbar und
+    # zaehlt ebenfalls nicht, auch wenn der Workflow kein `created` hat (#300).
+    if lock is not None and ("workflow_created" not in lock
+                             or lock["workflow_created"] != workflow.get("created")):
         lock = None
         lock_path.unlink(missing_ok=True)
         log_gate_event(
