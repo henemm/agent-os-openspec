@@ -180,7 +180,7 @@ Jeder Agent und jede Phase verwendet gezielt das passende Modell:
 |-------|---------|-----------|
 | **Haiku** | Schnell + guenstig fuer mechanische Aufgaben | Validierung (spec-validator), Kontext laden (Explore), Scope-Reviews, Test-Running (test-runner), Bug-Intake |
 | **Sonnet** | Qualitaet + Kosten-Balance fuer kreative/analytische Arbeit | Specs schreiben (spec-writer), Bug-Analyse (bug-investigator), Feature-Planung (feature-planner), Docs-Updates (docs-updater), Analysis-Challenger, Implementation-Validator, Auto-Fixes |
-| **Opus** | Hoechste Qualitaet fuer Kern-Arbeit | Implementation (Hauptkontext), User-Interaktion, Synthese, User Story Discovery (user-story-planner) |
+| **Opus** | Hoechste Qualitaet fuer Kern-Arbeit | Implementation (Hauptkontext), User-Interaktion, Synthese, User Story Discovery (`/83-user-story`, laeuft im Hauptkontext) |
 
 **Dispatching-Muster:**
 - **Parallel Explore (3x Haiku):** Schnelle Kontextsammlung in Analyse-Phasen

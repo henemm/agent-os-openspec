@@ -36,6 +36,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 PLUGIN_JSON = REPO_ROOT / ".claude-plugin" / "plugin.json"
 CHANGELOG = REPO_ROOT / "CHANGELOG.md"
 README = REPO_ROOT / "README.md"
+CLAUDE_MD = REPO_ROOT / "CLAUDE.md"
 RELEASE_BRANCH = "main"
 
 # Tag-Konvention: die Form, die Claude Code fuer Plugin-Abhaengigkeiten
@@ -179,6 +180,20 @@ def check_readme_version(manifest_version: str, readme_text: str) -> "tuple[bool
     return True, f"Version {manifest_version} auch im README"
 
 
+def check_claude_md_version(manifest_version: str, claude_md_text: str) -> "tuple[bool, str]":
+    """Versions-Header der CLAUDE.md gegen plugin.json (#279, Befund 2 / #257).
+
+    Dieselbe Marker-Zeile wie im README. Beim Release 3.32.0 zog das README mit,
+    die CLAUDE.md blieb stehen — gepflegt wurde sie bis dahin nur von Hand.
+    """
+    found = readme_version(claude_md_text)
+    if found is None:
+        return False, "Keine '**Version**:'-Zeile in CLAUDE.md gefunden"
+    if found != manifest_version:
+        return False, (f"CLAUDE.md sagt {found}, plugin.json {manifest_version}")
+    return True, f"Version {manifest_version} auch in CLAUDE.md"
+
+
 def check_tag_free(tag: str) -> "tuple[bool, str]":
     _git("fetch", "origin", "--tags", "--quiet")
     result = _git("tag", "--list", tag)
@@ -255,6 +270,7 @@ def run_pr_gate(base_ref: str) -> int:
     checks = [
         ("Version", check_version_match(version, latest_changelog_version(CHANGELOG.read_text()))),
         ("README", check_readme_version(version, README.read_text())),
+        ("CLAUDE.md", check_claude_md_version(version, CLAUDE_MD.read_text())),
         ("Tag", check_tag_free(tag)),
         ("Skills", check_skills_sync()),
     ]
@@ -312,6 +328,7 @@ def main() -> int:
         ("Abgleich", check_in_sync()),
         ("Version", check_version_match(version, latest_changelog_version(CHANGELOG.read_text()))),
         ("README", check_readme_version(version, README.read_text())),
+        ("CLAUDE.md", check_claude_md_version(version, CLAUDE_MD.read_text())),
         ("Tag", check_tag_free(tag)),
         ("Skills", check_skills_sync()),
     ]
