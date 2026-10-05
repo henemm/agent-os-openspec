@@ -430,14 +430,56 @@ def _is_outside_safe_zone(target: str, root: Path, cfg: dict,
             # Praefix-Pruefung an os.sep gebunden, damit '/x/scratchpad-evil'
             # kein Unterordner von '/x/scratchpad' wird (AC-9).
             return False
+    forms = _system_alias_forms(unresolved, resolved)
     for pattern in cfg["extra_allowed_write_dirs"]:
-        # Issue #239: bis hierher wurde nur gegen den AUFGELOESTEN Pfad geprueft —
-        # ein Muster wie '^/tmp/' konnte damit nie greifen, weil /tmp auf macOS
-        # zu /private/tmp aufloest. Jetzt zaehlt ein Treffer auf EINER der
-        # beiden Pfad-Formen.
-        if re.match(pattern, resolved) or re.match(pattern, unresolved):
+        # Issue #239: ein Muster wie '^/tmp/' muss auch greifen, wenn /tmp (macOS)
+        # zu /private/tmp aufloest. Issue #245: der ROHE Pfad-String taugt dafuer
+        # nicht — '/tmp/../etc/passwd' passt auf '^/tmp/', liegt aber in /etc.
+        # Verglichen werden nur Schreibweisen, die nachweislich dasselbe Ziel
+        # bezeichnen (siehe _system_alias_forms).
+        if any(re.match(pattern, form) for form in forms):
             return False
     return True
+
+
+def _system_alias_forms(unresolved: str, resolved: str) -> "list[str]":
+    """Das aufgeloeste Ziel plus seine Schreibweisen ueber System-Symlinks (#239, #245).
+
+    Fuer jeden Vorfahren X des lexikalisch normalisierten Pfads, der ein
+    System-Symlink ist (root gehoert, Elternordner nicht fuer alle beschreibbar —
+    `/tmp`, `/var`, `/etc` auf macOS), und dessen Ziel das aufgeloeste Ziel
+    enthaelt, ist `X + Rest` eine gleichwertige Schreibweise: sie loest exakt
+    auf `resolved` auf. Ein `..` aendert daran nichts — es wird vorher
+    lexikalisch aufgeloest, die Form muss trotzdem auf das echte Ziel zeigen.
+
+    Symlinks, die der Agent selbst anlegen kann (eigene Ordner, /tmp mit
+    Sticky-Bit), zaehlen bewusst NICHT: `/tmp/link -> /etc` ergaebe sonst die
+    Schreibweise `/tmp/link/passwd` und das Muster `^/tmp/` waere ein
+    Generalschluessel. Folge: ein solches Ziel wird blockiert, wenn nur seine
+    Symlink-Schreibweise, nicht aber sein echter Ort auf das Muster passt.
+    """
+    forms = [resolved]
+    ancestor = Path(os.path.normpath(unresolved))
+    for candidate in [ancestor, *ancestor.parents]:
+        if not _is_system_symlink(candidate):
+            continue
+        try:
+            real = str(candidate.resolve())
+        except (OSError, ValueError):
+            continue
+        if resolved == real or resolved.startswith(real + os.sep):
+            forms.append(str(candidate) + resolved[len(real):])
+    return forms
+
+
+def _is_system_symlink(path: Path) -> bool:
+    """Symlink, den nur root anlegen konnte und den niemand sonst umbiegen kann."""
+    try:
+        if not path.is_symlink():
+            return False
+        return path.lstat().st_uid == 0 and not path.parent.stat().st_mode & 0o002
+    except (OSError, ValueError):
+        return False
 
 
 def find_unsafe_redirects(tool_name: str, tool_input: dict, cfg: dict, root: Path,
