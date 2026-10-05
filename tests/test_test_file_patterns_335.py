@@ -21,10 +21,14 @@ sys.path.insert(0, str(HOOKS_DIR))
 from hook_utils import is_gated_code_path, is_colocated_test_file  # noqa: E402
 from config_loader import DEFAULT_TEST_PATH_PATTERNS  # noqa: E402
 
-TESTS = ["notified_test.go", "cmd/app/main_test.go", "test_parser.py", "pkg/x_test.py",
+TESTS = ["notified_test.go", "cmd/app/main_test.go",
          "src/app.test.ts", "src/app.spec.tsx", "web/a.test.mjs", "web/b.spec.js"]
+# Pruefrunde 1: Python-Namen tragen die Konvention nicht verlaesslich —
+# test_lock_guard.py ist ein echter Hook, ab_test.py ein Feature.
 CODE = ["notified.go", "test_helpers.go", "testing.go", "contest.py", "latest.py",
-        "src/test.ts", "src/app.ts", "src/testing/app.go", "Latest.java", "MyTest.swift"]
+        "src/test.ts", "src/app.ts", "src/testing/app.go", "Latest.java", "MyTest.swift",
+        "test_parser.py", "pkg/x_test.py", "src/ab_test.py",
+        "modules/ios-swiftui/hooks/test_lock_guard.py", "x_test.go/main.go"]
 
 
 @pytest.mark.parametrize("path", TESTS)
@@ -82,3 +86,17 @@ def test_red_phase_allows_go_test_file(red_project):
 def test_red_phase_still_blocks_go_code(red_project, rel):
     r = _edit(red_project, rel)
     assert r.returncode == 2 and "phase5_tdd_red" in r.stderr, r.stderr
+
+
+# --- Pruefrunde 1: Infrastruktur und Stop-Lock gehen vor ---
+
+@pytest.mark.parametrize("rel", [".claude/hooks/test_lock_guard.py", ".claude/hooks/x_test.go"])
+def test_infrastructure_stays_blocked_despite_test_name(red_project, rel):
+    r = _edit(red_project, rel)
+    assert r.returncode == 2 and "Infrastruktur" in r.stderr, r.stderr
+
+
+def test_stop_lock_blocks_colocated_test_file(red_project):
+    (red_project / ".claude" / "stop_lock.json").write_text('{"enabled": true}')
+    r = _edit(red_project, "notified_test.go")
+    assert r.returncode == 2 and "Stop-lock" in r.stderr, r.stderr

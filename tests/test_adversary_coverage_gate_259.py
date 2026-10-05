@@ -822,8 +822,9 @@ PATH_TABLE = [  # (Pfad, strict_code_gate-Überschreibung, Code?)
     ("src/app.py", {"code_extensions": [".sql"]}, False),  # … und ersetzt die Liste
     ("legacy/old.py", {"always_allowed_dirs": ["legacy/"]}, False),
     ("tests/helper.py", {"always_allowed_dirs": ["legacy/"]}, True),  # Defaults ersetzt
-    # #335: Testdatei-Namensmuster gelten zusaetzlich, eine Projekt-Liste ersetzt sie nicht
-    ("tests/test_x.py", {"always_allowed_dirs": ["legacy/"]}, False),
+    # #335: Testdatei-Namensmuster (Go/JS/TS) gelten zusaetzlich zur Projekt-Liste
+    ("tests/test_x.py", {"always_allowed_dirs": ["legacy/"]}, True),
+    ("src/app.test.ts", {"always_allowed_patterns": [r"\.md$"]}, False),
     ("pkg/notified_test.go", {}, False),
     ("pkg/test_helpers.go", {}, True),
     ("src/gen_api.py", {"always_allowed_patterns": [r"gen_\w+\.py$"]}, False),

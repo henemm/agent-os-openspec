@@ -22,7 +22,7 @@ Jeder Befund ist durch einen Test belegt, der ohne die Änderung rot ist; die vo
 
 ## Acceptance Criteria
 
-- **AC-1:** Given ein Workflow in phase5_tdd_red, When `notified_test.go` angelegt wird, Then erlaubt edit_gate das; `notified.go` und `test_helpers.go` bleiben blockiert.
+- **AC-1:** Given ein Workflow in phase5_tdd_red, When `notified_test.go` angelegt wird, Then erlaubt edit_gate das; `notified.go`, `test_helpers.go`, Python-Namen wie `test_lock_guard.py` und jede Datei unter `.claude/hooks/` bleiben blockiert.
 - **AC-2:** Given eine Nicht-UTF-8-Datei `50-implement.md` im Befehlsordner, When `setup.py --command-aliases` läuft, Then endet der Lauf mit Exit 0, die Datei bleibt unverändert und die übrigen Aliase entstehen.
 - **AC-3:** Given ein grüner node- oder unittest-Lauf, dessen Testname oder Docstring „TEST FAILED“ enthält, When qa_gate ihn prüft, Then ist das Ergebnis grün; die echte Form `** TEST FAILED **` bleibt rot.
 - **AC-4:** Given zwei node-Summaries ohne Trennzeile oder eine Summary mit unplausiblen Zahlen, When qa_gate sie prüft, Then ist das Ergebnis nicht grün.

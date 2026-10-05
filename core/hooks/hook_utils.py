@@ -1260,14 +1260,14 @@ ALWAYS_ALLOWED_PATTERNS = [
 
 
 # Testdateien NEBEN dem Code (#335): Go legt `foo_test.go` ins selbe Package,
-# Python/JS/TS kennen dieselbe Konvention. Test-ORDNER deckt ALWAYS_ALLOWED_DIRS.
-# Bewusst eng und case-sensitiv, nur Sprachen mit Co-Location-Konvention:
-# `test_helpers.go` (ohne `_test`-Suffix) bleibt Produktivcode. Gilt zusaetzlich
-# zu always_allowed_patterns — eine Projekt-Liste ersetzt sie nicht.
+# JS/TS kennen `*.test.*`/`*.spec.*`. Test-ORDNER deckt ALWAYS_ALLOWED_DIRS.
+# Bewusst eng und case-sensitiv, nur Konventionen, die der Name verlaesslich
+# traegt: Go baut `*_test.go` nie ins Programm. Python-Namen (`test_*.py`,
+# `*_test.py`) bewusst NICHT — `test_lock_guard.py` ist ein echter Hook,
+# `ab_test.py` ein Feature; Python-Tests liegen in `tests/`. `test_helpers.go`
+# bleibt Produktivcode. Gilt zusaetzlich zu always_allowed_patterns.
 TEST_FILE_PATTERNS = [
     r"(^|/)[^/]+_test\.go$",
-    r"(^|/)test_[^/]*\.py$",
-    r"(^|/)[^/]+_test\.py$",
     r"(^|/)[^/]+\.(test|spec)\.[cm]?[jt]sx?$",
 ]
 

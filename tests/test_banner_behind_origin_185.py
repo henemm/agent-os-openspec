@@ -87,3 +87,47 @@ def test_failed_fetch_shows_nothing_and_is_fast(repos, tmp_path):
 
 def test_not_a_repo_no_line(tmp_path):
     assert session_banner.behind_lines(tmp_path) == []
+
+
+# --- Pruefrunde 1 ---
+
+def test_no_askpass_dialog_on_fetch(repos, tmp_path, monkeypatch):
+    """VS Code setzt GIT_ASKPASS — beim Session-Start darf kein Dialog aufgehen."""
+    origin, main = repos
+    marker = tmp_path / "askpass_called"
+    askpass = tmp_path / "askpass.sh"
+    askpass.write_text(f"#!/bin/sh\ntouch {marker}\necho x\n")
+    askpass.chmod(0o755)
+    monkeypatch.setenv("GIT_ASKPASS", str(askpass))
+    monkeypatch.setenv("SSH_ASKPASS", str(askpass))
+    calls = []
+    real_run = session_banner.__dict__.get("_git")
+
+    def spy(args, cwd, timeout):
+        calls.append(args)
+        return real_run(args, cwd, timeout)
+    monkeypatch.setattr(session_banner, "_git", spy)
+    session_banner.behind_lines(main)
+    import subprocess as sp
+    env = {}
+    orig = sp.run
+
+    def capture(*a, **kw):
+        env.update(kw.get("env") or {})
+        return orig(*a, **kw)
+    monkeypatch.setattr(session_banner, "_git", real_run)
+    monkeypatch.setattr(sp, "run", capture)
+    session_banner.behind_lines(main)
+    assert env.get("GIT_ASKPASS") == "" and env.get("SSH_ASKPASS") == ""
+    assert env.get("GIT_TERMINAL_PROMPT") == "0" and env.get("GCM_INTERACTIVE") == "never"
+    assert not marker.exists()
+    assert any("fetch" in a for a in calls)
+
+
+def test_remote_name_with_slash(repos, tmp_path):
+    origin, main = repos
+    _git(["remote", "rename", "origin", "team/origin"], main)
+    _git(["branch", "--set-upstream-to", "team/origin/main", "main"], main)
+    _push_foreign_commit(origin, tmp_path)
+    lines = session_banner.behind_lines(main)
+    assert lines and "1 Commit(s) hinter team/origin/main" in lines[0], lines

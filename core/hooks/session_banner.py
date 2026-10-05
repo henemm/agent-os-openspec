@@ -199,7 +199,10 @@ _FETCH_TIMEOUT_S = 3
 def _git(args: "list[str]", cwd: Path, timeout: float) -> "str | None":
     """git-Ausgabe oder None (Fehler, Timeout, kein Repo) — wirft nie."""
     import subprocess
-    env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
+    # Kein Dialog beim Session-Start: weder Terminal- noch GUI-Abfrage (VS Code
+    # setzt GIT_ASKPASS), weder ssh-askpass noch Git Credential Manager.
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GIT_ASKPASS="", SSH_ASKPASS="",
+               SSH_ASKPASS_REQUIRE="never", GCM_INTERACTIVE="never")
     env.setdefault("GIT_SSH_COMMAND", "ssh -oBatchMode=yes")
     try:
         proc = subprocess.run(["git", *args], cwd=str(cwd), capture_output=True,
@@ -225,7 +228,13 @@ def behind_lines(cwd: Path) -> "list[str]":
             return []
     except Exception:
         pass
-    listing = _git(["worktree", "list", "--porcelain"], cwd, 2)
+    import time
+    deadline = time.monotonic() + 4.0  # Hook-Timeout ist 5 s; Banner und Alias-Warnungen gehen vor
+
+    def left(cap: float) -> float:
+        return max(0.1, min(cap, deadline - time.monotonic()))
+
+    listing = _git(["worktree", "list", "--porcelain"], cwd, left(1))
     if not listing:
         return []
     main_branch = next((ln.split(" ", 1)[1] for ln in listing.splitlines()
@@ -234,13 +243,16 @@ def behind_lines(cwd: Path) -> "list[str]":
     if not main_branch or f"branch {main_branch}" not in first_block:
         return []  # Haupt-Ordner ohne Zweig (detached) — nichts zu vergleichen
     main_branch = main_branch.removeprefix("refs/heads/")  # `<ref>@{u}` will den Kurznamen
-    upstream = _git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", f"{main_branch}@{{u}}"], cwd, 2)
-    if not upstream or "/" not in upstream:
+    upstream = _git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", f"{main_branch}@{{u}}"],
+                    cwd, left(1))
+    remote = _git(["config", f"branch.{main_branch}.remote"], cwd, left(1))  # darf `/` enthalten
+    if not upstream or not remote or remote == ".":
         return []
-    remote = upstream.split("/", 1)[0]
-    if _git(["fetch", "--quiet", remote], cwd, _FETCH_TIMEOUT_S) is None:
+    if time.monotonic() >= deadline or _git(
+            ["-c", "maintenance.auto=false", "-c", "gc.auto=0", "fetch", "--quiet",
+             "--no-recurse-submodules", remote], cwd, left(_FETCH_TIMEOUT_S)) is None:
         return []
-    count = _git(["rev-list", "--count", f"{main_branch}..{upstream}"], cwd, 2)
+    count = _git(["rev-list", "--count", f"{main_branch}..{upstream}"], cwd, left(1))
     if not count or not count.isdigit() or int(count) == 0:
         return []
     guard = _HOOK_DIR / "session_singleton_guard.py"

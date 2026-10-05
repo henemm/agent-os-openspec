@@ -164,8 +164,9 @@ _NODE_LINE_RE = re.compile(
 _CARGO_FAILED_RE = re.compile(r"(?m)^test result: FAILED")
 # xcodebuild-Marker in seiner echten Form `** TEST FAILED **` (#347 F101): ein
 # Testname oder Docstring, der die Worte nur erwaehnt, ist keine Rot-Evidenz —
-# auch nicht am Zeilenanfang (unittest -v druckt den Docstring dort).
-_TEST_FAILED_MARKER_RE = re.compile(r"(?m)^\s*\*\* TEST FAILED \*\*")
+# auch nicht am Zeilenanfang (unittest -v druckt den Docstring dort). Ueberall
+# in der Zeile, damit Zeitstempel/fastlane-Praefixe ihn nicht verstecken.
+_TEST_FAILED_MARKER_RE = re.compile(r"\*\* TEST (?:EXECUTE )?FAILED \*\*")
 _NODE_COUNTS = ("pass", "fail", "cancelled", "skipped", "todo")
 
 
@@ -230,6 +231,10 @@ def _node_blocks(content: str) -> "list[dict]":
 
 def _evaluate_node_block(block: dict) -> "tuple[bool, str] | None":
     """Wertet einen node --test-Summary-Block aus. None = unvollstaendig."""
+    if block.get("fail", 0) > 0 or block.get("cancelled", 0) > 0:
+        # Rot-Evidenz zaehlt auch im unvollstaendigen Block (Pruefrunde zu #347)
+        return False, (f"Tests FAILED: {int(block.get('fail', 0))} failed, "
+                       f"{int(block.get('cancelled', 0))} cancelled (node --test)")
     if not all(k in block for k in ("tests", "pass", "fail")):
         return None
     # Plausibilitaet (#347 F104): Zaehlfelder ganzzahlig, Summe stimmt — sonst

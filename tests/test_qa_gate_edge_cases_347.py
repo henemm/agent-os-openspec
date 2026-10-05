@@ -57,3 +57,28 @@ def test_f104_fractional_counter_is_not_green(tmp_path):
     (tmp_path / "f.txt").write_text(text)
     valid, msg = validate_test_output(str(tmp_path / "f.txt"))
     assert not valid and "ganzzahlig" in msg, msg
+
+
+# --- Pruefrunde 1 ---
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.parametrize("marker", [
+    "2026-10-05T12:00:00.123Z ** TEST FAILED **",
+    "[12:00:00]: ▸ ** TEST FAILED **",
+    "** TEST EXECUTE FAILED **",
+])
+def test_prefixed_xcodebuild_marker_beside_green_unittest_is_red(tmp_path, marker):
+    src = (FIXTURES / "unittest_green_docstring_mentions_test_failed.txt").read_text()
+    (tmp_path / "x.txt").write_text(src + "\n" + marker + "\n")
+    valid, msg = validate_test_output(str(tmp_path / "x.txt"))
+    assert not valid, msg
+
+
+def test_truncated_red_block_after_green_block_is_red(tmp_path):
+    green = (FIXTURES / "node_tap_two_blocks_no_separator.txt").read_text().splitlines()[8:]
+    text = "\n".join(green + ["# tests 3", "# fail 2"]) + "\n"
+    (tmp_path / "t.txt").write_text(text)
+    valid, msg = validate_test_output(str(tmp_path / "t.txt"))
+    assert not valid and "2 failed" in msg, msg

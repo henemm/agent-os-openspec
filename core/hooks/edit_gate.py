@@ -611,10 +611,6 @@ def main():
         if re.search(p, file_path, re.IGNORECASE):
             allow()
 
-    # 2c. Testdatei neben dem Code (#335: `foo_test.go`, `test_x.py`, `x.test.ts`)
-    if is_colocated_test_file(file_path):
-        allow()
-
     # 3. Not a code file
     ext = Path(file_path).suffix.lower()
     if ext not in code_ext:
@@ -639,6 +635,11 @@ def main():
     # 5. Stop-lock
     if _is_stop_locked():
         block("BLOCKED: Stop-lock active.")
+
+    # 5b. Testdatei neben dem Code (#335: `foo_test.go`, `x.test.ts`) — erst NACH
+    # Infrastruktur (4) und Stop-Lock (5): ein Testname macht einen Hook nicht frei.
+    if is_colocated_test_file(file_path):
+        allow()
 
     # 6. Find workflow for file
     workflow = _read_active_workflow()
