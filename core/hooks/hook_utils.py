@@ -946,16 +946,22 @@ SECRETS_FREETEXT_FLAGS = {"-m", "--message", "--body", "--title", "-F"}
 # als normale Tokens in den Datei-/Kommando-Scans. Ein Heredoc-Body ist DATEN,
 # kein Kommando — aber NUR, wenn das eindeutig feststeht.
 #
-# Sicherheitsmodell (#357, nach zwei unabhaengigen Pruefrunden zu #276):
-# Entfernt wird ein Body nur, wenn ein zusammenhaengender Scan des GANZEN
-# Befehls (Quotes ueber Zeilengrenzen, Kommentare, Command-Substitution) den
-# Oeffner zweifelsfrei findet. Bei jeder Unsicherheit — Backtick, Arithmetik,
-# ${...}, $'...', [[ ]], Zeilenfortsetzung, CR, offenes Heredoc, offene Quotes,
-# unbekannte Endwort-Form — bleibt der Befehl UNVERAENDERT (fail-closed).
-# Zusaetzlich bleibt jeder Body im Scan, der ausgefuehrt werden koennte:
-# Interpreter/eval/source/xargs/ssh irgendwo im uebrigen Befehl, Heredoc in
-# einer Command-Substitution ausserhalb eines Arguments ("$(cat <<'E'" hinter
-# einem Befehlswort), ungequotetes Endwort mit $ oder ` im Body.
+# Sicherheitsmodell (#357; Differenztest gegen bash als Orakel):
+# 1. Ein zusammenhaengender Scan des GANZEN Befehls (Quotes ueber Zeilen,
+#    Kommentare nur am Wortanfang, $(...) vs. Subshell) muss jeden Oeffner
+#    zweifelsfrei finden. Bei jeder Unsicherheit — Backtick, Arithmetik,
+#    ${...}, $'...', [[ ]], case, Zeilenfortsetzung, CR, offenes Heredoc,
+#    offene Quotes, unbekannte Endwort-Form, Body ueber Verschachtelungs-
+#    ebenen hinweg, Body-Zeile, die mit dem Endwort beginnt — bleibt der
+#    Befehl UNVERAENDERT (fail-closed).
+# 2. POSITIVLISTE statt Negativliste: Entfernt wird ein Body nur, wenn das
+#    Kommando, das ihn liest, ein reiner Daten-Konsument ist
+#    (_HEREDOC_SAFE_CONSUMERS); bei "$(cat <<'E'" auch das aeussere Kommando.
+#    Jede Pipe im uebrigen Befehl muss ebenfalls in einen solchen Konsumenten
+#    fuehren. Eine Liste "gefaehrlicher" Programme ist nie vollstaendig
+#    ($SHELL, sed e, s\h ...).
+# 3. Zusaetzlich (Verteidigung in der Tiefe): Interpreter-Namen, ./ und
+#    chmod im uebrigen Befehl, ungequotetes Endwort mit $ oder ` im Body.
 _HEREDOC_MARKER_RE = re.compile(
     r"<<(-?)[ \t]*(?:'([A-Za-z_][A-Za-z0-9_]*)'|\"([A-Za-z_][A-Za-z0-9_]*)\"|"
     r"\\([A-Za-z_][A-Za-z0-9_]*)|([A-Za-z_][A-Za-z0-9_]*))(?=$|[\s;&|)<>])"
@@ -963,12 +969,35 @@ _HEREDOC_MARKER_RE = re.compile(
 _HEREDOC_INTERPRETER_RE = re.compile(
     r"\b(python[0-9.]*|node|nodejs|deno|bun|perl|ruby|php|lua|tclsh|"
     r"(?:ba|z|da|k|c|tc|fi|mk|a)?sh|busybox|source|eval|exec|xargs|ssh|su|sudo|"
-    r"osascript|powershell|pwsh)\b|(?:^|[;&|({\s])\.\s"
+    r"osascript|powershell|pwsh|chmod)\b|(?:^|[;&|({\s])\.\.?/|(?:^|[;&|({\s])\.\s"
 )
+# Kommandos, die einen Heredoc nur als Daten lesen (kein Ausfuehren).
+_HEREDOC_SAFE_CONSUMERS = frozenset({
+    "cat", "tee", "git", "gh", "wc", "grep", "head", "tail", "sort", "uniq",
+    "tr", "cut", "column", "diff", "cmp", "base64", "md5sum", "sha256sum",
+    "shasum", "jq", "less", "more",
+})
+# Aeussere Kommandos fuer die Form `cmd ... "$(cat <<'E'"` (Argument-Text).
+_HEREDOC_SAFE_OUTER = frozenset({"git", "gh", "echo", "printf"})
 
 
 class _HeredocUnsure(Exception):
     """Der Befehl laesst sich nicht zweifelsfrei zerlegen — nichts entfernen."""
+
+
+def _segment_command_word(text: str) -> "str | None":
+    """Erstes Wort des letzten einfachen Kommandos in `text` (ohne Zuweisungen).
+
+    None bei leerem Segment, Redirect/Variable/Quote/Escape im Befehlswort.
+    """
+    seg = re.split(r"\|\||&&|[;&|(\n]", text)[-1]
+    for tok in seg.split():
+        if re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tok):
+            continue  # Zuweisung vor dem Befehl
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+", tok):
+            return None  # $SHELL, "bash", s\h, >f, ./x ...
+        return tok
+    return None
 
 
 def _heredoc_bodies(command: str) -> "list[tuple[int, int, bool]]":
@@ -977,20 +1006,21 @@ def _heredoc_bodies(command: str) -> "list[tuple[int, int, bool]]":
     start/end umfassen Body UND Terminator-Zeile (inkl. Zeilenumbruch).
     """
     n = len(command)
-    stack = ["code"]          # "code" | "dq"; Index 0 ist die Ebene des Befehls
-    subst_ok: "list[bool]" = []  # je offener $(...)-Ebene: harmloses Argument?
-    pending: "list[tuple[str, bool, bool, bool]]" = []  # marker, dash, quoted, ok
+    stack = ["code"]          # "code" | "sub" (Subshell) | "subst" ($(...)) | "dq"
+    subst_ok: "list[bool]" = []  # je offener "subst"/"sub"-Ebene
+    pending: "list[tuple[str, bool, bool, bool, int]]" = []  # marker, dash, quoted, ok, depth
     bodies: "list[tuple[int, int, bool]]" = []
+    word_start = True
     i = 0
     while i < n:
         c = command[i]
         top = stack[-1]
         if c == "\n":
             if pending:
-                if top != "code":
-                    raise _HeredocUnsure  # Body-Beginn innerhalb offener Quotes
+                if top == "dq" or any(d != len(stack) for *_, d in pending):
+                    raise _HeredocUnsure  # Body-Beginn in Quotes/anderer Ebene
                 i += 1
-                for marker, dash, quoted, ok in pending:
+                for marker, dash, quoted, ok, _d in pending:
                     start = i
                     while True:
                         if i >= n:
@@ -999,15 +1029,20 @@ def _heredoc_bodies(command: str) -> "list[tuple[int, int, bool]]":
                         j = n if j < 0 else j
                         line = command[i:j]
                         i = j + 1 if j < n else n
-                        if (line.lstrip("\t") if dash else line) == marker:
+                        cand = line.lstrip("\t") if dash else line
+                        if cand == marker:
                             break
+                        if cand.startswith(marker):
+                            raise _HeredocUnsure  # z.B. "E)" in $(...) (bash 5.2)
                     body = command[start:i]
                     if not quoted and ("$" in body or "`" in body):
                         ok = False  # ungequotet: die Shell expandiert den Body
                     bodies.append((start, i, ok))
                 pending = []
+                word_start = True
                 continue
             i += 1
+            word_start = True
             continue
         if c == "`":
             raise _HeredocUnsure
@@ -1015,65 +1050,81 @@ def _heredoc_bodies(command: str) -> "list[tuple[int, int, bool]]":
             if i + 1 < n and command[i + 1] == "\n":
                 raise _HeredocUnsure  # Zeilenfortsetzung
             i += 2
+            word_start = False
             continue
         if c == "$" and i + 1 < n:
             nxt = command[i + 1]
             if nxt == "(":
                 if command.startswith("$((", i):
                     raise _HeredocUnsure  # Arithmetik
-                # Harmlos nur als Argument: '"$(' direkt hinter Leerraum, in
-                # derselben Zeile steht davor ein Befehlswort (keine Zuweisung).
+                # Harmlos nur als Argument-Text: '"$(' hinter Leerraum, davor in
+                # derselben Zeile ein Befehlswort aus _HEREDOC_SAFE_OUTER.
                 ok = False
                 if top == "dq" and i >= 2 and command[i - 1] == '"' and command[i - 2] in " \t":
                     head = command[command.rfind("\n", 0, i) + 1:i - 1]
-                    seg = re.split(r"[;&|(]", head)[-1].strip()
-                    ok = bool(seg) and "=" not in seg.split()[0]
+                    ok = _segment_command_word(head) in _HEREDOC_SAFE_OUTER
                 subst_ok.append(ok and all(subst_ok))
-                stack.append("code")
+                stack.append("subst")
                 i += 2
+                word_start = True
                 continue
             if nxt in "{['":
                 raise _HeredocUnsure
             i += 1
+            word_start = False
             continue
         if top == "dq":
             if c == '"':
                 stack.pop()
             i += 1
+            word_start = False
             continue
-        # --- Code-Kontext ---
+        # --- Code-Kontext (Ebene, Subshell oder $(...)) ---
+        if c in " \t":
+            i += 1
+            word_start = True
+            continue
         if c == "'":
             j = command.find("'", i + 1)
             if j < 0 or (pending and "\n" in command[i:j]):
                 raise _HeredocUnsure
             i = j + 1
+            word_start = False
             continue
         if c == '"':
             stack.append("dq")
             i += 1
+            word_start = False
             continue
-        if c == "#" and (i == 0 or command[i - 1] in " \t\n;&|("):
+        if c == "#" and word_start:
             j = command.find("\n", i)
             i = n if j < 0 else j
             continue
+        if word_start and re.match(r"(case|esac|coproc|select)\b", command[i:i + 7]):
+            raise _HeredocUnsure
         if c == "(":
             if command.startswith("((", i):
                 raise _HeredocUnsure
-            stack.append("code")
+            stack.append("sub")
             subst_ok.append(False)
             i += 1
+            word_start = True
             continue
         if c == ")":
             if len(stack) > 1:
-                stack.pop()
+                closed = stack.pop()
                 if subst_ok:
                     subst_ok.pop()
+                word_start = closed == "sub"  # nach $(...) geht das Wort weiter
+            else:
+                word_start = True
             i += 1
             continue
         if c == "[" and command.startswith("[[", i):
             raise _HeredocUnsure
         if command.startswith("<<<", i):
             i += 3
+            word_start = True
             continue
         if command.startswith("<<", i):
             m = _HEREDOC_MARKER_RE.match(command, i)
@@ -1081,14 +1132,29 @@ def _heredoc_bodies(command: str) -> "list[tuple[int, int, bool]]":
                 raise _HeredocUnsure
             name = m.group(2) or m.group(3) or m.group(4) or m.group(5)
             quoted = m.group(5) is None
-            ok = all(subst_ok)  # ausserhalb jeder Substitution: True
-            pending.append((name, m.group(1) == "-", quoted, ok))
+            line_head = command[command.rfind("\n", 0, i) + 1:i]
+            consumer = _segment_command_word(line_head)
+            ok = all(subst_ok) and consumer in _HEREDOC_SAFE_CONSUMERS
+            pending.append((name, m.group(1) == "-", quoted, ok, len(stack)))
             i = m.end()
+            word_start = True
             continue
+        word_start = c in ";&|<>"
         i += 1
     if pending or stack != ["code"]:
         raise _HeredocUnsure
     return bodies
+
+
+def _residual_pipes_safe(residual: str) -> bool:
+    """Jede Pipe im uebrigen Befehl muss in einen reinen Daten-Konsumenten fuehren."""
+    if ">(" in residual or "<(" in residual:
+        return False
+    for m in re.finditer(r"(?<!\|)\|(?!\|)&?", residual):
+        rest = residual[m.end():].split(None, 1)
+        if not rest or rest[0] not in _HEREDOC_SAFE_CONSUMERS:
+            return False  # Ziel fehlt, ist $VAR, "bash", s\h, sed ...
+    return True
 
 
 def strip_heredoc_bodies(command: str) -> str:
@@ -1105,8 +1171,6 @@ def strip_heredoc_bodies(command: str) -> str:
         bodies = _heredoc_bodies(command)
     except _HeredocUnsure:
         return command
-    if not bodies:
-        return command
     keep, pos = [], 0
     for start, end, ok in bodies:
         if ok:
@@ -1116,9 +1180,9 @@ def strip_heredoc_bodies(command: str) -> str:
     residual = "".join(keep)
     if residual == command:
         return command
-    # Ein Interpreter irgendwo im uebrigen Befehl koennte Body-Daten ausfuehren
-    # (Pipe auf der Folgezeile, eval $(...), source /dev/stdin, ...).
-    if _HEREDOC_INTERPRETER_RE.search(residual):
+    # Ausfuehrende Konsumenten irgendwo im uebrigen Befehl (Pipe auf der
+    # Folgezeile, eval $(...), source /dev/stdin, ./skript ...).
+    if _HEREDOC_INTERPRETER_RE.search(residual) or not _residual_pipes_safe(residual):
         return command
     return residual
 

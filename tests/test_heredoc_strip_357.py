@@ -43,6 +43,14 @@ ATTACKS = {
     "line_continuation": f"cat <<EOF \\\n> x\n{REAL}\nEOF",
     "double_bracket": f"[[ a << b ]]\n{REAL}\nb",
     "unclosed": f"cat <<EOF\n{REAL}",
+    # Differenztest gegen bash, Klasse A: Parser lief aus dem Takt.
+    "hash_after_subshell": f"(true)#<<E\n{REAL}\nE",
+    "hash_after_case_pattern": f"case x in x)#<<E\n{REAL}\nE\nesac",
+    "hash_after_escaped_space": f"echo \\ #<<E\ncat <<F\nE\n{REAL}\nF",
+    "case_inside_subst": (f"echo \"$(case x in x) cat <<'E'\n\"\ncat <<'F'\nE\nesac)\"\n"
+                          f"{REAL}\nF"),
+    "terminator_with_paren_in_subst": f"echo \"$(cat <<'E'\ndata\nE)\"\n{REAL}\nE\n)\"",
+    "pending_across_subst_newline": f"cat <<E; echo \"$(true\n{REAL}\nE\n)\"",
 }
 
 # Faelle, in denen REAL im Body steht, der aber AUSGEFUEHRT wird.
@@ -58,6 +66,17 @@ EXECUTED_BODIES = {
     "unquoted_marker_with_expansion": f"cat <<EOF > notes.md\n$({REAL})\nEOF",
     "xargs": f"cat <<'EOF' | xargs -I{{}} sh -c {{}}\n{REAL}\nEOF",
     "bash_interpreter": f"bash <<'EOF'\n{REAL}\nEOF",
+    # Differenztest gegen bash (Pruefrunde zu #362), Klasse B: Konsumenten,
+    # die eine Namens-Negativliste nicht kennt -> Positivliste noetig.
+    "pipe_to_shell_var": f"cat <<'E' | $SHELL\n{REAL}\nE",
+    "pipe_to_quoted_shell_var": f"cat <<'E' | \"$SHELL\"\n{REAL}\nE",
+    "pipe_to_sed_e": f"cat <<'E' | sed e\n{REAL}\nE",
+    "pipe_to_awk_system": f"cat <<'E' | awk '{{system($0)}}'\n{REAL}\nE",
+    "pipe_to_escaped_name": f"cat <<'E' | s\\h\n{REAL}\nE",
+    "pipe_to_split_name": f"cat <<'E' | bas''h\n{REAL}\nE",
+    "pipe_to_composed_var": f"X=s; Y=h; cat <<'E' | $X$Y\n{REAL}\nE",
+    "written_then_executed": f"cat > x <<'E'\n{REAL}\nE\nchmod +x x; ./x",
+    "unknown_consumer": f"mystery-tool <<'E'\n{REAL}\nE",
 }
 
 
