@@ -296,17 +296,20 @@ Kill-Switch: `config.yaml` → `adversary_coverage_gate.enabled: false`.
 #### 8d. QA-Gate mit Checklist-Validierung
 
 ```bash
-python3 ${_H}/qa_gate.py /tmp/adversary_test_output.txt \
+python3 ${_H}/qa_gate.py docs/artifacts/<workflow-name>/adversary-test-output.txt \
     --checklist docs/artifacts/<workflow-name>/adversary-dialog.md \
-    --screenshot /tmp/adversary_screenshot.png
+    --screenshot docs/artifacts/<workflow-name>/adversary-screenshot.png
 
 # Fuer Infra-Tickets (ohne UI):
-python3 ${_H}/qa_gate.py /tmp/adversary_test_output.txt \
+python3 ${_H}/qa_gate.py docs/artifacts/<workflow-name>/adversary-test-output.txt \
     --checklist docs/artifacts/<workflow-name>/adversary-dialog.md \
     --infra --no-visual "Infra-Ticket ohne UI"
 ```
 
 Ohne `--checklist` prueft `qa_gate.py` nur die Testausgabe — das oeffnet weder Commit noch Phase 8.
+
+Ausgaben immer unter `docs/artifacts/<workflow-name>/` ablegen, nie unter `/tmp`: Schreibziele
+ausserhalb des Projekts blockt `secret_egress_guard` (Ausnahme: das eigene Sitzungs-Scratchpad).
 
 **Tri-State Verdict:**
 - **VERIFIED** — Alle Punkte bewiesen, weiter zu Phase 7

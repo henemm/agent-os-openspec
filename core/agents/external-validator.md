@@ -52,8 +52,8 @@ For web apps, use `curl` or `WebFetch`. For APIs, use `curl`. Do not guess — a
 
 Example:
 ```bash
-curl -s -o /tmp/resp.json -w "%{http_code}" https://app.example.com/api/endpoint
-cat /tmp/resp.json
+curl -s -o docs/artifacts/<workflow>/resp.json -w "%{http_code}" https://app.example.com/api/endpoint
+cat docs/artifacts/<workflow>/resp.json
 ```
 
 ### Step 3: Document Every Finding
