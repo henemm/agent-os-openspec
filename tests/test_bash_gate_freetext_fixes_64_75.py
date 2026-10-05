@@ -126,10 +126,13 @@ class TestHeredocBodyStripping:
         assert ".env" not in stripped
         assert "echo done" in stripped
 
-    def test_unclosed_heredoc_swallows_rest_like_shell(self):
+    def test_unclosed_heredoc_is_kept_fail_closed(self):
+        """#357: Ein nie geschlossenes Heredoc wird NICHT mehr entfernt. Die
+        Shell wuerde den Rest zwar als Daten lesen, aber ein falsch erkannter
+        Oeffner darf nie echte Befehle aus dem Scan nehmen — im Zweifel bleibt
+        der Befehl unveraendert."""
         cmd = "cat <<EOF\nalles hier ist body .env\nkein terminator"
-        stripped = strip_heredoc_bodies(cmd)
-        assert ".env" not in stripped
+        assert strip_heredoc_bodies(cmd) == cmd
 
     def test_here_string_is_not_a_heredoc(self):
         cmd = 'grep -c pattern <<< "kurzer text"'

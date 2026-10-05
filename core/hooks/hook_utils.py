@@ -941,50 +941,262 @@ SECRETS_ALWAYS_BLOCKED = [
 SECRETS_FREETEXT_FLAGS = {"-m", "--message", "--body", "--title", "-F"}
 
 
-# Heredoc-Body-Stripping (Issues #64/#75): shlex kennt keine Heredoc-Syntax,
-# darum landeten Body-Woerter (Doku-Freitext, Commit-Messages) als normale
-# Tokens in den Datei-/Kommando-Scans. Ein Heredoc-Body ist DATEN, kein
-# Kommando — ausser ein Interpreter auf der Oeffner-Zeile fuehrt ihn aus.
-_HEREDOC_OPEN_RE = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
-_HEREDOC_INTERPRETER_RE = re.compile(
-    r"\b(python3?|node|perl|ruby|php|(?:ba|z|da|k)?sh)\b"
+# Heredoc-Body-Stripping (Issues #64/#75, gehaertet in #357): shlex kennt keine
+# Heredoc-Syntax, darum landeten Body-Woerter (Doku-Freitext, Commit-Messages)
+# als normale Tokens in den Datei-/Kommando-Scans. Ein Heredoc-Body ist DATEN,
+# kein Kommando — aber NUR, wenn das eindeutig feststeht.
+#
+# Sicherheitsmodell (#357; Differenztest gegen bash als Orakel):
+# 1. Ein zusammenhaengender Scan des GANZEN Befehls (Quotes ueber Zeilen,
+#    Kommentare nur am Wortanfang, $(...) vs. Subshell) muss jeden Oeffner
+#    zweifelsfrei finden. Bei jeder Unsicherheit — Backtick, Arithmetik,
+#    ${...}, $'...', [[ ]], case, Zeilenfortsetzung, CR, offenes Heredoc,
+#    offene Quotes, unbekannte Endwort-Form, Body ueber Verschachtelungs-
+#    ebenen hinweg, Body-Zeile, die mit dem Endwort beginnt — bleibt der
+#    Befehl UNVERAENDERT (fail-closed).
+# 2. POSITIVLISTE statt Negativliste: Entfernt wird ein Body nur, wenn das
+#    Kommando, das ihn liest, ein reiner Daten-Konsument ist
+#    (_HEREDOC_SAFE_CONSUMERS); bei "$(cat <<'E'" auch das aeussere Kommando.
+#    Jede Pipe im uebrigen Befehl muss ebenfalls in einen solchen Konsumenten
+#    fuehren. Eine Liste "gefaehrlicher" Programme ist nie vollstaendig
+#    ($SHELL, sed e, s\h ...).
+# 3. Zusaetzlich (Verteidigung in der Tiefe): Interpreter-Namen, ./ und
+#    chmod im uebrigen Befehl, Umdefinitionen gelisteter Konsumenten
+#    (Funktion, Alias, git -c), ungequotetes Endwort mit $ oder ` im Body.
+# Bekannte Grenze: Schreibt ein Heredoc eine Datei, die ein spaeterer Befehl
+# ausfuehrt (make, Git-Hook, Testlauf), sieht der Guard den Inhalt nicht. Das
+# geht ebenso in zwei getrennten Aufrufen und ist fuer keinen Text-Guard
+# erkennbar; das Schreibziel selbst bleibt auf der Oeffner-Zeile sichtbar.
+_HEREDOC_MARKER_RE = re.compile(
+    r"<<(-?)[ \t]*(?:'([A-Za-z_][A-Za-z0-9_]*)'|\"([A-Za-z_][A-Za-z0-9_]*)\"|"
+    r"\\([A-Za-z_][A-Za-z0-9_]*)|([A-Za-z_][A-Za-z0-9_]*))(?=$|[\s;&|)<>])"
 )
+_HEREDOC_INTERPRETER_RE = re.compile(
+    r"\b(python[0-9.]*|node|nodejs|deno|bun|perl|ruby|php|lua|tclsh|"
+    r"(?:ba|z|da|k|c|tc|fi|mk|a)?sh|busybox|source|eval|exec|xargs|ssh|su|sudo|"
+    r"osascript|powershell|pwsh|chmod)\b|(?:^|[;&|({\s])\.\.?/|(?:^|[;&|({\s])\.\s"
+)
+# Kommandos, die einen Heredoc nur als Daten lesen (kein Ausfuehren).
+_HEREDOC_SAFE_CONSUMERS = frozenset({
+    "cat", "tee", "git", "gh", "wc", "grep", "head", "tail", "sort", "uniq",
+    "tr", "cut", "column", "diff", "cmp", "base64", "md5sum", "sha256sum",
+    "shasum", "jq",
+})
+# Umdefinitionen und Konfiguration, die einen gelisteten Konsumenten in einen
+# Ausfuehrer verwandeln (Funktion `cat(){ bash; }`, Alias, `git -c alias.x=!sh`).
+_HEREDOC_REDEFINE_RE = re.compile(
+    r"\b[A-Za-z_][\w.-]*\s*\(\s*\)|\b(?:function|alias|shopt|enable|hash)\b|"
+    r"\bgit\b[^\n;&|]*\s(?:-c\b|--config-env\b|--exec-path\b)"
+)
+# Aeussere Kommandos fuer die Form `cmd ... "$(cat <<'E'"` (Argument-Text).
+_HEREDOC_SAFE_OUTER = frozenset({"git", "gh", "echo", "printf"})
+
+
+class _HeredocUnsure(Exception):
+    """Der Befehl laesst sich nicht zweifelsfrei zerlegen — nichts entfernen."""
+
+
+def _segment_command_word(text: str) -> "str | None":
+    """Erstes Wort des letzten einfachen Kommandos in `text` (ohne Zuweisungen).
+
+    None bei leerem Segment, Redirect/Variable/Quote/Escape im Befehlswort.
+    """
+    seg = re.split(r"\|\||&&|[;&|(\n]", text)[-1]
+    for tok in seg.split():
+        if re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tok):
+            continue  # Zuweisung vor dem Befehl
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+", tok):
+            return None  # $SHELL, "bash", s\h, >f, ./x ...
+        return tok
+    return None
+
+
+def _heredoc_bodies(command: str) -> "list[tuple[int, int, bool]]":
+    """(start, end, strippable) je Heredoc-Body; wirft _HeredocUnsure.
+
+    start/end umfassen Body UND Terminator-Zeile (inkl. Zeilenumbruch).
+    """
+    n = len(command)
+    stack = ["code"]          # "code" | "sub" (Subshell) | "subst" ($(...)) | "dq"
+    subst_ok: "list[bool]" = []  # je offener "subst"/"sub"-Ebene
+    pending: "list[tuple[str, bool, bool, bool, int]]" = []  # marker, dash, quoted, ok, depth
+    bodies: "list[tuple[int, int, bool]]" = []
+    word_start = True
+    i = 0
+    while i < n:
+        c = command[i]
+        top = stack[-1]
+        if c == "\n":
+            if pending:
+                if top == "dq" or any(d != len(stack) for *_, d in pending):
+                    raise _HeredocUnsure  # Body-Beginn in Quotes/anderer Ebene
+                i += 1
+                for marker, dash, quoted, ok, _d in pending:
+                    start = i
+                    while True:
+                        if i >= n:
+                            raise _HeredocUnsure  # nie geschlossen
+                        j = command.find("\n", i)
+                        j = n if j < 0 else j
+                        line = command[i:j]
+                        i = j + 1 if j < n else n
+                        cand = line.lstrip("\t") if dash else line
+                        if cand == marker:
+                            break
+                        if cand.startswith(marker):
+                            raise _HeredocUnsure  # z.B. "E)" in $(...) (bash 5.2)
+                    body = command[start:i]
+                    if not quoted and ("$" in body or "`" in body):
+                        ok = False  # ungequotet: die Shell expandiert den Body
+                    bodies.append((start, i, ok))
+                pending = []
+                word_start = True
+                continue
+            i += 1
+            word_start = True
+            continue
+        if c == "`":
+            raise _HeredocUnsure
+        if c == "\\":
+            if i + 1 < n and command[i + 1] == "\n":
+                raise _HeredocUnsure  # Zeilenfortsetzung
+            i += 2
+            word_start = False
+            continue
+        if c == "$" and i + 1 < n:
+            nxt = command[i + 1]
+            if nxt == "(":
+                if command.startswith("$((", i):
+                    raise _HeredocUnsure  # Arithmetik
+                # Harmlos nur als Argument-Text: '"$(' hinter Leerraum, davor in
+                # derselben Zeile ein Befehlswort aus _HEREDOC_SAFE_OUTER.
+                ok = False
+                if top == "dq" and i >= 2 and command[i - 1] == '"' and command[i - 2] in " \t":
+                    head = command[command.rfind("\n", 0, i) + 1:i - 1]
+                    ok = _segment_command_word(head) in _HEREDOC_SAFE_OUTER
+                subst_ok.append(ok and all(subst_ok))
+                stack.append("subst")
+                i += 2
+                word_start = True
+                continue
+            if nxt in "{['":
+                raise _HeredocUnsure
+            i += 1
+            word_start = False
+            continue
+        if top == "dq":
+            if c == '"':
+                stack.pop()
+            i += 1
+            word_start = False
+            continue
+        # --- Code-Kontext (Ebene, Subshell oder $(...)) ---
+        if c in " \t":
+            i += 1
+            word_start = True
+            continue
+        if c == "'":
+            j = command.find("'", i + 1)
+            if j < 0 or (pending and "\n" in command[i:j]):
+                raise _HeredocUnsure
+            i = j + 1
+            word_start = False
+            continue
+        if c == '"':
+            stack.append("dq")
+            i += 1
+            word_start = False
+            continue
+        if c == "#" and word_start:
+            j = command.find("\n", i)
+            i = n if j < 0 else j
+            continue
+        if word_start and re.match(r"(case|esac|coproc|select)\b", command[i:i + 7]):
+            raise _HeredocUnsure
+        if c == "(":
+            if command.startswith("((", i):
+                raise _HeredocUnsure
+            stack.append("sub")
+            subst_ok.append(False)
+            i += 1
+            word_start = True
+            continue
+        if c == ")":
+            if len(stack) > 1:
+                closed = stack.pop()
+                if subst_ok:
+                    subst_ok.pop()
+                word_start = closed == "sub"  # nach $(...) geht das Wort weiter
+            else:
+                word_start = True
+            i += 1
+            continue
+        if c == "[" and command.startswith("[[", i):
+            raise _HeredocUnsure
+        if command.startswith("<<<", i):
+            i += 3
+            word_start = True
+            continue
+        if command.startswith("<<", i):
+            m = _HEREDOC_MARKER_RE.match(command, i)
+            if not m:
+                raise _HeredocUnsure
+            name = m.group(2) or m.group(3) or m.group(4) or m.group(5)
+            quoted = m.group(5) is None
+            line_head = command[command.rfind("\n", 0, i) + 1:i]
+            consumer = _segment_command_word(line_head)
+            ok = all(subst_ok) and consumer in _HEREDOC_SAFE_CONSUMERS
+            pending.append((name, m.group(1) == "-", quoted, ok, len(stack)))
+            i = m.end()
+            word_start = True
+            continue
+        word_start = c in ";&|<>"
+        i += 1
+    if pending or stack != ["code"]:
+        raise _HeredocUnsure
+    return bodies
+
+
+def _residual_pipes_safe(residual: str) -> bool:
+    """Jede Pipe im uebrigen Befehl muss in einen reinen Daten-Konsumenten fuehren."""
+    if ">(" in residual or "<(" in residual:
+        return False
+    for m in re.finditer(r"(?<!\|)\|(?!\|)&?", residual):
+        rest = residual[m.end():].split(None, 1)
+        if not rest or rest[0] not in _HEREDOC_SAFE_CONSUMERS:
+            return False  # Ziel fehlt, ist $VAR, "bash", s\h, sed ...
+    return True
 
 
 def strip_heredoc_bodies(command: str) -> str:
-    """Entfernt Heredoc-BODIES aus einem Kommandotext, Oeffner-Zeilen bleiben.
+    """Entfernt Heredoc-BODIES, die zweifelsfrei reine Daten sind (#64/#75/#357).
 
-    Sicherheitsmodell:
-    - Der Body ist stdin-DATEN des empfangenden Kommandos; Schreibziele
-      (Redirects, tee-Argumente) stehen auf der Oeffner-Zeile und bleiben
-      fuer die Gates sichtbar.
-    - Steht auf der Oeffner-Zeile ein Interpreter (python/sh/node/...), ist
-      der Body potenziell CODE — dann wird er NICHT entfernt (konservativ).
-    - Terminator-Erkennung POSIX-genau: Zeile == Marker; bei `<<-` sind
-      fuehrende Tabs erlaubt. Ein nie geschlossenes Heredoc verschluckt den
-      Rest — exakt wie die Shell selbst.
+    Oeffner-Zeilen bleiben stehen: Schreibziele (Redirects, tee-Argumente)
+    bleiben fuer die Gates sichtbar. Fail-closed: im Zweifel kommt der Befehl
+    unveraendert zurueck — ein falsch erkannter Oeffner darf nie echte Befehle
+    aus dem Scan entfernen.
     """
-    if "<<" not in command:
+    if "<<" not in command or "\r" in command:
         return command
-    out = []
-    pending: list[tuple[str, bool]] = []  # (marker, allow_tab_indent)
-    for line in command.split("\n"):
-        if pending:
-            marker, dash = pending[0]
-            candidate = line.lstrip("\t") if dash else line
-            if candidate == marker:
-                pending.pop(0)
-            continue  # Body-Zeile (oder Terminator) — nie uebernehmen
-        openers = [
-            (m.group(2), m.group(0).startswith("<<-"))
-            for m in _HEREDOC_OPEN_RE.finditer(line)
-            # `<<<` (Here-String) ist kein Heredoc-Oeffner
-            if not (m.start() > 0 and line[m.start() - 1] == "<")
-        ]
-        if openers and not _HEREDOC_INTERPRETER_RE.search(line):
-            pending.extend(openers)
-        out.append(line)
-    return "\n".join(out)
+    try:
+        bodies = _heredoc_bodies(command)
+    except _HeredocUnsure:
+        return command
+    keep, pos = [], 0
+    for start, end, ok in bodies:
+        if ok:
+            keep.append(command[pos:start])
+            pos = end
+    keep.append(command[pos:])
+    residual = "".join(keep)
+    if residual == command:
+        return command
+    # Ausfuehrende Konsumenten irgendwo im uebrigen Befehl (Pipe auf der
+    # Folgezeile, eval $(...), source /dev/stdin, ./skript ...).
+    if (_HEREDOC_INTERPRETER_RE.search(residual) or _HEREDOC_REDEFINE_RE.search(residual)
+            or not _residual_pipes_safe(residual)):
+        return command
+    return residual
 
 
 def get_file_path(tool_input: dict = None) -> str:

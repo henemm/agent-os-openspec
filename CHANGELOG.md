@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **#357:** `hook_utils.strip_heredoc_bodies` (genutzt von `bash_gate`, `secrets_guard` und jetzt auch `secret_egress_guard`) entfernt einen Heredoc-Body nur noch, wenn er zweifelsfrei reine Daten ist.
+  - **Scan:** Ein zusammenhängender Scan des ganzen Befehls ersetzt die zeilenweise Regex. Er kennt Quotes über Zeilengrenzen, Kommentare nur am Wortanfang und unterscheidet `$(...)` von Subshell und Ebene.
+  - **Fail-closed bei Unsicherheit:** Der Befehl bleibt unverändert bei Backtick, Arithmetik, `${…}`, `$'…'`, `[[ ]]`, `case`, Zeilenfortsetzung, CR, offenem Heredoc, offenen Quotes, unbekannter Endwort-Form, Body über Verschachtelungsebenen hinweg und Body-Zeilen, die mit dem Endwort beginnen.
+  - **Positivliste statt Negativliste:** Entfernt wird nur, wenn ein reiner Daten-Konsument den Body liest (`cat`, `tee`, `git`, `gh`, …). Bei `"$(cat <<'E'` muss zusätzlich das äußere Kommando dazugehören (`git`, `gh`, `echo`, `printf`). Jede Pipe im übrigen Befehl muss ebenfalls in einen solchen Konsumenten führen. Dazu kommt eine Interpreter-Liste (inkl. `./`, `chmod`) als Verteidigung in der Tiefe.
+  - **Vorher:** Ein falsch erkannter Öffner konnte echte Befehle (Marker schreiben, `.env` lesen) aus dem Scan nehmen.
+  - **Geprüft:** Ein unabhängiger Differenztest gegen bash als Orakel fand in der ersten Fassung 449 Fälle in 5.000 Snippets (8 Ursachen). Mit der Positivliste sind es 0 Fälle in 8.000 Snippets.
+  - **Bewusste Verhaltensänderung:** Ein nie geschlossenes Heredoc wird nicht mehr entfernt.
+  - **Umdefinierte Konsumenten:** Funktion, `alias`, `shopt` und `git -c`/`--config-env` im übrigen Befehl verhindern das Entfernen. `less`/`more` stehen nicht auf der Positivliste. Gefunden in Prüfrunde 2; danach 0 Befunde in weiteren 11.000 Bash-Abgleichen.
+  - **Bekannte Grenze:** Schreibt ein Heredoc eine Datei, die ein späterer Befehl ausführt (`make`, Git-Hook, Testlauf), sieht der Guard deren Inhalt nicht. Das geht ebenso in zwei getrennten Aufrufen und ist für keinen Text-Guard erkennbar. Das Schreibziel bleibt auf der Öffner-Zeile sichtbar.
+  - **#269:** Die Entlastung für zitierte `>` in Daten-Heredocs gilt damit auch im Egress-Guard wieder.
+  - **Tests:** `tests/test_heredoc_strip_357.py` mit allen Fällen beider Prüfrunden zu #276 und den Befund-Mustern des Differenztests. Dazu `tests/test_heredoc_bash_oracle_357.py`, das den Differenztest in kleiner fester Stichprobe dauerhaft ausführt (manuell breiter: `python3 tests/heredoc_bash_oracle.py 1000 <seed>`).
 - **Anleitungen schreiben nicht mehr nach `/tmp`:** `/50-implement` Step 8d (`qa_gate`-Ausgabe und Screenshot), `external-validator.md` und `templates/spec_template_dashboard.md` legen Ausgaben unter `docs/artifacts/<workflow>/` ab. `secret_egress_guard` blockt Schreibziele außerhalb des Projekts; die eigene Anleitung erzeugte so bei jedem Durchlauf eine Blockade und eine Extra-Runde (Gate-Logs 29.09.–02.10.: `/tmp/adversary_test_output.txt`). Regressionstest `tests/test_no_tmp_paths_in_instructions.py` über alle Befehle, Agenten, Templates und Skills.
 
 ## [3.36.0] - 2026-10-05
