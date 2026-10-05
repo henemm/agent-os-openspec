@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **#352:** `bash_gate` 5b (Rebase-Pflicht) misst den Rückstand während eines laufenden Merges gegen `MERGE_HEAD` statt `HEAD` — der abschließende Merge-Commit, der den Rückstand zu `origin/main` beseitigt, wird nicht mehr geblockt. Holt der Merge `origin/main` nicht vollständig herein, blockt das Gate mit Merge-Rat (`git fetch origin && git merge origin/main`) statt `rebase --autostash`. Ohne Merge unverändert.
+- **#349:** `tdd_enforcement` erkennt die Summary-Zeilen des `node --test`-spec-Reporters (`ℹ todo 0`) wie die TAP-Form (`# todo 0`); ein echtes RED-Artefakt wird nicht mehr als Platzhalter geblockt.
 - **#350:** Kurz-Befehle robust gegen unerwartete Dateien: `alias_sync.find_aliases`, `find_stale_aliases` und `find_removed_aliases` überspringen unlesbare Dateien (nicht UTF-8, Rechte entzogen) über den Helfer `_read_or_none`, statt abzustürzen — `--remove-aliases`/`--refresh-aliases` laufen durch, der Session-Banner verliert die Warnung nicht mehr; eine unlesbare Datei wird nie gelöscht und steht unter `Kept:`. Die Kept-Liste zeigt nur echte Dateien (keine Verzeichnisse, keine hängenden Symlinks); `--global` ohne `--remove-aliases` warnt auf stderr. `_frontmatter_close` erkennt Frontmatter mit CRLF oder Leerzeichen hinter `---`, der Marker landet hinter dem Frontmatter.
 - **#313/#327:** `qa_gate` erkennt die Ausgabe von `python3 -m unittest` und `node --test` (Spec- und TAP-Reporter); rote Läufe gewinnen vor jedem anderen Zweig — jede rote Evidenz gewinnt, auch bei zwei node-Läufen und gegenüber cargo/Marker; Größen-Gate unverändert.
 
