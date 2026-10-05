@@ -7,24 +7,7 @@ You are in **Phase 2 - Analysis** of the workflow.
 **Wurde dieser Befehl mit einer Issue-Nummer aufgerufen** (z. B. `/20-analyse #42` — typisch nach einem `/clear`)? Dann aktiviere den Workflow explizit. Ein reines `export OPENSPEC_ACTIVE_WORKFLOW=...` reicht NICHT: Shell-State überlebt keinen Bash-Tool-Aufruf, und in Worktree-Sessions ignoriert `resolve_active_workflow()` die Env-Var ohnehin (Issue #58).
 
 ```bash
-ISSUE=42   # die übergebene Nummer (ohne #)
-python3 - "$ISSUE" <<'PY'
-import sys, json, glob, re, os
-issue = sys.argv[1].lstrip('#')
-pat = re.compile(rf'(^|[-_]){re.escape(issue)}([-_]|$)')
-hits = []
-for f in glob.glob('.claude/workflows/*.json'):
-    name = os.path.basename(f)[:-5]
-    if pat.search(name):
-        d = json.load(open(f))
-        hits.append((name, d.get('current_phase'), d.get('spec_file') or 'Not created'))
-if not hits:
-    print(f'KEIN laufender Workflow fuer #{issue} (evtl. abgeschlossen -> .claude/workflows/_archive/).')
-else:
-    for name, ph, spec in hits:
-        print(f'GEFUNDEN: {name} | Phase={ph} | Spec={spec}')
-    print('\nNAME=' + hits[0][0])
-PY
+python3 .claude/hooks/workflow.py find 42   # die übergebene Nummer
 ```
 
 **PFLICHT direkt danach** — Workflow wirklich aktivieren (nicht nur die Zeile oben lesen) und den Stand verifizieren:

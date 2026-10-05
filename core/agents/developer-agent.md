@@ -57,6 +57,8 @@ Speichere finalen Output:
 [test_command] > docs/artifacts/[workflow]/test-green-output.txt 2>&1
 ```
 
+Schlaegt ein Lauf fehl und die Umgebung wirkt kaputt: Abhaengigkeits-Ordner (`node_modules`, `.venv`, `vendor`) **nie loeschen**. Im Worktree sind sie oft ein Symlink auf den GETEILTEN Ordner im Haupt-Repo — das Loeschen trifft alle Worktrees und Sitzungen. Stattdessen in place neu installieren (`npm ci` / `npm install`, `pip install --force-reinstall -r requirements.txt`, `composer install`). `bash_gate.py` blockt das Loeschen (#293).
+
 ### 4. Report an Orchestrator
 
 ```markdown

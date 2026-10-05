@@ -718,6 +718,113 @@ def _require_dialog_evidence(wf: dict, verdict: str, command: str) -> None:
     )
 
 
+# --- Abhaengigkeits-Ordner (Issue #293) ---
+
+DEFAULT_DEPENDENCY_DIRS = [
+    "node_modules", ".venv", "venv", "vendor", "bower_components", ".pnpm-store",
+]
+_DELETE_COMMANDS = frozenset({"rm", "rmdir", "unlink", "rimraf", "trash", "trash-put"})
+_PKG_RUNNERS = frozenset({"npx", "pnpx", "bunx"})
+_CMD_PREFIXES = frozenset({"sudo", "command", "nice", "nohup", "time", "env", "exec"})
+
+
+def _dependency_dirs(config: dict) -> "list[str] | None":
+    """Konfigurierte Ordnernamen, None wenn der Guard abgeschaltet ist."""
+    block_cfg = (config or {}).get("dependency_dir_guard") or {}
+    if not isinstance(block_cfg, dict):
+        block_cfg = {}
+    if block_cfg.get("enabled") is False:
+        return None
+    dirs = block_cfg.get("dirs", DEFAULT_DEPENDENCY_DIRS)
+    return [str(d) for d in dirs] if isinstance(dirs, list) else DEFAULT_DEPENDENCY_DIRS
+
+
+def _dep_target(arg: str, dirs: "list[str]") -> "str | None":
+    """Der Ordner selbst oder sein gesamter Inhalt (`x/`, `x/*`, `x/.`) — nicht tiefer.
+
+    `rm -rf node_modules/.cache` bleibt erlaubt: ein Cache-Reset trifft nicht
+    die Abhaengigkeiten. Symlink-Aufloesung ist bewusst NICHT Voraussetzung.
+    """
+    path = arg.strip("'\"")
+    for suffix in ("/*", "/.", "/"):
+        while path.endswith(suffix) and len(path) > len(suffix):
+            path = path[: -len(suffix)]
+    base = path.rsplit("/", 1)[-1]
+    return base if base in dirs else None
+
+
+def _segment_dep_hit(seg: "list[str]", dirs: "list[str]") -> "str | None":
+    i = 0
+    while i < len(seg) and (re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", seg[i])
+                            or seg[i] in _CMD_PREFIXES):
+        i += 1
+    if i >= len(seg):
+        return None
+    head = seg[i].rsplit("/", 1)[-1]
+    args = seg[i + 1:]
+    if head in _PKG_RUNNERS:
+        rest = [a for a in args if not a.startswith("-")]
+        if rest and rest[0].rsplit("/", 1)[-1].split("@")[0] in ("rimraf", "del-cli", "trash-cli"):
+            args = args[args.index(rest[0]) + 1:]
+            head = "rimraf"
+        else:
+            return None
+    if head in _DELETE_COMMANDS:
+        targets = [a for a in args if not a.startswith("-")]
+    elif head == "mv":
+        plain = [a for a in args if not a.startswith("-")]
+        targets = plain[:-1]  # letzte Angabe ist das Ziel
+    elif head == "find" and any(a in ("-delete", "-exec", "-execdir") for a in args):
+        targets = []
+        for a in args:
+            if a.startswith("-") or a in ("(", "!"):
+                break
+            targets.append(a)
+        # `find . -name node_modules -exec rm -rf {} +` / `-delete`
+        for k, a in enumerate(args[:-1]):
+            if a in ("-name", "-iname", "-path") and _dep_target(args[k + 1], dirs):
+                targets.append(args[k + 1])
+    else:
+        return None
+    for t in targets:
+        hit = _dep_target(t, dirs)
+        if hit:
+            return hit
+    return None
+
+
+def _deletes_dependency_dir(command: str, config: dict) -> "str | None":
+    """Name des Abhaengigkeits-Ordners, den das Kommando loescht/verschiebt, sonst None."""
+    dirs = _dependency_dirs(config)
+    if not dirs or not any(d in command for d in dirs):
+        return None
+    nested = re.search(r"\b(?:ba|z|da|k)?sh\s+-c\b|\beval\b|\bxargs\b", command)
+    segments = None if nested else _git_segments(command)
+    if segments is None:
+        # Verschachtelte Shell / nicht zerlegbar: konservativer Roh-Scan.
+        names = "|".join(re.escape(d) for d in dirs)
+        m = re.search(
+            rf"\b(?:rm|rmdir|unlink|rimraf|trash|mv)\b[^;&|\n]*?(?<![\w.-])({names})(?:/\*?|/\.)?"
+            r"(?=$|[\s'\";&|)])",
+            command,
+        )
+        return m.group(1) if m else None
+    for seg in segments:
+        hit = _segment_dep_hit(seg, dirs)
+        if hit:
+            return hit
+    return None
+
+
+def _any_override_token() -> bool:
+    try:
+        from override_token import has_valid_token
+        name = get_active_workflow_name()
+        return has_valid_token(name) if name else has_valid_token()
+    except Exception:
+        return False
+
+
 # --- Main ---
 
 def main():
@@ -835,6 +942,21 @@ def main():
         if cred_type:
             block(f"BLOCKED: Hardcoded {cred_type} detected. Use env vars or secrets.env instead.")
 
+    # 4c. Abhaengigkeits-Ordner (#293): Schutz, kein Workflow-Zwang — gilt
+    #     auch ohne Workflow. In Worktrees ist node_modules oft ein Symlink auf
+    #     den geteilten Ordner; ein `rm -rf` trifft dann alle Sitzungen.
+    dep_hit = _deletes_dependency_dir(scan_cmd, config)
+    if dep_hit and not _any_override_token():
+        block(
+            f"BLOCKED: Abhaengigkeits-Ordner '{dep_hit}' wird geloescht oder verschoben.\n"
+            "  In Worktrees ist er oft ein Symlink auf den GETEILTEN Ordner im Haupt-Repo —\n"
+            "  das Loeschen traefe alle Worktrees und Sitzungen.\n"
+            "  Stattdessen in place neu installieren: `npm ci` / `npm install`,\n"
+            "  `pnpm install --force`, `pip install --force-reinstall -r requirements.txt`,\n"
+            "  `composer install`. Bewusst gewollt? User tippt 'override'.\n"
+            "  Ordnerliste: config.yaml -> dependency_dir_guard.dirs (Kill-Switch: enabled: false)."
+        )
+
     # 5. Git commit gates (tokenbasiert, Issue #1431 — Erwaehnung ist kein Aufruf)
     if workflow_enforced and is_git_subcommand(command, "commit"):
         import subprocess
@@ -895,7 +1017,9 @@ def main():
                         # --autostash: vorgemerkte Dateien ueberleben den Rebase (#284)
                         block(
                             f"BLOCKED — Branch ist {behind} Commit(s) hinter origin/main.\n"
-                            "Bitte erst: git fetch origin && git rebase --autostash origin/main"
+                            "Bitte erst: git fetch origin && git rebase --autostash origin/main\n"
+                            "Ein gestempelter Adversary-Nachweis bleibt dabei gueltig, solange sich\n"
+                            "die eigene Aenderung konfliktfrei auf main setzen laesst (#289)."
                         )
                 # fetch returncode != 0 → kein Netz → silent skip
             except (subprocess.TimeoutExpired, OSError, ValueError):

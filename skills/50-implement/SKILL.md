@@ -41,25 +41,7 @@ $WF status
 **Wurde dieser Befehl mit einer Issue-Nummer aufgerufen** (z. B. `/50-implement #42` — typisch nach einem `/clear`)? Dann löse den Workflow-Namen von der Platte auf — der komplette State (Phase, Spec, RED-Tests, Verdict) überlebt jeden `/clear` und jeden Worktree:
 
 ```bash
-ISSUE=42   # die übergebene Nummer (ohne #)
-python3 - "$ISSUE" <<'PY'
-import sys, json, glob, re, os
-issue = sys.argv[1].lstrip('#')
-pat = re.compile(rf'(^|[-_]){re.escape(issue)}([-_]|$)')
-hits = []
-for f in glob.glob('.claude/workflows/*.json'):
-    name = os.path.basename(f)[:-5]
-    if pat.search(name):
-        d = json.load(open(f))
-        hits.append((name, d.get('current_phase'), d.get('spec_file') or 'Not created', d.get('adversary_verdict'), d.get('affected_files', [])))
-if not hits:
-    print(f'KEIN laufender Workflow fuer #{issue} (evtl. abgeschlossen -> .claude/workflows/_archive/).')
-else:
-    for name, ph, spec, verd, aff in hits:
-        print(f'GEFUNDEN: {name} | Phase={ph} | Spec={spec} | Verdict={verd}')
-        if aff: print(f'  affected_files: {", ".join(aff)}')
-    print('\nNAME=' + hits[0][0])
-PY
+$WF find 42   # die übergebene Nummer
 ```
 
 **PFLICHT direkt danach** — Workflow wirklich aktivieren (nicht nur die Zeile oben lesen). Ein reines `export OPENSPEC_ACTIVE_WORKFLOW=...` reicht NICHT: Shell-State überlebt keinen Bash-Tool-Aufruf, und in Worktree-Sessions ignoriert `resolve_active_workflow()` die Env-Var ohnehin (Issue #58):
@@ -100,8 +82,10 @@ ScheduleWakeup(1200, "Implementierung Rückfall [50-implement], nur im /loop-Kon
 
 Dispatche einen **Explore/Haiku Subagenten** um den Implementierungs-Kontext zu laden:
 
+**Im Vordergrund starten (`run_in_background: false`, #83):** Das Ergebnis wird sofort gebraucht, der Orchestrator hat währenddessen nichts zu tun. Hintergrund-Starts kurzlebiger Prüfagenten ohne Worktree-Isolation kamen wiederholt ohne Bericht zurück — Nachfordern oder Doppelstart kostete jedes Mal eine volle Runde.
+
 ```
-Task (Explore/haiku, run_in_background: true): "Lies folgende Dateien und fasse den relevanten Kontext
+Task (Explore/haiku, run_in_background: false): "Lies folgende Dateien und fasse den relevanten Kontext
   zusammen:
   - Spec: [spec_file_path]
   - Betroffene Dateien: [affected_files]
@@ -195,6 +179,7 @@ Wenn das Ergebnis so stimmt, schreibe `go`.
 - Du darfst NICHT selbst entscheiden ob Auffaelligkeiten relevant sind
 - Du darfst NICHT "go" simulieren oder die Freigabe umgehen
 - Der User gibt frei mit: "go", "weiter", "tests ok", "green ok"
+- Freigaben nie über den Auswahldialog (`AskUserQuestion`) einholen, nur als Textzeile: der `phase_listener` sieht ausschließlich getippte Nachrichten, eine im Dialog geklickte Freigabe wirkt nicht und der PO muss sie erneut tippen (#183)
 
 ### Step 7: Update Workflow State to Adversary Phase
 
@@ -294,6 +279,13 @@ Code passen. Es zaehlt das zuletzt registrierte `adversary_dialog`; ohne Registr
 Standardpfad oben. Ein gruener Testlauf aktualisiert nur `last_test_run` — er setzt kein Verdict und
 oeffnet keinen Commit. Aendert ein spaeterer Fix (auch ein Auto-Fix in `/60-validate`) eine zitierte
 Datei, braucht es einen neuen Dialog.
+
+**Aufsetzen auf main nach dem VERIFIED (#289):** `stamp` haelt zusaetzlich einen `## Prüfbasis`-Block
+fest (merge-base mit `origin/main`, der gepruefte Stand je Datei als Git-Blob). Aendert main eine
+gebundene Datei, gilt der Nachweis nach Rebase/Merge weiter, solange der 3-Wege-Merge (gepruefte
+Aenderung auf die neue Basis) konfliktfrei ist und exakt den aktuellen Stand ergibt. Bei Konflikt oder
+eigener Nacharbeit ist ein neuer Dialog noetig — deshalb moeglichst **vor** dem Adversary-Dialog auf
+main aufsetzen.
 
 **Gate-Wirkung (#259):** Der Hash-Block muss zudem die Aenderungsmenge abdecken — am Commit-Gate jede
 Code-Datei des entstehenden Commits, in Phase 8 jede seit der Basis (`base_commit` bzw.

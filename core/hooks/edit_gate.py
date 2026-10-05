@@ -438,7 +438,8 @@ def _check_loc_delta(config: dict, workflow: dict) -> str | None:
     Only ADDED lines count (not added+deleted) and production code is counted
     separately from test code, each against its own threshold (Issue #94).
     """
-    from config_loader import get_scope_loc_config, get_scope_test_loc_config
+    from config_loader import (get_scope_loc_config, get_scope_test_loc_config,
+                               with_default_loc_excludes)
     max_loc, exclude_patterns = get_scope_loc_config()
     max_test_loc, test_patterns = get_scope_test_loc_config()
     # Explicitly passed config values win over the loaded project config.
@@ -446,7 +447,8 @@ def _check_loc_delta(config: dict, workflow: dict) -> str | None:
     if "max_loc_delta" in scope:
         max_loc = int(scope["max_loc_delta"])
     if "loc_exclude_patterns" in scope:
-        exclude_patterns = list(scope["loc_exclude_patterns"])
+        exclude_patterns = with_default_loc_excludes(
+            list(scope["loc_exclude_patterns"]), scope)
     if "max_test_loc_delta" in scope:
         max_test_loc = int(scope["max_test_loc_delta"])
     if "test_path_patterns" in scope:

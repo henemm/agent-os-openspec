@@ -50,6 +50,8 @@ Common test commands:
 
 **Save the FULL output** — the qa_gate hook will validate it.
 
+**Failing tests that smell like a broken install:** never delete dependency directories (`rm -rf node_modules`, `.venv`, `vendor`). In a worktree they are often a symlink to the SHARED folder of the main repo — deleting them breaks every worktree and session. Reinstall in place instead (`npm ci` / `npm install`, `pip install --force-reinstall -r requirements.txt`, `composer install`). `bash_gate.py` blocks the deletion (#293).
+
 ### Step 3: Probe Edge Cases
 
 Get the changed files first (#259) — every code file changed since the workflow's base, one per line:

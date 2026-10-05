@@ -449,6 +449,12 @@ def find_unsafe_redirects(tool_name: str, tool_input: dict, cfg: dict, root: Pat
     if not command:
         return []
     targets = _shell_write_targets(command)
+    # Zeilenfortsetzung (`cmd \\<NL>> /ziel`): bash loest sie vor der Auswertung
+    # auf. Rein ADDITIV beide Lesarten scannen — ein Zusammenziehen allein
+    # verfaelscht gequotete Heredoc-Koerper (Pruefrunde 2, #276).
+    if "\\\n" in command:
+        targets += [t for t in _shell_write_targets(command.replace("\\\n", ""))
+                    if t not in targets]
     unsafe = []
     for t in targets:
         if _is_outside_safe_zone(t, root, cfg, scratchpad_dir) and t not in unsafe:

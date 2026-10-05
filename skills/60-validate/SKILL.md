@@ -22,25 +22,7 @@ WF="python3 ${_H}/workflow.py"
 **Wurde dieser Befehl als `/60-validate #<N>` aufgerufen** (typisch nach einem `/clear`)? Dann löse zuerst den Workflow von der Platte auf — der komplette State überlebt jeden `/clear` und jeden Worktree:
 
 ```bash
-ISSUE=42   # die übergebene Nummer (ohne #)
-python3 - "$ISSUE" <<'PY'
-import sys, json, glob, re, os
-issue = sys.argv[1].lstrip('#')
-pat = re.compile(rf'(^|[-_]){re.escape(issue)}([-_]|$)')
-hits = []
-for f in glob.glob('.claude/workflows/*.json'):
-    name = os.path.basename(f)[:-5]
-    if pat.search(name):
-        d = json.load(open(f))
-        hits.append((name, d.get('current_phase'), d.get('spec_file') or 'Not created', d.get('adversary_verdict'), d.get('affected_files', [])))
-if not hits:
-    print(f'KEIN laufender Workflow fuer #{issue} (evtl. abgeschlossen -> .claude/workflows/_archive/).')
-else:
-    for name, ph, spec, verd, aff in hits:
-        print(f'GEFUNDEN: {name} | Phase={ph} | Spec={spec} | Verdict={verd}')
-        if aff: print(f'  affected_files: {", ".join(aff)}')
-    print('\nNAME=' + hits[0][0])
-PY
+$WF find 42   # die übergebene Nummer
 ```
 
 **PFLICHT direkt danach** — Workflow wirklich aktivieren (nicht nur die Zeile oben lesen). Ein reines `export OPENSPEC_ACTIVE_WORKFLOW=...` reicht NICHT: Shell-State überlebt keinen Bash-Tool-Aufruf, und in Worktree-Sessions ignoriert `resolve_active_workflow()` die Env-Var ohnehin (Issue #58):
@@ -125,24 +107,26 @@ Code-Datei (etwa aus einem Fix nach dem Dialog) blockt Phase 8 ebenso wie eine g
 
 ### Step 1: Parallele Validierung (4x Haiku)
 
-Dispatche **4 parallele Haiku-Agenten** fuer umfassende Validierung:
+Dispatche **4 parallele Haiku-Agenten** fuer umfassende Validierung — alle vier in EINER Nachricht, dann laufen sie trotz Vordergrund parallel:
+
+**Im Vordergrund starten (`run_in_background: false`, #83):** Das Ergebnis wird sofort gebraucht, der Orchestrator hat währenddessen nichts zu tun. Hintergrund-Starts kurzlebiger Prüfagenten ohne Worktree-Isolation kamen wiederholt ohne Bericht zurück — Nachfordern oder Doppelstart kostete jedes Mal eine volle Runde.
 
 ```
-Task 1 (general-purpose/haiku, run_in_background: true) - TEST CHECK:
+Task 1 (general-purpose/haiku, run_in_background: false) - TEST CHECK:
   "Fuehre ALLE Tests aus: [test_command]
   Report: Anzahl passed/failed, Laufzeit, Fehlerdetails."
 
-Task 2 (general-purpose/haiku, run_in_background: true) - SPEC COMPLIANCE:
+Task 2 (general-purpose/haiku, run_in_background: false) - SPEC COMPLIANCE:
   "Lies die Spec: [spec_file_path]
   Pruefe jeden Acceptance Criterion gegen die Implementation.
   Report: Welche Kriterien sind erfuellt, welche nicht?"
 
-Task 3 (general-purpose/haiku, run_in_background: true) - REGRESSION CHECK:
+Task 3 (general-purpose/haiku, run_in_background: false) - REGRESSION CHECK:
   "Fuehre die vollstaendige Test-Suite aus (nicht nur Feature-Tests).
   Report: Gibt es Regressionen? Welche Tests die vorher gruen waren
   sind jetzt rot?"
 
-Task 4 (general-purpose/haiku, run_in_background: true) - SCOPE CHECK:
+Task 4 (general-purpose/haiku, run_in_background: false) - SCOPE CHECK:
   "Vergleiche die geaenderten Dateien mit der Spec.
   Wurden Dateien ausserhalb des Specs geaendert?
   Wurden mehr als 5 Dateien / 250 LoC geaendert?"

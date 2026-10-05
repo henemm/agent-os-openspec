@@ -432,7 +432,7 @@ class TestScopeConfig:
         monkeypatch.setattr(config_loader, "load_config", lambda: {})
         max_loc, excludes = config_loader.get_scope_loc_config()
         assert max_loc == 250
-        assert excludes == []
+        assert excludes == config_loader.DEFAULT_LOC_EXCLUDE_PATTERNS
 
     def test_reads_from_yaml_config(self, tmp_path, monkeypatch):
         import config_loader

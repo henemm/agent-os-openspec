@@ -284,7 +284,9 @@ def test_reentry_commands_resolve_the_workflow_from_disk():
         text = _command(name)
         # Aufruf-Beispiel, je nach Datei `#<N>` oder `#42`.
         assert f"/{name} #" in text, name
-        assert ".claude/workflows/*.json" in text, name
+        # Aufloesung von der Platte ueber den lesenden CLI-Aufruf (#276) — ein
+        # Python-Schnipsel ueber .claude/workflows/*.json blockte bash_gate.
+        assert "workflow.py find" in text, name
         assert "workflow.py switch" in text, name
         assert "workflow.py status" in text, name
         assert "in 2 Sätzen" in text, name

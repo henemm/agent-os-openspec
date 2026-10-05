@@ -22,24 +22,7 @@ WF="python3 ${_H}/workflow.py"
 **Wurde dieser Befehl mit einer Issue-Nummer aufgerufen** (z. B. `/30-write-spec #42` — typisch nach einem `/clear`)? Dann aktiviere den Workflow explizit. Ein reines `export OPENSPEC_ACTIVE_WORKFLOW=...` reicht NICHT: Shell-State überlebt keinen Bash-Tool-Aufruf, und in Worktree-Sessions ignoriert `resolve_active_workflow()` die Env-Var ohnehin (Issue #58).
 
 ```bash
-ISSUE=42   # die übergebene Nummer (ohne #)
-python3 - "$ISSUE" <<'PY'
-import sys, json, glob, re, os
-issue = sys.argv[1].lstrip('#')
-pat = re.compile(rf'(^|[-_]){re.escape(issue)}([-_]|$)')
-hits = []
-for f in glob.glob('.claude/workflows/*.json'):
-    name = os.path.basename(f)[:-5]
-    if pat.search(name):
-        d = json.load(open(f))
-        hits.append((name, d.get('current_phase'), d.get('spec_file') or 'Not created'))
-if not hits:
-    print(f'KEIN laufender Workflow fuer #{issue} (evtl. abgeschlossen -> .claude/workflows/_archive/).')
-else:
-    for name, ph, spec in hits:
-        print(f'GEFUNDEN: {name} | Phase={ph} | Spec={spec}')
-    print('\nNAME=' + hits[0][0])
-PY
+$WF find 42   # die übergebene Nummer
 ```
 
 **PFLICHT direkt danach** — Workflow wirklich aktivieren (nicht nur die Zeile oben lesen) und den Stand verifizieren:
@@ -127,8 +110,10 @@ Task (general-purpose/sonnet, run_in_background: true): "Du bist der spec-writer
 
 Dispatche den **spec-validator/Haiku** zur Validierung:
 
+**Im Vordergrund starten (`run_in_background: false`, #83):** Das Ergebnis wird sofort gebraucht, der Orchestrator hat währenddessen nichts zu tun. Hintergrund-Starts kurzlebiger Prüfagenten ohne Worktree-Isolation kamen wiederholt ohne Bericht zurück — Nachfordern oder Doppelstart kostete jedes Mal eine volle Runde.
+
 ```
-Task (general-purpose/haiku, run_in_background: true): "Du bist der spec-validator Agent.
+Task (general-purpose/haiku, run_in_background: false): "Du bist der spec-validator Agent.
 
   Validiere die Spec: docs/specs/[category]/[entity].md
   Pruefe alle Required Fields, Sections, Placeholders.
@@ -274,6 +259,7 @@ Erst sichern, dann ist `/clear` gefahrlos.
 
 **IMPORTANT:**
 - Do NOT implement until approved
+- Freigaben nie über den Auswahldialog (`AskUserQuestion`) einholen, nur als Textzeile: der `phase_listener` sieht ausschließlich getippte Nachrichten, eine im Dialog geklickte Freigabe wirkt nicht und der PO muss sie erneut tippen (#183)
 - Do NOT skip TDD RED phase after approval
 - Die Freigabe-Ausgabe ist das Briefing wörtlich plus Marker-Zeile — keine eigene
   Zusammenfassung davor oder danach. Abweichungen vom Ticket benennt der po-briefer
