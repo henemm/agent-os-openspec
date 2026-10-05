@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+Fehlalarm-Paket aus der Backlog-Triage vom 2026-10-05:
+
+- **#335 (Go-Testdateien):** `edit_gate` blockte `foo_test.go` in `phase5_tdd_red`, weil Go Tests neben dem Code ablegt und nur Test-Ordner freigestellt waren.
+  - **Neu:** eine eng gefasste Liste `hook_utils.TEST_FILE_PATTERNS` für Go (`*_test.go`), Python (`test_*.py`, `*_test.py`) und JS/TS (`*.test.*`, `*.spec.*`). Sie gilt für `edit_gate` und die Abdeckungsprüfung (`is_gated_code_path`), zusätzlich zu `always_allowed_patterns`. Eine eigene Projekt-Liste ersetzt sie also nicht, der Workaround aus dem Issue entfällt.
+  - **Bleibt Produktivcode:** `test_helpers.go` ohne Suffix. Swift, Kotlin und Java legen Tests in Test-Ordner, die schon frei sind; für sie gibt es bewusst kein Namensmuster, sonst würden Namen wie `SpeedTest.swift` Produktivcode freistellen.
+  - **LoC-Gate:** zählt `*_test.go` als Test.
+  - **Tests:** `tests/test_test_file_patterns_335.py`.
+- **#353 (`--command-aliases`):** Eine unlesbare Datei im Befehlsordner (kein UTF-8, keine Rechte) brach den Lauf ab. Jetzt wird sie übersprungen und nie überschrieben; die übrigen Aliase entstehen trotzdem. Test in `tests/test_alias_robust_350.py`.
+- **#347 (`qa_gate`):**
+  - **F101:** `TEST FAILED` neben einem grünen unittest- oder node-Lauf zählt nur noch in der echten xcodebuild-Form `** TEST FAILED **`. Ein Testname oder Docstring, den `unittest -v` am Zeilenanfang druckt, kippt den Lauf nicht mehr.
+  - **F102:** Zwei node-Summaries ohne Trennzeile verschmelzen nicht mehr.
+  - **F104:** Nicht ganzzahlige Zähler oder `tests != pass+fail+cancelled+skipped+todo` sind fail-safe rot.
+  - **Tests:** Fixtures aus echten Läufen (node 22, Python 3.11) in `tests/test_qa_gate_edge_cases_347.py`.
+
+### Added
+
+- **#185 (Banner: Haupt-Ordner veraltet):** Der Session-Banner warnt, wenn der Zweig des Haupt-Ordners hinter seinem Upstream liegt, und nennt `session_singleton_guard.py sync-main`.
+  - **Worktree-Sitzungen:** Auch dort wird gemessen, über die geteilten Refs und ohne Git-Aufruf auf den Haupt-Ordner selbst (#169).
+  - **Fetch:** `git fetch` mit 3 s Timeout, ohne Rückfragen nach Zugangsdaten. Scheitert er, erscheint keine Zeile.
+  - **Abschaltbar:** `config.yaml` → `session_banner.behind_check: false`.
+  - **Tests:** `tests/test_banner_behind_origin_185.py`.
+
 ## [3.37.0] - 2026-10-05
 
 ### Changed

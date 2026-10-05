@@ -193,13 +193,70 @@ def removed_alias_lines(project: Path) -> "list[str]":
     return lines
 
 
-def build_message(root: Path, project: Path) -> "str | None":
+_FETCH_TIMEOUT_S = 3
+
+
+def _git(args: "list[str]", cwd: Path, timeout: float) -> "str | None":
+    """git-Ausgabe oder None (Fehler, Timeout, kein Repo) — wirft nie."""
+    import subprocess
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
+    env.setdefault("GIT_SSH_COMMAND", "ssh -oBatchMode=yes")
+    try:
+        proc = subprocess.run(["git", *args], cwd=str(cwd), capture_output=True,
+                              text=True, timeout=timeout, env=env, stdin=subprocess.DEVNULL)
+    except Exception:
+        return None
+    return proc.stdout.strip() if proc.returncode == 0 else None
+
+
+def behind_lines(cwd: Path) -> "list[str]":
+    """Warnzeile, wenn der Haupt-Ordner hinter seinem Upstream liegt (#185).
+
+    Gemessen wird der Zweig, den der HAUPT-Ordner ausgecheckt hat — auch aus
+    einer Worktree-Sitzung, ueber die geteilten Refs, ohne Git-Aufruf auf den
+    Haupt-Ordner selbst (#169). Ein `git fetch` mit 3 s Timeout holt den
+    Remote-Stand; scheitert er (offline, VPN, Zugangsdaten), erscheint keine
+    Zeile — lieber nichts als ein veralteter Vergleich. Abschaltbar ueber
+    config.yaml → session_banner.behind_check: false.
+    """
+    try:
+        from config_loader import load_config
+        if (load_config().get("session_banner") or {}).get("behind_check", True) is False:
+            return []
+    except Exception:
+        pass
+    listing = _git(["worktree", "list", "--porcelain"], cwd, 2)
+    if not listing:
+        return []
+    main_branch = next((ln.split(" ", 1)[1] for ln in listing.splitlines()
+                        if ln.startswith("branch ")), None)  # erster Eintrag = Haupt-Ordner
+    first_block = listing.split("\n\n", 1)[0]
+    if not main_branch or f"branch {main_branch}" not in first_block:
+        return []  # Haupt-Ordner ohne Zweig (detached) — nichts zu vergleichen
+    main_branch = main_branch.removeprefix("refs/heads/")  # `<ref>@{u}` will den Kurznamen
+    upstream = _git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", f"{main_branch}@{{u}}"], cwd, 2)
+    if not upstream or "/" not in upstream:
+        return []
+    remote = upstream.split("/", 1)[0]
+    if _git(["fetch", "--quiet", remote], cwd, _FETCH_TIMEOUT_S) is None:
+        return []
+    count = _git(["rev-list", "--count", f"{main_branch}..{upstream}"], cwd, 2)
+    if not count or not count.isdigit() or int(count) == 0:
+        return []
+    guard = _HOOK_DIR / "session_singleton_guard.py"
+    return [f"Haupt-Ordner {count} Commit(s) hinter {upstream} — Bugs nicht gegen veralteten "
+            f"Code analysieren. Nachziehen aus einer Sitzung im Haupt-Ordner: "
+            f"python3 {guard} sync-main"]
+
+
+def build_message(root: Path, project: Path, cwd: "Path | None" = None) -> "str | None":
     version = plugin_version(root)
     if not version:
         return None
     lines = [f"agent-os-openspec {version} aktiv"]
     lines.extend(stale_alias_lines(root, project))
     lines.extend(removed_alias_lines(project))
+    lines.extend(behind_lines(cwd or project))
     return "\n".join(lines)
 
 
@@ -210,7 +267,8 @@ def main() -> None:
     payload_cwd = _payload_cwd()
     if framework_disabled():
         return
-    message = build_message(plugin_root(), project_dir(payload_cwd))
+    message = build_message(plugin_root(), project_dir(payload_cwd),
+                            Path(payload_cwd) if payload_cwd else None)
     if message:
         print(json.dumps({"systemMessage": message}, ensure_ascii=False))
 
