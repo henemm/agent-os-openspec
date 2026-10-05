@@ -497,6 +497,18 @@ def _is_amend(command: str) -> bool:
     return re.search(r"(?<!\S)--amend(?!\S)", command) is not None
 
 
+def _creates_commit(command: str) -> bool:
+    """Erzeugt der Befehl einen Commit, der durch die Commit-Gates muss?
+
+    `git commit` und der Abschluss eines Merges per `git merge --continue` (#355):
+    der eine fuehrt intern genau den anderen aus. Ueber-Erkennung (`--continue`
+    gehoert zu einem anderen Segment) heisst nur, dass zusaetzlich geprueft wird.
+    """
+    if is_git_subcommand(command, "commit"):
+        return True
+    return is_git_subcommand(command, "merge") and "--continue" in command
+
+
 def _commit_content_files(staged_list: list, measure_root: Path, command: str) -> list:
     """Dateien, die der ENTSTEHENDE Commit enthaelt.
 
@@ -876,7 +888,7 @@ def main():
         and not git_runs_foreign_code(command)    # Shell-Alias, `-c core.pager=…` (#297)
     ):
         git_only = True  # fail-open: exakt das bisherige Verhalten
-    if git_only and not is_git_subcommand(command, "commit") and not redirect_hit:
+    if git_only and not _creates_commit(command) and not redirect_hit:
         allow()
 
     # 3a. Approval-/Erfolgs-Marker: deny by default, kein Bash-Weg erlaubt.
@@ -958,7 +970,7 @@ def main():
         )
 
     # 5. Git commit gates (tokenbasiert, Issue #1431 — Erwaehnung ist kein Aufruf)
-    if workflow_enforced and is_git_subcommand(command, "commit"):
+    if workflow_enforced and _creates_commit(command):
         import subprocess
 
         # Gemessen wird im Arbeitsbaum, nicht im Hauptrepo (Issue #155).
