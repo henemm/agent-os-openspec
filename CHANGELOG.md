@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.38.2] - 2026-10-06
+
 ### Fixed
 
 - **#292 (secrets_guard im Worktree, PO-Entscheidung A):** Im Worktree galten die Muster aus der Config des Haupt-Ordners. Hatte ein Zweig zu breite Muster bereits verengt (z. B. `_key` → `private_key`), blockte der Wächter trotzdem harmlose Dateinamen, auch bei `grep`, `ls` und `wc`.
