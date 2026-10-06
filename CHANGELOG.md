@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.38.3] - 2026-10-06
+
 ### Fixed
 
 - **#337 (`complete`/`finish` in Phase 8):** Stand ein Workflow schon auf `phase8_complete`, prüfte der Abschluss nichts mehr. `_validate_transition` kehrte bei gleicher Phase sofort zurück, und der Workflow wurde ohne Adversary-Nachweis archiviert. Jetzt prüft der Abschluss immer voll; eine Transition in dieselbe Phase unterhalb von Phase 8 bleibt frei. Tests: `tests/test_complete_recheck_337.py`.
