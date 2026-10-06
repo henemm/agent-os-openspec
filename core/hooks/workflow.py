@@ -1352,7 +1352,29 @@ _SET_FIELD_PROTECTED = {
     "phase_log": "wird von workflow.py phase gefuehrt",
     "status": "workflow.py finish / abandon",
     "name": "workflow.py start <name>",
+    "base_commit": "wird von workflow.py start gesetzt (Basis der Phase-8-Abdeckung)",
 }
+
+# Nach der Freigabe nur noch mit Override-Token des Users per set-field (#379).
+_SET_FIELD_FROZEN_AFTER_APPROVAL = {"spec_file"}
+
+
+def _is_approved(data: dict) -> bool:
+    """Freigabe erteilt? Nicht nur an current_phase gemessen: `phase` erlaubt
+    Rueckspruenge, spec_approved bleibt dabei stehen (#379)."""
+    if data.get("spec_approved"):
+        return True
+    phase = data.get("current_phase", "phase0_idle")
+    idx = PHASES.index(phase) if phase in PHASES else len(PHASES)
+    return idx >= PHASES.index("phase4_approved")
+
+
+def _user_override(name: str) -> bool:
+    try:
+        from override_token import has_valid_token
+        return bool(has_valid_token(name))
+    except Exception:
+        return False
 
 
 def _check_set_field_type(data: dict, name: str, value: str) -> str | None:
@@ -1369,16 +1391,9 @@ def _check_set_field_type(data: dict, name: str, value: str) -> str | None:
         return f"Unbekannter workflow_type {value!r}. Gueltig: feature, feature-fast"
     if value != "feature-fast" or data.get("workflow_type") == "feature-fast":
         return None
-    phase = data.get("current_phase", "phase0_idle")
-    idx = PHASES.index(phase) if phase in PHASES else len(PHASES)
-    if idx < PHASES.index("phase4_approved"):
+    if not _is_approved(data) or _user_override(name):
         return None
-    try:
-        from override_token import has_valid_token
-        if has_valid_token(name):
-            return None
-    except Exception:
-        pass
+    phase = data.get("current_phase", "phase0_idle")
     return (
         f"workflow_type -> feature-fast in {phase} entzieht den Workflow dem "
         "Adversary-Gate beim Abschluss. Nach der Freigabe nur mit Override: "
@@ -1404,6 +1419,16 @@ def cmd_set_field(args: list[str]) -> None:
         err = _check_set_field_type(data, name, value)
         if err:
             print(f"BLOCKED: {err}", file=sys.stderr)
+            sys.exit(1)
+    if key in _SET_FIELD_FROZEN_AFTER_APPROVAL:
+        data, name = _read_active()
+        if _is_approved(data) and not _user_override(name):
+            print(
+                f"BLOCKED: `{key}` ist nach der Freigabe eingefroren — sonst pruefen "
+                "Spec-Freeze und Adversary-Checkliste eine nicht freigegebene Spec (#379). "
+                "Nur mit Override: der User tippt \"override\" (gilt 1 h).",
+                file=sys.stderr,
+            )
             sys.exit(1)
     if value.lower() in ("true", "yes"):
         value = True

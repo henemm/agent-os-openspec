@@ -91,7 +91,7 @@ def test_legacy_bug_workflow_needs_override_too(tmp_path):
 
 @pytest.mark.parametrize("phase", ["phase1_context", "phase3_spec"])
 def test_downgrade_before_approval_free(tmp_path, phase):
-    wf_dir = _project(tmp_path, phase=phase)
+    wf_dir = _project(tmp_path, phase=phase, spec_approved=False)
     r = _run(tmp_path, "set-field", "workflow_type", "feature-fast")
     assert r.returncode == 0, r.stderr
     assert _state(wf_dir)["workflow_type"] == "feature-fast"
@@ -117,6 +117,7 @@ def test_unknown_type_rejected(tmp_path):
     ("red_test_done", "true"),
     ("ui_test_red_done", "true"),
     ("status", "complete"),
+    ("base_commit", "deadbeef"),
 ])
 def test_gate_keys_blocked(tmp_path, key, value):
     wf_dir = _project(tmp_path, phase="phase3_spec", spec_approved=False,
@@ -130,7 +131,6 @@ def test_gate_keys_blocked(tmp_path, key, value):
 @pytest.mark.parametrize("key,value", [
     ("github_issue", "379"),
     ("loc_limit_override", "400"),
-    ("spec_file", "docs/specs/y.md"),
     ("adversary_findings_total", "3"),
 ])
 def test_regular_keys_still_settable(tmp_path, key, value):
@@ -138,6 +138,38 @@ def test_regular_keys_still_settable(tmp_path, key, value):
     r = _run(tmp_path, "set-field", key, value)
     assert r.returncode == 0, r.stderr
     assert str(_state(wf_dir)[key]) == value
+
+
+def test_rewind_does_not_unlock_downgrade(tmp_path):
+    # Adversary-Runde 1: phase zurueck auf phase3_spec, dann herabstufen, dann finish
+    wf_dir = _project(tmp_path)
+    assert _run(tmp_path, "phase", "phase3_spec").returncode == 0
+    r = _run(tmp_path, "set-field", "workflow_type", "feature-fast")
+    assert r.returncode == 1 and "BLOCKED" in r.stderr, r.stdout
+    assert _state(wf_dir)["workflow_type"] == "feature"
+
+
+def test_spec_file_settable_before_approval(tmp_path):
+    wf_dir = _project(tmp_path, phase="phase3_spec", spec_approved=False)
+    r = _run(tmp_path, "set-field", "spec_file", "docs/specs/y.md")
+    assert r.returncode == 0, r.stderr
+    assert _state(wf_dir)["spec_file"] == "docs/specs/y.md"
+
+
+@pytest.mark.parametrize("phase", ["phase4_approved", "phase7_validate"])
+def test_spec_file_frozen_after_approval(tmp_path, phase):
+    wf_dir = _project(tmp_path, phase=phase)
+    r = _run(tmp_path, "set-field", "spec_file", "docs/specs/other.md")
+    assert r.returncode == 1 and "BLOCKED" in r.stderr, r.stdout
+    assert _state(wf_dir)["spec_file"] == "docs/specs/x.md"
+
+
+def test_spec_file_after_approval_with_override(tmp_path):
+    wf_dir = _project(tmp_path)
+    _token(tmp_path)
+    r = _run(tmp_path, "set-field", "spec_file", "docs/specs/other.md")
+    assert r.returncode == 0, r.stderr
+    assert _state(wf_dir)["spec_file"] == "docs/specs/other.md"
 
 
 # --- Zweiter Punkt: BatchMode nur fuer OpenSSH ---
@@ -172,3 +204,27 @@ def test_plink_variant_untouched():
 def test_git_ssh_alone_not_overridden():
     # GIT_SSH_COMMAND hat Vorrang vor GIT_SSH — setzen hiesse den Client ersetzen
     assert _env(GIT_SSH="/opt/plink") is None
+
+
+def test_unquoted_windows_openssh_path_gets_batchmode():
+    cmd = r"C:\Windows\System32\OpenSSH\ssh.exe"
+    assert _env(GIT_SSH_COMMAND=cmd) == cmd + " -oBatchMode=yes"
+
+
+def _repo_with_core_ssh(tmp_path, value):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "core.sshCommand", value], check=True)
+
+
+def test_core_ssh_command_plink_not_replaced(tmp_path):
+    _repo_with_core_ssh(tmp_path, "plink -batch")
+    env = {}
+    session_banner._batch_ssh(env, tmp_path)
+    assert "GIT_SSH_COMMAND" not in env
+
+
+def test_core_ssh_command_openssh_kept_with_batchmode(tmp_path):
+    _repo_with_core_ssh(tmp_path, "ssh -i /k/special")
+    env = {}
+    session_banner._batch_ssh(env, tmp_path)
+    assert env["GIT_SSH_COMMAND"] == "ssh -i /k/special -oBatchMode=yes"

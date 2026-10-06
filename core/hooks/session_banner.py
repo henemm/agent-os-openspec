@@ -199,32 +199,57 @@ _FETCH_TIMEOUT_S = 3
 _PLINK_VARIANTS = ("plink", "putty", "tortoiseplink")
 
 
-def _batch_ssh(env: dict) -> None:
-    """Eigene GIT_SSH_COMMAND des Users behalten, aber nie ohne BatchMode (#371).
+def _ssh_program(cmd: str) -> str:
+    """Basisname des Programms im ssh-Kommando, klein und ohne .exe.
+
+    Kein POSIX-shlex: der wuerde Backslashes unquotierter Windows-Pfade
+    (C:\\...\\ssh.exe) verschlucken (#379).
+    """
+    cmd = cmd.strip()
+    if cmd[:1] in ("'", '"'):
+        end = cmd.find(cmd[0], 1)
+        prog = cmd[1:end] if end > 0 else cmd[1:]
+    else:
+        prog = cmd.split()[0] if cmd.split() else ""
+    base = prog.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    return base[:-4] if base.endswith(".exe") else base
+
+
+def _core_ssh_command(cwd) -> str:
+    """`core.sshCommand` aus der Git-Config oder "" — wirft nie."""
+    import subprocess
+    if cwd is None:
+        return ""
+    try:
+        r = subprocess.run(["git", "config", "--get", "core.sshCommand"], cwd=str(cwd),
+                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                           stdin=subprocess.DEVNULL, text=True, timeout=1)
+        return r.stdout.strip() if r.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
+def _batch_ssh(env: dict, cwd=None) -> None:
+    """Eigenes ssh-Kommando des Users behalten, aber nie ohne BatchMode (#371).
 
     `-oBatchMode=yes` versteht nur OpenSSH. Bei plink/putty brach der Fetch
     sonst ab und die Warnung fiel still weg (#379) — dort bleibt alles, wie es
     ist. Ein gesetztes GIT_SSH ohne GIT_SSH_COMMAND bleibt ebenfalls unberuehrt:
-    GIT_SSH_COMMAND hat Vorrang und wuerde den Client des Users ersetzen.
+    GIT_SSH_COMMAND hat Vorrang und wuerde den Client des Users ersetzen. Aus
+    demselben Grund dient ein konfiguriertes `core.sshCommand` als Basis statt
+    eines nackten `ssh`.
     """
-    import shlex
     ssh = env.get("GIT_SSH_COMMAND", "").strip()
     if not ssh and env.get("GIT_SSH", "").strip():
         return
     if env.get("GIT_SSH_VARIANT", "").strip().lower() in _PLINK_VARIANTS:
         return
+    if not ssh:
+        ssh = _core_ssh_command(cwd)
     ssh = ssh or "ssh"
     if "BatchMode" in ssh:
-        env["GIT_SSH_COMMAND"] = ssh
         return
-    try:
-        prog = shlex.split(ssh)[0]
-    except Exception:
-        prog = ssh.split()[0]
-    base = prog.replace("\\", "/").rsplit("/", 1)[-1].lower()
-    if base.endswith(".exe"):
-        base = base[:-4]
-    if base == "ssh":
+    if _ssh_program(ssh) == "ssh":
         env["GIT_SSH_COMMAND"] = f"{ssh} -oBatchMode=yes"
 
 
@@ -236,7 +261,7 @@ def _git(args: "list[str]", cwd: Path, timeout: float) -> "str | None":
     env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GIT_ASKPASS="", SSH_ASKPASS="",
                SSH_ASKPASS_REQUIRE="never", GCM_INTERACTIVE="never")
     try:
-        _batch_ssh(env)
+        _batch_ssh(env, cwd)
     except Exception:
         pass
     try:
