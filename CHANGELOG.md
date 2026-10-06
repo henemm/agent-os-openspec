@@ -11,6 +11,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **#379 (`set-field` hebelt Gates aus):** `workflow.py set-field` setzte jeden Schlüssel ungeprüft. `set-field workflow_type feature-fast` entzog einen freigegebenen `feature`-Workflow dem Adversary-Gate, und `finish` archivierte ohne Verdict.
+  - **Gesperrt:** Schlüssel mit eigenem, geprüftem Befehl (`current_phase`, `spec_approved`, `red_test_done`, `ui_test_red_done`, `test_artifacts`, `po_briefing`, `adversary_ambiguous_override`, `affected_files`, `phase_log`, `status`, `name`). Die Meldung nennt den richtigen Befehl.
+  - **`workflow_type`:** nur noch `feature` oder `feature-fast`. Die Herabstufung auf `feature-fast` ab `phase4_approved` verlangt ein `override` des Users. Davor und als Hochstufung auf `feature` bleibt der Wechsel frei.
+  - **Kein Umweg über Rücksprung:** „Nach der Freigabe“ richtet sich nach `spec_approved`, nicht nur nach der aktuellen Phase. `phase phase3_spec` mit anschließender Herabstufung funktioniert also nicht mehr.
+  - **`spec_file` eingefroren:** Nach der Freigabe ist `spec_file` nur mit `override` änderbar. Sonst würden Spec-Freeze und Adversary-Checkliste eine nicht freigegebene Spec prüfen.
+  - **`base_commit` gesperrt:** Der Wert wird von `start` gesetzt und legt die Phase-8-Abdeckung fest.
+  - **Rezept aus #333** (`set-field workflow_type feature-fast` für Alt-Workflows vom Typ `bug`): gilt nach der Freigabe nur noch mit `override`.
+  - **Bewusst offen:** `adversary_verdict` bleibt setzbar, weil `qa_gate.py` es so schreibt. Commit und Phase 8 verlangen dafür ohnehin den gestempelten Dialog-Nachweis (#253).
+- **#379 (Banner-Fetch mit plink):** `-oBatchMode=yes` wird nur noch an OpenSSH (`ssh`, `ssh.exe`) angehängt. Bei `plink`/`putty` (auch über `GIT_SSH_VARIANT`) bleibt das Kommando unverändert. Ein gesetztes `GIT_SSH` ohne `GIT_SSH_COMMAND` wird nicht mehr durch `ssh -oBatchMode=yes` ersetzt. Ein konfiguriertes `core.sshCommand` dient als Basis und wird nicht mehr durch ein nacktes `ssh` ersetzt. Auch unquotierte Windows-Pfade (`C:\\...\\ssh.exe`) werden erkannt.
+- **Tests:** `tests/test_set_field_gate_keys_379.py`.
+
+## [3.38.3] - 2026-10-06
+
+### Fixed
+
 - **#337 (`complete`/`finish` in Phase 8):** Stand ein Workflow schon auf `phase8_complete`, prüfte der Abschluss nichts mehr. `_validate_transition` kehrte bei gleicher Phase sofort zurück, und der Workflow wurde ohne Adversary-Nachweis archiviert. Jetzt prüft der Abschluss immer voll; eine Transition in dieselbe Phase unterhalb von Phase 8 bleibt frei. Tests: `tests/test_complete_recheck_337.py`.
 - **#371 (Banner-Fetch):** Nach dem Timeout des `git fetch` aus #185 liefen Kindprozesse weiter: `git remote-http`, Credential-Helper und ssh.
   - **Prozessgruppe:** git läuft jetzt in einer eigenen Prozessgruppe, die bei Timeout als Ganzes beendet wird.
