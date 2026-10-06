@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.38.6] - 2026-10-06
+
+### Fixed
+
+- **#387 (tdd_enforcement ohne Korrekturweg):** Ein falsch registriertes RED-Artefakt blockierte Edits dauerhaft, weil `add-artifact` nur anhängt und `set-field` `test_artifacts` nicht setzen darf. Neu: `workflow.py remove-artifact <pfad> [<phase>]`; die Block-Meldung nennt den Befehl. Tests: `tests/test_workflow_remove_artifact_387.py`.
+
 ## [3.38.5] - 2026-10-06
 
 ### Fixed

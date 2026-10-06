@@ -18,6 +18,7 @@ Usage:
     python3 workflow.py set-briefing <pfad-zum-po-briefing>
     python3 workflow.py set-affected-files [--replace] <f1> <f2> ...
     python3 workflow.py add-artifact <type> <path> <desc> <phase>
+    python3 workflow.py remove-artifact <path> [<phase>]
     python3 workflow.py mark-red <result>
     python3 workflow.py mark-ui-red <result>
     python3 workflow.py write-log [outcome]
@@ -1548,6 +1549,32 @@ def cmd_add_artifact(args: list[str]) -> None:
     print(f"Artifact added to {data['name']}: {art_type} ({desc})")
 
 
+def cmd_remove_artifact(args: list[str]) -> None:
+    """Falsch registriertes Artefakt per Pfad entfernen (#387).
+
+    Ohne diesen Weg blockiert tdd_enforcement dauerhaft: add-artifact haengt nur
+    an, und set-field darf test_artifacts nicht setzen.
+    """
+    if not args:
+        print("Usage: workflow.py remove-artifact <path> [<phase>]", file=sys.stderr)
+        sys.exit(1)
+    art_path = args[0]
+    phase = args[1] if len(args) > 1 else None
+    data, _ = _read_active()
+    arts = data.get("test_artifacts", [])
+    keep = [
+        a for a in arts
+        if not (a.get("path") == art_path and (phase is None or a.get("phase") == phase))
+    ]
+    removed = len(arts) - len(keep)
+    if not removed:
+        print(f"Kein Artefakt mit Pfad '{art_path}' in {data['name']} gefunden.", file=sys.stderr)
+        sys.exit(1)
+    data["test_artifacts"] = keep
+    _save_active(data)
+    print(f"{removed} Artefakt(e) aus {data['name']} entfernt: {art_path}")
+
+
 def cmd_mark_red(args: list[str]) -> None:
     result = " ".join(args) if args else "failed"
     data, name = _read_active()
@@ -2183,6 +2210,7 @@ COMMANDS = {
     "set-briefing": cmd_set_briefing,
     "set-affected-files": cmd_set_affected_files,
     "add-artifact": cmd_add_artifact,
+    "remove-artifact": cmd_remove_artifact,
     "mark-red": cmd_mark_red,
     "mark-ui-red": cmd_mark_ui_red,
     "write-log": cmd_write_log,

@@ -298,6 +298,8 @@ def main() -> None:
             f"BLOCKED [tdd_enforcement]: RED-Artefakte ungültig für '{wf_name}':\n"
             + "\n".join(errors)
             + "\n→ Echte fehlschlagende Tests ausführen und neue Artefakte registrieren."
+            + "\n→ Falsch registriertes Artefakt entfernen: "
+            "python3 .claude/hooks/workflow.py remove-artifact '<pfad>' phase5_tdd_red"
         )
 
     allow()
