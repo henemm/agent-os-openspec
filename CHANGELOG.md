@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **#379 (`set-field` hebelt Gates aus):** `workflow.py set-field` setzte jeden Schlüssel ungeprüft. `set-field workflow_type feature-fast` entzog einen freigegebenen `feature`-Workflow dem Adversary-Gate, und `finish` archivierte ohne Verdict.
+  - **Gesperrt:** Schlüssel mit eigenem, geprüftem Befehl (`current_phase`, `spec_approved`, `red_test_done`, `ui_test_red_done`, `test_artifacts`, `po_briefing`, `adversary_ambiguous_override`, `affected_files`, `phase_log`, `status`, `name`). Die Meldung nennt den richtigen Befehl.
+  - **`workflow_type`:** nur noch `feature` oder `feature-fast`. Die Herabstufung auf `feature-fast` ab `phase4_approved` verlangt ein `override` des Users. Davor und als Hochstufung auf `feature` bleibt der Wechsel frei.
+  - **Rezept aus #333** (`set-field workflow_type feature-fast` für Alt-Workflows vom Typ `bug`): gilt nach der Freigabe nur noch mit `override`.
+  - **Bewusst offen:** `adversary_verdict` bleibt setzbar, weil `qa_gate.py` es so schreibt. Commit und Phase 8 verlangen dafür ohnehin den gestempelten Dialog-Nachweis (#253).
+- **#379 (Banner-Fetch mit plink):** `-oBatchMode=yes` wird nur noch an OpenSSH (`ssh`, `ssh.exe`) angehängt. Bei `plink`/`putty` (auch über `GIT_SSH_VARIANT`) bleibt das Kommando unverändert. Ein gesetztes `GIT_SSH` ohne `GIT_SSH_COMMAND` wird nicht mehr durch `ssh -oBatchMode=yes` ersetzt.
+- **Tests:** `tests/test_set_field_gate_keys_379.py`.
+
 ## [3.38.3] - 2026-10-06
 
 ### Fixed

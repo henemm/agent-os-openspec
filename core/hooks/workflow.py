@@ -1338,11 +1338,73 @@ def _print_budget_question(exceeded: list) -> None:
         print(text)
 
 
+# Schluessel, die ein Gate steuern und einen eigenen, geprueften Befehl haben.
+# `set-field` wuerde sie ohne jede Pruefung setzen (#379).
+_SET_FIELD_PROTECTED = {
+    "current_phase": "workflow.py phase <phase>",
+    "spec_approved": "Freigabe-Phrase des Users in phase3_spec",
+    "red_test_done": "workflow.py mark-red <ergebnis>",
+    "ui_test_red_done": "workflow.py mark-ui-red <ergebnis>",
+    "test_artifacts": "workflow.py add-artifact ...",
+    "po_briefing": "workflow.py set-briefing <pfad>",
+    "adversary_ambiguous_override": "workflow.py override-ambiguous <grund>",
+    "affected_files": "workflow.py set-affected-files ...",
+    "phase_log": "wird von workflow.py phase gefuehrt",
+    "status": "workflow.py finish / abandon",
+    "name": "workflow.py start <name>",
+}
+
+
+def _check_set_field_type(data: dict, name: str, value: str) -> str | None:
+    """`workflow_type` per set-field: Herabstufung auf feature-fast ab Phase 4
+    nur mit Override-Token des Users (#379).
+
+    Der feature-fast-Zweig von `_validate_transition` prueft beim Abschluss kein
+    Adversary-Verdict — ein freigegebener `feature`-Workflow verloere durch die
+    Umklassifizierung sonst jeden Pruefnachweis. Vor der Freigabe bleibt der
+    Wechsel frei: dann greift das Freigabe-Gate noch. Rueckfall-Rezept fuer
+    Alt-Workflows vom Typ `bug` (#333) bleibt ueber `override` moeglich.
+    """
+    if value not in ("feature", "feature-fast"):
+        return f"Unbekannter workflow_type {value!r}. Gueltig: feature, feature-fast"
+    if value != "feature-fast" or data.get("workflow_type") == "feature-fast":
+        return None
+    phase = data.get("current_phase", "phase0_idle")
+    idx = PHASES.index(phase) if phase in PHASES else len(PHASES)
+    if idx < PHASES.index("phase4_approved"):
+        return None
+    try:
+        from override_token import has_valid_token
+        if has_valid_token(name):
+            return None
+    except Exception:
+        pass
+    return (
+        f"workflow_type -> feature-fast in {phase} entzieht den Workflow dem "
+        "Adversary-Gate beim Abschluss. Nach der Freigabe nur mit Override: "
+        "der User tippt \"override\" (gilt 1 h), dann erneut ausfuehren. "
+        "Ohne Abschluss beenden: workflow.py abandon --reason \"...\""
+    )
+
+
 def cmd_set_field(args: list[str]) -> None:
     if len(args) < 2:
         print("Usage: workflow.py set-field <key> <value>", file=sys.stderr)
         sys.exit(1)
     key, value = args[0], " ".join(args[1:])
+    if key in _SET_FIELD_PROTECTED:
+        print(
+            f"BLOCKED: `{key}` steuert ein Gate und ist per set-field gesperrt (#379). "
+            f"Stattdessen: {_SET_FIELD_PROTECTED[key]}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if key == "workflow_type":
+        data, name = _read_active()
+        err = _check_set_field_type(data, name, value)
+        if err:
+            print(f"BLOCKED: {err}", file=sys.stderr)
+            sys.exit(1)
     if value.lower() in ("true", "yes"):
         value = True
     elif value.lower() in ("false", "no"):
