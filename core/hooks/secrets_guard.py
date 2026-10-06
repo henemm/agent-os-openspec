@@ -72,10 +72,16 @@ _NESTED_SHELL_RE = re.compile(r"\b(?:ba|z|da|k)?sh\s+-c\b|\beval\b")
 
 def _get_config() -> dict:
     cfg = load_config().get("secrets_guard", {})
+    try:
+        from config_loader import secrets_guard_patterns  # Zweig-Muster mit Untergrenze (#292)
+        sensitive, always = secrets_guard_patterns()
+    except Exception:
+        sensitive = cfg.get("sensitive_patterns", _DEFAULT_SENSITIVE)
+        always = cfg.get("always_blocked", _DEFAULT_ALWAYS_BLOCKED)
     return {
         "enabled": cfg.get("enabled", True),
-        "sensitive_patterns": cfg.get("sensitive_patterns", _DEFAULT_SENSITIVE),
-        "always_blocked": cfg.get("always_blocked", _DEFAULT_ALWAYS_BLOCKED),
+        "sensitive_patterns": sensitive,
+        "always_blocked": always,
     }
 
 
@@ -138,23 +144,9 @@ def _read_payload() -> tuple[str, dict]:
         return "", {}
 
 
-def main() -> None:
-    cfg = _get_config()
-    if not cfg["enabled"]:
-        sys.exit(0)
-
-    tool_name, tool_input = _read_payload()
-    sensitive = cfg["sensitive_patterns"]
-    always = cfg["always_blocked"]
-    staging = _is_staging()
-
-    def _log(reason: str, excerpt: str) -> None:
-        try:
-            log_gate_event(hook="secrets_guard", tool=tool_name, reason=reason,
-                           command_excerpt=excerpt)
-        except Exception:
-            pass
-
+def _decide(tool_name: str, tool_input: dict, sensitive: list, always: list,
+            staging: bool) -> "tuple[str, str, str] | None":
+    """(Log-Grund, Meldung, Auszug) bei Blockade, sonst None."""
     if tool_name == "Bash":
         # Heredoc-Bodies sind stdin-Daten, kein Kommandotext (Issues #64/#75):
         # Freitext darin (Commit-Messages, Doku) darf die Datei-Token- und
@@ -163,43 +155,68 @@ def main() -> None:
         cmd = strip_heredoc_bodies(tool_input.get("command", ""))
         if _references_sensitive_file(cmd, sensitive) and _DANGEROUS_CMD_RE.search(cmd):
             if _references_sensitive_file(cmd, always):
-                _log("Befehl würde geschützte Credentials/Keys ausgeben (always_blocked)", cmd)
-                print(
-                    "BLOCKED [secrets_guard]: Befehl würde geschützte Credentials/Keys ausgeben.\n"
-                    "  Diese Dateien sind immer geschützt (auch im Staging-Modus).\n"
-                    "  Tipp: 'grep -l' zeigt Dateipfade ohne Inhalt.",
-                    file=sys.stderr,
-                )
-                sys.exit(2)
+                return ("Befehl würde geschützte Credentials/Keys ausgeben (always_blocked)",
+                        "BLOCKED [secrets_guard]: Befehl würde geschützte Credentials/Keys ausgeben.\n"
+                        "  Diese Dateien sind immer geschützt (auch im Staging-Modus).\n"
+                        "  Tipp: 'grep -l' zeigt Dateipfade ohne Inhalt.", cmd)
             if not staging:
-                _log("Befehl würde sensible Datei ausgeben", cmd)
-                print(
-                    "BLOCKED [secrets_guard]: Befehl würde sensible Datei ausgeben.\n"
-                    "  Für .env-Zugriff im Staging: touch .claude/staging\n"
-                    "  Oder: export OPENSPEC_ENV=staging",
-                    file=sys.stderr,
-                )
-                sys.exit(2)
-
+                return ("Befehl würde sensible Datei ausgeben",
+                        "BLOCKED [secrets_guard]: Befehl würde sensible Datei ausgeben.\n"
+                        "  Für .env-Zugriff im Staging: touch .claude/staging\n"
+                        "  Oder: export OPENSPEC_ENV=staging", cmd)
     elif tool_name == "Read":
         file_path = tool_input.get("file_path", "")
         if _matches(file_path, sensitive):
             if _matches(file_path, always):
-                _log("Datei enthält Credentials/Keys (always_blocked)", file_path)
-                print(
-                    f"BLOCKED [secrets_guard]: {Path(file_path).name} enthält Credentials/Keys.\n"
-                    "  Diese Datei ist immer geschützt.",
-                    file=sys.stderr,
-                )
-                sys.exit(2)
+                return ("Datei enthält Credentials/Keys (always_blocked)",
+                        f"BLOCKED [secrets_guard]: {Path(file_path).name} enthält Credentials/Keys.\n"
+                        "  Diese Datei ist immer geschützt.", file_path)
             if not staging:
-                _log("Sensible Datei", file_path)
-                print(
-                    f"BLOCKED [secrets_guard]: Sensible Datei: {Path(file_path).name}\n"
-                    "  Für .env-Zugriff im Staging: touch .claude/staging",
-                    file=sys.stderr,
-                )
-                sys.exit(2)
+                return ("Sensible Datei",
+                        f"BLOCKED [secrets_guard]: Sensible Datei: {Path(file_path).name}\n"
+                        "  Für .env-Zugriff im Staging: touch .claude/staging", file_path)
+    return None
+
+
+def main() -> None:
+    cfg = _get_config()
+    if not cfg["enabled"]:
+        sys.exit(0)
+
+    tool_name, tool_input = _read_payload()
+    staging = _is_staging()
+
+    def _block(verdict: "tuple[str, str, str]") -> None:
+        reason, message, excerpt = verdict
+        try:
+            log_gate_event(hook="secrets_guard", tool=tool_name, reason=reason,
+                           command_excerpt=excerpt)
+        except Exception:
+            pass
+        print(message, file=sys.stderr)
+        sys.exit(2)
+
+    # #292: wirken Muster aus dem eigenen Zweig, entscheiden zuerst die
+    # eingebauten Grundmuster allein — ein Zweig-Muster (ReDoS, Absturz) kann
+    # die Blockade von .env & Co. dann nicht mehr verhindern.
+    try:
+        from config_loader import secrets_guard_floor
+        floor = secrets_guard_floor()
+    except Exception:
+        floor = None
+    if floor is not None:
+        verdict = _decide(tool_name, tool_input, floor[0], floor[1], staging)
+        if verdict:
+            _block(verdict)
+    try:
+        verdict = _decide(tool_name, tool_input, cfg["sensitive_patterns"],
+                          cfg["always_blocked"], staging)
+    except Exception as exc:  # fehlerhaftes Muster: blockieren statt Exit 1 (fail-closed)
+        verdict = ("secrets_guard-Muster nicht auswertbar",
+                   f"BLOCKED [secrets_guard]: Muster nicht auswertbar ({type(exc).__name__}) — "
+                   "secrets_guard-Abschnitt der Config pruefen.", "")
+    if verdict:
+        _block(verdict)
 
     sys.exit(0)
 

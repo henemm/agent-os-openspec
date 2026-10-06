@@ -269,6 +269,142 @@ def load_config() -> dict:
     return config
 
 
+def secrets_guard_patterns(config: "dict | None" = None) -> "tuple[list, list]":
+    """(sensitive_patterns, always_blocked) fuer secrets_guard UND bash_gate (#292).
+
+    Grundsatz wie bei allen Grenzen (#153): die Config kommt aus dem Haupt-Ordner.
+    Einzige Ausnahme: ein Worktree darf die secrets_guard-MUSTER seines Zweigs
+    selbst setzen — sonst blockt eine im Zweig bereits verengte Liste weiter mit
+    der alten, breiten Fassung harmlose Dateinamen (grep, ls, wc).
+
+    Damit eine Sitzung den Schutz im eigenen Zweig nicht abschalten kann, bleiben
+    die eingebauten Grundmuster (hook_utils.SECRETS_*: .env, credentials.json,
+    private Keys, .pem, .key, *.secret.*) immer Teil der Liste; der Zweig ersetzt
+    nur die projekteigenen Zusatzmuster. `enabled` wird nie aus dem Worktree
+    gelesen. Ungueltige Regex aus dem Worktree werden verworfen. Wirft nie.
+    """
+    from hook_utils import SECRETS_ALWAYS_BLOCKED, SECRETS_SENSITIVE_PATTERNS
+    base_sensitive, base_always = list(SECRETS_SENSITIVE_PATTERNS), list(SECRETS_ALWAYS_BLOCKED)
+    try:
+        cfg = (config if config is not None else load_config()).get("secrets_guard") or {}
+    except Exception:
+        cfg = {}
+    sensitive = list(cfg.get("sensitive_patterns", base_sensitive))
+    always = list(cfg.get("always_blocked", base_always))
+    try:
+        override = _worktree_secrets_section()
+    except Exception:
+        override = None
+    if override:
+        def floor(base: list, branch) -> list:
+            valid = []
+            for p in branch if isinstance(branch, list) else []:
+                # Nur Text-Muster begrenzter Laenge: `!!binary` liefert bytes, die
+                # re.compile annimmt, re.search auf str aber mit TypeError quittiert.
+                if not isinstance(p, str) or len(p) > _MAX_BRANCH_PATTERN_LEN:
+                    continue
+                try:
+                    re.compile(p)
+                except Exception:  # re.error, TypeError, OverflowError (a{4294967296})
+                    continue
+                valid.append(p)
+            return base + [p for p in valid if p not in base]
+        if "sensitive_patterns" in override:
+            sensitive = floor(base_sensitive, override["sensitive_patterns"])
+        if "always_blocked" in override:
+            always = floor(base_always, override["always_blocked"])
+    return sensitive, always
+
+
+_MAX_BRANCH_PATTERN_LEN = 200
+# Groessere Zweig-Configs werden fuer secrets_guard ignoriert: YAML-Parsen kostet
+# rein in Python ~1,7 s je 230 KB, und der Hook hat 5 s — ein Timeout liesse den
+# Zugriff durch, BEVOR die Grundmuster pruefen (Pruefrunde 2 zu #292).
+_MAX_BRANCH_CONFIG_BYTES = 64 * 1024
+
+
+def secrets_guard_floor() -> "tuple[list, list] | None":
+    """Eingebaute Grundmuster, wenn ein Worktree-Abschnitt wirkt — sonst None (#292).
+
+    Die Hooks pruefen damit ZUERST allein gegen die Grundmuster: ein Muster aus
+    dem Zweig (ReDoS, Absturz) kann die Entscheidung ueber .env & Co. dann nicht
+    mehr verhindern. Ohne Worktree-Abschnitt bleibt alles wie bisher.
+    """
+    try:
+        if not _worktree_secrets_section():
+            return None
+    except Exception:
+        return None
+    from hook_utils import SECRETS_ALWAYS_BLOCKED, SECRETS_SENSITIVE_PATTERNS
+    return list(SECRETS_SENSITIVE_PATTERNS), list(SECRETS_ALWAYS_BLOCKED)
+
+
+def _is_genuine_worktree_of(worktree: Path, main_root: Path) -> bool:
+    """Ist `worktree` ein echter, registrierter Worktree des Repos unter `main_root`?
+
+    Die `.git`-Datei allein beweist nichts (sie ist frei faelschbar). Verlangt:
+    das dort genannte gitdir existiert, liegt unter `<main>/.git/worktrees/`
+    und verweist seinerseits (Datei `gitdir`) zurueck auf genau diesen Worktree.
+    """
+    try:
+        text = (worktree / ".git").read_text(errors="ignore")
+        line = next((l for l in text.splitlines() if l.startswith("gitdir:")), "")
+        gitdir = Path(line.split(":", 1)[1].strip())
+        if not gitdir.is_absolute():
+            gitdir = worktree / gitdir
+        gitdir = gitdir.resolve()
+        main_git = (main_root / ".git").resolve()
+        if gitdir.parent != main_git / "worktrees" or not gitdir.is_dir():
+            return False
+        back = Path((gitdir / "gitdir").read_text(errors="ignore").strip())
+        if not back.is_absolute():
+            back = gitdir / back
+        return back.resolve() == (worktree / ".git").resolve()
+    except Exception:
+        return False
+
+
+@lru_cache(maxsize=1)
+def _worktree_secrets_section() -> "dict | None":
+    """secrets_guard-Abschnitt der Worktree-Config, wenn er von dem des Haupt-Ordners abweicht."""
+    from hook_utils import find_worktree_root
+    main_root = find_project_root()
+    worktree = find_worktree_root()
+    if worktree is None or yaml is None:
+        return None
+    try:
+        if worktree.resolve() == main_root.resolve():
+            return None
+        # Nur ein echter Worktree DIESES Repos — nicht jeder Ordner mit einer
+        # `.git`-Datei, in dem die CWD gerade steht.
+        linked = find_main_repo_from_worktree(worktree)
+        if linked is None:
+            return None
+        linked, main_r = linked.resolve(), main_root.resolve()
+        if not (main_r == linked or linked in main_r.parents):
+            return None
+        if not _is_genuine_worktree_of(worktree, linked):
+            return None
+    except OSError:
+        return None
+    local = _find_config_file(worktree)
+    if local is None:
+        return None
+    try:
+        if not local.is_file() or local.stat().st_size > _MAX_BRANCH_CONFIG_BYTES:
+            return None
+    except OSError:
+        return None
+    section = (yaml.safe_load(local.read_text()) or {}).get("secrets_guard")
+    if not isinstance(section, dict):
+        return None
+    main_file = _find_config_file(main_root)
+    main_section = {}
+    if main_file is not None:
+        main_section = (yaml.safe_load(main_file.read_text()) or {}).get("secrets_guard") or {}
+    return section if section != main_section else None
+
+
 def load_local_overrides(root: Path) -> dict | None:
     """
     Load local override settings.
