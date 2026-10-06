@@ -203,13 +203,42 @@ def _git(args: "list[str]", cwd: Path, timeout: float) -> "str | None":
     # setzt GIT_ASKPASS), weder ssh-askpass noch Git Credential Manager.
     env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GIT_ASKPASS="", SSH_ASKPASS="",
                SSH_ASKPASS_REQUIRE="never", GCM_INTERACTIVE="never")
-    env.setdefault("GIT_SSH_COMMAND", "ssh -oBatchMode=yes")
+    # Eigene GIT_SSH_COMMAND des Users behalten, aber nie ohne BatchMode (#371).
+    ssh = env.get("GIT_SSH_COMMAND", "").strip() or "ssh"
+    env["GIT_SSH_COMMAND"] = ssh if "BatchMode" in ssh else f"{ssh} -oBatchMode=yes"
     try:
-        proc = subprocess.run(["git", *args], cwd=str(cwd), capture_output=True,
-                              text=True, timeout=timeout, env=env, stdin=subprocess.DEVNULL)
+        # Eigene Prozessgruppe: beim Timeout endet die GANZE Kette (remote-http,
+        # Credential-Helper, ssh) — nicht nur git selbst (#371).
+        proc = subprocess.Popen(["git", *args], cwd=str(cwd), stdout=subprocess.PIPE,
+                                stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+                                text=True, env=env, start_new_session=True)
     except Exception:
         return None
-    return proc.stdout.strip() if proc.returncode == 0 else None
+    try:
+        out, _ = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_group(proc)
+        return None
+    except Exception:
+        _kill_group(proc)
+        return None
+    return out.strip() if proc.returncode == 0 else None
+
+
+def _kill_group(proc) -> None:
+    """Prozessgruppe beenden; wirft nie."""
+    import signal
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+    try:
+        proc.wait(timeout=1)
+    except Exception:
+        pass
 
 
 def behind_lines(cwd: Path) -> "list[str]":
