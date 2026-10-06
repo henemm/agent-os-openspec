@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **#384 (Worktree-Sitzungen der Desktop-App):** Die Hooks fanden dort den aktiven Workflow nicht. Der Prozess-cwd lag nicht im Worktree, und `_find_worktree_root()` entscheidet über `Path.cwd()`. Der `phase_listener` meldete deshalb bei „approved“ und „go“ nur „kein auflösbarer Workflow“. Jetzt wechseln die Eingabe-Leser in `hook_utils` (und `footer_gate`) in das Verzeichnis aus dem Eingabefeld `cwd`, das laut Claude-Code-Doku dem Worktree folgt. Tests: `tests/test_hook_payload_cwd_384.py`.
+
 ## [3.38.4] - 2026-10-06
 
 ### Fixed

@@ -22,7 +22,7 @@ from pathlib import Path
 from hook_utils import setup_path
 setup_path()
 
-from hook_utils import block, find_project_root, framework_disabled, resolve_active_workflow  # noqa: E402
+from hook_utils import adopt_payload_cwd, block, find_project_root, framework_disabled, resolve_active_workflow  # noqa: E402
 from workflow import expected_footer_command  # noqa: E402
 
 # Marker-Zeile: „❗ Du: ..." bzw. „‼️ Du: ..." (Variation Selector optional).
@@ -173,6 +173,7 @@ def main() -> None:
         sys.exit(0)
     if not isinstance(payload, dict):
         sys.exit(0)
+    adopt_payload_cwd(payload)
 
     message = payload.get("last_assistant_message")
     if not isinstance(message, str) or not message:

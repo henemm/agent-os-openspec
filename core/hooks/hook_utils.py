@@ -714,6 +714,28 @@ def setup_path():
 _STDIN_PAYLOAD: dict = {}
 
 
+def adopt_payload_cwd(data) -> None:
+    """In das Verzeichnis aus dem Eingabefeld `cwd` wechseln (#384).
+
+    Alle Worktree-Aufloesungen (`_find_worktree_root`, aktiver Workflow,
+    Stop-Lock, Gate-Event-Log) entscheiden ueber `Path.cwd()`. In
+    Worktree-Sitzungen der Desktop-App liegt der Prozess-cwd des Hooks aber
+    nicht im Worktree; laut Claude-Code-Doku folgt nur das Eingabefeld `cwd`
+    dem Worktree. Fehlt es oder existiert das Verzeichnis nicht, bleibt alles,
+    wie es war.
+    """
+    if not isinstance(data, dict):
+        return
+    cwd = data.get("cwd")
+    if not isinstance(cwd, str) or not cwd.strip():
+        return
+    try:
+        if os.path.isdir(cwd):
+            os.chdir(cwd)
+    except OSError:
+        pass
+
+
 def get_tool_input() -> dict:
     """Parse tool input from CLAUDE_TOOL_INPUT env var or stdin.
     Returns parsed dict or empty dict on failure."""
@@ -725,6 +747,7 @@ def get_tool_input() -> dict:
             if isinstance(data, dict):
                 _STDIN_PAYLOAD.clear()
                 _STDIN_PAYLOAD.update(data)
+            adopt_payload_cwd(data)
             return data.get("tool_input", {})
         except (json.JSONDecodeError, Exception):
             return {}
@@ -746,6 +769,7 @@ def get_user_message() -> str:
     """
     try:
         data = json.load(sys.stdin)
+        adopt_payload_cwd(data)
         return data.get("prompt") or data.get("user_message", "")
     except (json.JSONDecodeError, Exception):
         return ""
@@ -755,6 +779,7 @@ def get_tool_result() -> dict:
     """Parse tool result from stdin (for PostToolUse hooks)."""
     try:
         data = json.load(sys.stdin)
+        adopt_payload_cwd(data)
         return data
     except (json.JSONDecodeError, Exception):
         return {}
