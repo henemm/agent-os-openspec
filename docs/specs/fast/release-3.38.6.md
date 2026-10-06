@@ -1,0 +1,25 @@
+# Fast Track: Release 3.38.6
+
+## Problem
+
+Der Fix zu #387 (`workflow.py remove-artifact`, Korrekturweg für falsch registrierte RED-Artefakte) erreicht ohne Versions-Bump keinen Plugin-Nutzer. Patch-Version: Fehlerbehebung, keine neue Funktion.
+
+## Scope
+
+- `.claude-plugin/plugin.json`, `CLAUDE.md`, `README.md`: Version 3.38.6
+- `CHANGELOG.md`: Abschnitt `[3.38.6]`
+- `skills/*/SKILL.md`, `.claude/commands/*.md`: neu erzeugt (`sync_skills.py`, `--refresh-aliases`)
+
+## Definition of Done
+
+Das Release-Gate (`release_check.py --pr-gate`) ist grün, und nach dem Merge entsteht der Tag `agent-os-openspec--v3.38.6` automatisch.
+
+## Acceptance Criteria
+
+- **AC-1:** Given der Versions-Bump, When `release_check.py --pr-gate --base origin/main` läuft, Then sind Version, README, CLAUDE.md, Tag und Skills grün.
+- **AC-2:** Given der Merge nach main, When der Release-Workflow läuft, Then existiert der Tag agent-os-openspec--v3.38.6 mit den Notizen aus dem CHANGELOG-Abschnitt.
+
+## Test Plan
+
+- `python3 scripts/release_check.py --pr-gate --base origin/main` (AC-1)
+- Volle Suite in der CI; Tag nach dem Merge per `git ls-remote --tags` prüfen (AC-2)
