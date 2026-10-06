@@ -1027,8 +1027,10 @@ def _validate_transition(data: dict, target: str) -> str | None:
     if tgt_idx < 0:
         return f"Unknown phase: {target}"
 
-    # Allow backward transitions (reset) and same-phase
-    if tgt_idx <= cur_idx:
+    # Allow backward transitions (reset) and same-phase — ausser Phase 8: der
+    # Abschluss (`complete`/`finish`) prueft immer voll, auch wenn der State schon
+    # auf phase8_complete steht (#337: sonst archivierte er ohne jede Pruefung).
+    if tgt_idx < cur_idx or (tgt_idx == cur_idx and target != "phase8_complete"):
         return None
 
     if tgt_idx >= PHASES.index("phase2_analyse"):

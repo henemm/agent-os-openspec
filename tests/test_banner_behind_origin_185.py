@@ -110,13 +110,13 @@ def test_no_askpass_dialog_on_fetch(repos, tmp_path, monkeypatch):
     session_banner.behind_lines(main)
     import subprocess as sp
     env = {}
-    orig = sp.run
+    orig = sp.Popen
 
     def capture(*a, **kw):
         env.update(kw.get("env") or {})
         return orig(*a, **kw)
     monkeypatch.setattr(session_banner, "_git", real_run)
-    monkeypatch.setattr(sp, "run", capture)
+    monkeypatch.setattr(sp, "Popen", capture)
     session_banner.behind_lines(main)
     assert env.get("GIT_ASKPASS") == "" and env.get("SSH_ASKPASS") == ""
     assert env.get("GIT_TERMINAL_PROMPT") == "0" and env.get("GCM_INTERACTIVE") == "never"
@@ -131,3 +131,38 @@ def test_remote_name_with_slash(repos, tmp_path):
     _push_foreign_commit(origin, tmp_path)
     lines = session_banner.behind_lines(main)
     assert lines and "1 Commit(s) hinter team/origin/main" in lines[0], lines
+
+
+# --- #371: keine Waisen nach dem Timeout, BatchMode auch bei eigener GIT_SSH_COMMAND ---
+
+def test_hanging_credential_helper_leaves_no_orphans(repos, tmp_path, monkeypatch):
+    origin, main = repos
+    marker = tmp_path / "helper_started"
+    helper = tmp_path / "helper.sh"
+    helper.write_text(f"#!/bin/sh\ntouch {marker}\nexec sleep 30\n")
+    helper.chmod(0o755)
+    # Remote, der nach Zugangsdaten fragt: ext::-Transport mit haengendem Helfer
+    _git(["config", "protocol.ext.allow", "always"], main)
+    _git(["remote", "set-url", "origin", f"ext::{helper}"], main)
+    import time
+    start = time.monotonic()
+    assert session_banner.behind_lines(main) == []
+    assert time.monotonic() - start < 5
+    time.sleep(0.3)
+    left = subprocess.run(["pgrep", "-f", str(helper)], capture_output=True, text=True).stdout
+    assert marker.exists(), "Testaufbau: Helfer muss gestartet sein"
+    assert left.strip() == "", f"Waisenprozesse: {left}"
+
+
+def test_user_ssh_command_gets_batchmode(monkeypatch, tmp_path):
+    seen = {}
+    import subprocess as sp
+    real = sp.Popen
+
+    def spy(*a, **kw):
+        seen.update(kw.get("env") or {})
+        return real(*a, **kw)
+    monkeypatch.setenv("GIT_SSH_COMMAND", "ssh -i ~/.ssh/deploy")
+    monkeypatch.setattr(sp, "Popen", spy)
+    session_banner._git(["--version"], tmp_path, 2)
+    assert seen["GIT_SSH_COMMAND"] == "ssh -i ~/.ssh/deploy -oBatchMode=yes"

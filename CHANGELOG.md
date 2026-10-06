@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **#337 (`complete`/`finish` in Phase 8):** Stand ein Workflow schon auf `phase8_complete`, prüfte der Abschluss nichts mehr. `_validate_transition` kehrte bei gleicher Phase sofort zurück, und der Workflow wurde ohne Adversary-Nachweis archiviert. Jetzt prüft der Abschluss immer voll; eine Transition in dieselbe Phase unterhalb von Phase 8 bleibt frei. Tests: `tests/test_complete_recheck_337.py`.
+- **#371 (Banner-Fetch):** Nach dem Timeout des `git fetch` aus #185 liefen Kindprozesse weiter: `git remote-http`, Credential-Helper und ssh.
+  - **Prozessgruppe:** git läuft jetzt in einer eigenen Prozessgruppe, die bei Timeout als Ganzes beendet wird.
+  - **Eigene `GIT_SSH_COMMAND`:** bleibt erhalten und bekommt `-oBatchMode=yes` angehängt, statt ohne BatchMode durchzulaufen.
+  - **Credential-Helper:** bleiben bewusst aktiv. Sonst verschwände die Warnung bei privaten HTTPS-Repos.
+  - **Tests:** in `tests/test_banner_behind_origin_185.py`.
+
 ## [3.38.2] - 2026-10-06
 
 ### Fixed
