@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.38.8] - 2026-10-07
+
 ### Changed
 
 - README: Befehlsanzahl (15), Alias-Empfehlung pro Projekt statt global (#87), Aufräumen verwaister Kurz-Aliase (`--refresh-aliases`/`--remove-aliases`) dokumentiert.
