@@ -445,15 +445,21 @@ agent-os-openspec/
 ## Updating an Existing Installation
 
 ```bash
-# Dry run — see what would change
+# Update — keeps files you changed locally
 python3 setup.py /path/to/project --update
 
-# Apply updates (preserves project-specific files)
+# Replace every framework file, local changes included
 python3 setup.py /path/to/project --update --force
 
 # Check installed version — copy mode only
 cat /path/to/project/.claude/framework_version.json
 ```
+
+`--update` remembers in `.claude/framework_manifest.json` what the framework last wrote (commit it).
+A file you changed since then stays as it is; the new framework version lands next to it as
+`<name>.new`, and the update lists it under "LOKAL GEAENDERT". Merge the two and delete the `.new`
+file. Installations from before this manifest are overwritten once, with the previous version saved
+under `.claude/update-backups/<time>/`.
 
 In **plugin mode** that file deliberately pins no version (`"framework_version": null`): updates
 run through `claude plugin update`, which never touches it, so any number in there would be wrong

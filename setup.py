@@ -220,14 +220,154 @@ def should_update_command(src: Path, dst: Path, force: bool = False) -> tuple[bo
     return False, "unchanged"
 
 
-def copy_core_components(project_path: Path):
-    """Copy core hooks, agents, commands, and tools."""
+# --- Lokale Anpassungen erhalten (#72) ---------------------------------------
+# Ein Update ersetzte jede Datei, deren Inhalt von der Framework-Fassung abwich —
+# auch Agent-/Befehlsdateien, die ein Projekt bewusst ergaenzt hatte. Das
+# Manifest merkt sich pro Datei den Hash dessen, was das Framework zuletzt
+# geschrieben hat. Weicht die Datei davon ab, hat das Projekt sie geaendert:
+# dann bleibt sie stehen, und die neue Fassung landet daneben als `<name>.new`.
+MANIFEST_REL = ".claude/framework_manifest.json"
+BACKUP_DIR_REL = ".claude/update-backups"
+
+
+def _sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def load_manifest(project_path: Path) -> dict:
+    """Manifest lesen; fehlend oder unlesbar ergibt ein leeres Manifest."""
+    path = project_path / MANIFEST_REL
+    try:
+        data = json.loads(path.read_text())
+        files = data.get("files")
+        return dict(files) if isinstance(files, dict) else {}
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
+def save_manifest(project_path: Path, manifest: dict) -> None:
+    path = project_path / MANIFEST_REL
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(
+        {"version": 1, "framework_version": FRAMEWORK_VERSION,
+         "files": dict(sorted(manifest.items()))}, indent=2) + "\n")
+
+
+class SyncReport:
+    """Ergebnis eines Datei-Abgleichs, fuer die Update-Zusammenfassung."""
+
+    def __init__(self, backup_stamp: "str | None" = None):
+        self.new: list = []
+        self.updated: list = []
+        self.unchanged: list = []
+        self.kept_local: list = []   # lokal geaendert -> <name>.new daneben
+        self.backed_up: list = []    # ohne Manifest ueberschrieben, Kopie gesichert
+        self.backup_stamp = backup_stamp or datetime.now().strftime("%Y%m%d-%H%M%S")
+
+
+def sync_file(project_path: Path, dst: Path, content: bytes, manifest: dict,
+              report: SyncReport, force: bool = False, mode: "int | None" = None) -> str:
+    """Eine Framework-Datei schreiben, ohne lokale Anpassungen still zu verlieren.
+
+    - fehlt die Datei: schreiben ("new")
+    - Inhalt gleich: nichts tun ("unchanged")
+    - `force`: ueberschreiben ("updated")
+    - Datei entspricht dem, was das Framework zuletzt schrieb: ueberschreiben
+    - Datei weicht davon ab (lokal geaendert): stehen lassen; hat sich die
+      Framework-Fassung seitdem geaendert, liegt sie als `<name>.new` daneben
+      ("kept_local"), sonst passiert nichts
+    - kein Manifest-Eintrag (Installation vor #72): ueberschreiben, alte Fassung
+      unter `.claude/update-backups/<zeit>/` sichern ("backed_up")
+    """
+    rel = dst.relative_to(project_path).as_posix()
+    new_hash = _sha256(content)
+    if not dst.exists():
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_bytes(content)
+        _apply_mode(dst, mode)
+        manifest[rel] = new_hash
+        report.new.append(rel)
+        return "new"
+    current = dst.read_bytes()
+    if current == content:
+        manifest[rel] = new_hash
+        stale = dst.with_name(dst.name + ".new")
+        if stale.exists() and stale.read_bytes() == content:
+            stale.unlink()  # Konflikt von frueher ist erledigt
+        report.unchanged.append(rel)
+        return "unchanged"
+    recorded = manifest.get(rel)
+    if not force and recorded and _sha256(current) != recorded:
+        if recorded == new_hash:
+            # Framework-Fassung seit dem letzten Schreiben unveraendert: es gibt
+            # nichts Neues zusammenzufuehren. Kein `.new`, keine Warnung — sonst
+            # kaeme beides nach jedem Zusammenfuehren bei jedem Update wieder.
+            report.unchanged.append(rel)
+            return "unchanged"
+        dst.with_name(dst.name + ".new").write_bytes(content)
+        # Angebotene Fassung merken: erst eine weitere Framework-Aenderung
+        # fuehrt zu einem neuen `.new` und einer neuen Warnung.
+        manifest[rel] = new_hash
+        report.kept_local.append(rel)
+        return "kept_local"
+    if not force and not recorded:
+        backup = project_path / BACKUP_DIR_REL / report.backup_stamp / rel
+        backup.parent.mkdir(parents=True, exist_ok=True)
+        backup.write_bytes(current)
+        report.backed_up.append(rel)
+    dst.write_bytes(content)
+    _apply_mode(dst, mode)
+    manifest[rel] = new_hash
+    report.updated.append(rel)
+    return "updated"
+
+
+def _apply_mode(dst: Path, mode: "int | None") -> None:
+    """Rechte der Quelle uebernehmen (wie shutil.copy), v. a. das Ausfuehrbar-Bit."""
+    if mode is not None:
+        try:
+            os.chmod(dst, mode & 0o777)
+        except OSError:
+            pass
+
+
+def _record(manifest: "dict | None", project_path: Path, dst: Path) -> None:
+    """Hash einer frisch geschriebenen Framework-Datei ins Manifest eintragen."""
+    if manifest is not None:
+        manifest[dst.relative_to(project_path).as_posix()] = _sha256(dst.read_bytes())
+
+
+def print_sync_warnings(report: SyncReport) -> None:
+    """Lokale Anpassungen laut melden — nie still verlieren (#72)."""
+    if report.kept_local:
+        print(f"\nLOKAL GEAENDERT — nicht ueberschrieben ({len(report.kept_local)}):")
+        for rel in report.kept_local:
+            print(f"  ! {rel}  (neue Fassung: {rel}.new)")
+        print("  Bitte die Unterschiede zusammenfuehren und die .new-Datei danach loeschen.")
+        print("  Alles mit der Framework-Fassung ersetzen: --update --force")
+    if report.backed_up:
+        print(f"\nUEBERSCHRIEBEN, ALTE FASSUNG GESICHERT ({len(report.backed_up)}):")
+        for rel in report.backed_up:
+            print(f"  ~ {rel}")
+        print(f"  Sicherung: {BACKUP_DIR_REL}/{report.backup_stamp}/")
+        print("  Diese Dateien wurden vor dem ersten Update mit Manifest installiert;")
+        print("  ob sie lokal angepasst waren, laesst sich nicht feststellen.")
+        print("  Eigene Ergaenzungen bitte aus der Sicherung zurueckholen.")
+
+
+def copy_core_components(project_path: Path, manifest: "dict | None" = None):
+    """Copy core hooks, agents, commands, and tools.
+
+    Mit `manifest` wird der Hash jeder geschriebenen Datei festgehalten, damit
+    ein spaeteres `--update` lokale Anpassungen erkennt (#72).
+    """
     # Copy hooks
     hooks_src = CORE_DIR / "hooks"
     hooks_dst = project_path / ".claude" / "hooks"
 
     for hook_file in hooks_src.glob("*.py"):
         shutil.copy(hook_file, hooks_dst / hook_file.name)
+        _record(manifest, project_path, hooks_dst / hook_file.name)
         print(f"  Copied hook: {hook_file.name}")
 
     # Copy agents
@@ -236,6 +376,7 @@ def copy_core_components(project_path: Path):
 
     for agent_file in agents_src.glob("*.md"):
         shutil.copy(agent_file, agents_dst / agent_file.name)
+        _record(manifest, project_path, agents_dst / agent_file.name)
         print(f"  Copied agent: {agent_file.name}")
 
     # Copy commands
@@ -244,6 +385,7 @@ def copy_core_components(project_path: Path):
 
     for cmd_file in commands_src.glob("*.md"):
         copy_command_file(cmd_file, commands_dst / cmd_file.name)
+        _record(manifest, project_path, commands_dst / cmd_file.name)
         print(f"  Copied command: {cmd_file.name}")
 
     # Copy tools (v2.0 - validation, E2E testing, output validation)
@@ -254,6 +396,7 @@ def copy_core_components(project_path: Path):
         tools_dst.mkdir(parents=True, exist_ok=True)
         for tool_file in tools_src.glob("*.py"):
             shutil.copy(tool_file, tools_dst / tool_file.name)
+            _record(manifest, project_path, tools_dst / tool_file.name)
             print(f"  Copied tool: {tool_file.name}")
 
     # Copy standards (v2.0 - scoping limits, testing, etc.)
@@ -297,8 +440,26 @@ def install_ci_gate(project_path: Path, force: bool = False):
     print("  Created: .github/workflows/spec-gate.yml")
 
 
-def install_module(project_path: Path, module_name: str):
-    """Install a specific module."""
+def install_module(project_path: Path, module_name: str, manifest: "dict | None" = None,
+                   report: "SyncReport | None" = None, force: bool = True):
+    """Install a specific module.
+
+    Mit `manifest` (Update-Pfad) gilt fuer jede Datei `sync_file`: lokal
+    geaenderte Dateien bleiben stehen (#72). Ohne Manifest wird kopiert wie bisher.
+    """
+    report = report if report is not None else SyncReport()
+
+    def put(src: Path, dst: Path, content: "bytes | None" = None) -> None:
+        if manifest is None:
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            if content is None:
+                shutil.copy(src, dst)
+            else:
+                dst.write_bytes(content)
+            return
+        data = content if content is not None else src.read_bytes()
+        sync_file(project_path, dst, data, manifest, report, force, mode=src.stat().st_mode)
+
     module_dir = MODULES_DIR / module_name
 
     if not module_dir.exists():
@@ -310,7 +471,7 @@ def install_module(project_path: Path, module_name: str):
     if hooks_src.exists():
         hooks_dst = project_path / ".claude" / "hooks"
         for hook_file in hooks_src.glob("*.py"):
-            shutil.copy(hook_file, hooks_dst / hook_file.name)
+            put(hook_file, hooks_dst / hook_file.name)
             print(f"  Copied module hook: {hook_file.name}")
 
     # Copy module agents
@@ -318,7 +479,7 @@ def install_module(project_path: Path, module_name: str):
     if agents_src.exists():
         agents_dst = project_path / ".claude" / "agents"
         for agent_file in agents_src.glob("*.md"):
-            shutil.copy(agent_file, agents_dst / agent_file.name)
+            put(agent_file, agents_dst / agent_file.name)
             print(f"  Copied module agent: {agent_file.name}")
 
     # Copy module commands (slash commands)
@@ -326,7 +487,7 @@ def install_module(project_path: Path, module_name: str):
     if commands_src.exists():
         commands_dst = project_path / ".claude" / "commands"
         for cmd_file in commands_src.glob("*.md"):
-            copy_command_file(cmd_file, commands_dst / cmd_file.name)
+            put(cmd_file, commands_dst / cmd_file.name, copy_command_text(cmd_file.read_text()).encode())
             print(f"  Copied module command: {cmd_file.name}")
 
     # Copy module tools
@@ -336,7 +497,7 @@ def install_module(project_path: Path, module_name: str):
         tools_dst.mkdir(exist_ok=True)
         for tool_file in tools_src.glob("*"):
             if tool_file.is_file():
-                shutil.copy(tool_file, tools_dst / tool_file.name)
+                put(tool_file, tools_dst / tool_file.name)
                 print(f"  Copied tool: {tool_file.name}")
 
     # Copy module standards (for ios-swiftui and similar modules)
@@ -348,7 +509,7 @@ def install_module(project_path: Path, module_name: str):
                 dst_subdir = standards_dst / subdir.name
                 dst_subdir.mkdir(parents=True, exist_ok=True)
                 for std_file in subdir.glob("*.md"):
-                    shutil.copy(std_file, dst_subdir / std_file.name)
+                    put(std_file, dst_subdir / std_file.name)
                     print(f"  Copied standard: {subdir.name}/{std_file.name}")
 
     # Copy module workflows
@@ -357,7 +518,7 @@ def install_module(project_path: Path, module_name: str):
         workflows_dst = project_path / ".agent-os" / "workflows"
         workflows_dst.mkdir(parents=True, exist_ok=True)
         for wf_file in workflows_src.glob("*.md"):
-            shutil.copy(wf_file, workflows_dst / wf_file.name)
+            put(wf_file, workflows_dst / wf_file.name)
             print(f"  Copied workflow: {wf_file.name}")
 
     # Copy module templates
@@ -366,14 +527,14 @@ def install_module(project_path: Path, module_name: str):
         docs_dst = project_path / "DOCS"
         docs_dst.mkdir(exist_ok=True)
         for tmpl_file in templates_src.glob("*.md"):
-            shutil.copy(tmpl_file, docs_dst / tmpl_file.name)
+            put(tmpl_file, docs_dst / tmpl_file.name)
             print(f"  Copied template: {tmpl_file.name}")
 
     # Copy module config
     module_config = module_dir / "config.yaml"
     if module_config.exists():
         dst = project_path / ".claude" / f"module_{module_name}.yaml"
-        shutil.copy(module_config, dst)
+        put(module_config, dst)
         print(f"  Copied module config: module_{module_name}.yaml")
 
     return True
@@ -907,93 +1068,50 @@ def update_project(project_path: Path, modules: list, force: bool = False):
     print()
 
     # Track changes
-    updated = []
-    skipped = []
     new_files = []
+    manifest = load_manifest(project_path)
+    report = SyncReport()
 
-    # Update core hooks
-    hooks_src = CORE_DIR / "hooks"
+    def sync_dir(src_dir: Path, pattern: str, dst_dir: Path, render=None) -> None:
+        if not src_dir.exists():
+            return
+        for src in sorted(src_dir.glob(pattern)):
+            if not src.is_file():
+                continue
+            content = render(src).encode() if render else src.read_bytes()
+            sync_file(project_path, dst_dir / src.name, content, manifest, report, force,
+                      mode=src.stat().st_mode)
+
     hooks_dst = project_path / ".claude" / "hooks"
-
     if hooks_dst.exists():
-        for hook_file in hooks_src.glob("*.py"):
-            dst = hooks_dst / hook_file.name
-            should_update, reason = should_update_file(hook_file, dst, force)
-
-            if should_update:
-                shutil.copy(hook_file, dst)
-                if reason == "new file":
-                    new_files.append(f"hook: {hook_file.name}")
-                else:
-                    updated.append(f"hook: {hook_file.name}")
-            else:
-                skipped.append(f"hook: {hook_file.name}")
+        sync_dir(CORE_DIR / "hooks", "*.py", hooks_dst)
 
     # CI-Gate mitziehen (Script immer, Action-Vorlage nur falls fehlend)
     install_ci_gate(project_path)
 
-    # Update core commands
-    commands_src = CORE_DIR / "commands"
     commands_dst = project_path / ".claude" / "commands"
-
     if commands_dst.exists():
-        for cmd_file in commands_src.glob("*.md"):
-            dst = commands_dst / cmd_file.name
-            should_update, reason = should_update_command(cmd_file, dst, force)
+        sync_dir(CORE_DIR / "commands", "*.md", commands_dst,
+                 render=lambda src: copy_command_text(src.read_text()))
 
-            if should_update:
-                copy_command_file(cmd_file, dst)
-                if reason == "new file":
-                    new_files.append(f"command: {cmd_file.name}")
-                else:
-                    updated.append(f"command: {cmd_file.name}")
-            else:
-                skipped.append(f"command: {cmd_file.name}")
-
-    # Update core agents
-    agents_src = CORE_DIR / "agents"
     agents_dst = project_path / ".claude" / "agents"
-
     if agents_dst.exists():
-        for agent_file in agents_src.glob("*.md"):
-            dst = agents_dst / agent_file.name
-            should_update, reason = should_update_file(agent_file, dst, force)
+        sync_dir(CORE_DIR / "agents", "*.md", agents_dst)
 
-            if should_update:
-                shutil.copy(agent_file, dst)
-                if reason == "new file":
-                    new_files.append(f"agent: {agent_file.name}")
-                else:
-                    updated.append(f"agent: {agent_file.name}")
-            else:
-                skipped.append(f"agent: {agent_file.name}")
+    if (CORE_DIR / "tools").exists():
+        sync_dir(CORE_DIR / "tools", "*.py", project_path / ".claude" / "tools")
 
-    # Update core tools (v2.0)
-    tools_src = CORE_DIR / "tools"
-    tools_dst = project_path / ".claude" / "tools"
-
-    if tools_src.exists():
-        tools_dst.mkdir(parents=True, exist_ok=True)
-        for tool_file in tools_src.glob("*.py"):
-            dst = tools_dst / tool_file.name
-            should_update, reason = should_update_file(tool_file, dst, force)
-
-            if should_update:
-                shutil.copy(tool_file, dst)
-                if reason == "new file":
-                    new_files.append(f"tool: {tool_file.name}")
-                else:
-                    updated.append(f"tool: {tool_file.name}")
-            else:
-                skipped.append(f"tool: {tool_file.name}")
-
-    # Update modules
+    # Update modules — dieselbe Regel wie fuer Core-Dateien (#72)
     for module in modules:
         module_dir = MODULES_DIR / module
         if module_dir.exists():
             print(f"\nUpdating module: {module}...")
-            # Similar logic for module files...
-            install_module(project_path, module)
+            install_module(project_path, module, manifest=manifest, report=report, force=force)
+
+    save_manifest(project_path, manifest)
+    updated = report.updated
+    skipped = report.unchanged
+    new_files.extend(report.new)
 
     # Laufzeit-Eintraege nachziehen — auch in Projekten, die vor #78
     # installiert wurden.
@@ -1056,6 +1174,8 @@ def update_project(project_path: Path, modules: list, force: bool = False):
 
     if skipped and not force:
         print(f"\nUnchanged ({len(skipped)}): Use --force to overwrite all")
+
+    print_sync_warnings(report)
 
     print(f"\nFramework updated to version {FRAMEWORK_VERSION}")
 
@@ -1377,12 +1497,14 @@ Available modules:
     print("  Created: docs/context/")
 
     print("\nCopying core components...")
-    copy_core_components(project_path)
+    manifest = load_manifest(project_path)
+    copy_core_components(project_path, manifest)
     install_ci_gate(project_path)
 
     for module in args.modules:
         print(f"\nInstalling module: {module}...")
-        install_module(project_path, module)
+        install_module(project_path, module, manifest=manifest, force=True)
+    save_manifest(project_path, manifest)
 
     print("\nGenerating configuration...")
     generate_config_yaml(project_path, args.modules)
