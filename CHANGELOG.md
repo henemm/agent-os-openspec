@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **#382 (Banner liest core.sshCommand zu oft):** `session_banner._git` las vor jedem der rund fünf Git-Aufrufe `core.sshCommand` mit festem 1-s-Timeout, obwohl nur der Fetch ssh nutzt. Ein hängendes `git config` konnte so das 4-s-Budget sprengen. Jetzt liest nur der Fetch die Einstellung, höchstens 1 s und innerhalb seines eigenen Timeouts. Tests: `tests/test_banner_ssh_config_382.py`.
+
 ## [3.38.7] - 2026-10-07
 
 ### Fixed

@@ -215,7 +215,7 @@ def _ssh_program(cmd: str) -> str:
     return base[:-4] if base.endswith(".exe") else base
 
 
-def _core_ssh_command(cwd) -> str:
+def _core_ssh_command(cwd, timeout: float = 1) -> str:
     """`core.sshCommand` aus der Git-Config oder "" — wirft nie."""
     import subprocess
     if cwd is None:
@@ -223,13 +223,13 @@ def _core_ssh_command(cwd) -> str:
     try:
         r = subprocess.run(["git", "config", "--get", "core.sshCommand"], cwd=str(cwd),
                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                           stdin=subprocess.DEVNULL, text=True, timeout=1)
+                           stdin=subprocess.DEVNULL, text=True, timeout=timeout)
         return r.stdout.strip() if r.returncode == 0 else ""
     except Exception:
         return ""
 
 
-def _batch_ssh(env: dict, cwd=None) -> None:
+def _batch_ssh(env: dict, cwd=None, timeout: float = 1) -> None:
     """Eigenes ssh-Kommando des Users behalten, aber nie ohne BatchMode (#371).
 
     `-oBatchMode=yes` versteht nur OpenSSH. Bei plink/putty brach der Fetch
@@ -245,12 +245,17 @@ def _batch_ssh(env: dict, cwd=None) -> None:
     if env.get("GIT_SSH_VARIANT", "").strip().lower() in _PLINK_VARIANTS:
         return
     if not ssh:
-        ssh = _core_ssh_command(cwd)
+        ssh = _core_ssh_command(cwd, timeout)
     ssh = ssh or "ssh"
     if "BatchMode" in ssh:
         return
     if _ssh_program(ssh) == "ssh":
         env["GIT_SSH_COMMAND"] = f"{ssh} -oBatchMode=yes"
+
+
+def _monotonic() -> float:
+    import time
+    return time.monotonic()
 
 
 def _git(args: "list[str]", cwd: Path, timeout: float) -> "str | None":
@@ -260,10 +265,15 @@ def _git(args: "list[str]", cwd: Path, timeout: float) -> "str | None":
     # setzt GIT_ASKPASS), weder ssh-askpass noch Git Credential Manager.
     env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GIT_ASKPASS="", SSH_ASKPASS="",
                SSH_ASKPASS_REQUIRE="never", GCM_INTERACTIVE="never")
-    try:
-        _batch_ssh(env, cwd)
-    except Exception:
-        pass
+    if "fetch" in args:
+        # Nur der Fetch nutzt ssh. Das Config-Lesen zaehlt zum Timeout des
+        # Aufrufs, damit ein haengendes `git config` das Budget nicht sprengt (#382).
+        start = _monotonic()
+        try:
+            _batch_ssh(env, cwd, min(1.0, timeout))
+        except Exception:
+            pass
+        timeout = max(0.1, timeout - (_monotonic() - start))
     try:
         # Eigene Prozessgruppe: beim Timeout endet die GANZE Kette (remote-http,
         # Credential-Helper, ssh) — nicht nur git selbst (#371).

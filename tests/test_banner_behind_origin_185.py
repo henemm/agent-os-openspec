@@ -164,5 +164,6 @@ def test_user_ssh_command_gets_batchmode(monkeypatch, tmp_path):
         return real(*a, **kw)
     monkeypatch.setenv("GIT_SSH_COMMAND", "ssh -i ~/.ssh/deploy")
     monkeypatch.setattr(sp, "Popen", spy)
-    session_banner._git(["--version"], tmp_path, 2)
+    # Nur der Fetch nutzt ssh und bekommt BatchMode (#382); kein Remote, scheitert lokal
+    session_banner._git(["fetch", "--quiet", "nonexistent-remote"], tmp_path, 2)
     assert seen["GIT_SSH_COMMAND"] == "ssh -i ~/.ssh/deploy -oBatchMode=yes"
