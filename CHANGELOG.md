@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **#72 (Update überschreibt lokale Anpassungen still):** `setup.py --update` ersetzte jede Hook-, Befehls-, Agent- und Tool-Datei, deren Inhalt von der Framework-Fassung abwich, auch bewusst ergänzte Abschnitte in Projekt-Agenten. Jetzt merkt sich `.claude/framework_manifest.json` den Hash dessen, was das Framework zuletzt geschrieben hat.
+  - **Lokal geändert:** Die Datei bleibt stehen. Hat sich die Framework-Fassung seitdem geändert, landet sie als `<name>.new` daneben, und das Update meldet die Datei unter „LOKAL GEAENDERT“. Jede neue Framework-Fassung wird nur einmal angeboten: Nach dem Zusammenführen kommt die Warnung nicht bei jedem Update wieder.
+  - **Unverändert:** Die Datei wird wie bisher aktualisiert.
+  - **Installation ohne Manifest:** Die Datei wird einmal überschrieben, die alte Fassung unter `.claude/update-backups/<zeit>/` gesichert und gemeldet.
+  - **`--force`** ersetzt weiterhin alles.
+  - **Module:** Dieselbe Regel gilt für Modul-Dateien (Hooks, Agenten, Befehle, Tools, Standards, Vorlagen, Modul-Config), die ein Update bisher ungeprüft neu kopierte.
+  - README: `--update` ist kein Probelauf; der Abschnitt beschreibt jetzt das tatsächliche Verhalten.
+  - Tests: `tests/test_setup_update_keeps_local_72.py`.
+
 ## [3.38.8] - 2026-10-07
 
 ### Changed
