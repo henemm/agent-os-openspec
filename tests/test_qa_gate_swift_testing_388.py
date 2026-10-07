@@ -230,3 +230,71 @@ def test_known_issue_pass_is_not_red(tmp_path):
             + GREEN_SUMMARY + XCTEST_ZERO + "** TEST SUCCEEDED **\n")
     valid, msg = _write(tmp_path, text)
     assert valid, msg
+
+
+# --- Adversary-Runde 2 (#390) ---
+
+def test_recorded_known_issue_is_not_red(tmp_path):
+    text = (XCODE_HEAD
+            + "✖ Test a() recorded a known issue at A.swift:3:5: Expectation failed: (x → 1) == 2\n"
+            + "✖ Test a() passed after 0.001 seconds with 1 known issue.\n"
+            + "✔ Test run with 1 test in 0 suites passed after 0.002 seconds with 1 known issue.\n"
+            + XCTEST_ZERO + "** TEST SUCCEEDED **\n")
+    valid, msg = _write(tmp_path, text)
+    assert valid, msg
+
+
+def test_known_issue_text_in_real_failure_stays_red(tmp_path):
+    text = (XCTEST_ZERO
+            + "✘ Test x() failed after 0.1 seconds: expected passed with known issue\n"
+            + "✔ Test run with 1 test in 0 suites passed after 0.1 seconds.\n")
+    valid, msg = _write(tmp_path, text)
+    assert not valid, msg
+
+
+def test_cross_glyph_real_failure_is_red(tmp_path):
+    text = (XCTEST_ZERO + "✖ Test x() failed after 0.1 seconds with 1 issue.\n"
+            + "✔ Test run with 1 test in 0 suites passed after 0.1 seconds.\n")
+    valid, msg = _write(tmp_path, text)
+    assert not valid, msg
+
+
+PYTEST_RED = (
+    "============================= test session starts ==============================\n"
+    "collected 5 items\n\n"
+    "tests/test_a.py ....F                                                    [100%]\n\n"
+    "=================================== FAILURES ===================================\n"
+    "___________________________________ test_e ____________________________________\n"
+    "E       assert 1 == 2\n"
+)
+
+
+@pytest.mark.parametrize("stray", [
+    "- Test run with 5 tests passed\n",
+    "Suite Auth passed\n✔ ok\n",
+])
+def test_stray_swift_like_line_in_red_pytest_stays_red(tmp_path, stray):
+    text = PYTEST_RED + stray + "========================= 1 failed, 4 passed in 0.12s =========================\n"
+    valid, msg = _write(tmp_path, text)
+    assert not valid, msg
+
+
+def test_stray_suite_line_in_red_mocha_stays_red(tmp_path):
+    text = ("  Login\n    ✔ a\n    1) b\n\nSuite Login passed\n\n"
+            "  1 passing (12ms)\n  1 failing\n\n  1) Login\n       b:\n     AssertionError: x\n")
+    valid, msg = _write(tmp_path, text)
+    assert not valid, msg
+
+
+def test_mocha_title_with_suite_word_does_not_trigger_swift(tmp_path):
+    text = ("  Teardown\n    ✔ Suite teardown failed gracefully\n    ✔ other\n\n"
+            "  2 passing (12ms)\n" + "x" * 60 + "\n")
+    valid, msg = _write(tmp_path, text)
+    assert "Swift" not in msg, msg
+
+
+def test_green_swift_with_red_pytest_summary_is_red(tmp_path):
+    text = (PYTEST_RED + "✔ Test run with 3 tests in 1 suite passed after 0.01 seconds.\n"
+            + "========================= 1 failed, 4 passed in 0.12s =========================\n")
+    valid, msg = _write(tmp_path, text)
+    assert not valid, msg

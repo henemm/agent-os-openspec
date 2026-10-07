@@ -60,21 +60,30 @@ _EXECUTED_RE = re.compile(
 # ✔/✘-Zeilen je Test und `Suite "…" passed|failed`. Ein ✔ allein (mocha, node
 # spec) ist KEIN Swift-Testing-Beleg — erst Summary oder Suite-Zeile aktivieren
 # den Zweig.
-# Fuehrendes Symbol: ✔/✘/… bzw. auf macOS SF-Symbols aus der Private-Use-Area
-# (􁁛 pass, 􀢄 fail), optional mit Variationsselektor, danach beliebiger Leerraum.
-_SWIFT_GLYPH = r"[^\w\s\"]︎?️?"
+# Fuehrendes Symbol: nur die Swift-Testing-Glyphen ✔ ✘ ✖ ◇ ➜ bzw. auf macOS
+# SF-Symbols aus der Private-Use-Area (􁁛 pass, 􀢄 fail), optional mit
+# Variationsselektor. Pflicht fuer Summary und Suite-Zeile, ebenso das
+# `after …` dahinter: so aktiviert eine zufaellige Zeile wie `Suite Auth passed`
+# oder `- Test run with 5 tests passed` im Log eines anderen Runners den Zweig
+# nicht (#390).
+_SWIFT_GLYPH = "[\u2714\u2718\u2716\u25c7\u279c\U00100000-\U0010fffd]\ufe0e?\ufe0f?"
 _SWIFT_RUN_RE = re.compile(
-    r"(?m)^\s*(?:" + _SWIFT_GLYPH + r"\s+)?Test run with (\d{1,9}) tests?\b.*?\b(passed|failed)\b")
+    r"(?m)^\s*" + _SWIFT_GLYPH
+    + r"\s+Test run with (\d{1,9}) tests?\b[^\n]*?\b(passed|failed) after\b")
 # Suite-Namen sind nur mit Anzeigenamen gequotet: `Suite "Name" passed` / `Suite MyTests passed`
+# Ohne Glyphe (xcbeautify) nur die gequotete Form; die ungequotete braucht die Glyphe.
 _SWIFT_SUITE_RE = re.compile(
-    r'(?m)^\s*(?:' + _SWIFT_GLYPH + r'\s+)?Suite (?:"[^"\n]*"|[^\s"]+) (passed|failed)\b')
+    r'(?m)^\s*(?:' + _SWIFT_GLYPH + r'\s+Suite (?:"[^"\n]*"|[^\s"]+)|Suite "[^"\n]*")'
+    r' (passed|failed) after\b')
 _SWIFT_PASS_LINE_RE = re.compile(
-    "(?m)^\\s*[✔\U0010105b]︎?️?\\s+(?!Suite |Test run with )\\S")
-_SWIFT_FAIL_LINE_RE = re.compile(
-    "(?m)^\\s*[✘✖\U00100884]︎?️?\\s+\\S.*$")
-# Bestanden mit bekanntem Problem (withKnownIssue) ist kein Fehlschlag
-_SWIFT_KNOWN_ISSUE_PASS_RE = re.compile(r"\bpassed\b.*\bknown issues?\b")
-_SWIFT_SKIP_LINE_RE = re.compile("(?m)^\\s*➜︎?️?\\s+Test .*\\bskipped\\b")
+    "(?m)^\\s*[\u2714\U0010105b]\ufe0e?\ufe0f?\\s+(?!Suite |Test run with )\\S")
+# ✘ und 􀢄 sind immer Fehlschlag; ✖ ist bei Swift Testing auch das Symbol fuer
+# bekannte Probleme (withKnownIssue) und zaehlt nur ohne diese Form.
+_SWIFT_FAIL_LINE_RE = re.compile("(?m)^\\s*[\u2718\U00100884]\ufe0e?\ufe0f?\\s+\\S")
+_SWIFT_CROSS_LINE_RE = re.compile("(?m)^\\s*\u2716\ufe0e?\ufe0f?\\s+(\\S.*)$")
+_SWIFT_KNOWN_ISSUE_RE = re.compile(
+    r"^Test .*?(?:\bpassed after\b.*\bwith \d+ known issues?\b|\brecorded a known issue\b)")
+_SWIFT_SKIP_LINE_RE = re.compile("(?m)^\\s*\u279c\ufe0e?\ufe0f?\\s+Test .*\\bskipped\\b")
 # Abbruch neben gruenem Swift Testing: Crash, Build- oder Testlauf-Fehler
 _SWIFT_ABORT_RE = re.compile(
     r"(?m)\*\* (?:TEST (?:EXECUTE )?|BUILD )FAILED \*\*|^\s*Testing failed:"
@@ -153,6 +162,23 @@ def _evaluate_executed(total: int, skipped: int, failures: int) -> tuple[bool, s
     return True, f"Tests PASSED: {total} tests, 0 failures{suffix}"
 
 
+def _other_runner_red(content: str) -> bool:
+    """Rote Evidenz eines anderen Runners im selben Log (#390).
+
+    Ein gruenes Swift-Testing-Ergebnis kehrt vor den pytest-/go-/cargo-/
+    mocha-/jest-Auswertungen zurueck und darf deren Rot nicht ueberstimmen.
+    """
+    line = _find_pytest_summary_line(content)
+    if line is not None:
+        verdict = _evaluate_pytest_summary(line)
+        if verdict is not None and not verdict[0]:
+            return True
+    return bool(_GO_PKG_FAIL_RE.search(content) or "\n--- FAIL: " in "\n" + content
+                or _CARGO_FAILED_RE.search(content)
+                or re.search(r"(?m)^\s*\d+ failing\b", content)
+                or re.search(r"(?m)^Tests:.*\b[1-9]\d* failed\b", content))
+
+
 def _swift_testing_result(content: str) -> "tuple[bool | None, int, int] | None":
     """Swift-Testing-Befund (#388): (gruen?, Anzahl Tests, uebersprungen).
 
@@ -166,10 +192,11 @@ def _swift_testing_result(content: str) -> "tuple[bool | None, int, int] | None"
     if not runs and not suites:
         return None
     skipped = len(_SWIFT_SKIP_LINE_RE.findall(content))
-    fail_lines = [m.group(0) for m in _SWIFT_FAIL_LINE_RE.finditer(content)
-                  if not _SWIFT_KNOWN_ISSUE_PASS_RE.search(m.group(0))]
+    cross_fails = [m.group(1) for m in _SWIFT_CROSS_LINE_RE.finditer(content)
+                   if not _SWIFT_KNOWN_ISSUE_RE.search(m.group(1))]
     if (any(status == "failed" for _, status in runs) or "failed" in suites
-            or fail_lines or _SWIFT_ABORT_RE.search(content)):
+            or _SWIFT_FAIL_LINE_RE.search(content) or cross_fails
+            or _SWIFT_ABORT_RE.search(content) or _other_runner_red(content)):
         return False, 0, skipped
     if runs:
         return True, sum(int(n) for n, _ in runs), skipped
