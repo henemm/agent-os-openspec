@@ -80,8 +80,8 @@ python3 setup.py /path/to/your/project --module ios-swiftui
 # Add short slash-command aliases (e.g. /50-implement instead of /agent-os-openspec:50-implement)
 python3 setup.py /path/to/your/project --command-aliases   # recommended: per project (a global alias in ~ can shadow a project's own command, #87)
 
-# Update an existing installation
-python3 setup.py /path/to/your/project --update --force
+# Update an existing installation (keeps files you changed locally, see below)
+python3 setup.py /path/to/your/project --update
 ```
 
 Already on Option B and want to switch to the plugin? Run `python3 migrate_to_plugin.py /path/to/project --apply` — it removes the now-redundant local hook copies and points your project at the plugin instead. Hook commands your project owns are kept and re-anchored at `${CLAUDE_PROJECT_DIR}`: hooks run in the session's *current* directory, so a cwd-relative path (`python3 .claude/hooks/x.py`) fails the moment the session sits in a subfolder. Run it without `--apply` first — the dry run reports exactly what it would change.
