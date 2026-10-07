@@ -52,6 +52,15 @@ cd /path/to/your/project
 python3 /path/to/agent-os-openspec/setup.py . --command-aliases
 ```
 
+Aliases are copies and do not disappear when a command is removed from the plugin (e.g. `/00-bug`, removed in #333). The session banner warns about such orphans; clean up with:
+
+```bash
+python3 /path/to/agent-os-openspec/setup.py /path/to/your/project --refresh-aliases   # refresh outdated aliases, delete orphaned ones
+python3 /path/to/agent-os-openspec/setup.py /path/to/your/project --remove-aliases    # delete all marked aliases (add --global for ~)
+```
+
+Only files carrying the alias marker are touched; your own commands are kept.
+
 Optional domain modules (iOS/SwiftUI, Home Assistant) are enabled per project via `openspec.yaml` — see [Available Modules](#available-modules). A root `config.yaml` also works, but only if it contains a framework block; one with nothing but `modules:` (or `project`/`agents`/`deploy`/`hooks`) is treated as an app config and skipped (#372).
 
 ### Option B — As Framework Files Copied into Your Project
@@ -69,7 +78,7 @@ python3 setup.py /path/to/your/project
 python3 setup.py /path/to/your/project --module ios-swiftui
 
 # Add short slash-command aliases (e.g. /50-implement instead of /agent-os-openspec:50-implement)
-python3 setup.py ~ --command-aliases   # recommended: global (~), covers all projects
+python3 setup.py /path/to/your/project --command-aliases   # recommended: per project (a global alias in ~ can shadow a project's own command, #87)
 
 # Update an existing installation
 python3 setup.py /path/to/your/project --update --force
@@ -382,7 +391,7 @@ agent-os-openspec/
 │   │   ├── hook_utils.py                # Shared bootstrap
 │   │   └── config_loader.py             # YAML config loader
 │   ├── agents/              # Agent definitions (Markdown)
-│   └── commands/            # Slash command definitions (16 commands, see table above)
+│   └── commands/            # Slash command definitions (15 commands, see table above)
 │
 ├── modules/                 # Optional domain-specific modules
 │   ├── ios-swiftui/         # iOS/SwiftUI: TDD, localization, UI testing
