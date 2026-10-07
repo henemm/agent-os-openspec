@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **#388 (qa_gate und Swift Testing):** xcodebuild zählt `@Test`-Tests nicht in der Zeile `Executed N tests`. Ein Lauf nur mit Swift-Testing-Suite galt deshalb als „0 tests executed“, ein voller Lauf meldete nur die XCTest-Zahl. Jetzt wertet `qa_gate.py` die Swift-Testing-Summary (`Test run with N tests … passed|failed`) bzw. nach xcbeautify die `✔`/`✘`-Zeilen und `Suite "…" passed|failed` aus und addiert sie zur XCTest-Zahl. Jede `✘`-Zeile und jede fehlgeschlagene Suite macht den Lauf rot. Tests: `tests/test_qa_gate_swift_testing_388.py`.
+
 ## [3.38.6] - 2026-10-06
 
 ### Fixed

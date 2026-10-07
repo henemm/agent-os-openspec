@@ -38,6 +38,7 @@ TEST_PATTERNS = [
     r"\d+ tests? ran", r"OK \(", r"FAIL",
     r"--- (PASS|FAIL|SKIP):",      # go test -v (je Test) — Issue #76
     r"(?m)^(ok|FAIL)\s+\S+",       # go test (je Paket) — Issue #76
+    r"Test run with \d+ tests?",   # Swift Testing (Summary) — Issue #388
 ]
 
 # go test: Paket-Summenzeile MIT Dauer-/Cache-Suffix. Das Suffix ist Pflicht,
@@ -52,6 +53,19 @@ _GO_PKG_FAIL_RE = re.compile(r"(?m)^FAIL\s+\S+")
 _EXECUTED_RE = re.compile(
     r"Executed (\d+) tests?, with (?:(\d+) tests? skipped and )?(\d+) failures?"
 )
+
+# Swift Testing (#388): xcodebuild zaehlt `@Test`-Tests nicht in der
+# Executed-Zeile. Roh: `✔ Test run with N tests in K suites passed after …`
+# bzw. `✘ Test run with N tests … failed …`; nach xcbeautify bleiben nur die
+# ✔/✘-Zeilen je Test und `Suite "…" passed|failed`. Ein ✔ allein (mocha, node
+# spec) ist KEIN Swift-Testing-Beleg — erst Summary oder Suite-Zeile aktivieren
+# den Zweig.
+_SWIFT_RUN_RE = re.compile(
+    r"(?m)^\s*[✔✘✖]?\s*Test run with (\d{1,9}) tests?\b.*?\b(passed|failed)\b")
+_SWIFT_SUITE_RE = re.compile(r'(?m)^\s*[✔✘✖]?\s*Suite "[^"\n]*" (passed|failed)\b')
+_SWIFT_PASS_LINE_RE = re.compile(r"(?m)^\s*✔ (?!Suite \"|Test run with )\S")
+_SWIFT_FAIL_LINE_RE = re.compile(r"(?m)^\s*[✘✖] \S")
+_SWIFT_SKIP_LINE_RE = re.compile(r"(?m)^\s*➜ Test .*\bskipped\b")
 
 
 def _set_verdict(verdict: str) -> None:
@@ -125,6 +139,26 @@ def _evaluate_executed(total: int, skipped: int, failures: int) -> tuple[bool, s
         return _not_passed_skipped(skipped)
     suffix = f" ({skipped} skipped)" if skipped else ""
     return True, f"Tests PASSED: {total} tests, 0 failures{suffix}"
+
+
+def _swift_testing_result(content: str) -> "tuple[bool | None, int, int] | None":
+    """Swift-Testing-Befund (#388): (gruen?, Anzahl Tests, uebersprungen).
+
+    None = keine Swift-Testing-Ausgabe. gruen=False bei jeder ✘/✖-Zeile,
+    fehlgeschlagener Suite oder roter Summary. Anzahl: Summe der Summaries,
+    sonst ✔- plus ➜-Zeilen je Test (nach xcbeautify inkl. XCTest-Tests).
+    """
+    runs = _SWIFT_RUN_RE.findall(content)
+    suites = _SWIFT_SUITE_RE.findall(content)
+    if not runs and not suites:
+        return None
+    skipped = len(_SWIFT_SKIP_LINE_RE.findall(content))
+    if (any(status == "failed" for _, status in runs) or "failed" in suites
+            or _SWIFT_FAIL_LINE_RE.search(content)):
+        return False, 0, skipped
+    if runs:
+        return True, sum(int(n) for n, _ in runs), skipped
+    return True, len(_SWIFT_PASS_LINE_RE.findall(content)) + skipped, skipped
 
 
 def _evaluate_pytest_summary(line: str) -> "tuple[bool, str] | None":
@@ -307,10 +341,24 @@ def validate_test_output(filepath: str, infra: bool = False) -> tuple[bool, str]
     # Kehrt bei vorhandener Executed-Zeile IMMER zurueck — der spaetere
     # 'TEST SUCCEEDED'-Fallback kann die skipped-Regel daher nicht aushebeln.
     exec_rows = [tuple(int(x or 0) for x in m) for m in _EXECUTED_RE.findall(content)]
+    # Swift Testing (#388): jede rote Evidenz gewinnt; eine gruene Summary
+    # wird zur XCTest-Zahl addiert, sodass `Executed 0` sie nicht ueberstimmt.
+    swift = _swift_testing_result(content)
+    if swift is not None and not swift[0]:
+        return False, "Tests FAILED: Swift Testing meldet fehlgeschlagene Tests/Suites"
     if exec_rows:
         red_rows = [r for r in exec_rows if r[2] > 0]
         row = red_rows[0] if red_rows and exec_rows[-1][2] == 0 else exec_rows[-1]
+        if swift is not None and row[2] == 0:
+            _, n_swift, swift_skipped = swift
+            if _SWIFT_RUN_RE.search(content):
+                total = row[0] + n_swift
+            else:  # xcbeautify: ✔-Zeilen zaehlen XCTest bereits mit
+                total = max(row[0], n_swift)
+            row = (total, row[1] + swift_skipped, 0)
         return _evaluate_executed(*row)
+    if swift is not None:
+        return _evaluate_executed(swift[1], swift[2], 0)
 
     # Pattern: pytest summary line ("N passed, M failed, ...").
     # Bound to the real summary line (not a whole-text scan) and check the
