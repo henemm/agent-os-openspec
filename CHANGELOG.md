@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Doku zu #72: README-Schnellstart empfiehlt `--update` statt `--update --force` (sonst gingen lokale Anpassungen verloren); CLAUDE.md beschreibt das Manifest-Verhalten von `--update`.
+
 ## [3.39.0] - 2026-10-07
 
 ### Fixed

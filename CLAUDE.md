@@ -390,10 +390,11 @@ Wenn in einem Projekt eine Verbesserung am Framework entsteht:
 ### Improvements aus diesem Projekt beziehen
 
 ```bash
-# Framework in bestehendes Projekt aktualisieren
+# Framework in bestehendes Projekt aktualisieren — lokal geaenderte Dateien bleiben stehen,
+# neue Fassung als <name>.new daneben (Manifest .claude/framework_manifest.json, #72)
 python3 /path/to/agent-os-openspec/setup.py /path/to/project --update
 
-# Force-Update (alle Dateien überschreiben)
+# Force-Update (alle Dateien überschreiben, auch lokale Anpassungen)
 python3 /path/to/agent-os-openspec/setup.py /path/to/project --update --force
 
 # Neues Modul hinzufügen
