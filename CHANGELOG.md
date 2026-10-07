@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.39.0] - 2026-10-07
+
 ### Fixed
 
 - **#72 (Update überschreibt lokale Anpassungen still):** `setup.py --update` ersetzte jede Hook-, Befehls-, Agent- und Tool-Datei, deren Inhalt von der Framework-Fassung abwich, auch bewusst ergänzte Abschnitte in Projekt-Agenten. Jetzt merkt sich `.claude/framework_manifest.json` den Hash dessen, was das Framework zuletzt geschrieben hat.
