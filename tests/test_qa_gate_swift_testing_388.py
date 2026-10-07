@@ -150,3 +150,83 @@ def test_ac6_mocha_checkmarks_are_not_swift_testing(tmp_path):
     )
     valid, msg = _write(tmp_path, text)
     assert not valid, msg
+
+
+# --- Adversary-Runde 1 (#390) ---
+
+GREEN_SUMMARY = "✔ Test run with 3 tests in 1 suite passed after 0.001 seconds.\n"
+
+
+def test_crash_after_green_summary_is_red(tmp_path):
+    text = (XCODE_HEAD + GREEN_SUMMARY + XCTEST_ZERO
+            + "Testing failed:\n\tMyApp (12345) encountered an error (Crash)\n"
+            + "** TEST FAILED **\n")
+    valid, msg = _write(tmp_path, text)
+    assert not valid, msg
+
+
+def test_xcbeautify_crash_without_summary_is_red(tmp_path):
+    text = ('✔ Test a() passed after 0.001 seconds.\n'
+            '✔ Suite "S" passed after 0.01 seconds.\n'
+            "MyApp crashed\n** TEST FAILED **\n")
+    valid, msg = _write(tmp_path, text)
+    assert not valid, msg
+
+
+def test_restart_after_crash_is_red(tmp_path):
+    text = (XCODE_HEAD + GREEN_SUMMARY
+            + "Restarting after unexpected exit, crash, or test timeout\n" + XCTEST_ZERO)
+    valid, msg = _write(tmp_path, text)
+    assert not valid, msg
+
+
+def test_build_failed_after_green_summary_is_red(tmp_path):
+    valid, msg = _write(tmp_path, XCODE_HEAD + GREEN_SUMMARY + "** BUILD FAILED **\n")
+    assert not valid, msg
+
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.parametrize("fail_line", [
+    "✘  Test b() failed after 0.001 seconds with 1 issue.",
+    "✘︎ Test b() failed after 0.001 seconds with 1 issue.",
+    "✘\tTest b() failed after 0.001 seconds with 1 issue.",
+    "\U00100884  Test b() failed after 0.001 seconds with 1 issue.",
+])
+def test_fail_line_variants_are_red(tmp_path, fail_line):
+    text = ('✔ Suite "S" passed after 0.01 seconds.\n' + fail_line + "\n"
+            "✔ Test a() passed after 0.001 seconds.\n")
+    valid, msg = _write(tmp_path, text)
+    assert not valid, msg
+
+
+def test_sf_symbols_green_summary_overrides_executed_zero(tmp_path):
+    text = (XCODE_HEAD + "\U001007c8  Test run started.\n"
+            "\U0010105b  Test run with 4 tests in 1 suite passed after 0.01 seconds.\n"
+            + XCTEST_ZERO + "** TEST SUCCEEDED **\n")
+    valid, msg = _write(tmp_path, text)
+    assert valid and "4" in msg, msg
+
+
+def test_sf_symbols_red_summary_is_red(tmp_path):
+    text = (XCODE_HEAD
+            + "\U00100884  Test run with 1 test in 1 suite failed after 0.01 seconds with 1 issue.\n"
+            + "\t Executed 5 tests, with 0 failures (0 unexpected) in 0.1 (0.1) seconds\n")
+    valid, msg = _write(tmp_path, text)
+    assert not valid, msg
+
+
+def test_unquoted_suite_name_activates_swift_branch(tmp_path):
+    text = ("✔ Test foo() passed after 0.001 seconds.\n"
+            "✔ Suite MyTests passed after 0.01 seconds.\n" + XCTEST_ZERO
+            + "** TEST SUCCEEDED **\n")
+    valid, msg = _write(tmp_path, text)
+    assert valid, msg
+
+
+def test_known_issue_pass_is_not_red(tmp_path):
+    text = (XCODE_HEAD + "✖ Test a() passed after 0.001 seconds with 1 known issue.\n"
+            + GREEN_SUMMARY + XCTEST_ZERO + "** TEST SUCCEEDED **\n")
+    valid, msg = _write(tmp_path, text)
+    assert valid, msg

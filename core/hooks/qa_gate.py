@@ -60,13 +60,25 @@ _EXECUTED_RE = re.compile(
 # ✔/✘-Zeilen je Test und `Suite "…" passed|failed`. Ein ✔ allein (mocha, node
 # spec) ist KEIN Swift-Testing-Beleg — erst Summary oder Suite-Zeile aktivieren
 # den Zweig.
+# Fuehrendes Symbol: ✔/✘/… bzw. auf macOS SF-Symbols aus der Private-Use-Area
+# (􁁛 pass, 􀢄 fail), optional mit Variationsselektor, danach beliebiger Leerraum.
+_SWIFT_GLYPH = r"[^\w\s\"]︎?️?"
 _SWIFT_RUN_RE = re.compile(
-    r"(?m)^\s*[✔✘✖]?\s*Test run with (\d{1,9}) tests?\b.*?\b(passed|failed)\b")
-_SWIFT_SUITE_RE = re.compile(r'(?m)^\s*[✔✘✖]?\s*Suite "[^"\n]*" (passed|failed)\b')
-_SWIFT_PASS_LINE_RE = re.compile(r"(?m)^\s*✔ (?!Suite \"|Test run with )\S")
-_SWIFT_FAIL_LINE_RE = re.compile(r"(?m)^\s*[✘✖] \S")
-_SWIFT_SKIP_LINE_RE = re.compile(r"(?m)^\s*➜ Test .*\bskipped\b")
-
+    r"(?m)^\s*(?:" + _SWIFT_GLYPH + r"\s+)?Test run with (\d{1,9}) tests?\b.*?\b(passed|failed)\b")
+# Suite-Namen sind nur mit Anzeigenamen gequotet: `Suite "Name" passed` / `Suite MyTests passed`
+_SWIFT_SUITE_RE = re.compile(
+    r'(?m)^\s*(?:' + _SWIFT_GLYPH + r'\s+)?Suite (?:"[^"\n]*"|[^\s"]+) (passed|failed)\b')
+_SWIFT_PASS_LINE_RE = re.compile(
+    "(?m)^\\s*[✔\U0010105b]︎?️?\\s+(?!Suite |Test run with )\\S")
+_SWIFT_FAIL_LINE_RE = re.compile(
+    "(?m)^\\s*[✘✖\U00100884]︎?️?\\s+\\S.*$")
+# Bestanden mit bekanntem Problem (withKnownIssue) ist kein Fehlschlag
+_SWIFT_KNOWN_ISSUE_PASS_RE = re.compile(r"\bpassed\b.*\bknown issues?\b")
+_SWIFT_SKIP_LINE_RE = re.compile("(?m)^\\s*➜︎?️?\\s+Test .*\\bskipped\\b")
+# Abbruch neben gruenem Swift Testing: Crash, Build- oder Testlauf-Fehler
+_SWIFT_ABORT_RE = re.compile(
+    r"(?m)\*\* (?:TEST (?:EXECUTE )?|BUILD )FAILED \*\*|^\s*Testing failed:"
+    r"|Restarting after unexpected exit")
 
 def _set_verdict(verdict: str) -> None:
     """Set adversary_verdict on active workflow via workflow.py CLI."""
@@ -144,8 +156,9 @@ def _evaluate_executed(total: int, skipped: int, failures: int) -> tuple[bool, s
 def _swift_testing_result(content: str) -> "tuple[bool | None, int, int] | None":
     """Swift-Testing-Befund (#388): (gruen?, Anzahl Tests, uebersprungen).
 
-    None = keine Swift-Testing-Ausgabe. gruen=False bei jeder ✘/✖-Zeile,
-    fehlgeschlagener Suite oder roter Summary. Anzahl: Summe der Summaries,
+    None = keine Swift-Testing-Ausgabe. gruen=False bei jeder ✘/✖/􀢄-Zeile,
+    fehlgeschlagener Suite, roter Summary oder Abbruch-Marker (Crash,
+    `** TEST/BUILD FAILED **`) — eine gruene Summary vor dem Crash zaehlt nicht. Anzahl: Summe der Summaries,
     sonst ✔- plus ➜-Zeilen je Test (nach xcbeautify inkl. XCTest-Tests).
     """
     runs = _SWIFT_RUN_RE.findall(content)
@@ -153,8 +166,10 @@ def _swift_testing_result(content: str) -> "tuple[bool | None, int, int] | None"
     if not runs and not suites:
         return None
     skipped = len(_SWIFT_SKIP_LINE_RE.findall(content))
+    fail_lines = [m.group(0) for m in _SWIFT_FAIL_LINE_RE.finditer(content)
+                  if not _SWIFT_KNOWN_ISSUE_PASS_RE.search(m.group(0))]
     if (any(status == "failed" for _, status in runs) or "failed" in suites
-            or _SWIFT_FAIL_LINE_RE.search(content)):
+            or fail_lines or _SWIFT_ABORT_RE.search(content)):
         return False, 0, skipped
     if runs:
         return True, sum(int(n) for n, _ in runs), skipped
@@ -345,7 +360,7 @@ def validate_test_output(filepath: str, infra: bool = False) -> tuple[bool, str]
     # wird zur XCTest-Zahl addiert, sodass `Executed 0` sie nicht ueberstimmt.
     swift = _swift_testing_result(content)
     if swift is not None and not swift[0]:
-        return False, "Tests FAILED: Swift Testing meldet fehlgeschlagene Tests/Suites"
+        return False, "Tests FAILED: Swift Testing meldet fehlgeschlagene Tests/Suites oder Abbruch"
     if exec_rows:
         red_rows = [r for r in exec_rows if r[2] > 0]
         row = red_rows[0] if red_rows and exec_rows[-1][2] == 0 else exec_rows[-1]
