@@ -38,6 +38,7 @@ TEST_PATTERNS = [
     r"\d+ tests? ran", r"OK \(", r"FAIL",
     r"--- (PASS|FAIL|SKIP):",      # go test -v (je Test) — Issue #76
     r"(?m)^(ok|FAIL)\s+\S+",       # go test (je Paket) — Issue #76
+    r"Test run with \d+ tests?",   # Swift Testing (Summary) — Issue #388
 ]
 
 # go test: Paket-Summenzeile MIT Dauer-/Cache-Suffix. Das Suffix ist Pflicht,
@@ -53,6 +54,40 @@ _EXECUTED_RE = re.compile(
     r"Executed (\d+) tests?, with (?:(\d+) tests? skipped and )?(\d+) failures?"
 )
 
+# Swift Testing (#388): xcodebuild zaehlt `@Test`-Tests nicht in der
+# Executed-Zeile. Roh: `✔ Test run with N tests in K suites passed after …`
+# bzw. `✘ Test run with N tests … failed …`; nach xcbeautify bleiben nur die
+# ✔/✘-Zeilen je Test und `Suite "…" passed|failed`. Ein ✔ allein (mocha, node
+# spec) ist KEIN Swift-Testing-Beleg — erst Summary oder Suite-Zeile aktivieren
+# den Zweig.
+# Fuehrendes Symbol: nur die Swift-Testing-Glyphen ✔ ✘ ✖ ◇ ➜ bzw. auf macOS
+# SF-Symbols aus der Private-Use-Area (􁁛 pass, 􀢄 fail), optional mit
+# Variationsselektor. Pflicht fuer Summary und Suite-Zeile, ebenso das
+# `after …` dahinter: so aktiviert eine zufaellige Zeile wie `Suite Auth passed`
+# oder `- Test run with 5 tests passed` im Log eines anderen Runners den Zweig
+# nicht (#390).
+_SWIFT_GLYPH = "[\u2714\u2718\u2716\u25c7\u279c\U00100000-\U0010fffd]\ufe0e?\ufe0f?"
+_SWIFT_RUN_RE = re.compile(
+    r"(?m)^\s*" + _SWIFT_GLYPH
+    + r"\s+Test run with (\d{1,9}) tests?\b[^\n]*?\b(passed|failed) after\b")
+# Suite-Namen sind nur mit Anzeigenamen gequotet: `Suite "Name" passed` / `Suite MyTests passed`
+# Ohne Glyphe (xcbeautify) nur die gequotete Form; die ungequotete braucht die Glyphe.
+_SWIFT_SUITE_RE = re.compile(
+    r'(?m)^\s*(?:' + _SWIFT_GLYPH + r'\s+Suite (?:"[^"\n]*"|[^\s"]+)|Suite "[^"\n]*")'
+    r' (passed|failed) after\b')
+_SWIFT_PASS_LINE_RE = re.compile(
+    "(?m)^\\s*[\u2714\U0010105b]\ufe0e?\ufe0f?\\s+(?!Suite |Test run with )\\S")
+# ✘ und 􀢄 sind immer Fehlschlag; ✖ ist bei Swift Testing auch das Symbol fuer
+# bekannte Probleme (withKnownIssue) und zaehlt nur ohne diese Form.
+_SWIFT_FAIL_LINE_RE = re.compile("(?m)^\\s*[\u2718\U00100884]\ufe0e?\ufe0f?\\s+\\S")
+_SWIFT_CROSS_LINE_RE = re.compile("(?m)^\\s*\u2716\ufe0e?\ufe0f?\\s+(\\S.*)$")
+_SWIFT_KNOWN_ISSUE_RE = re.compile(
+    r"^Test .*?(?:\bpassed after\b.*\bwith \d+ known issues?\b|\brecorded a known issue\b)")
+_SWIFT_SKIP_LINE_RE = re.compile("(?m)^\\s*\u279c\ufe0e?\ufe0f?\\s+Test .*\\bskipped\\b")
+# Abbruch neben gruenem Swift Testing: Crash, Build- oder Testlauf-Fehler
+_SWIFT_ABORT_RE = re.compile(
+    r"(?m)\*\* (?:TEST (?:EXECUTE )?|BUILD )FAILED \*\*|^\s*Testing failed:"
+    r"|Restarting after unexpected exit")
 
 def _set_verdict(verdict: str) -> None:
     """Set adversary_verdict on active workflow via workflow.py CLI."""
@@ -125,6 +160,47 @@ def _evaluate_executed(total: int, skipped: int, failures: int) -> tuple[bool, s
         return _not_passed_skipped(skipped)
     suffix = f" ({skipped} skipped)" if skipped else ""
     return True, f"Tests PASSED: {total} tests, 0 failures{suffix}"
+
+
+def _other_runner_red(content: str) -> bool:
+    """Rote Evidenz eines anderen Runners im selben Log (#390).
+
+    Ein gruenes Swift-Testing-Ergebnis kehrt vor den pytest-/go-/cargo-/
+    mocha-/jest-Auswertungen zurueck und darf deren Rot nicht ueberstimmen.
+    """
+    line = _find_pytest_summary_line(content)
+    if line is not None:
+        verdict = _evaluate_pytest_summary(line)
+        if verdict is not None and not verdict[0]:
+            return True
+    return bool(_GO_PKG_FAIL_RE.search(content) or "\n--- FAIL: " in "\n" + content
+                or _CARGO_FAILED_RE.search(content)
+                or re.search(r"(?m)^\s*\d+ failing\b", content)
+                or re.search(r"(?m)^Tests:.*\b[1-9]\d* failed\b", content))
+
+
+def _swift_testing_result(content: str) -> "tuple[bool | None, int, int] | None":
+    """Swift-Testing-Befund (#388): (gruen?, Anzahl Tests, uebersprungen).
+
+    None = keine Swift-Testing-Ausgabe. gruen=False bei jeder ✘/✖/􀢄-Zeile,
+    fehlgeschlagener Suite, roter Summary oder Abbruch-Marker (Crash,
+    `** TEST/BUILD FAILED **`) — eine gruene Summary vor dem Crash zaehlt nicht. Anzahl: Summe der Summaries,
+    sonst ✔- plus ➜-Zeilen je Test (nach xcbeautify inkl. XCTest-Tests).
+    """
+    runs = _SWIFT_RUN_RE.findall(content)
+    suites = _SWIFT_SUITE_RE.findall(content)
+    if not runs and not suites:
+        return None
+    skipped = len(_SWIFT_SKIP_LINE_RE.findall(content))
+    cross_fails = [m.group(1) for m in _SWIFT_CROSS_LINE_RE.finditer(content)
+                   if not _SWIFT_KNOWN_ISSUE_RE.search(m.group(1))]
+    if (any(status == "failed" for _, status in runs) or "failed" in suites
+            or _SWIFT_FAIL_LINE_RE.search(content) or cross_fails
+            or _SWIFT_ABORT_RE.search(content) or _other_runner_red(content)):
+        return False, 0, skipped
+    if runs:
+        return True, sum(int(n) for n, _ in runs), skipped
+    return True, len(_SWIFT_PASS_LINE_RE.findall(content)) + skipped, skipped
 
 
 def _evaluate_pytest_summary(line: str) -> "tuple[bool, str] | None":
@@ -307,10 +383,24 @@ def validate_test_output(filepath: str, infra: bool = False) -> tuple[bool, str]
     # Kehrt bei vorhandener Executed-Zeile IMMER zurueck — der spaetere
     # 'TEST SUCCEEDED'-Fallback kann die skipped-Regel daher nicht aushebeln.
     exec_rows = [tuple(int(x or 0) for x in m) for m in _EXECUTED_RE.findall(content)]
+    # Swift Testing (#388): jede rote Evidenz gewinnt; eine gruene Summary
+    # wird zur XCTest-Zahl addiert, sodass `Executed 0` sie nicht ueberstimmt.
+    swift = _swift_testing_result(content)
+    if swift is not None and not swift[0]:
+        return False, "Tests FAILED: Swift Testing meldet fehlgeschlagene Tests/Suites oder Abbruch"
     if exec_rows:
         red_rows = [r for r in exec_rows if r[2] > 0]
         row = red_rows[0] if red_rows and exec_rows[-1][2] == 0 else exec_rows[-1]
+        if swift is not None and row[2] == 0:
+            _, n_swift, swift_skipped = swift
+            if _SWIFT_RUN_RE.search(content):
+                total = row[0] + n_swift
+            else:  # xcbeautify: ✔-Zeilen zaehlen XCTest bereits mit
+                total = max(row[0], n_swift)
+            row = (total, row[1] + swift_skipped, 0)
         return _evaluate_executed(*row)
+    if swift is not None:
+        return _evaluate_executed(swift[1], swift[2], 0)
 
     # Pattern: pytest summary line ("N passed, M failed, ...").
     # Bound to the real summary line (not a whole-text scan) and check the
