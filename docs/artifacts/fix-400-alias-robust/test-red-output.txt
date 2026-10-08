@@ -1,0 +1,161 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.14, pytest-9.1.1, pluggy-1.6.0 -- /private/tmp/claude-501/-Users-hem-Developer-agent-os-openspec--claude-worktrees-snazzy-sparking-cupcake/924231f2-f65f-4ae9-9bf9-a9712a6e1efc/scratchpad/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/hem/Developer/agent-os-openspec/.claude/worktrees/snazzy-sparking-cupcake
+collecting ... collected 6 items
+
+tests/test_alias_sync_robust_400.py::test_symlink_wird_nicht_beschrieben FAILED [ 16%]
+tests/test_alias_sync_robust_400.py::test_symlink_als_entfernter_alias_wird_nicht_geloescht FAILED [ 33%]
+tests/test_alias_sync_robust_400.py::test_schreibgeschuetzte_datei_bricht_schleife_nicht_ab FAILED [ 50%]
+tests/test_alias_sync_robust_400.py::test_rueckgabe_tupel_und_optionaler_skipped_parameter FAILED [ 66%]
+tests/test_alias_sync_robust_400.py::test_start_hinweis_zaehlt_erfolge_und_nennt_uebersprungene FAILED [ 83%]
+tests/test_alias_sync_robust_400.py::test_refresh_aliases_cli_meldet_uebersprungene FAILED [100%]
+
+=================================== FAILURES ===================================
+_____________________ test_symlink_wird_nicht_beschrieben ______________________
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-482/test_symlink_wird_nicht_beschr0')
+
+    def test_symlink_wird_nicht_beschrieben(tmp_path):
+        """AC-1: veralteter markierter Alias als Symlink — Ziel bleibt unveraendert."""
+        skills = _skills(tmp_path, "10-alpha")
+        commands = _commands(tmp_path)
+        target = _external(tmp_path)
+        link = commands / "10-alpha.md"
+        link.symlink_to(target)
+    
+        skipped: list = []
+>       refreshed, removed = alias_sync.refresh_aliases(skills, commands, None, skipped=skipped)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: refresh_aliases() got an unexpected keyword argument 'skipped'
+
+tests/test_alias_sync_robust_400.py:76: TypeError
+____________ test_symlink_als_entfernter_alias_wird_nicht_geloescht ____________
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-482/test_symlink_als_entfernter_al0')
+
+    def test_symlink_als_entfernter_alias_wird_nicht_geloescht(tmp_path):
+        """AC-2: markierter Alias eines entfernten Befehls als Symlink bleibt stehen."""
+        skills = _skills(tmp_path, "10-alpha")
+        commands = _commands(tmp_path)
+        target = _external(tmp_path)
+        link = commands / "00-bug.md"
+        link.symlink_to(target)
+    
+        skipped: list = []
+>       _, removed = alias_sync.refresh_aliases(skills, commands, None, skipped=skipped)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: refresh_aliases() got an unexpected keyword argument 'skipped'
+
+tests/test_alias_sync_robust_400.py:93: TypeError
+____________ test_schreibgeschuetzte_datei_bricht_schleife_nicht_ab ____________
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-482/test_schreibgeschuetzte_datei_0')
+
+    @needs_non_root
+    def test_schreibgeschuetzte_datei_bricht_schleife_nicht_ab(tmp_path):
+        """AC-3: 0444-Datei wird uebersprungen, die uebrigen Dateien werden bedient."""
+        skills = _skills(tmp_path, "10-alpha", "20-beta")
+        commands = _commands(tmp_path)
+        locked = commands / "10-alpha.md"
+        locked.write_text(OLD_COPY)
+        locked.chmod(0o444)
+        other = commands / "20-beta.md"
+        other.write_text(OLD_COPY)
+        removed_alias = commands / "00-bug.md"
+        removed_alias.write_text(OLD_COPY)
+    
+        skipped: list = []
+        try:
+>           refreshed, removed = alias_sync.refresh_aliases(skills, commands, None, skipped=skipped)
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           TypeError: refresh_aliases() got an unexpected keyword argument 'skipped'
+
+tests/test_alias_sync_robust_400.py:116: TypeError
+____________ test_rueckgabe_tupel_und_optionaler_skipped_parameter _____________
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-482/test_rueckgabe_tupel_und_optio0')
+
+    def test_rueckgabe_tupel_und_optionaler_skipped_parameter(tmp_path):
+        """AC-4: ohne `skipped` weiter Zweier-Tupel; mit Liste wird sie gefuellt."""
+        skills = _skills(tmp_path, "10-alpha")
+        commands = _commands(tmp_path)
+        (commands / "10-alpha.md").write_text(OLD_COPY)
+    
+        result = alias_sync.refresh_aliases(skills, commands, None)
+        assert result == (["10-alpha"], [])
+        assert (commands / "10-alpha.md").read_text() == alias_sync.alias_content("10-alpha", SKILL_TEXT)
+    
+        link = commands / "10-alpha.md"
+        link.unlink()
+        link.symlink_to(_external(tmp_path))
+        skipped: list = []
+>       alias_sync.refresh_aliases(skills, commands, None, skipped=skipped)
+E       TypeError: refresh_aliases() got an unexpected keyword argument 'skipped'
+
+tests/test_alias_sync_robust_400.py:142: TypeError
+__________ test_start_hinweis_zaehlt_erfolge_und_nennt_uebersprungene __________
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-482/test_start_hinweis_zaehlt_erfo0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x108806fd0>
+
+    def test_start_hinweis_zaehlt_erfolge_und_nennt_uebersprungene(tmp_path, monkeypatch):
+        """AC-5: Zaehlung nur Erfolge, Uebersprungene als Zusatz; nur-Uebersprungene eigene Zeile."""
+        root = _plugin_root(tmp_path, "10-alpha", "20-beta")
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        commands = _commands(tmp_path)
+        (commands / "20-beta.md").write_text(OLD_COPY)
+        (commands / "10-alpha.md").symlink_to(_external(tmp_path))
+    
+        lines = session_banner.refresh_home_aliases(root)
+    
+>       assert lines == ["Kurzbefehle aktualisiert (1) · 1 übersprungen"]
+E       AssertionError: assert ['Kurzbefehle...alisiert (2)'] == ['Kurzbefehle...übersprungen']
+E         
+E         At index 0 diff: 'Kurzbefehle aktualisiert (2)' != 'Kurzbefehle aktualisiert (1) · 1 übersprungen'
+E         
+E         Full diff:
+E           [
+E         -     'Kurzbefehle aktualisiert (1) · 1 übersprungen',
+E         ?                                ^ -----------------...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+tests/test_alias_sync_robust_400.py:168: AssertionError
+________________ test_refresh_aliases_cli_meldet_uebersprungene ________________
+
+tmp_path = PosixPath('/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-482/test_refresh_aliases_cli_melde0')
+
+    def test_refresh_aliases_cli_meldet_uebersprungene(tmp_path):
+        """AC-6: `setup.py --refresh-aliases` als echter Prozess nennt Skipped-Eintraege."""
+        home = tmp_path / "home"
+        project = tmp_path / "project"
+        commands = project / ".claude" / "commands"
+        commands.mkdir(parents=True)
+        home.mkdir(exist_ok=True)
+        (commands / "40-tdd-red.md").write_text(OLD_COPY)
+        (commands / "50-implement.md").symlink_to(_external(tmp_path))
+        env = dict(os.environ, HOME=str(home))
+    
+        def run():
+            return subprocess.run(
+                [sys.executable, str(SETUP_PY), str(project), "--refresh-aliases"],
+                capture_output=True, text=True, env=env, cwd=str(home),
+            )
+    
+        first = run()
+        assert first.returncode == 0, first.stdout + first.stderr
+        assert "  Refreshed: 40-tdd-red.md" in first.stdout
+>       assert "  Skipped: 50-implement" in first.stdout
+E       AssertionError: assert '  Skipped: 50-implement' in '  Refreshed: 40-tdd-red.md\n  Refreshed: 50-implement.md\nCommand aliases: 2 refreshed, 0 removed, none created.\n'
+E        +  where '  Refreshed: 40-tdd-red.md\n  Refreshed: 50-implement.md\nCommand aliases: 2 refreshed, 0 removed, none created.\n' = CompletedProcess(args=['/private/tmp/claude-501/-Users-hem-Developer-agent-os-openspec--claude-worktrees-snazzy-sparking-cupcake/924231f2-f65f-4ae9-9bf9-a9712a6e1efc/scratchpad/venv/bin/python', '/Users/hem/Developer/agent-os-openspec/.claude/worktrees/snazzy-sparking-cupcake/setup.py', '/private/var/folders/dk/p4qd3_xx6ls6_xybmqzfgs1h0000gn/T/pytest-of-hem/pytest-482/test_refresh_aliases_cli_melde0/project', '--refresh-aliases'], returncode=0, stdout='  Refreshed: 40-tdd-red.md\n  Refreshed: 50-implement.md\nCommand aliases: 2 refreshed, 0 removed, none created.\n', stderr='').stdout
+
+tests/test_alias_sync_robust_400.py:195: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_alias_sync_robust_400.py::test_symlink_wird_nicht_beschrieben
+FAILED tests/test_alias_sync_robust_400.py::test_symlink_als_entfernter_alias_wird_nicht_geloescht
+FAILED tests/test_alias_sync_robust_400.py::test_schreibgeschuetzte_datei_bricht_schleife_nicht_ab
+FAILED tests/test_alias_sync_robust_400.py::test_rueckgabe_tupel_und_optionaler_skipped_parameter
+FAILED tests/test_alias_sync_robust_400.py::test_start_hinweis_zaehlt_erfolge_und_nennt_uebersprungene
+FAILED tests/test_alias_sync_robust_400.py::test_refresh_aliases_cli_meldet_uebersprungene
+============================== 6 failed in 2.76s ===============================
