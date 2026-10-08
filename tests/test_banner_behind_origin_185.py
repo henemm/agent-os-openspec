@@ -114,7 +114,9 @@ def test_remote_name_with_slash(repos, tmp_path):
     _git(["branch", "--set-upstream-to", "team/origin/main", "main"], main)
     _push_foreign_commit(origin, tmp_path)
     lines = session_banner.behind_lines(main)
-    assert lines and "1 Commit(s) hinter team/origin/main" in lines[0], lines
+    # #399: wird nachgezogen statt gemeldet
+    assert lines == ["Projektstand aktualisiert (1 Änderungen)"], lines
+    assert (main / "b0.txt").exists()
 
 
 # --- #371: keine Waisen nach dem Timeout, BatchMode auch bei eigener GIT_SSH_COMMAND ---

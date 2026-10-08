@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **#399 (Start erledigt Wartung selbst):** Der Start-Hinweis nennt keine Befehle mehr, sondern behebt ungefährliche Fälle selbst. Veraltete Kurzbefehle in `~/.claude/commands` werden aufgefrischt (gleiche Regeln wie `setup.py --refresh-aliases`, gemeinsame Kernlogik `alias_sync.refresh_aliases`), ein sauberer Haupt-Ordner hinter dem Remote wird fast-forward nachgezogen (nur wenn die Sitzung im Haupt-Ordner startet; Abbruch per SIGTERM). Sichtbar bleibt Klartext („Kurzbefehle aktualisiert (N)“, „Projektstand aktualisiert (N Änderungen)“). Was nicht automatisch geht (Projekt-Kurzbefehle, Haupt-Ordner mit lokalen Änderungen), geht nur als `additionalContext` an Claude. Nach Kontext-Kompaktierung keine Wartung. Hook-Timeout 5 → 10 s. Tests: `tests/test_session_banner.py`, `tests/test_banner_behind_origin_185.py`.
+
 - Doku zu #72: README-Schnellstart empfiehlt `--update` statt `--update --force` (sonst gingen lokale Anpassungen verloren); CLAUDE.md beschreibt das Manifest-Verhalten von `--update`.
 
 ## [3.39.0] - 2026-10-07

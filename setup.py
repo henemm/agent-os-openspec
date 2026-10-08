@@ -1284,22 +1284,18 @@ def refresh_command_aliases(scope_path: Path) -> None:
     `~` sicher.
     """
     sys.path.insert(0, str(FRAMEWORK_ROOT / "core" / "hooks"))
-    from alias_sync import alias_content, find_removed_aliases, find_stale_aliases
+    from alias_sync import refresh_aliases
 
-    skills_dir = FRAMEWORK_ROOT / "skills"
-    commands_dir = scope_path / ".claude" / "commands"
-    stale = find_stale_aliases(
-        skills_dir, commands_dir, loaded_version=FRAMEWORK_VERSION
+    # Kernlogik geteilt mit dem Start-Hinweis (#399); Aliase entfernter
+    # Befehle (z.B. 00-bug, #333) werden nur geloescht, wenn markiert.
+    stale, removed = refresh_aliases(
+        FRAMEWORK_ROOT / "skills", scope_path / ".claude" / "commands",
+        FRAMEWORK_VERSION,
     )
     for name in stale:
-        skill_text = (skills_dir / name / "SKILL.md").read_text()
-        (commands_dir / f"{name}.md").write_text(alias_content(name, skill_text))
         print(f"  Refreshed: {name}.md")
-    # Aliase entfernter Befehle (z.B. 00-bug, #333): nur markierte Dateien.
-    removed = find_removed_aliases(commands_dir)
-    for path in removed:
-        path.unlink()
-        print(f"  Removed: {path.name}")
+    for name in removed:
+        print(f"  Removed: {name}")
     print(
         f"Command aliases: {len(stale)} refreshed, {len(removed)} removed, "
         "none created."
