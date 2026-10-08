@@ -48,3 +48,68 @@ Issue #345 (aus der Analyse zu #313/#327, dort Alternative B): `qa_gate.py` soll
 - **Zweite Erkennung in post_bash.py** bleibt Text-basiert; ob sie mitwandert, ist zu entscheiden (Scope).
 - **Scope-Limit (4-5 Dateien, ±250 LoC):** volle Umsetzung inkl. Befehls-/Agenten-Doku und Skills-Sync sprengt es wahrscheinlich -> Teilung in Entwurf/ADR + Umsetzungsscheiben pruefen.
 - **Offene Recherchefrage:** Was liefert der PostToolUse-Bash-Payload von Claude Code (Exit-Code-Feld?) — waere eine Alternative ohne Selbstausfuehrung (Hook liest den echten Exit-Code des Laufs, den Claude ohnehin startet).
+
+## Analysis
+
+### Type
+Feature (Gate-Umbau mit ADR; kippt die Entscheidung "Verworfene Alternative B" in docs/specs/fix-313-327-qa-gate-testausgabe.md)
+
+### Recherche (Belege, 2026-10-08)
+- **Exit 0 heisst nicht "Tests liefen":** pytest alle skipped -> 0, nichts gesammelt -> 5 (https://docs.pytest.org/en/9.0.x/reference/exit-codes.html); unittest >= 3.12 nur Skips -> 0, nichts -> 5 (https://discuss.python.org/t/unittest-fail-if-zero-tests-were-discovered/21498); go `[no test files]` -> 0 (golang cmd/go testdata test_no_tests.txt, golang.org/issue/64500); cargo "running 0 tests" -> 0 (Bericht, nicht offiziell). xcodebuild TEST FAILED -> 65 (Foren). => Exit-Code allein ersetzt die Zaehlung nicht; die #275-Regel (0 passed + skipped != gruen) bleibt Text-basiert.
+- **Pipes:** `xcodebuild | xcbeautify` ohne `set -o pipefail` liefert den Exit des Formatters (https://github.com/cpisciotta/xcbeautify README).
+- **Claude-Code-Hooks:** PostToolUse(Bash) feuert nur bei Exit 0 (anthropics/claude-code #29799, Maintainer). Fehlschlaege -> PostToolUseFailure mit `error`-String "Exit code N ...", kein numerisches Feld (https://code.claude.com/docs/en/hooks). => Variante "Exit-Code per Hook" waere wieder Textparsing; post_bash.py sieht rote Laeufe nie -> eigenes Issue #403.
+- **Timeouts:** Bash-Tool max 600 s (`BASH_MAX_TIMEOUT_MS`, https://code.claude.com/docs/en/env-vars), Hook-command default 600 s.
+
+### Varianten
+| | Ansatz | (a) "Could not determine" weg | (b) Faelschbarkeit weg | Kippt |
+|---|---|---|---|---|
+| **A (Empfehlung)** | `qa_gate.py --run` zusaetzlich; Gate fuehrt aus, schreibt Ausgabe selbst als Artefakt, stempelt Exit/SHA | bei Exit != 0 vollstaendig; bei Exit 0 + unbekanntem Format -> AMBIGUOUS statt Fehler | ja, sobald `require_run` gilt und der Stempel gesperrt ist | nur "Agent liefert die Datei"; Artefakt bleibt |
+| B | Datei-Modus ersetzen | fast vollstaendig | vollstaendig | alles: 45 Testaufrufe/13 Dateien, /50, /60, /80, Agenten, Konsumenten (Breaking) |
+| C | kein Selbstausfuehren, Exit per PostToolUseFailure erfassen | nein (wieder Textparsing) | nein (Datei bleibt handschreibbar) | nichts |
+| D | Status quo + weitere Regexe | je Runner einzeln, endlos | nein | nichts |
+
+### Technical Approach (Empfehlung A, in Scheiben)
+**Urteilsregel `--run` (rot gewinnt):**
+1. Exit != 0 -> BROKEN, ohne Text (auch pytest 5, xcodebuild 65, Timeout).
+2. Exit 0 -> bestehende Kaskade `validate_test_output`: rot im Text -> BROKEN; gruen mit >= 1 passed -> VERIFIED.
+3. Exit 0 + 0 Tests / nur skipped / `[no test files]` -> nicht gruen (#275 bleibt).
+4. Exit 0 + Format unbekannt -> AMBIGUOUS "Exit 0, Ausgabe nicht auswertbar" (kein reines "Exit 0 = gruen", das waere ein neuer False-Pass).
+5. Vorfilter `size < 100` / "looks fabricated" im `--run`-Modus aus (Herkunft ist gemessen).
+
+**Ausfuehrung:** `subprocess` mit `bash -o pipefail -c <cmd>`, stdout+stderr zusammen, zeilenweise in Artefaktdatei (Default `docs/artifacts/<wf>/test-run-output.txt`) und auf stdout; Timeout default 540 s (< 600 s Bash-Limit), konfigurierbar; Prozessgruppe beenden bei Timeout.
+
+**Stempel:** Exit-Code, SHA-256 der Artefaktdatei, Zeit, Hash des Befehls (nie Klartext: Inline-Credentials), Modus `run`. Key auf `_SET_FIELD_PROTECTED` (workflow.py:1344) — Befund: `adversary_verdict` selbst ist dort NICHT gesperrt (qa_gate setzt es per set-field), der neue Stempel muss es sein, sonst bleibt (b) offen. Muster wie Dialog-Stempel (#253), kein dritter Mechanismus.
+
+**Sicherheit:** `qa_gate.py` steht auf `WHITELIST_COMMANDS` (bash_gate.py:109); die Whitelist ueberspringt nur 3b (State-Integrity, bash_gate.py:947). Mit `--run "<cmd>"` koennte ein innerer Schreibbefehl auf State-Dateien an 3b vorbeilaufen -> `--run` von der Whitelist ausnehmen.
+
+**Durchsetzung (b):** Config `qa_gate.require_run` (Default false = Migrationspfad). Datei-Modus vermerkt `source=file`; bei `require_run: true` lehnt er ab, und Commit-Gate/Phase 8 verlangen Stempel `source=run` mit passendem SHA.
+
+**Scheiben:**
+1. qa_gate `--run` + Urteilsregel + Stempel + Sperrliste + Whitelist-Ausnahme + Tests + ADR (qa_gate.py, workflow.py, bash_gate.py, neue tests/test_qa_gate_run_345.py, Spec) — ~+250 LoC Code/Tests, an der Grenze. Falls knapp: `require_run` in Scheibe 3.
+2. Doku/Befehle: 50-implement (Step 4, 8d), 60-validate, 80-workflow, implementation-validator, developer-agent, config.yaml (`test_command`, das heute nur referenziert, nie definiert ist), CLAUDE.md, README, skills-Sync — >5 Dateien, eigener Schnitt.
+3. `require_run` an Commit-Gate/Phase 8 + Deprecation-Hinweis im Datei-Modus. Default erst umstellen, wenn 3 da ist.
+
+### Affected Files (Scheibe 1)
+| File | Change Type | Description |
+|------|-------------|-------------|
+| core/hooks/qa_gate.py | MODIFY | `--run`/`--out`/`--timeout`, run_and_capture, Urteilsregel Exit x Text, Stempel; `main` in Hilfsfunktionen (<= 50 LoC) |
+| core/hooks/workflow.py | MODIFY | Stempel-Key auf `_SET_FIELD_PROTECTED` |
+| core/hooks/bash_gate.py | MODIFY | `qa_gate.py --run` nicht per Whitelist freistellen |
+| tests/test_qa_gate_run_345.py | CREATE | Exit != 0, Exit 0 gruen, Exit 0 + skipped, unbekanntes Format -> AMBIGUOUS, pipefail, Timeout, Stempel/SHA, Sperrliste, Whitelist |
+| docs/specs/feat-345-qa-gate-selbst-ausfuehren.md | CREATE | Spec + ADR (ersetzt "Verworfene Alternative B") |
+
+### Scope Assessment
+- Files: 4 Code/Test + 1 Spec (Scheibe 1); Scheibe 2 und 3 getrennt
+- Estimated LoC: ca. +250 / -20 (Scheibe 1, ohne Spec)
+- Risk Level: MEDIUM — zentrales Gate, aber additiv (Datei-Modus und 45 bestehende Testaufrufe bleiben unveraendert)
+
+### Dependencies
+- Upstream: hook_utils, workflow.py (set-field, Sperrliste), adversary_dialog (Checkliste unveraendert).
+- Downstream: Commit-Gate bash_gate.py:1089, Phase-8-Uebergang workflow.py:1061 (lesen `adversary_verdict`, unveraendert in Scheibe 1).
+- Verwandt: #275 (skipped), #253 (Dialog-Stempel), #299/#325 (Zustand statt Text), #403 (post_bash/PostToolUseFailure, abgetrennt).
+
+### Alternative zur Empfehlung
+Variante B (Datei-Modus sofort ersetzen) ist die konsequentere Loesung fuer (b), bricht aber alle Konsumenten und sprengt das Limit; sie bleibt Endzustand nach Deprecation (Scheibe 3 -> spaeteres Ticket). Variante C wurde durch die Recherche widerlegt (kein Exit-Feld, rote Laeufe nur als Text).
+
+### Open Questions
+- [ ] Soll diese Spec nur Scheibe 1 umfassen und Scheiben 2/3 als Folge-Issues angelegt werden? (Empfehlung: ja, nach Spec-Freigabe ein gebuendeltes Folge-Issue "qa_gate --run ausrollen" fuer 2+3.)
