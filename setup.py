@@ -1281,25 +1281,27 @@ def refresh_command_aliases(scope_path: Path) -> None:
     Anders als generate_command_aliases legt dieser Modus NIE eine Datei an:
     nur bereits vorhandene, markierte und veraltete Kopien werden ueber-
     schrieben. Damit kann er nichts ueberschatten (#87) und ist auch fuer
-    `~` sicher.
+    `~` sicher. Symlinks und nicht schreibbare Dateien werden als
+    `Skipped:` gemeldet statt angefasst (#400).
     """
     sys.path.insert(0, str(FRAMEWORK_ROOT / "core" / "hooks"))
     from alias_sync import refresh_aliases
 
     # Kernlogik geteilt mit dem Start-Hinweis (#399); Aliase entfernter
     # Befehle (z.B. 00-bug, #333) werden nur geloescht, wenn markiert.
+    skipped: list = []
     stale, removed = refresh_aliases(
         FRAMEWORK_ROOT / "skills", scope_path / ".claude" / "commands",
-        FRAMEWORK_VERSION,
+        FRAMEWORK_VERSION, skipped=skipped,
     )
     for name in stale:
         print(f"  Refreshed: {name}.md")
     for name in removed:
         print(f"  Removed: {name}")
-    print(
-        f"Command aliases: {len(stale)} refreshed, {len(removed)} removed, "
-        "none created."
-    )
+    for entry in skipped:
+        print(f"  Skipped: {entry}")
+    summary = f"Command aliases: {len(stale)} refreshed, {len(removed)} removed, none created"
+    print(f"{summary}, {len(skipped)} skipped." if skipped else f"{summary}.")
 
 
 def remove_command_aliases(scope_path: Path) -> None:

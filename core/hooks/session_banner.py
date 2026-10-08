@@ -151,17 +151,26 @@ def refresh_home_aliases(root: Path) -> "list[str]":
     """Kurzbefehle in `~` selbst auffrischen (#399); sichtbare Zeile oder nichts.
 
     Gleiche Regeln wie `setup.py --refresh-aliases`: legt nie an, stuft nie
-    herab (#163), fasst nur markierte Dateien an. Fehler → still nichts.
+    herab (#163), fasst nur markierte Dateien an. Fehler → still nichts;
+    Uebersprungenes (Symlink, Schreibschutz) wird mitgezaehlt (#400).
     """
+    skipped: list = []
     try:
         from alias_sync import refresh_aliases
         refreshed, removed = refresh_aliases(
-            root / "skills", Path.home() / ".claude" / "commands", plugin_version(root)
+            root / "skills", Path.home() / ".claude" / "commands", plugin_version(root),
+            skipped=skipped,
         )
     except Exception:
         return []
     count = len(refreshed) + len(removed)
-    return [f"Kurzbefehle aktualisiert ({count})"] if count else []
+    if count and skipped:
+        return [f"Kurzbefehle aktualisiert ({count}) · {len(skipped)} übersprungen"]
+    if count:
+        return [f"Kurzbefehle aktualisiert ({count})"]
+    if skipped:
+        return [f"Kurzbefehle: {len(skipped)} übersprungen"]
+    return []
 
 
 def project_alias_context(root: Path, project: Path) -> "list[str]":
