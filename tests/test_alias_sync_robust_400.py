@@ -96,6 +96,7 @@ def test_symlink_als_entfernter_alias_wird_nicht_geloescht(tmp_path):
     assert target.read_text() == OLD_COPY
     assert removed == []
     assert any(e.startswith("00-bug") for e in skipped), skipped
+    assert "00-bug: Symlink" in skipped, skipped
 
 
 @needs_non_root
@@ -123,6 +124,23 @@ def test_schreibgeschuetzte_datei_bricht_schleife_nicht_ab(tmp_path):
     assert not removed_alias.exists()
     assert locked.read_text() == OLD_COPY
     assert any(e.startswith("10-alpha") for e in skipped), skipped
+    assert "10-alpha: schreibgeschützt" in skipped, skipped
+
+
+def test_unlesbarer_skill_text_wird_uebersprungen_statt_abzubrechen(tmp_path, monkeypatch):
+    """F003: nicht dekodierbare SKILL.md (Race nach find_stale_aliases) bricht nicht ab."""
+    skills = tmp_path / "skills"
+    (skills / "10-alpha").mkdir(parents=True)
+    (skills / "10-alpha" / "SKILL.md").write_bytes(b"\xff\xfe")
+    commands = _commands(tmp_path)
+    (commands / "10-alpha.md").write_text(OLD_COPY)
+    monkeypatch.setattr(alias_sync, "find_stale_aliases", lambda *a, **k: ["10-alpha"])
+
+    skipped: list = []
+    refreshed, _ = alias_sync.refresh_aliases(skills, commands, None, skipped=skipped)
+
+    assert refreshed == []
+    assert "10-alpha: Skill nicht lesbar" in skipped, skipped
 
 
 def test_rueckgabe_tupel_und_optionaler_skipped_parameter(tmp_path):

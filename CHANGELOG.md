@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **#400 (Kurzbefehl-Wartung robust):** Start-Hinweis und `setup.py --refresh-aliases` überspringen Symlinks in `.claude/commands`, statt durch sie in fremde Dateien zu schreiben oder sie zu löschen. Eine schreibgeschützte Datei stoppt die Wartung nicht mehr; die übrigen Kurzbefehle werden trotzdem erneuert. Übersprungenes wird gemeldet („Kurzbefehle aktualisiert (N) · M übersprungen“ bzw. `Skipped: …` und `K skipped` in der Schlusszeile). `alias_sync.refresh_aliases` nimmt dafür optional `skipped=` entgegen; die Rückgabe bleibt `(erneuert, gelöscht)`. Tests: `tests/test_alias_sync_robust_400.py`.
+
 ### Changed
 
 - **#399 (Start erledigt Wartung selbst):** Der Start-Hinweis nennt keine Befehle mehr, sondern behebt ungefährliche Fälle selbst. Veraltete Kurzbefehle in `~/.claude/commands` werden aufgefrischt (gleiche Regeln wie `setup.py --refresh-aliases`, gemeinsame Kernlogik `alias_sync.refresh_aliases`), ein sauberer Haupt-Ordner hinter dem Remote wird fast-forward nachgezogen (nur wenn die Sitzung im Haupt-Ordner startet; Abbruch per SIGTERM). Sichtbar bleibt Klartext („Kurzbefehle aktualisiert (N)“, „Projektstand aktualisiert (N Änderungen)“). Was nicht automatisch geht (Projekt-Kurzbefehle, Haupt-Ordner mit lokalen Änderungen), geht nur als `additionalContext` an Claude. Nach Kontext-Kompaktierung keine Wartung. Hook-Timeout 5 → 10 s. Tests: `tests/test_session_banner.py`, `tests/test_banner_behind_origin_185.py`.

@@ -212,8 +212,21 @@ def find_removed_aliases(commands_dir: Path) -> "list[Path]":
     return found
 
 
+def _skip(skipped: "list[str] | None", name: str, reason: str) -> None:
+    if skipped is not None:
+        skipped.append(f"{name}: {reason}")
+
+
+def _reason(exc: OSError) -> str:
+    """Kurzgrund fuer `skipped` (#400)."""
+    if isinstance(exc, PermissionError):
+        return "schreibgeschützt"
+    return f"Fehler ({type(exc).__name__})"
+
+
 def refresh_aliases(skills_dir: Path, commands_dir: Path,
-                    loaded_version: "str | None") -> "tuple[list[str], list[str]]":
+                    loaded_version: "str | None",
+                    skipped: "list[str] | None" = None) -> "tuple[list[str], list[str]]":
     """Veraltete markierte Kopien erneuern, Aliase entfernter Befehle loeschen.
 
     Gemeinsame Kernlogik von `setup.py --refresh-aliases` und dem Start-Hinweis
@@ -221,16 +234,40 @@ def refresh_aliases(skills_dir: Path, commands_dir: Path,
     unlesbare Dateien bleiben unberuehrt (#353). Kopien mit beweisbar neuerem
     Versions-Marker werden nicht herabgestuft (#163).
 
+    Symlinks werden weder beschrieben noch geloescht, ein OSError an einer
+    Datei bricht den Lauf nicht ab (#400). Beides landet als "<name>: <grund>"
+    in `skipped`, falls eine Liste uebergeben wird.
+
     Liefert (erneuerte Namen, geloeschte Dateinamen).
     """
     stale = find_stale_aliases(skills_dir, commands_dir, loaded_version=loaded_version)
     refreshed = []
     for name in stale:
-        skill_text = (skills_dir / name / "SKILL.md").read_text()
-        (commands_dir / f"{name}.md").write_text(alias_content(name, skill_text))
+        target = commands_dir / f"{name}.md"
+        # Symlink zeigt evtl. aus dem Schreibbereich heraus — nicht anfassen.
+        if target.is_symlink():
+            _skip(skipped, name, "Symlink")
+            continue
+        try:
+            skill_text = (skills_dir / name / "SKILL.md").read_text()
+        except (OSError, UnicodeDecodeError):
+            _skip(skipped, name, "Skill nicht lesbar")
+            continue
+        try:
+            target.write_text(alias_content(name, skill_text))
+        except OSError as exc:
+            _skip(skipped, name, _reason(exc))
+            continue
         refreshed.append(name)
     removed = []
     for path in find_removed_aliases(commands_dir):
-        path.unlink()
+        if path.is_symlink():
+            _skip(skipped, path.stem, "Symlink")
+            continue
+        try:
+            path.unlink()
+        except OSError as exc:
+            _skip(skipped, path.stem, _reason(exc))
+            continue
         removed.append(path.name)
     return refreshed, removed
