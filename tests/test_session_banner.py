@@ -110,6 +110,14 @@ def _message(result) -> str:
     return json.loads(result.stdout)["systemMessage"]
 
 
+def _context(result) -> str:
+    """`hookSpecificOutput.additionalContext` (#399) oder "" wenn nicht vorhanden."""
+    if not result.stdout.strip():
+        return ""
+    data = json.loads(result.stdout)
+    return (data.get("hookSpecificOutput") or {}).get("additionalContext") or ""
+
+
 # --- Version ----------------------------------------------------------------
 
 def test_banner_shows_plugin_version(tmp_path):
@@ -127,48 +135,30 @@ def test_banner_uses_real_plugin_json_without_env(tmp_path):
     assert _message(result).splitlines()[0] == f"agent-os-openspec {expected} aktiv"
 
 
-# --- Stale-Alias-Erkennung ----------------------------------------------------
-
-def test_full_copy_for_now_invocable_skill_is_stale(tmp_path):
-    """Live-Fall: ~/.claude/commands/40-tdd-red.md ist eine Vollkopie mit
-    disable-model-invocation: true, der Skill ist inzwischen false.
-
-    AC-4 (#205): Fuer den Scope `~` nennt der Banner `--refresh-aliases`
-    (erzeugt nie neue Dateien, ueberschattet also nichts) statt des
-    frueheren Pro-Projekt-Umwegs, der bei `~`-Kopien nichts reparierte.
-    """
-    plugin = _plugin(tmp_path)
-    home, project = _dirs(tmp_path)
-    installed = _installed(tmp_path, home)
-    old = SKILL_INVOCABLE.replace("false", "true").replace("Neue", "Alte")
-    (home / ".claude" / "commands" / "40-tdd-red.md").write_text(f"{ALIAS_MARKER}\n{old}")
-    msg = _message(_run(plugin, home, project))
-    lines = msg.splitlines()
-    assert lines[0] == "agent-os-openspec 9.9.9 aktiv"
-    assert len(lines) == 2, msg
-    assert "Veraltete Befehls-Kopien: 40-tdd-red" in lines[1]
-    assert f"python3 {installed / 'setup.py'} ~ --refresh-aliases" in lines[1]
-    assert "--command-aliases" not in msg
-    assert str(plugin / "setup.py") not in msg
-
+# --- Stale-Alias-Erkennung (#399: Wartung statt Befehl) ---------------------
 
 def test_outdated_full_copy_in_project_is_stale(tmp_path):
-    """AC-2: Der Reparatur-Befehl zeigt auf die installierte Fassung, nicht
-    auf die beim Session-Start eingefrorene Plugin-Wurzel."""
+    """#399 AC-4: Der Projekt-Hinweis steht nur noch im Claude-Kontext und
+    zeigt auf die installierte Fassung, nicht auf die eingefrorene Plugin-Wurzel."""
     plugin = _plugin(tmp_path)
     home, project = _dirs(tmp_path)
     installed = _installed(tmp_path, home)
     old = SKILL_BLOCKED.replace("Neue", "Alte")
     (project / ".claude" / "commands" / "50-implement.md").write_text(f"{ALIAS_MARKER}\n{old}")
-    msg = _message(_run(plugin, home, project))
-    assert "Veraltete Befehls-Kopien: 50-implement" in msg
-    assert f"python3 {installed / 'setup.py'} {project} --refresh-aliases" in msg
-    assert "--command-aliases" not in msg
-    assert str(plugin / "setup.py") not in msg
+    result = _run(plugin, home, project)
+    msg = _message(result)
+    ctx = _context(result)
+    assert "Veraltete Befehls-Kopien" not in msg
+    assert "python3" not in msg
+    assert "50-implement" in ctx
+    assert str(installed / "setup.py") in ctx
+    assert "--refresh-aliases" in ctx
+    assert "--command-aliases" not in ctx
+    assert str(plugin / "setup.py") not in ctx
 
 
 def test_copy_with_newer_marker_is_not_reported(tmp_path):
-    """AC-1: Eine Kopie, die beweisbar neuer ist als die geladene Version,
+    """AC-1 (#163): Eine Kopie, die beweisbar neuer ist als die geladene Version,
     wuerde durch den Reparatur-Befehl herabgestuft — also kein Wort darueber."""
     plugin = _plugin(tmp_path, "3.24.0")
     home, project = _dirs(tmp_path)
@@ -176,45 +166,202 @@ def test_copy_with_newer_marker_is_not_reported(tmp_path):
     (project / ".claude" / "commands" / "50-implement.md").write_text(
         _marked("50-implement", SKILL_BLOCKED, "3.25.0")
     )
-    msg = _message(_run(plugin, home, project))
-    assert msg == "agent-os-openspec 3.24.0 aktiv"
+    result = _run(plugin, home, project)
+    assert _message(result) == "agent-os-openspec 3.24.0 aktiv"
+    assert "50-implement" not in _context(result)
 
 
 def test_copy_with_older_marker_points_to_installed_version(tmp_path):
-    """AC-2/AC-5: 3.9.0 ist aelter als 3.25.0 — numerisch, nicht als String."""
+    """AC-2/AC-5: 3.9.0 ist aelter als 3.25.0 — numerisch, nicht als String.
+    #399: Hinweis nur im Claude-Kontext."""
     plugin = _plugin(tmp_path, "3.25.0")
     home, project = _dirs(tmp_path)
     installed = _installed(tmp_path, home, "3.26.2")
     (project / ".claude" / "commands" / "50-implement.md").write_text(
         _marked("50-implement", SKILL_BLOCKED, "3.9.0")
     )
-    msg = _message(_run(plugin, home, project))
-    assert "Veraltete Befehls-Kopien: 50-implement" in msg
-    assert f"python3 {installed / 'setup.py'} {project} --refresh-aliases" in msg
-    assert str(plugin / "setup.py") not in msg
+    result = _run(plugin, home, project)
+    msg = _message(result)
+    ctx = _context(result)
+    assert "Veraltete Befehls-Kopien" not in msg
+    assert "python3" not in msg
+    assert "50-implement" in ctx
+    assert str(installed / "setup.py") in ctx
+    assert str(plugin / "setup.py") not in ctx
 
 
 def test_unresolvable_installation_yields_no_setup_py_path(tmp_path):
-    """AC-4: Ohne `installed_plugins.json` lieber kein Pfad als ein falscher."""
+    """AC-4 (#205): Ohne `installed_plugins.json` lieber kein Pfad als ein falscher."""
     plugin = _plugin(tmp_path)
     home, project = _dirs(tmp_path)
     old = SKILL_BLOCKED.replace("Neue", "Alte")
     (project / ".claude" / "commands" / "50-implement.md").write_text(f"{ALIAS_MARKER}\n{old}")
-    msg = _message(_run(plugin, home, project))
-    assert "Veraltete Befehls-Kopien: 50-implement" in msg
-    assert "setup.py" not in msg
+    result = _run(plugin, home, project)
+    msg = _message(result)
+    ctx = _context(result)
+    assert "Veraltete Befehls-Kopien" not in msg
+    assert "python3" not in msg
+    assert "50-implement" in ctx
+    assert "/setup.py" not in ctx
 
 
 def test_installation_without_setup_py_yields_no_path(tmp_path):
-    """AC-4: Eintrag vorhanden, Installation aber unbrauchbar — kein Pfad."""
+    """AC-4 (#205): Eintrag vorhanden, Installation aber unbrauchbar — kein Pfad."""
     plugin = _plugin(tmp_path)
     home, project = _dirs(tmp_path)
     _installed(tmp_path, home, with_setup=False)
     old = SKILL_BLOCKED.replace("Neue", "Alte")
     (project / ".claude" / "commands" / "50-implement.md").write_text(f"{ALIAS_MARKER}\n{old}")
+    result = _run(plugin, home, project)
+    msg = _message(result)
+    ctx = _context(result)
+    assert "Veraltete Befehls-Kopien" not in msg
+    assert "python3" not in msg
+    assert "50-implement" in ctx
+    assert "/setup.py" not in ctx
+
+
+# --- Wartung beim Start (#399) -------------------------------------------------
+
+def test_start_frischt_veraltete_kopie_in_home_auf(tmp_path):
+    """AC-1 (#399):
+    GIVEN eine veraltete markierte Kopie ~/.claude/commands/40-tdd-red.md
+    WHEN der Banner beim Start laeuft
+    THEN entspricht sie der geladenen Fassung, die sichtbare Ausgabe meldet
+    "Kurzbefehle aktualisiert" und enthaelt keinen Befehl (kein python3/setup.py).
+    """
+    plugin = _plugin(tmp_path)
+    home, project = _dirs(tmp_path)
+    _installed(tmp_path, home)
+    target = home / ".claude" / "commands" / "40-tdd-red.md"
+    old = SKILL_INVOCABLE.replace("false", "true").replace("Neue", "Alte")
+    target.write_text(f"{ALIAS_MARKER}\n{old}")
     msg = _message(_run(plugin, home, project))
-    assert "Veraltete Befehls-Kopien: 50-implement" in msg
+    assert target.read_text() == alias_content("40-tdd-red", SKILL_INVOCABLE)
+    assert find_stale_aliases(plugin / "skills", home / ".claude" / "commands") == []
+    assert msg.splitlines()[0] == "agent-os-openspec 9.9.9 aktiv"
+    assert "Kurzbefehle aktualisiert" in msg
+    assert "python3" not in msg
     assert "setup.py" not in msg
+
+
+def test_start_stuft_kopie_mit_neuerem_marker_nicht_herab(tmp_path):
+    """AC-2 (#399, #163):
+    GIVEN eine Kopie in ~ mit neuerem Versions-Marker (3.25.0) als die geladene
+          Fassung (3.24.0) und abweichendem Inhalt
+    WHEN der Banner laeuft
+    THEN bleibt die Datei byte-identisch und es erscheint keine Aktualisierungszeile.
+    """
+    plugin = _plugin(tmp_path, "3.24.0")
+    home, project = _dirs(tmp_path)
+    target = home / ".claude" / "commands" / "40-tdd-red.md"
+    newer = _marked("40-tdd-red", SKILL_INVOCABLE.replace("Neue", "Neuere"), "3.25.0")
+    target.write_bytes(newer.encode())
+    msg = _message(_run(plugin, home, project))
+    assert target.read_bytes() == newer.encode()
+    assert "Kurzbefehle aktualisiert" not in msg
+
+
+def test_start_loescht_markierten_alias_entfernter_befehle_nicht_fremde_datei(tmp_path):
+    """AC-3 (#399, #333, #353):
+    GIVEN ein markierter Alias des entfernten Befehls 00-bug in ~/.claude/commands,
+          eine unmarkierte Datei gleichen Namens in einem anderen Ordner unter ~
+          und ein eigener unmarkierter Befehl
+    WHEN der Banner laeuft
+    THEN ist der markierte Alias geloescht, die unmarkierten Dateien bleiben unveraendert.
+    """
+    plugin = _plugin(tmp_path)
+    home, project = _dirs(tmp_path)
+    cmds = home / ".claude" / "commands"
+    marked = cmds / "00-bug.md"
+    marked.write_text(f"{ALIAS_MARKER}\n# Bug\n\nAlte Fassung.\n")
+    other_dir = cmds / "eigene"
+    other_dir.mkdir()
+    foreign = other_dir / "00-bug.md"
+    foreign.write_bytes(b"# Mein eigener Bug-Befehl\n")
+    own = cmds / "eigener.md"
+    own.write_bytes(b"# Eigener Befehl\n")
+    _message(_run(plugin, home, project))
+    assert not marked.exists()
+    assert foreign.read_bytes() == b"# Mein eigener Bug-Befehl\n"
+    assert own.read_bytes() == b"# Eigener Befehl\n"
+
+
+def test_projekt_kopie_wird_nicht_geschrieben_nur_claude_hinweis(tmp_path):
+    """AC-4 (#399):
+    GIVEN eine veraltete markierte Kopie in <projekt>/.claude/commands/50-implement.md
+    WHEN der Banner laeuft
+    THEN ist die Datei byte-identisch, der Hinweis steht nur in additionalContext.
+    """
+    plugin = _plugin(tmp_path)
+    home, project = _dirs(tmp_path)
+    _installed(tmp_path, home)
+    target = project / ".claude" / "commands" / "50-implement.md"
+    old = f"{ALIAS_MARKER}\n{SKILL_BLOCKED.replace('Neue', 'Alte')}".encode()
+    target.write_bytes(old)
+    result = _run(plugin, home, project)
+    msg = _message(result)
+    assert target.read_bytes() == old
+    assert "50-implement" in _context(result)
+    assert "50-implement" not in msg
+    assert "python3" not in msg
+
+
+def test_source_compact_fuehrt_keine_wartung_aus(tmp_path):
+    """AC-8 (#399):
+    GIVEN Payload source == "compact" und eine veraltete Kopie in ~
+    WHEN der Banner laeuft
+    THEN wird nichts aufgefrischt, ausgegeben wird nur die Versionszeile.
+    """
+    plugin = _plugin(tmp_path)
+    home, project = _dirs(tmp_path)
+    _installed(tmp_path, home)
+    target = home / ".claude" / "commands" / "40-tdd-red.md"
+    old = f"{ALIAS_MARKER}\n{SKILL_INVOCABLE.replace('Neue', 'Alte')}".encode()
+    target.write_bytes(old)
+    result = _run(plugin, home, project, stdin=json.dumps({"source": "compact"}))
+    assert _message(result) == "agent-os-openspec 9.9.9 aktiv"
+    assert _context(result) == ""
+    assert target.read_bytes() == old
+
+
+def test_exception_in_wartung_bleibt_fail_open(tmp_path):
+    """AC-10 (#399):
+    GIVEN ein schreibgeschuetztes ~/.claude/commands mit veralteter markierter
+          Kopie und einem markierten Alias eines entfernten Befehls
+    WHEN der Banner laeuft
+    THEN endet er mit Exit 0, ohne Traceback; stdout ist leer oder gueltiges JSON.
+    """
+    plugin = _plugin(tmp_path)
+    home, project = _dirs(tmp_path)
+    cmds = home / ".claude" / "commands"
+    stale = cmds / "40-tdd-red.md"
+    stale.write_text(f"{ALIAS_MARKER}\n{SKILL_INVOCABLE.replace('Neue', 'Alte')}")
+    (cmds / "00-bug.md").write_text(f"{ALIAS_MARKER}\n# Bug\n")
+    stale.chmod(0o444)
+    cmds.chmod(0o500)
+    try:
+        result = _run(plugin, home, project)
+    finally:
+        cmds.chmod(0o755)
+        stale.chmod(0o644)
+    assert result.returncode == 0, result.stderr
+    assert "Traceback" not in result.stdout
+    if result.stdout.strip():
+        json.loads(result.stdout)
+
+
+def test_hooks_json_banner_timeout_ist_10():
+    """AC-11 (#399):
+    GIVEN hooks/hooks.json
+    WHEN der SessionStart-Eintrag fuer session_banner.py gelesen wird
+    THEN ist sein timeout 10.
+    """
+    hooks = json.loads((REPO_ROOT / "hooks" / "hooks.json").read_text())
+    entries = [h for entry in hooks["hooks"]["SessionStart"] for h in entry["hooks"]
+               if h.get("command") == "${CLAUDE_PLUGIN_ROOT}/core/hooks/session_banner.py"]
+    assert len(entries) == 1
+    assert entries[0].get("timeout") == 10
 
 
 # --- Versions-Marker (alias_sync) ---------------------------------------------
