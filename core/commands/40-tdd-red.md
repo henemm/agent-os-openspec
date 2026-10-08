@@ -138,7 +138,7 @@ Weder diese Anweisung noch die `###`-Überschriften gehören in die Ausgabe — 
 ---
 ✅ Phase 5 (TDD RED) abgeschlossen.
 
-Workflow: `<name>` · Issue: **#<N>** · Phase: `phase5_tdd_red` ✓
+Workflow: `<name>` · Issue: **#<N>** · Phase 5 (`phase5_tdd_red`) ✓ · jetzt: `phase6_implement`
 
 **Was wurde gemacht:** Die Qualitätsprüfungen (Tests) sind aufgesetzt und bestätigt als fehlschlagend — genau wie geplant, denn die eigentliche Funktion ist noch nicht gebaut. Das ist ein gutes Zeichen: Wir messen zuerst, dann bauen wir.
 

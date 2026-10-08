@@ -86,7 +86,9 @@ Task (Plan/sonnet, run_in_background: true): "Basierend auf folgenden Investigat
   2. Risiko-Bewertung (was koennte brechen?)
   3. Scope-Schaetzung (Dateien, LoC)
   4. Abhaengigkeiten und Reihenfolge
-  5. Empfehlung (eine klare Empfehlung)"
+  5. Befunde, die gegen den Plan sprechen (oder „keine“ mit Begruendung); bei Mess- oder
+     Variantenvergleichen alle Varianten mit Zahlen in einer Tabelle, BEVOR die Empfehlung kommt
+  6. Empfehlung (eine klare Empfehlung)"
 ```
 
 ### Step 4: Synthese praesentieren
