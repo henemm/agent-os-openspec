@@ -53,7 +53,7 @@ Die folgenden Standards MUESSEN befolgt werden (Pfad relativ zu Projekt-Root):
 
 Jede Feature-Planung MUSS enden mit diesen Schritten:
 
-1. **ZUERST: GitHub Issue erstellen** (zentraler Tracking-Einstiegspunkt!)
+1. **ZUERST: GitHub Issue erstellen** (zentraler Tracking-Einstiegspunkt!) — aber erst, wenn der PO den Zweck (Nutzerproblem + riskanteste Annahme, zwei bis drei Sätze) bestätigt hat. Ohne Bestätigung: Zweck vorlegen und stoppen (#187).
 
    **Triage-Marker (Pflicht als erste Body-Zeile):** Das Ziel-Repo blockt `gh issue create` ohne Marker. Standardfall fuer Feature-Planung ist `[triage:po]` (vom PO angestossen). Alternativen:
    - `[triage:a]` — Feature ist aus einem konkreten Nutzerproblem abgeleitet
