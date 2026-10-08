@@ -5,6 +5,8 @@ der einen Commit pusht. Gemessen wird der Zweig des Haupt-Ordners — auch aus
 einer Worktree-Sitzung heraus. Scheitert der Fetch, erscheint keine Zeile.
 """
 
+import json
+import os
 import subprocess
 import sys
 import time
@@ -56,24 +58,6 @@ def _push_foreign_commit(origin, tmp_path, n=1):
 def test_up_to_date_no_line(repos):
     _, main = repos
     assert session_banner.behind_lines(main) == []
-
-
-def test_behind_shows_count_and_sync_main(repos, tmp_path):
-    origin, main = repos
-    _push_foreign_commit(origin, tmp_path, n=2)
-    lines = session_banner.behind_lines(main)
-    assert len(lines) == 1 and "2 Commit(s) hinter origin/main" in lines[0], lines
-    assert "sync-main" in lines[0]
-
-
-def test_worktree_session_measures_main_folder(repos, tmp_path):
-    origin, main = repos
-    wt = tmp_path / "wt"
-    _git(["worktree", "add", "-q", "-b", "feat", str(wt)], main)
-    _push_foreign_commit(origin, tmp_path)
-    lines = session_banner.behind_lines(wt)
-    assert lines and "1 Commit(s) hinter origin/main" in lines[0], lines
-    assert (main / "a.txt").exists() and not (main / "b0.txt").exists(), "Haupt-Ordner unberuehrt"
 
 
 def test_failed_fetch_shows_nothing_and_is_fast(repos, tmp_path):
@@ -130,7 +114,9 @@ def test_remote_name_with_slash(repos, tmp_path):
     _git(["branch", "--set-upstream-to", "team/origin/main", "main"], main)
     _push_foreign_commit(origin, tmp_path)
     lines = session_banner.behind_lines(main)
-    assert lines and "1 Commit(s) hinter team/origin/main" in lines[0], lines
+    # #399: wird nachgezogen statt gemeldet
+    assert lines == ["Projektstand aktualisiert (1 Änderungen)"], lines
+    assert (main / "b0.txt").exists()
 
 
 # --- #371: keine Waisen nach dem Timeout, BatchMode auch bei eigener GIT_SSH_COMMAND ---
@@ -167,3 +153,101 @@ def test_user_ssh_command_gets_batchmode(monkeypatch, tmp_path):
     # Nur der Fetch nutzt ssh und bekommt BatchMode (#382); kein Remote, scheitert lokal
     session_banner._git(["fetch", "--quiet", "nonexistent-remote"], tmp_path, 2)
     assert seen["GIT_SSH_COMMAND"] == "ssh -i ~/.ssh/deploy -oBatchMode=yes"
+
+
+# --- #399: Haupt-Ordner wird beim Start selbst nachgezogen (Subprozess) ---
+
+BANNER = REPO_ROOT / "core" / "hooks" / "session_banner.py"
+GIT_VOCAB = ("commit", "merge", "branch", "fetch", "origin", "worktree", "rebase",
+             "checkout", "push", "pull", "sync-main", "python3")
+
+
+def _fake_plugin(tmp_path):
+    root = tmp_path / "plugin"
+    (root / ".claude-plugin").mkdir(parents=True, exist_ok=True)
+    (root / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "agent-os-openspec", "version": "9.9.9"}))
+    return root
+
+
+def _run_banner(tmp_path, cwd):
+    home = tmp_path / "home"
+    (home / ".claude" / "commands").mkdir(parents=True, exist_ok=True)
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("OPENSPEC_FRAMEWORK", "CLAUDE_PLUGIN_ROOT")}
+    env.update({"HOME": str(home), "CLAUDE_PLUGIN_ROOT": str(_fake_plugin(tmp_path)),
+                "CLAUDE_PROJECT_DIR": str(cwd)})
+    stdin = json.dumps({"source": "startup", "cwd": str(cwd)})
+    res = subprocess.run([sys.executable, str(BANNER)], input=stdin, capture_output=True,
+                         text=True, env=env, cwd=str(cwd), timeout=30)
+    assert res.returncode == 0, res.stderr
+    assert res.stdout.strip(), f"keine Ausgabe, stderr={res.stderr!r}"
+    data = json.loads(res.stdout)
+    ctx = (data.get("hookSpecificOutput") or {}).get("additionalContext") or ""
+    return data["systemMessage"], ctx
+
+
+def _head(repo, ref="HEAD"):
+    return subprocess.run(["git", "rev-parse", ref], cwd=str(repo), check=True,
+                          capture_output=True, text=True).stdout.strip()
+
+
+def _no_vocab(text):
+    low = text.lower()
+    hits = [w for w in GIT_VOCAB if w in low]
+    assert not hits, f"Git-Vokabular im sichtbaren Text {hits}: {text!r}"
+
+
+def test_behind_sauber_wird_nachgezogen_ohne_git_vokabular(repos, tmp_path):
+    """AC-5.
+    GIVEN ein sauberer Haupt-Ordner, 2 Aenderungen hinter dem Remote, cwd = Haupt-Ordner
+    WHEN der Banner als SessionStart-Hook laeuft
+    THEN ist HEAD gleich dem Remote-Stand, die neue Datei liegt im Haupt-Ordner und die
+         sichtbare Zeile meldet "Projektstand aktualisiert" ohne Git-Vokabular
+    """
+    origin, main = repos
+    _push_foreign_commit(origin, tmp_path, n=2)
+    msg, _ctx = _run_banner(tmp_path, main)
+    assert _head(main) == _head(main, "origin/main"), "Haupt-Ordner nicht nachgezogen"
+    assert (main / "b0.txt").exists()
+    assert "Projektstand aktualisiert" in msg, msg
+    _no_vocab(msg)
+
+
+def test_behind_mit_lokalen_aenderungen_nur_claude_hinweis(repos, tmp_path):
+    """AC-6.
+    GIVEN ein Haupt-Ordner hinter dem Remote mit geaenderter versionierter Datei
+    WHEN der Banner laeuft
+    THEN bleibt HEAD stehen, die lokale Aenderung bleibt erhalten, der Hinweis steht in
+         additionalContext und systemMessage enthaelt weder Git-Vokabular noch
+         "Projektstand aktualisiert"
+    """
+    origin, main = repos
+    _push_foreign_commit(origin, tmp_path)
+    (main / "a.txt").write_text("lokal\n")
+    before = _head(main)
+    msg, ctx = _run_banner(tmp_path, main)
+    assert _head(main) == before, "HEAD darf sich bei lokalen Aenderungen nicht bewegen"
+    assert (main / "a.txt").read_text() == "lokal\n"
+    assert ctx.strip(), "Hinweis an Claude fehlt in additionalContext"
+    assert "Projektstand aktualisiert" not in msg, msg
+    _no_vocab(msg)
+
+
+def test_worktree_cwd_zieht_nicht_nach_und_schweigt(repos, tmp_path):
+    """AC-7.
+    GIVEN eine Sitzung im Worktree, der Haupt-Ordner liegt hinter dem Remote
+    WHEN der Banner laeuft
+    THEN bleibt der Haupt-Ordner unveraendert und es erscheint nur die Versionszeile,
+         ohne Hinweis an Claude
+    """
+    origin, main = repos
+    wt = tmp_path / "wt"
+    _git(["worktree", "add", "-q", "-b", "feat", str(wt)], main)
+    _push_foreign_commit(origin, tmp_path)
+    before = _head(main)
+    msg, ctx = _run_banner(tmp_path, wt)
+    assert _head(main) == before
+    assert not (main / "b0.txt").exists(), "Haupt-Ordner darf nicht nachgezogen werden"
+    assert msg == "agent-os-openspec 9.9.9 aktiv", msg
+    assert not ctx.strip(), ctx

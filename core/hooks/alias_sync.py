@@ -210,3 +210,27 @@ def find_removed_aliases(commands_dir: Path) -> "list[Path]":
         if text is not None and is_alias_file(text):
             found.append(target)
     return found
+
+
+def refresh_aliases(skills_dir: Path, commands_dir: Path,
+                    loaded_version: "str | None") -> "tuple[list[str], list[str]]":
+    """Veraltete markierte Kopien erneuern, Aliase entfernter Befehle loeschen.
+
+    Gemeinsame Kernlogik von `setup.py --refresh-aliases` und dem Start-Hinweis
+    (#399). Legt nie eine Datei an (#87/#205); unmarkierte, fremde oder
+    unlesbare Dateien bleiben unberuehrt (#353). Kopien mit beweisbar neuerem
+    Versions-Marker werden nicht herabgestuft (#163).
+
+    Liefert (erneuerte Namen, geloeschte Dateinamen).
+    """
+    stale = find_stale_aliases(skills_dir, commands_dir, loaded_version=loaded_version)
+    refreshed = []
+    for name in stale:
+        skill_text = (skills_dir / name / "SKILL.md").read_text()
+        (commands_dir / f"{name}.md").write_text(alias_content(name, skill_text))
+        refreshed.append(name)
+    removed = []
+    for path in find_removed_aliases(commands_dir):
+        path.unlink()
+        removed.append(path.name)
+    return refreshed, removed

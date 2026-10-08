@@ -279,7 +279,7 @@ Einmal-Bypass fuer Gates:
 
 Registrierung zentral in `hooks/hooks.json` (Plugin-Modus) bzw. `.claude/settings.json` (Copy-Modus). Reihenfolge innerhalb eines Events entspricht der Listen-Reihenfolge in `hooks.json`.
 
-**SessionStart:** `session_singleton_guard.py register` — legt Sitzungseintrag an → `session_banner.py` — zeigt geladene Version, warnt vor veralteten Befehls-Kopien
+**SessionStart:** `session_singleton_guard.py register` — legt Sitzungseintrag an → `session_banner.py` — zeigt Version, frischt markierte Kurzbefehle in `~/.claude/commands` auf, zieht den Haupt-Ordner nach; Unerledigtes geht per `additionalContext` an Claude (#399)
 
 **PreToolUse, alle Tools:** `session_singleton_guard.py guard` — erzwingt Worktree-Pflicht (blockt Schreib-Tools im Haupt-Repo) → `secret_egress_guard.py` — blockt ausgeschriebene `.env`-Werte in JEDEM Tool-Input und, nur bei Bash, Umleitungsziele ausserhalb der Sicherheitszone (Issue #97/#237). Bewusst ohne Matcher: der Wert-Check gilt fuer alle Tools, nicht nur Bash.
 
@@ -310,7 +310,7 @@ Registrierung zentral in `hooks/hooks.json` (Plugin-Modus) bzw. `.claude/setting
   Issue-Nummer gehoert. Als einziger Modus gibt `claim` Meldungen auf stdout aus; die drei
   Hook-Modi bleiben still.
 
-**Kein Hook — zweiter CLI-Modus:** `session_singleton_guard.py sync-main` zieht den Haupt-Ordner
+**Kein Hook — zweiter CLI-Modus:** `session_singleton_guard.py sync-main` zieht den Haupt-Ordner (der Banner versucht das beim Start dort selbst, #399)
 per `git fetch` + `git merge --ff-only` nach (Issue #169). Der Guard lässt im Haupt-Ordner genau
 diesen einen Bash-Aufruf durch; bei Änderungen, abweichender Historie oder ohne Upstream bricht er
 ab, ohne etwas zu ändern. Nur aus einer Session im Haupt-Ordner nutzbar — Worktree-Sessions dürfen

@@ -225,7 +225,10 @@ def test_refresh_aliases_deletes_only_removed_marked_alias(tmp_path):
 
 
 def test_banner_warns_about_removed_aliases(tmp_path):
-    """AC-7: Banner meldet markierten 00-bug-Alias und nennt --refresh-aliases."""
+    """AC-7: Banner meldet markierten 00-bug-Alias und nennt --refresh-aliases.
+
+    #399: Der Projekt-Hinweis geht nur an Claude (additionalContext), nicht in den sichtbaren Text.
+    """
     plugin = tmp_path / "plugin"
     (plugin / ".claude-plugin").mkdir(parents=True)
     (plugin / ".claude-plugin" / "plugin.json").write_text(
@@ -251,10 +254,14 @@ def test_banner_warns_about_removed_aliases(tmp_path):
                        cwd=str(project))
     assert r.returncode == 0, r.stderr
     assert r.stdout.strip(), r.stderr
-    msg = json.loads(r.stdout)["systemMessage"]
-    warn = [line for line in msg.splitlines() if "00-bug" in line]
-    assert warn, msg
-    assert any("--refresh-aliases" in line for line in warn), msg
+    data = json.loads(r.stdout)
+    msg = data["systemMessage"]
+    ctx = data.get("hookSpecificOutput", {}).get("additionalContext", "")
+    warn = [line for line in ctx.splitlines() if "00-bug" in line]
+    assert warn, ctx
+    assert any("--refresh-aliases" in line for line in warn), ctx
+    assert "00-bug" not in msg, msg
+    assert "python3" not in msg, msg
 
 
 # --- AC-8 -------------------------------------------------------------------

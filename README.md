@@ -52,7 +52,7 @@ cd /path/to/your/project
 python3 /path/to/agent-os-openspec/setup.py . --command-aliases
 ```
 
-Aliases are copies and do not disappear when a command is removed from the plugin (e.g. the former bug command, removed in #333). The session banner warns about such orphans; clean up with:
+Aliases are copies and do not disappear when a command is removed from the plugin (e.g. the former bug command, removed in #333). The session banner refreshes outdated global aliases in `~/.claude/commands` and deletes orphaned ones itself (never downgrades, never creates new ones). Project-level aliases are versioned and left untouched; refresh them with:
 
 ```bash
 python3 /path/to/agent-os-openspec/setup.py /path/to/your/project --refresh-aliases   # refresh outdated aliases, delete orphaned ones

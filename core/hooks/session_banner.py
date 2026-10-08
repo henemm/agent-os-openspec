@@ -23,6 +23,14 @@ er ueberschreibt nur vorhandene veraltete Kopien und legt nie eine neue Datei an
 sicher auch im globalen Scope `~`, wo `--command-aliases` projekteigene Befehle
 ueberschatten wuerde (#87).
 
+Seit #399 erledigt der Start die ungefaehrliche Wartung selbst, statt dem User
+Befehle zu nennen: veraltete Kurzbefehle in `~` werden aufgefrischt, ein
+sauberer Haupt-Ordner wird fast-forward nachgezogen. Sichtbar bleibt nur
+Klartext ("Kurzbefehle aktualisiert (N)", "Projektstand aktualisiert (N
+Änderungen)"). Was der Start nicht beheben darf (Projekt-Kurzbefehle sind
+versioniert; Haupt-Ordner mit lokalen Aenderungen), geht nur als
+`additionalContext` an Claude. Bei `source == "compact"` keine Wartung.
+
 Robust by design: jede Exception → still Exit 0. Ein Banner darf den
 Session-Start nie blockieren. Bei `framework: {enabled: false}` bzw.
 OPENSPEC_FRAMEWORK=off wird nichts ausgegeben.
@@ -55,16 +63,21 @@ def plugin_version(root: Path) -> "str | None":
     return version if isinstance(version, str) and version else None
 
 
-def _payload_cwd() -> "str | None":
+def _read_payload() -> dict:
+    """SessionStart-Payload von stdin (einmal gelesen), sonst {} — wirft nie."""
     try:
         if sys.stdin is None or sys.stdin.isatty():
-            return None
+            return {}
         raw = sys.stdin.read()
         data = json.loads(raw) if raw.strip() else {}
-        cwd = data.get("cwd") if isinstance(data, dict) else None
-        return cwd if isinstance(cwd, str) and cwd else None
+        return data if isinstance(data, dict) else {}
     except Exception:
-        return None
+        return {}
+
+
+def _payload_str(payload: dict, key: str) -> "str | None":
+    value = payload.get(key)
+    return value if isinstance(value, str) and value else None
 
 
 def project_dir(payload_cwd: "str | None") -> Path:
@@ -134,62 +147,58 @@ def _alias_scopes(project: Path) -> "list[tuple[str, Path]]":
     return scopes
 
 
-def stale_alias_lines(root: Path, project: Path) -> "list[str]":
-    """Eine Warnzeile je Scope (~ bzw. Projekt) mit veralteten Alias-Kopien."""
-    from alias_sync import find_stale_aliases
+def refresh_home_aliases(root: Path) -> "list[str]":
+    """Kurzbefehle in `~` selbst auffrischen (#399); sichtbare Zeile oder nichts.
 
-    skills_dir = root / "skills"
-    scopes = _alias_scopes(project)
-
-    loaded = plugin_version(root)
+    Gleiche Regeln wie `setup.py --refresh-aliases`: legt nie an, stuft nie
+    herab (#163), fasst nur markierte Dateien an. Fehler → still nichts.
+    """
     try:
-        installed = installed_plugin()
-    except Exception:
-        installed = None
-
-    lines = []
-    for label, scope in scopes:
-        try:
-            stale = find_stale_aliases(
-                skills_dir, scope / ".claude" / "commands", loaded_version=loaded
-            )
-        except Exception:
-            continue
-        if stale:
-            lines.append(
-                f"Veraltete Befehls-Kopien: {', '.join(stale)} "
-                f"(Scope {label}) — {_repair_hint(label, installed)}"
-            )
-    return lines
-
-
-def removed_alias_lines(project: Path) -> "list[str]":
-    """Eine Warnzeile je Scope mit markierten Aliasen entfernter Befehle (#333)."""
-    from alias_sync import find_removed_aliases
-
-    try:
-        installed = installed_plugin()
-    except Exception:
-        installed = None
-
-    lines = []
-    for label, scope in _alias_scopes(project):
-        try:
-            found = find_removed_aliases(scope / ".claude" / "commands")
-        except Exception:
-            continue
-        if not found:
-            continue
-        if installed is None:
-            hint = (f"aufraeumen per --refresh-aliases im Scope {label} "
-                    "(installierte Plugin-Fassung nicht auffindbar)")
-        else:
-            hint = f"aufraeumen mit: python3 {installed[0]} {label} --refresh-aliases"
-        names = ", ".join(p.stem for p in found)
-        lines.append(
-            f"{len(found)} Kurz-Alias(e) entfernter Befehle: {names} "
-            f"(Scope {label}) — {hint}"
+        from alias_sync import refresh_aliases
+        refreshed, removed = refresh_aliases(
+            root / "skills", Path.home() / ".claude" / "commands", plugin_version(root)
         )
+    except Exception:
+        return []
+    count = len(refreshed) + len(removed)
+    return [f"Kurzbefehle aktualisiert ({count})"] if count else []
+
+
+def project_alias_context(root: Path, project: Path) -> "list[str]":
+    """Hinweise an Claude zu veralteten Kurzbefehlen im Projekt-Scope (#399).
+
+    Das Projekt-Scope ist versioniert — der Start schreibt dort nie; ein
+    Schreiben wuerde den Haupt-Ordner aendern und das Nachziehen blockieren.
+    """
+    from alias_sync import find_removed_aliases, find_stale_aliases
+
+    try:
+        installed = installed_plugin()
+    except Exception:
+        installed = None
+    lines = []
+    for label, scope in _alias_scopes(project)[1:]:
+        commands = scope / ".claude" / "commands"
+        try:
+            stale = find_stale_aliases(root / "skills", commands,
+                                       loaded_version=plugin_version(root))
+            removed = [p.stem for p in find_removed_aliases(commands)]
+        except Exception:
+            continue
+        hint = _repair_hint(label, installed)
+        if stale:
+            lines.append(f"Veraltete Kurzbefehl-Kopien im Projekt: {', '.join(stale)} "
+                         f"(Scope {label}) — {hint}")
+        if removed:
+            if installed is None:
+                hint = (f"aufraeumen per --refresh-aliases im Scope {label} "
+                        "(installierte Plugin-Fassung nicht auffindbar)")
+            lines.append(f"Kurz-Alias(e) entfernter Befehle im Projekt: {', '.join(removed)} "
+                         f"(Scope {label}) — {hint}")
+    if lines:
+        lines.append("Diese Dateien sind versioniert und wurden beim Start nicht geaendert: "
+                     "im Arbeitsordner mit --refresh-aliases auffrischen und mit der "
+                     "naechsten Aenderung mitliefern.")
     return lines
 
 
@@ -258,13 +267,17 @@ def _monotonic() -> float:
     return time.monotonic()
 
 
+def _git_env() -> dict:
+    # Kein Dialog beim Session-Start: weder Terminal- noch GUI-Abfrage (VS Code
+    # setzt GIT_ASKPASS), weder ssh-askpass noch Git Credential Manager.
+    return dict(os.environ, GIT_TERMINAL_PROMPT="0", GIT_ASKPASS="", SSH_ASKPASS="",
+                SSH_ASKPASS_REQUIRE="never", GCM_INTERACTIVE="never")
+
+
 def _git(args: "list[str]", cwd: Path, timeout: float) -> "str | None":
     """git-Ausgabe oder None (Fehler, Timeout, kein Repo) — wirft nie."""
     import subprocess
-    # Kein Dialog beim Session-Start: weder Terminal- noch GUI-Abfrage (VS Code
-    # setzt GIT_ASKPASS), weder ssh-askpass noch Git Credential Manager.
-    env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GIT_ASKPASS="", SSH_ASKPASS="",
-               SSH_ASKPASS_REQUIRE="never", GCM_INTERACTIVE="never")
+    env = _git_env()
     if "fetch" in args:
         # Nur der Fetch nutzt ssh. Das Config-Lesen zaehlt zum Timeout des
         # Aufrufs, damit ein haengendes `git config` das Budget nicht sprengt (#382).
@@ -309,77 +322,201 @@ def _kill_group(proc) -> None:
         pass
 
 
-def behind_lines(cwd: Path) -> "list[str]":
-    """Warnzeile, wenn der Haupt-Ordner hinter seinem Upstream liegt (#185).
+_TOTAL_BUDGET_S = 8.0  # Hook-Timeout ist 10 s (#399); Rest fuer Start und Ausgabe
+_MERGE_TIMEOUT_S = 4.0
+_MIN_MERGE_S = 0.5
 
-    Gemessen wird der Zweig, den der HAUPT-Ordner ausgecheckt hat — auch aus
-    einer Worktree-Sitzung, ueber die geteilten Refs, ohne Git-Aufruf auf den
-    Haupt-Ordner selbst (#169). Ein `git fetch` mit 3 s Timeout holt den
-    Remote-Stand; scheitert er (offline, VPN, Zugangsdaten), erscheint keine
-    Zeile — lieber nichts als ein veralteter Vergleich. Abschaltbar ueber
-    config.yaml → session_banner.behind_check: false.
-    """
+
+def _term_group(proc) -> None:
+    """Prozessgruppe mit SIGTERM beenden, nie SIGKILL — git raeumt dann seine
+    `index.lock` selbst weg (#399). Wirft nie."""
+    import signal
     try:
-        from config_loader import load_config
-        if (load_config().get("session_banner") or {}).get("behind_check", True) is False:
-            return []
+        os.killpg(proc.pid, signal.SIGTERM)
+    except Exception:
+        try:
+            proc.terminate()
+        except Exception:
+            pass
+    try:
+        proc.wait(timeout=1)
     except Exception:
         pass
-    import time
-    deadline = time.monotonic() + 4.0  # Hook-Timeout ist 5 s; Banner und Alias-Warnungen gehen vor
 
-    def left(cap: float) -> float:
-        return max(0.1, min(cap, deadline - time.monotonic()))
 
+def _ff_merge(folder: Path, upstream: str, timeout: float) -> bool:
+    """`git merge --ff-only` mit eigenem Zeitbudget; True bei Erfolg — wirft nie."""
+    import subprocess
+    try:
+        proc = subprocess.Popen(
+            ["git", "-c", "maintenance.auto=false", "-c", "gc.auto=0",
+             "merge", "--ff-only", "--quiet", upstream],
+            cwd=str(folder), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL, env=_git_env(), start_new_session=True)
+    except Exception:
+        return False
+    try:
+        proc.wait(timeout=timeout)
+    except Exception:
+        _term_group(proc)
+        return False
+    return proc.returncode == 0
+
+
+def _behind_check_enabled() -> bool:
+    try:
+        from config_loader import load_config
+        return (load_config().get("session_banner") or {}).get("behind_check", True) is not False
+    except Exception:
+        return True
+
+
+def _main_checkout(cwd: Path, left) -> "tuple[Path, str] | None":
+    """(Haupt-Ordner, Zweig-Kurzname) — nur wenn cwd der Haupt-Ordner ist.
+
+    Erster Eintrag von `git worktree list` = Haupt-Ordner. Aus einem Worktree
+    heraus wird nichts gemessen und nichts gemeldet (#399): Worktrees verzweigen
+    vom Remote-Stand, ein veralteter Haupt-Ordner schadet dort nicht.
+    """
     listing = _git(["worktree", "list", "--porcelain"], cwd, left(1))
     if not listing:
-        return []
-    main_branch = next((ln.split(" ", 1)[1] for ln in listing.splitlines()
-                        if ln.startswith("branch ")), None)  # erster Eintrag = Haupt-Ordner
-    first_block = listing.split("\n\n", 1)[0]
-    if not main_branch or f"branch {main_branch}" not in first_block:
-        return []  # Haupt-Ordner ohne Zweig (detached) — nichts zu vergleichen
-    main_branch = main_branch.removeprefix("refs/heads/")  # `<ref>@{u}` will den Kurznamen
-    upstream = _git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", f"{main_branch}@{{u}}"],
-                    cwd, left(1))
-    remote = _git(["config", f"branch.{main_branch}.remote"], cwd, left(1))  # darf `/` enthalten
-    if not upstream or not remote or remote == ".":
-        return []
-    if time.monotonic() >= deadline or _git(
-            ["-c", "maintenance.auto=false", "-c", "gc.auto=0", "fetch", "--quiet",
-             "--no-recurse-submodules", remote], cwd, left(_FETCH_TIMEOUT_S)) is None:
-        return []
-    count = _git(["rev-list", "--count", f"{main_branch}..{upstream}"], cwd, left(1))
-    if not count or not count.isdigit() or int(count) == 0:
-        return []
+        return None
+    first = listing.split("\n\n", 1)[0].splitlines()
+    path = next((ln.split(" ", 1)[1] for ln in first if ln.startswith("worktree ")), None)
+    branch = next((ln.split(" ", 1)[1] for ln in first if ln.startswith("branch ")), None)
+    if not path or not branch:
+        return None  # Haupt-Ordner ohne Zweig (detached) — nichts zu vergleichen
+    try:
+        if Path(path).resolve() != Path(cwd).resolve():
+            return None
+    except Exception:
+        return None
+    return Path(path), branch.removeprefix("refs/heads/")  # `<ref>@{u}` will den Kurznamen
+
+
+def _blocker(folder: Path, upstream: str, left) -> "str | None":
+    """Grund, warum nicht nachgezogen werden darf (Regeln wie `sync-main`), sonst None."""
+    for name in ("MERGE_HEAD", "rebase-merge", "rebase-apply"):
+        marker = _git(["rev-parse", "--git-path", name], folder, left(1))
+        if marker is None:
+            return "Git-Zustand nicht lesbar"
+        if (folder / marker).exists():
+            return f"laufender Merge/Rebase ({name})"
+    status = _git(["status", "--porcelain", "--untracked-files=no"], folder, left(2))
+    if status is None:
+        return "git status fehlgeschlagen"
+    if status:
+        return "lokale Aenderungen an versionierten Dateien"
+    if _git(["merge-base", "--is-ancestor", "HEAD", upstream], folder, left(1)) is None:
+        return "lokale Commits, die im Upstream fehlen (Historie abgewichen)"
+    return None
+
+
+def _stale_main_context(folder: Path, upstream: str, count: int, reason: str) -> str:
     guard = _HOOK_DIR / "session_singleton_guard.py"
-    return [f"Haupt-Ordner {count} Commit(s) hinter {upstream} — Bugs nicht gegen veralteten "
-            f"Code analysieren. Nachziehen aus einer Sitzung im Haupt-Ordner: "
-            f"python3 {guard} sync-main"]
+    return (f"Der Haupt-Ordner {folder} liegt {count} Commit(s) hinter {upstream} und wurde "
+            f"beim Start NICHT nachgezogen. Grund: {reason}. Auftrag an Claude: Erklaere dem "
+            "PO in Klartext ohne Git-Vokabular, dass der Projektstand im Haupt-Ordner veraltet "
+            "ist und warum; analysiere Fehler nicht gegen diesen veralteten Stand. Nach "
+            f"Behebung des Grundes nachziehen aus einer Sitzung im Haupt-Ordner: "
+            f"python3 {guard} sync-main")
 
 
-def build_message(root: Path, project: Path, cwd: "Path | None" = None) -> "str | None":
+def _pull_forward(folder: Path, upstream: str, count: int, deadline: float,
+                  left) -> "tuple[list[str], list[str]]":
+    """Haupt-Ordner fast-forward nachziehen oder Claude den Grund nennen."""
+    reason = _blocker(folder, upstream, left)
+    if reason is None:
+        budget = deadline - _monotonic()
+        if budget < _MIN_MERGE_S:
+            reason = "Zeitbudget beim Start erschoepft"
+        elif not _ff_merge(folder, upstream, min(_MERGE_TIMEOUT_S, budget)):
+            reason = "git merge --ff-only fehlgeschlagen oder Zeitueberschreitung"
+    if reason is None:
+        return [f"Projektstand aktualisiert ({count} Änderungen)"], []
+    return [], [_stale_main_context(folder, upstream, count, reason)]
+
+
+def main_folder_sync(cwd: Path) -> "tuple[list[str], list[str]]":
+    """(sichtbare Zeilen, Hinweise an Claude) zum Haupt-Ordner (#185, #399).
+
+    Nur wenn cwd der Haupt-Ordner ist. Ein `git fetch` mit 3 s Timeout holt den
+    Remote-Stand; scheitert er (offline, VPN, Zugangsdaten), gibt es keine
+    Meldung — lieber nichts als ein veralteter Vergleich. Liegt der Haupt-Ordner
+    zurueck, wird er fast-forward nachgezogen, sofern die Regeln von `sync-main`
+    es erlauben. Abschaltbar ueber config.yaml → session_banner.behind_check: false.
+    """
+    if not _behind_check_enabled():
+        return [], []
+    deadline = _monotonic() + _TOTAL_BUDGET_S
+
+    def left(cap: float) -> float:
+        return max(0.1, min(cap, deadline - _monotonic()))
+
+    checkout = _main_checkout(cwd, left)
+    if checkout is None:
+        return [], []
+    folder, branch = checkout
+    upstream = _git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", f"{branch}@{{u}}"],
+                    folder, left(1))
+    remote = _git(["config", f"branch.{branch}.remote"], folder, left(1))  # darf `/` enthalten
+    if not upstream or not remote or remote == ".":
+        return [], []
+    if _monotonic() >= deadline or _git(
+            ["-c", "maintenance.auto=false", "-c", "gc.auto=0", "fetch", "--quiet",
+             "--no-recurse-submodules", remote], folder, left(_FETCH_TIMEOUT_S)) is None:
+        return [], []
+    count = _git(["rev-list", "--count", f"{branch}..{upstream}"], folder, left(1))
+    if not count or not count.isdigit() or int(count) == 0:
+        return [], []
+    return _pull_forward(folder, upstream, int(count), deadline, left)
+
+
+def behind_lines(cwd: Path) -> "list[str]":
+    """Sichtbare Zeilen zum Haupt-Ordner (Kompatibilitaet; siehe main_folder_sync)."""
+    return main_folder_sync(cwd)[0]
+
+
+def build_output(root: Path, project: Path, cwd: "Path | None" = None,
+                 source: "str | None" = None) -> "dict | None":
+    """Hook-Ausgabe: sichtbare `systemMessage`, optional `additionalContext` fuer Claude."""
     version = plugin_version(root)
     if not version:
         return None
     lines = [f"agent-os-openspec {version} aktiv"]
-    lines.extend(stale_alias_lines(root, project))
-    lines.extend(removed_alias_lines(project))
-    lines.extend(behind_lines(cwd or project))
-    return "\n".join(lines)
+    context: "list[str]" = []
+    if source != "compact":  # nach Kontext-Kompaktierung keine Wartung (#399)
+        lines.extend(refresh_home_aliases(root))
+        try:
+            context.extend(project_alias_context(root, project))
+        except Exception:
+            pass
+        try:
+            visible, hints = main_folder_sync(cwd or project)
+        except Exception:
+            visible, hints = [], []
+        lines.extend(visible)
+        context.extend(hints)
+    output: dict = {"systemMessage": "\n".join(lines)}
+    if context:
+        output["hookSpecificOutput"] = {"hookEventName": "SessionStart",
+                                        "additionalContext": "\n".join(context)}
+    return output
 
 
 def main() -> None:
     sys.path.insert(0, str(_HOOK_DIR))
     from hook_utils import framework_disabled
 
-    payload_cwd = _payload_cwd()
+    payload = _read_payload()
+    payload_cwd = _payload_str(payload, "cwd")
     if framework_disabled():
         return
-    message = build_message(plugin_root(), project_dir(payload_cwd),
-                            Path(payload_cwd) if payload_cwd else None)
-    if message:
-        print(json.dumps({"systemMessage": message}, ensure_ascii=False))
+    output = build_output(plugin_root(), project_dir(payload_cwd),
+                          Path(payload_cwd) if payload_cwd else None,
+                          _payload_str(payload, "source"))
+    if output:
+        print(json.dumps(output, ensure_ascii=False))
 
 
 if __name__ == "__main__":
