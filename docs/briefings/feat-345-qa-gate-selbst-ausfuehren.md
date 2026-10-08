@@ -1,6 +1,6 @@
 ---
 spec_file: docs/specs/feat-345-qa-gate-selbst-ausfuehren.md
-spec_sha256: 12cdff2037b0dc0594a9062625d7d5a158a764523294d0abcca4fcda4ca1ecb9
+spec_sha256: ff5baad15c87631c7ab5c822b4cdd57c67ddcf349085cccc486cc82a7f3b5987
 ---
 
 # PO-Briefing: feat-345-qa-gate-selbst-ausfuehren
@@ -11,22 +11,22 @@ spec_sha256: 12cdff2037b0dc0594a9062625d7d5a158a764523294d0abcca4fcda4ca1ecb9
 
 ## Was gebaut wird
 
-Das Prüftor startet Tests selbst und urteilt nach dem echten Ergebnis statt nach einer Textdatei.
+Das Prüftor startet den hinterlegten Testbefehl selbst und urteilt nach dem echten Ergebnis, statt Textausgaben zu raten.
 
 ## Definition of Done
 
-Jeder Lauf hinterlässt Ausgabedatei, gesperrten Stempel und Urteil; rote Läufe sind immer BROKEN; die alte Datei-Variante funktioniert weiter.
+Ein Lauf liefert Urteil, gespeicherte Ausgabe und gesperrten Stempel; der alte Weg über Textdateien funktioniert unverändert weiter.
 
 ## Wie geprüft wird
 
-Elf automatische Tests mit echten Prozessen belegen Urteil, Zeitlimit, Stempel, Sperre; nicht geprüft wird, ob der neue Weg genutzt wird.
+Dreizehn automatische Tests mit echten Prozessen belegen Urteil, Zeitlimit, Stempel und Sperren; nicht belegt wird, dass die hinterlegten Tests sinnvoll sind.
 
 ## Kritische Anmerkungen
 
-- Neuer Weg ist freiwillig: Pflicht, Migration und Datei-Modus-Entscheidung fehlen; Fälschbarkeit bleibt bis zum Folge-Ticket.
-- Exit 0 mit unbekanntem Ausgabeformat ergibt nur AMBIGUOUS, also Rückfrage, nicht grün.
-- Zusatz: Änderung am Befehls-Filter; das Folge-Ticket ist noch nicht angelegt.
+- Abweichung: Anfrage wollte den Befehl als Argument; er kommt nun aus der Projektkonfiguration, weil die Argument-Variante dreimal durchfiel.
+- Ohne Pflicht bleibt Fälschen möglich; Durchsetzung, Migrationspfad und Ausrollen folgen erst im Folge-Issue #404.
+- Stempel per Python-Import und Änderung der Konfiguration bleiben umgehbar.
 
 ## Freigabe-Frage
 
-Reicht dir Scheibe 1 als freiwilliger Weg, mit Pflicht und Migration später in einem Folge-Ticket?
+Reicht dir, dass diese erste Scheibe nur den prüfbaren Weg schafft, während Pflicht und Migration später folgen?
