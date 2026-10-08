@@ -355,7 +355,7 @@ def test_status_line_wording_matches_the_hook_note():
     note = workflow.status_note({"name": "fix-1761-x",
                                  "current_phase": "phase7_validate"})
     # Der Hook nennt den Schritt unter diesem Namen; der Baustein verweist
-    # darauf, damit „wörtlich von dort“ eindeutig bleibt.
+    # darauf, damit die Quelle der Fußzeile eindeutig bleibt.
     assert "Nächster Pflicht-Schritt: /60-validate" in note
     assert "„Nächster Pflicht-Schritt“" in sync_skills.marker_block("60-validate", "9.9.9")
     # Beide Seiten kennen dieselben zwei Kennzeichnungen.
@@ -371,3 +371,20 @@ def test_marker_block_does_not_contradict_the_verbatim_handover_blocks():
     block = sync_skills.marker_block("50-implement", "9.9.9")
     assert "frei formulierten Arbeitsstandsmeldungen" in block
     assert "Übergabe-Blöcke oben bleiben unverändert" in block
+
+
+def test_footer_rule_has_no_verbatim_from_turn_start_contradiction():
+    """#235: „wörtlich von dort“ (Turn-Beginn-Hinweis) widersprach der Regel,
+    nach eigenem Phasenwechsel den neuen Stand zu nennen."""
+    block = sync_skills.marker_block("40-tdd-red", "9.9.9")
+    assert "wörtlich von dort" not in block
+    assert "AM ENDE dieser Nachricht" in block
+    assert "workflow.py status" in block
+
+
+def test_tdd_red_summary_names_the_phase_it_sets():
+    """#235: der Ausgabeblock von /40-tdd-red nannte `phase5_tdd_red` als
+    aktuelle Phase, obwohl der Befehl direkt davor phase6_implement setzt."""
+    text = (REPO_ROOT / "core" / "commands" / "40-tdd-red.md").read_text()
+    assert "Phase: `phase5_tdd_red` ✓" not in text
+    assert "jetzt: `phase6_implement`" in text

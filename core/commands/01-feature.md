@@ -42,7 +42,7 @@ Falls kein Issue → `feature-planner` erstellt am Ende eines neues Issue.
 ## Workflow
 
 1. **Modus bestimmen:** NEU oder AENDERUNG?
-2. Feature-Intent verstehen (WAS, WARUM, Kategorie)
+2. Feature-Intent verstehen (WAS, WARUM, Kategorie). Den Zweck in zwei bis drei Sätzen formulieren (welches Nutzerproblem, welche riskanteste Annahme) und **vom PO bestätigen lassen, bevor ein Issue angelegt wird** (#187)
 3. **Bei AENDERUNG:** Aktuellen Zustand dokumentieren, Delta identifizieren
 4. Bestehende Systeme pruefen (KRITISCH!)
 5. Scoping (Max 4-5 Dateien, +/-250 LoC)
@@ -56,6 +56,7 @@ Falls kein Issue → `feature-planner` erstellt am Ende eines neues Issue.
 
 Stoppe und frage nach wenn:
 - Feature-Intent unklar
+- Zweck vom PO noch nicht bestätigt — dann kein Issue anlegen
 - Scoping ueberschritten (>5 Dateien, >250 LoC)
 - Bestehendes System gefunden (erweitern oder neu?)
 
