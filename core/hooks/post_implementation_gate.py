@@ -27,7 +27,6 @@ Lock-Dateien:
 
 import json
 import os
-import re
 import sys
 import time
 from pathlib import Path
@@ -42,6 +41,7 @@ def _setup():
 _setup()
 
 from hook_utils import get_tool_input, find_project_root, block, allow, get_active_workflow_name, framework_disabled  # noqa: E402
+from hook_utils import is_hook_always_allowed  # noqa: E402
 from hook_utils import (  # noqa: E402
     pending_validation_lock_path as _lock_path,
     read_pending_validation_lock as _read_lock,
@@ -69,12 +69,6 @@ _GATED_PHASES = {"phase6_implement"}
 
 # Phasen in denen das Gate explizit NICHT gilt (Adversary + alles danach)
 _BYPASS_PHASES = {"phase6b_adversary", "phase7_validate", "phase8_complete", "phase0_idle"}
-
-# Pfade die immer erlaubt sind
-_ALWAYS_ALLOWED = re.compile(
-    r"(\.claude[/\\]|[/\\]docs[/\\]|\.md$|\.gitignore|\.txt$|[/\\]specs[/\\]"
-    r"|[/\\]\.claude[/\\])"
-)
 
 
 def _write_lock(lock_path: Path, wf_name: str, workflow_created) -> None:
@@ -119,8 +113,9 @@ def main() -> None:
 
     file_path = tool_input.get("file_path", "")
 
-    # Docs, Configs, Specs immer erlaubt
-    if _ALWAYS_ALLOWED.search(file_path):
+    # Docs, Specs, .claude/ immer erlaubt — gemeinsamer Helfer mit
+    # tdd_enforcement, relativ zur Worktree-/Projektwurzel (#409)
+    if is_hook_always_allowed(file_path):
         allow()
 
     # Workflow laden
