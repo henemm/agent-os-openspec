@@ -14,7 +14,14 @@ Usage:
     python3 qa_gate.py <test-output-file> --checklist <artifact-path>
     python3 qa_gate.py <test-output-file> --no-visual "reason"
     python3 qa_gate.py <test-output-file> --infra --no-visual "reason"
+    python3 qa_gate.py --run [--timeout <s>] [--checklist <md>] [--screenshot <png>]
+                             [--infra] [--no-visual "reason"]
     python3 qa_gate.py --check
+
+--run (#345): das Gate startet `qa_gate.test_command` aus config.yaml selbst
+(bash -o pipefail; nie ein Befehl von der Kommandozeile), Ausgabe fest nach
+docs/artifacts/<workflow>/test-run-output.txt. Exit != 0 ist BROKEN, bei Exit 0
+entscheidet die Textauswertung (unbekannt -> AMBIGUOUS).
 
 Exit Codes: 0 = VERIFIED or AMBIGUOUS, 1 = BROKEN/FAILED
 """
@@ -22,13 +29,20 @@ Exit Codes: 0 = VERIFIED or AMBIGUOUS, 1 = BROKEN/FAILED
 from hook_utils import setup_path, strip_ansi
 setup_path()
 
+import hashlib
 import json
 import os
 import re
+import signal
+import stat
 import subprocess
 import sys
+import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
+
+from hook_utils import find_project_root, find_worktree_root
 
 # Generic test patterns (project-agnostic)
 TEST_PATTERNS = [
@@ -344,19 +358,24 @@ def _evaluate_node_test(content: str) -> "tuple[bool, str] | None":
     return next((r for r in results if not r[0]), results[-1])
 
 
-def validate_test_output(filepath: str, infra: bool = False) -> tuple[bool, str]:
-    """Validate test output file. Returns (valid, message)."""
+def validate_test_output(filepath: str, infra: bool = False,
+                         trusted: bool = False) -> tuple[bool, str]:
+    """Validate test output file. Returns (valid, message).
+
+    trusted=True (#345, `--run`): die Datei hat das Gate selbst erzeugt —
+    Altersgrenze und Groessen-/"fabricated"-Vorfilter entfallen.
+    """
     path = Path(filepath)
 
     if not path.exists():
         return False, f"File not found: {filepath}"
 
     age_min = (time.time() - path.stat().st_mtime) / 60
-    if age_min > 30:
+    if not trusted and age_min > 30:
         return False, f"Test output is {age_min:.0f} min old (max 30). Re-run tests."
 
     size = path.stat().st_size
-    if size < 100:
+    if not trusted and size < 100:
         return False, f"Test output too small ({size} bytes). Looks fabricated."
 
     content = strip_ansi(path.read_text(errors="replace"))
@@ -446,6 +465,210 @@ def validate_test_output(filepath: str, infra: bool = False) -> tuple[bool, str]
     return False, "Could not determine test result."
 
 
+DEFAULT_RUN_TIMEOUT = 540  # unter dem 600-s-Limit des Bash-Tools (#345)
+UNREADABLE_MSG = "Exit 0, Ausgabe nicht auswertbar"
+
+
+def _opt(args: list, flag: str) -> "str | None":
+    """Wert hinter `flag` oder None."""
+    if flag in args:
+        idx = args.index(flag)
+        if idx + 1 < len(args):
+            return args[idx + 1]
+    return None
+
+
+def _usage_error(message: str) -> None:
+    print(f"ERROR: {message}", file=sys.stderr)
+    sys.exit(1)
+
+
+def _sha256_file(path) -> str:
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def _write_stamp(stamp: dict) -> None:
+    """Stempel `qa_run_stamp` ueber den Schreibpfad in workflow.py, nie set-field (#345)."""
+    stamp["timestamp"] = datetime.now(timezone.utc).isoformat()
+    try:
+        from workflow import write_qa_run_stamp
+        write_qa_run_stamp(stamp)  # False = kein aktiver Workflow, still
+    except Exception as exc:  # Stempel darf das Urteil nicht verhindern
+        print(f"Warnung: qa_run_stamp nicht geschrieben: {exc}", file=sys.stderr)
+
+
+def _pump(stream, out_file) -> None:
+    """Kopiert die Ausgabe zeilenweise in die Artefaktdatei und auf stdout.
+
+    Bricht stdout weg (`| head`), wird nur das Spiegeln abgeschaltet und fd 1 auf
+    /dev/null gelegt; Datei und Pipe laufen bis zum Ende weiter (#345 F002).
+    """
+    mirror = sys.stdout is not None
+    for line in iter(stream.readline, b""):
+        out_file.write(line)
+        out_file.flush()
+        if mirror:
+            try:
+                sys.stdout.buffer.write(line)
+                sys.stdout.buffer.flush()
+            except OSError:
+                mirror = False
+                os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+
+
+def _kill_group(proc) -> None:
+    """Beendet die ganze Prozessgruppe des Laufs: erst SIGTERM, dann SIGKILL."""
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(proc.pid, sig)
+        except (ProcessLookupError, PermissionError):
+            pass
+        try:
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            pass
+
+
+def run_and_capture(cmd: str, out_path, timeout: int) -> "tuple[int, bool]":
+    """Fuehrt `cmd` mit pipefail aus, schreibt stdout+stderr nach out_path (#345).
+
+    Returns (exit_code, timed_out). Gelesen wird in einem Thread, damit ein
+    Kindprozess, der die Pipe offen haelt, den Timeout nicht blockiert.
+    """
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    if sys.stdout is not None:  # F005: `--run >&-` laesst sys.stdout None
+        sys.stdout.flush()
+    fd = os.open(out_path, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o644)
+    st = os.fstat(fd)
+    if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1:  # F004: erst pruefen, dann kuerzen
+        os.close(fd)
+        _usage_error(f"Artefaktpfad {out_path} ist keine eigenstaendige Datei — Abbruch.")
+    os.ftruncate(fd, 0)
+    with os.fdopen(fd, "wb") as out_file:
+        proc = subprocess.Popen(["bash", "-o", "pipefail", "-c", cmd],
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                start_new_session=True)
+        reader = threading.Thread(target=_pump, args=(proc.stdout, out_file), daemon=True)
+        reader.start()
+        timed_out = False
+        try:
+            proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            _kill_group(proc)
+        reader.join(timeout=5)
+        if reader.is_alive():  # Hintergrundprozess haelt die Pipe offen
+            _kill_group(proc)
+            reader.join(timeout=5)
+    return proc.wait(), timed_out
+
+
+def _judge_run(code: int, timed_out: bool, timeout: int, out_path) -> "tuple[str, str]":
+    """Urteil "rot gewinnt" (#345): (BROKEN|VERIFIED|AMBIGUOUS, Meldung)."""
+    if timed_out:
+        return "BROKEN", f"Timeout nach {timeout} s (Prozessgruppe beendet)"
+    if code != 0:
+        return "BROKEN", f"Testbefehl endete mit Exit-Code {code}"
+    valid, message = validate_test_output(str(out_path), trusted=True)
+    if valid:
+        return "VERIFIED", message
+    if message.startswith(("Could not determine", "Doesn't look like test output")):
+        return "AMBIGUOUS", UNREADABLE_MSG
+    return "BROKEN", message
+
+
+RUN_VALUE_OPTIONS = ("--timeout", "--checklist", "--screenshot", "--no-visual")
+RUN_FLAG_OPTIONS = ("--infra",)
+
+
+def _positive_int(value, what: str) -> int:
+    """Positive Ganzzahl oder Fehlbedienung (Exit 1)."""
+    try:
+        number = int(str(value).strip())
+    except ValueError:
+        number = 0
+    if number <= 0:
+        _usage_error(f"{what} braucht eine positive ganze Sekundenzahl, nicht {value!r}")
+    return number
+
+
+def _check_run_args(args: list) -> "int | None":
+    """Nur bekannte Optionen nach `--run` (#345 v2), sonst Exit 1 vor jeder Ausfuehrung.
+
+    Returns den `--timeout`-Wert der Kommandozeile oder None.
+    """
+    timeout, i = None, 1
+    while i < len(args):
+        arg = args[i]
+        if arg in RUN_FLAG_OPTIONS:
+            i += 1
+            continue
+        if arg not in RUN_VALUE_OPTIONS:
+            _usage_error(f"--run nimmt kein Argument {arg!r} an. Der Testbefehl kommt aus "
+                         "config.yaml (qa_gate.test_command); erlaubt: "
+                         + ", ".join(RUN_VALUE_OPTIONS + RUN_FLAG_OPTIONS))
+        if i + 1 >= len(args):
+            _usage_error(f"{arg} braucht einen Wert")
+        if arg == "--timeout":
+            timeout = _positive_int(args[i + 1], "--timeout")
+        i += 2
+    return timeout
+
+
+def _run_config(cli_timeout: "int | None") -> "tuple[str, int]":
+    """Testbefehl und Timeout aus config.yaml (`qa_gate`), `--timeout` gewinnt."""
+    from config_loader import load_config
+    section = load_config().get("qa_gate") or {}
+    if not isinstance(section, dict):
+        section = {}
+    cmd = section.get("test_command")
+    if not isinstance(cmd, str) or not cmd.strip():
+        _usage_error("Kein Testbefehl konfiguriert: qa_gate.test_command in config.yaml "
+                     "setzen (z.B. \"python3 -m pytest tests/ -q\").")
+    if cli_timeout is not None:
+        return cmd, cli_timeout
+    configured = section.get("run_timeout")
+    if configured is None:
+        return cmd, DEFAULT_RUN_TIMEOUT
+    return cmd, _positive_int(configured, "qa_gate.run_timeout")
+
+
+def _run_mode(cmd: str, timeout: int, wf_name: str) -> "tuple[str, str]":
+    """`--run`: konfigurierten Befehl ausfuehren, Stempel schreiben, Urteil liefern."""
+    root = find_worktree_root() or find_project_root()
+    wf_dir = (wf_name.split() or ["unknown"])[0]  # `status` haengt "[quelle]" an
+    if wf_dir in ("unknown", "unknown-error"):  # F003: ohne Workflow nichts ausfuehren
+        _usage_error("Kein aktiver Workflow — --run fuehrt nichts aus.")
+    rel = Path("docs", "artifacts", wf_dir, "test-run-output.txt")
+    out_path = root / rel
+    for i in range(1, len(rel.parts) + 1):  # F001: kein Symlink unterhalb der Wurzel
+        if root.joinpath(*rel.parts[:i]).is_symlink():
+            _usage_error(f"Symlink im Artefaktpfad {root.joinpath(*rel.parts[:i])} — Abbruch.")
+    print(f"Running qa_gate.test_command (timeout {timeout} s), output: {out_path}")
+    code, timed_out = run_and_capture(cmd, out_path, timeout)
+    _write_stamp({"source": "run", "exit_code": code, "output_sha256": _sha256_file(out_path),
+                  "output_path": str(out_path),
+                  "command_sha256": hashlib.sha256(cmd.encode()).hexdigest()})
+    return _judge_run(code, timed_out, timeout, out_path)
+
+
+def _file_mode(args: list, wf_name: str) -> "tuple[str, str]":
+    """Bisheriger Datei-Modus; vermerkt zusaetzlich `source: "file"` (#345)."""
+    filepath = args[0]
+    print(f"Validating test output: {filepath}")
+    valid, message = validate_test_output(filepath, infra="--infra" in args)
+    if Path(filepath).is_file():
+        _write_stamp({"source": "file", "output_sha256": _sha256_file(filepath),
+                      "output_path": str(Path(filepath))})
+    if not valid:
+        print(f"\nFAILED — {message}")
+        print(f"Workflow: {wf_name}")
+        print("Fix the issues and re-run tests.")
+        sys.exit(1)
+    return "VERIFIED", message
+
+
 def main():
     args = sys.argv[1:]
 
@@ -454,28 +677,30 @@ def main():
         subprocess.run([sys.executable, str(workflow_py), "status"])
         sys.exit(0)
 
-    filepath = args[0]
-    infra = "--infra" in args
-    no_visual = "--no-visual" in args
-    screenshot = None
+    run_mode = args[0] == "--run"
+    if not run_mode and "--run" in args:
+        _usage_error("--run und eine Testausgabedatei schliessen sich aus.")
+    if run_mode:  # Fehlbedienung endet vor jedem anderen Schritt (#345 v2)
+        run_cmd, run_timeout = _run_config(_check_run_args(args))
 
-    checklist = None
-    if "--checklist" in args:
-        idx = args.index("--checklist")
-        if idx + 1 < len(args):
-            checklist = args[idx + 1]
+    if "--no-visual" in args:
+        print(f"Screenshot skipped: {_opt(args, '--no-visual') or 'no reason given'}")
 
-    if "--screenshot" in args:
-        idx = args.index("--screenshot")
-        if idx + 1 < len(args):
-            screenshot = args[idx + 1]
+    wf_name = _workflow_name()
+    if run_mode:
+        kind, message = _run_mode(run_cmd, run_timeout, wf_name)
+    else:
+        kind, message = _file_mode(args, wf_name)
+    if kind == "BROKEN":
+        _set_verdict(f"BROKEN:{message}")
+        print(f"\nBROKEN:{message}")
+        print(f"Workflow: {wf_name}")
+        sys.exit(1)
+    _finish(args, wf_name, message, kind == "AMBIGUOUS")
 
-    if no_visual:
-        idx = args.index("--no-visual")
-        reason = args[idx + 1] if idx + 1 < len(args) else "no reason given"
-        print(f"Screenshot skipped: {reason}")
 
-    # Get active workflow name
+def _workflow_name() -> str:
+    """Name des aktiven Workflows laut `workflow.py status`."""
     workflow_py = Path(__file__).parent / "workflow.py"
     result = subprocess.run(
         [sys.executable, str(workflow_py), "status"],
@@ -493,19 +718,13 @@ def main():
         for line in result.stdout.splitlines():
             if line.startswith("Workflow:"):
                 wf_name = line.split(":", 1)[1].strip()
+    return wf_name
 
-    print(f"Validating test output: {filepath}")
 
-    valid, message = validate_test_output(filepath, infra=infra)
-
-    if not valid:
-        print(f"\nFAILED — {message}")
-        print(f"Workflow: {wf_name}")
-        print("Fix the issues and re-run tests.")
-        sys.exit(1)
-
-    # Validate screenshot if required
-    if screenshot and not no_visual:
+def _check_screenshot(args: list) -> None:
+    """Validate screenshot if required."""
+    screenshot = _opt(args, "--screenshot")
+    if screenshot and "--no-visual" not in args:
         ss_path = Path(screenshot)
         if not ss_path.exists():
             print(f"\nFAILED — Screenshot not found: {screenshot}")
@@ -514,8 +733,13 @@ def main():
             print(f"\nFAILED — Screenshot too small ({ss_path.stat().st_size} bytes)")
             sys.exit(1)
 
+
+def _finish(args: list, wf_name: str, message: str, is_ambiguous: bool) -> None:
+    """Screenshot, Checkliste, Verdict setzen — gemeinsam fuer Datei- und --run-Modus."""
+    _check_screenshot(args)
+    checklist = _opt(args, "--checklist")
+
     # Validate adversary dialog checklist if provided
-    is_ambiguous = False
     if checklist:
         try:
             from adversary_dialog import dialog_verdict, validate_dialog_artifact_ex

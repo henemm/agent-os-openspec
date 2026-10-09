@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **#345 (qa_gate führt Tests selbst aus, Scheibe 1):** `qa_gate.py --run [--timeout <s>] [--checklist <md>] [--screenshot <png>] [--infra] [--no-visual <Text>]` startet den in `config.yaml` hinterlegten Testbefehl `qa_gate.test_command` selbst (`bash -o pipefail`, eigene Prozessgruppe), spiegelt die Ausgabe live und schreibt sie fest nach `docs/artifacts/<workflow>/test-run-output.txt`. Die Kommandozeile nimmt keinen Befehl und kein `--out` an; Befehlstext, `--out`, unbekannte Optionen, ungültiges `--timeout` und ein fehlender/leerer `qa_gate.test_command` enden mit Exit 1, bevor etwas läuft. Urteil „rot gewinnt“: Exit ≠ 0 oder Timeout (`--timeout` > `qa_gate.run_timeout` > 540 s, ganze Prozessgruppe wird beendet) → BROKEN; bei Exit 0 entscheidet die bestehende Textauswertung, unbekanntes Format → AMBIGUOUS („Exit 0, Ausgabe nicht auswertbar“). Nach jedem Lauf steht der Stempel `qa_run_stamp` (Exit-Code, SHA-256 von Ausgabe und Befehl, nie der Befehlstext) im Workflow-State; er ist per `set-field` gesperrt und wird nur über `workflow.write_qa_run_stamp` (Import, kein CLI-Befehl) geschrieben. Der Datei-Modus bleibt unverändert und vermerkt `source: "file"`. `bash_gate.py` bleibt unverändert. `config.yaml` dokumentiert den neuen Abschnitt `qa_gate:` (`test_command`, `run_timeout`). ADR-0345. Tests: `tests/test_qa_gate_run_345.py`.
+
 ### Fixed
 
 - **#235 (Fußzeilen-Regel widersprach sich):** Der Versions-Marker-Baustein verlangte, Phase und Schritt „wörtlich“ aus dem Hinweis von Turn-Beginn zu übernehmen, und zugleich nach einem eigenen Phasenwechsel den neuen Stand. Jetzt gilt eine Regel: Die Fußzeile gibt den Stand am Ende der Nachricht wieder; nach einem eigenen Wechsel zählt `workflow.py status`. `/40-tdd-red` nannte im Abschlussblock `phase5_tdd_red` als aktuelle Phase, obwohl der Befehl direkt davor `phase6_implement` setzt; er nennt jetzt beide. Tests: `tests/test_skills_sync.py`.

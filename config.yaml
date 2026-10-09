@@ -325,6 +325,12 @@ session_banner:
 adversary_coverage_gate:
   enabled: true
 
+# qa_gate --run (#345): fuehrt test_command selbst aus (nie von der Kommandozeile),
+# z.B. "python3 -m pytest tests/ -q"; leer = Abbruch. `--timeout <s>` > run_timeout.
+qa_gate:
+  test_command: ""
+  run_timeout: 540
+
 # Aufwandsbremse je Stufe (Issue #250, Teil B)
 # Ueberschreitet ein Workflow Fix-Loops oder Phasen-Wiedereintritte seiner Stufe,
 # gibt `workflow.py phase` eine RUECKFRAGE AN DEN PO aus und protokolliert sie
