@@ -48,7 +48,7 @@ agent-os-openspec/
 │   │   ├── edit_verify.py               # PostToolUse Edit|Write: prueft ob Aenderung wirklich auf Disk landete
 │   │   ├── secrets_guard.py             # PreToolUse Bash+Read: blockt Zugriff auf .env/Credentials/Keys
 │   │   ├── workflow.py                  # Workflow State CLI (isolierte JSON-Files)
-│   │   ├── qa_gate.py                   # QA-Gate: Test-Output validieren, Verdict setzen
+│   │   ├── qa_gate.py                   # QA-Gate: Test-Output validieren oder per --run konfigurierten Testbefehl selbst ausfuehren, Verdict setzen
 │   │   ├── adversary_dialog.py          # Adversary-Dialog: Spec-Checkliste, Tri-State-Verdict
 │   │   ├── override_token.py            # Shared Override-Token Management (TTL, Multi-WF)
 │   │   ├── migrate_state.py             # v2 → v3 State-Migration
@@ -431,7 +431,7 @@ python3 /path/to/agent-os-openspec/setup.py --version
 | `core/hooks/secrets_guard.py` | PreToolUse Bash+Read: blockt Zugriff auf .env/Credentials/Keys |
 | `core/hooks/secret_egress_guard.py` | PreToolUse (alle Tools): blockt ausgeschriebene .env-WERTE im Tool-Input; bei Bash zusaetzlich Umleitungsziele ausserhalb der Sicherheitszone (Projekt, `extra_allowed_write_dirs`, eigenes Sitzungs-Scratchpad) |
 | `core/hooks/workflow.py` | Workflow State CLI (isolierte JSON-Files pro Workflow) |
-| `core/hooks/qa_gate.py` | QA-Gate: Test-Output validieren, Verdict setzen |
+| `core/hooks/qa_gate.py` | QA-Gate: Test-Output validieren oder per `--run` den konfigurierten Testbefehl (`qa_gate.test_command`) selbst ausfuehren, Verdict setzen |
 | `core/hooks/override_token.py` | Shared Override-Token Management (TTL, Multi-WF) |
 | `core/hooks/migrate_state.py` | v2 → v3 State-Migration |
 | `core/hooks/hook_utils.py` | Shared Bootstrap (Imports, Parsing, Exit-Helpers) |
