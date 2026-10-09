@@ -1542,6 +1542,70 @@ def _find_worktree_root() -> "Path | None":
     return None
 
 
+# Freigabe-Liste von tdd_enforcement und post_implementation_gate (#409).
+# Laeuft auf dem Pfad RELATIV zur Worktree-/Projektwurzel: `.claude/` ist am
+# Wurzelanfang verankert, `docs/`/`specs/` komponentenweise. Inhaltlich bewusst
+# nicht an edit_gate angeglichen.
+_HOOK_ALWAYS_ALLOWED = re.compile(
+    r"(^\.claude/|(^|/)docs/|(^|/)specs/|\.md$|\.gitignore|\.txt$)"
+)
+_WORKTREE_PREFIX_RE = re.compile(r"^\.claude/worktrees/[^/]+/")
+
+
+def _hook_candidate_roots() -> "list[Path]":
+    """Worktree- und Projektwurzel, aufgeloest, laengste zuerst. Fehler → ausgelassen."""
+    roots = []
+    for finder in (_find_worktree_root, find_project_root):
+        try:
+            root = finder()
+            if root is not None:
+                roots.append(Path(root).resolve())
+        except Exception:
+            continue
+    return sorted(set(roots), key=lambda r: len(r.parts), reverse=True)
+
+
+def _relative_for_allowlist(file_path: str) -> "str | None":
+    """Pfad relativ zur Wurzel (POSIX-Trenner); None = ausserhalb Projekt/Worktree.
+
+    Relative Pfade bleiben relativ. Absolute Pfade werden gegen die laengste
+    passende Wurzel relativiert (`is_relative_to`, nicht `startswith` — sonst
+    passt `/proj` auf `/proj2/...`). Ein fuehrendes `.claude/worktrees/<n>/`
+    wird immer abgeschnitten (#409).
+    """
+    raw = str(file_path or "")
+    path = Path(raw)
+    if not path.is_absolute():
+        rel = raw.replace("\\", "/")
+    else:
+        try:
+            path = path.resolve()
+        except (OSError, RuntimeError):
+            pass
+        roots = _hook_candidate_roots()
+        if not roots:
+            # Keine Wurzel ermittelbar: fail-safe nur den Dateinamen bewerten
+            # (Endungen), damit kein Vorfahren-`docs/` freigibt.
+            return path.name
+        root = next((r for r in roots if path.is_relative_to(r)), None)
+        if root is None:
+            return None
+        rel = path.relative_to(root).as_posix()
+    return _WORKTREE_PREFIX_RE.sub("", rel, count=1)
+
+
+def is_hook_always_allowed(file_path: str) -> bool:
+    """True, wenn tdd_enforcement/post_implementation_gate den Pfad nicht pruefen.
+
+    Frei sind `.claude/...` am Wurzelanfang, `docs/`, `specs/`, `.md`, `.txt`,
+    `.gitignore` sowie Pfade ausserhalb von Projekt und Worktree (wie edit_gate #80).
+    """
+    rel = _relative_for_allowlist(file_path)
+    if rel is None:
+        return True
+    return bool(_HOOK_ALWAYS_ALLOWED.search(rel))
+
+
 def get_active_workflow_name() -> str:
     """Unverändertes Verhalten — delegiert an resolve_active_workflow()."""
     return resolve_active_workflow()[0]

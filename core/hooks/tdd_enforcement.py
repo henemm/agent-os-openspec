@@ -34,15 +34,10 @@ _setup()
 
 import hook_utils  # noqa: E402
 from hook_utils import get_tool_input, find_project_root, block, allow, get_active_workflow_name, framework_disabled  # noqa: E402
+from hook_utils import is_hook_always_allowed  # noqa: E402
 
 # Phasen in denen TDD-Enforcement gilt
 TEST_REQUIRED_PHASES = {"phase6_implement", "phase6b_adversary"}
-
-# Pfade die immer erlaubt sind (gespiegelt von edit_gate.py)
-_ALWAYS_ALLOWED = re.compile(
-    r"(\.claude[/\\]|[/\\]docs[/\\]|\.md$|\.gitignore|\.txt$|[/\\]specs[/\\]"
-    r"|[/\\]\.claude[/\\])"
-)
 
 # Mindestgröße eines gültigen Artefakts in Bytes
 _MIN_SIZE = 80
@@ -245,8 +240,10 @@ def main() -> None:
 
     file_path = tool_input.get("file_path", "")
 
-    # Immer-Erlaubt-Pfade (Docs, Configs, Specs) — gleiche Logik wie edit_gate.py
-    if _ALWAYS_ALLOWED.search(file_path):
+    # Immer-Erlaubt-Pfade (Docs, Specs, .claude/) — gemeinsamer Helfer mit
+    # post_implementation_gate, relativ zur Worktree-/Projektwurzel (#409).
+    # Eigene Liste, NICHT identisch mit edit_gate.py.
+    if is_hook_always_allowed(file_path):
         allow()
 
     # Workflow laden
