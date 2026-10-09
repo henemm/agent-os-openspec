@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.40.0] - 2026-10-09
+
 ### Added
 
 - **#345 (qa_gate führt Tests selbst aus, Scheibe 1):** `qa_gate.py --run [--timeout <s>] [--checklist <md>] [--screenshot <png>] [--infra] [--no-visual <Text>]` startet den in `config.yaml` hinterlegten Testbefehl `qa_gate.test_command` selbst (`bash -o pipefail`, eigene Prozessgruppe), spiegelt die Ausgabe live und schreibt sie fest nach `docs/artifacts/<workflow>/test-run-output.txt`. Die Kommandozeile nimmt keinen Befehl und kein `--out` an; Befehlstext, `--out`, unbekannte Optionen, ungültiges `--timeout` und ein fehlender/leerer `qa_gate.test_command` enden mit Exit 1, bevor etwas läuft. Urteil „rot gewinnt“: Exit ≠ 0 oder Timeout (`--timeout` > `qa_gate.run_timeout` > 540 s, ganze Prozessgruppe wird beendet) → BROKEN; bei Exit 0 entscheidet die bestehende Textauswertung, unbekanntes Format → AMBIGUOUS („Exit 0, Ausgabe nicht auswertbar“). Nach jedem Lauf steht der Stempel `qa_run_stamp` (Exit-Code, SHA-256 von Ausgabe und Befehl, nie der Befehlstext) im Workflow-State; er ist per `set-field` gesperrt und wird nur über `workflow.write_qa_run_stamp` (Import, kein CLI-Befehl) geschrieben. Der Datei-Modus bleibt unverändert und vermerkt `source: "file"`. `bash_gate.py` bleibt unverändert. `config.yaml` dokumentiert den neuen Abschnitt `qa_gate:` (`test_command`, `run_timeout`). ADR-0345. Tests: `tests/test_qa_gate_run_345.py`.
