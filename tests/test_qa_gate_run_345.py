@@ -335,3 +335,83 @@ def test_bash_gate_unchanged_and_qa_gate_calls_pass(project):
     ):
         r = _bash_gate(project, command)
         assert r.returncode == 0, f"bash_gate blockt {command!r}: {_out(r)}"
+
+
+# --- Gegenpruefung v2: F002 / F001 / F003 ------------------------------------
+
+def test_broken_stdout_pipe_keeps_full_artifact(project):
+    """F002 (AC-7): `--run | head -n 3` -> Artefakt trotzdem vollstaendig, VERIFIED."""
+    _configure(project, "for i in $(seq 3000); do echo line$i; done; echo '4 passed in 0.1s'")
+    subprocess.run(f"{sys.executable} {HOOKS_DIR / 'qa_gate.py'} --run | head -n 3",
+                   shell=True, capture_output=True, text=True, cwd=str(project),
+                   env=_env(project), stdin=subprocess.DEVNULL, timeout=60)
+    lines = (project / FIXED_OUT).read_text().splitlines()
+    assert len(lines) == 3001, f"Artefakt gekuerzt: {len(lines)} Zeilen"
+    assert _verdict(project).startswith("VERIFIED:"), _verdict(project)
+
+
+def test_symlinked_artifact_path_is_refused(project):
+    """F001: Symlink am Artefaktpfad -> Exit 1, nichts ausgefuehrt, State byte-gleich."""
+    marker = project / "ran.marker"
+    _configure(project, f"touch {marker}; {GREEN_CMD}")
+    out = project / FIXED_OUT
+    out.parent.mkdir(parents=True)
+    os.symlink(_state_path(project), out)
+    before = _state_path(project).read_bytes()
+    r = _hook(project, "qa_gate.py", ["--run"])
+    assert r.returncode == 1, _out(r)
+    assert not marker.exists(), "Testbefehl lief trotz Symlink"
+    assert _state_path(project).read_bytes() == before, "State ueber Symlink veraendert"
+
+
+def test_no_active_workflow_runs_nothing(project):
+    """F003: kein aktiver Workflow -> Exit 1, Testbefehl nicht ausgefuehrt."""
+    marker = project / "ran.marker"
+    _configure(project, f"touch {marker}; {GREEN_CMD}")
+    (project / ".claude" / "active_workflow").unlink()
+    r = _hook(project, "qa_gate.py", ["--run"])
+    assert r.returncode == 1, _out(r)
+    assert not marker.exists(), "Testbefehl lief ohne aktiven Workflow"
+    assert not (project / "docs" / "artifacts").exists(), "Artefakt ohne Workflow geschrieben"
+
+
+def test_hardlinked_artifact_path_is_refused(project):
+    """F004: harter Verweis am Artefaktpfad -> Exit 1, nichts ausgefuehrt, State byte-gleich."""
+    marker = project / "ran.marker"
+    _configure(project, f"touch {marker}; {GREEN_CMD}")
+    out = project / FIXED_OUT
+    out.parent.mkdir(parents=True)
+    os.link(_state_path(project), out)
+    before = _state_path(project).read_bytes()
+    r = _hook(project, "qa_gate.py", ["--run"])
+    assert r.returncode == 1, _out(r)
+    assert not marker.exists(), "Testbefehl lief trotz hartem Verweis"
+    assert _state_path(project).read_bytes() == before, "State ueber Hardlink veraendert"
+
+
+def test_closed_stdout_does_not_crash(project):
+    """F005: `--run >&-` (stdout geschlossen) -> kein Traceback, Artefakt vollstaendig, Verdict."""
+    _configure(project, f"echo line1; {GREEN_CMD}")
+    r = subprocess.run(f"{sys.executable} {HOOKS_DIR / 'qa_gate.py'} --run >&-",
+                       shell=True, capture_output=True, text=True, cwd=str(project),
+                       env=_env(project), stdin=subprocess.DEVNULL, timeout=60)
+    assert "Traceback" not in r.stderr, r.stderr
+    assert (project / FIXED_OUT).read_text().splitlines() == ["line1", "3 passed in 0.1s"]
+    assert _verdict(project).startswith("VERIFIED:"), _verdict(project) + r.stderr
+
+
+def test_fifo_artifact_path_does_not_hang(project):
+    """F007: FIFO ohne Leser am Artefaktpfad -> kein Haengen, Exit != 0, nichts ausgefuehrt."""
+    marker = project / "ran.marker"
+    _configure(project, f"touch {marker}; {GREEN_CMD}")
+    out = project / FIXED_OUT
+    out.parent.mkdir(parents=True)
+    os.mkfifo(out)
+    before = _state_path(project).read_bytes()
+    try:
+        r = _hook(project, "qa_gate.py", ["--run"], timeout=20)
+    except subprocess.TimeoutExpired:
+        pytest.fail("qa_gate.py --run haengt an FIFO am Artefaktpfad")
+    assert r.returncode != 0, _out(r)
+    assert not marker.exists(), "Testbefehl lief trotz FIFO"
+    assert _state_path(project).read_bytes() == before, "State trotz FIFO veraendert"

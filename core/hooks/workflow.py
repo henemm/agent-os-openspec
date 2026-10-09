@@ -412,6 +412,23 @@ def read_active_workflow_fast() -> "tuple[str, dict] | None":
     return None
 
 
+def write_qa_run_stamp(stamp: dict) -> bool:
+    """Schreibt `qa_run_stamp` in den aktiven Workflow (#345). False = kein Workflow.
+
+    Nur fuer qa_gate.py per Import. Bewusst KEIN CLI-Unterbefehl: der Stempel
+    soll belegen, dass das Gate selbst gemessen hat — ein Befehl, der beliebiges
+    JSON annimmt, liesse ihn per Bash faelschen (Sperre via _SET_FIELD_PROTECTED).
+    """
+    found = read_active_workflow_fast()
+    if found is None:
+        return False
+    name, data = found
+    data.setdefault("name", name)
+    data["qa_run_stamp"] = dict(stamp)
+    _save_active(data)
+    return True
+
+
 def _set_active(name: str) -> None:
     """Set .active symlink and persist OPENSPEC_ACTIVE_WORKFLOW in settings.local.json.
 
@@ -1354,6 +1371,7 @@ _SET_FIELD_PROTECTED = {
     "status": "workflow.py finish / abandon",
     "name": "workflow.py start <name>",
     "base_commit": "wird von workflow.py start gesetzt (Basis der Phase-8-Abdeckung)",
+    "qa_run_stamp": "wird von qa_gate.py gesetzt",
 }
 
 # Nach der Freigabe nur noch mit Override-Token des Users per set-field (#379).
