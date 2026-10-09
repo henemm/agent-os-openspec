@@ -287,7 +287,7 @@ Registrierung zentral in `hooks/hooks.json` (Plugin-Modus) bzw. `.claude/setting
   Intern (edit_gate.py, das Kern-Gate): Protected State → Always-Allowed → Code-Check → Infra → Stop-Lock → Workflow → Phase → Override → TDD
 
 **PreToolUse Bash:** `secrets_guard.py` → `bash_gate.py` → [module hooks]
-  Intern (bash_gate.py, das Kern-Gate): Stop-Lock → Git Fast-Path → State-Integrity → Secrets → Commit-Gates
+  Intern (bash_gate.py, das Kern-Gate): Stop-Lock → Config-Schutz (Schreibzugriff auf wirksame Gate-Config, Ausweg "override") → Git Fast-Path → State-Integrity → Secrets → Commit-Gates
 
 **PreToolUse Read:** `secrets_guard.py`
 

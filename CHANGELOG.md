@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **#410 (bash_gate: Restlücken in Prüfung 3b, wirksame Config):** Bei aktivem Workflow erkennt Prüfung 3b jetzt Globs im letzten Pfadteil (`cp|ln|mv .claude/workflows/fix* docs/x/`, eigene Liste `PROTECTED_GLOB_PATTERNS`), Ordner-Token mit `/.`, `/..` und `//` (`rsync -a docs/w/ .claude/workflows/.`, `ln -s .claude//workflows d`) und nackte `workflows`/`.`-Token nach `cd`/`pushd .claude` (`cd .claude && ln -s workflows ../w`). Neu: Schreibzugriffe per Bash auf die **wirksame** Gate-Config (`find_config_file(find_project_root())`, im Worktree die Datei im Hauptordner) enden mit Exit 2, auch ohne Workflow und vor dem Git-Schnellweg; Ausweg nur „override“ (gibt die Config frei, nicht den Workflow-State). Worktree-Kopie, Lesen und App-`config.yaml` bleiben frei. Bekannte Grenzen: Ordner und Schreibbefehl in getrennten Segmenten sowie `xargs`/`find`/`tar` (F004), `cat .claude/workflows/fix* > docs/x` als hinnehmbarer Fehlalarm, Textprüfung grundsätzlich umgehbar (Prüfung an der Quelle: #416; allgemeiner Hauptrepo-Schutz: #417). Tests: `tests/test_bash_gate_state_integrity_410.py`.
+
 ## [3.40.0] - 2026-10-09
 
 ### Added

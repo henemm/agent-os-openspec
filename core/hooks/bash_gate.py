@@ -67,8 +67,12 @@ PROTECTED_FILE_PATTERNS = [
 # (optional ./, Praefixpfad, abschliessender Slash). Nur fuer 3b. Bewusst
 # NICHT `.claude/worktrees/…` und `.claude/hooks` (wie _cd_into_claude).
 PROTECTED_DIR_TOKEN_PATTERNS = [
-    r"(?<![\w.-])(?:\./)?(?:[^\s'\"]*/)?\.claude(?:/workflows)?/*(?=[\s\"';&|)]|$)",
+    r"(?<![\w.-])(?:\./)?(?:[^\s'\"]*/)?\.claude(?:/+workflows)?(?:/+\.{1,2})*/*(?=[\s\"';&|)]|$)",
 ]
+
+# Glob im letzten Pfadteil (#410): `.claude/workflows/fix*`. Wie die Ordner-
+# Token nur bei aktivem Workflow (#407 AC-9), daher nicht in der Liste oben.
+PROTECTED_GLOB_PATTERNS = [r"\.claude/workflows/[^\s/]*[*?[][^\s]*"]
 
 # Verweis-/Kopierbefehle als KOMMANDOWORT (#407): Segmentanfang, nach
 # ; & | ( oder Praefix (sudo/env/VAR=x), im Roh-Text auch nach `-c "`/`eval "`.
@@ -264,7 +268,8 @@ def _protected_outside_whitelist(scan_cmd: str, command: str, dirs: bool = False
     bisher auf den ganzen Befehl (fail-open). `dirs`: Zustandsordner (#407).
     """
     def hit(text: str) -> bool:
-        return _references_protected(text) or (dirs and _writes_state_dir(text))
+        return _references_protected(text) or (dirs and (
+            _writes_state_dir(text) or _matches_file_token(text, PROTECTED_GLOB_PATTERNS)))
 
     segments = _git_segments(scan_cmd)
     if segments is None:
@@ -351,6 +356,54 @@ def _cd_context_protected(scan_cmd: str) -> bool:
         if in_claude and _matches_file_token(shlex.join(seg), patterns):
             return True
         in_claude = in_claude or _cd_into_claude(seg)
+    return False
+
+
+def _dir_token_in_cd_context(segments: list) -> bool:
+    """Nach `cd .claude[/workflows]` ein nacktes `workflows`/`.` mit Verweis-/Schreibbefehl (#410).
+
+    `cd .claude && ln -s workflows ../w` blockt; `cd .claude && ls workflows`
+    und `cd .claude/worktrees/x && cp a b` bleiben frei.
+    """
+    in_claude = False
+    for seg in segments:
+        if in_claude and any(t.rstrip("/") in ("workflows", ".") for t in seg
+                             if t and t != "/") \
+                and _has_write_indicator(shlex.join(seg), links=True):
+            return True
+        in_claude = in_claude or _cd_into_claude(seg)
+    return False
+
+
+def _writes_effective_config(segments: list, cwd: Path) -> bool:
+    """Schreibt ein Segment auf die WIRKSAME Gate-Config (#410)?
+
+    Wirksam = `find_config_file(find_project_root())` (im Worktree die Datei im
+    Hauptordner). Die Worktree-Kopie loest auf eine andere Datei auf und bleibt
+    frei. Aufgeloest wird erst, wenn ein Segment einen Schreib-Indikator hat.
+    Fehler bei der Aufloesung: fail-open.
+    """
+    effective = None
+    for seg in segments:
+        if not _has_write_indicator(shlex.join(seg)):
+            continue
+        try:
+            if effective is None:
+                from config_loader import find_config_file
+                found = find_config_file(find_project_root())
+                if found is None:
+                    return False
+                effective = Path(found).resolve()
+            skip_next = False
+            for tok in seg:
+                if skip_next:
+                    skip_next = False
+                elif tok in SECRETS_FREETEXT_FLAGS:
+                    skip_next = True
+                elif not tok.startswith("-") and (cwd / tok).resolve() == effective:
+                    return True
+        except Exception:
+            return False
     return False
 
 
@@ -918,6 +971,16 @@ def main():
     if workflow_enforced and _is_stop_locked():
         block("BLOCKED: Stop-lock active.")
 
+    # 1b. Wirksame Gate-Config (#410): Schutz, kein Workflow-Zwang — gilt ohne
+    #     Workflow und vor jedem Schnellweg; Ausweg nur der Override-Token.
+    if _writes_effective_config(_git_segments(scan_cmd) or [], Path.cwd()) \
+            and not _any_override_token():
+        block(
+            "BLOCKED: Schreibzugriff auf die wirksame Gate-Config (Kill-Switches).\n"
+            "  Aenderungen gehoeren in die Worktree-Kopie und wirken nach dem Merge.\n"
+            "  Bewusst gewollt? User tippt 'override'."
+        )
+
     # Umleitung auf State/Marker hinter einem erlaubten Befehl (#316): VOR dem
     # Git-Schnellweg berechnen, sonst endet `git status > <state>` dort.
     redirect_hit = workflow_enforced and _redirects_to_protected(scan_cmd)
@@ -987,6 +1050,7 @@ def main():
     if workflow_enforced and (
         _protected_outside_whitelist(scan_cmd, command, wf_active)
         or _cd_context_protected(scan_cmd)
+        or (wf_active and _dir_token_in_cd_context(_git_segments(scan_cmd) or []))
     ):
         if _has_write_indicator(scan_cmd, links=wf_active):
             block(_state_msg)

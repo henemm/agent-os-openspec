@@ -210,6 +210,7 @@ Läuft **bevor Claude einen Shell-Befehl ausführt**. Besonders relevant bei `gi
 
 ```
 1. Stop-Lock aktiv? → BLOCK
+1b. Schreibzugriff auf die wirksame Gate-Config? → BLOCK (Ausweg: User tippt "override")
 2. Reiner git-Befehl (kein commit)? → ALLOW (Fast Path)
 3. Versucht Workflow-State direkt zu manipulieren? → BLOCK
 4. Sensitive Datei + Output-Befehl? → BLOCK
