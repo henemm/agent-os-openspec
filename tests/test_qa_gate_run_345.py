@@ -304,29 +304,17 @@ def test_file_mode_unchanged_and_marks_source_file(project):
     assert r.returncode == 1 and "min old" in _out(r), _out(r)
 
 
-# --- AC-13: bash_gate unveraendert, beide qa_gate-Aufrufe frei ---------------
+# --- AC-13: beide qa_gate-Aufrufe passieren bash_gate -----------------------
+# Der Byte-Vergleich von bash_gate.py mit origin/main ist mit #407 entfallen:
+# er sicherte nur den Scope von #345 und brach bei jeder spaeteren Aenderung.
 
 def _bash_gate(root: Path, command: str):
     payload = json.dumps({"command": command})
     return _hook(root, "bash_gate.py", [], extra_env={"CLAUDE_TOOL_INPUT": payload})
 
 
-def _main_bash_gate() -> "str | None":
-    """bash_gate.py auf origin/main, None wenn die Referenz fehlt (flacher CI-Checkout)."""
-    r = subprocess.run(
-        ["git", "show", "origin/main:core/hooks/bash_gate.py"],
-        capture_output=True, text=True, cwd=str(REPO_ROOT),
-        env={k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
-    )
-    return r.stdout if r.returncode == 0 else None
-
-
-def test_bash_gate_unchanged_and_qa_gate_calls_pass(project):
-    """AC-13: bash_gate.py == main; Datei-Modus und `--run` passieren bash_gate (Exit 0)."""
-    main_text = _main_bash_gate()
-    if main_text is not None:
-        current = (HOOKS_DIR / "bash_gate.py").read_text()
-        assert current == main_text, "core/hooks/bash_gate.py weicht von origin/main ab"
+def test_qa_gate_calls_pass_bash_gate(project):
+    """AC-13: Datei-Modus und `--run` passieren bash_gate (Exit 0)."""
     for command in (
         f"python3 .claude/hooks/qa_gate.py docs/artifacts/{WF}/test-output.txt",
         "python3 .claude/hooks/qa_gate.py --run",

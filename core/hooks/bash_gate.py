@@ -63,6 +63,22 @@ PROTECTED_FILE_PATTERNS = [
     r"\.claude/user_approved_validation_[^\s]*",
 ]
 
+# Zustandsordner als ganzes Token (#407): `.claude`, `.claude/workflows`
+# (optional ./, Praefixpfad, abschliessender Slash). Nur fuer 3b. Bewusst
+# NICHT `.claude/worktrees/…` und `.claude/hooks` (wie _cd_into_claude).
+PROTECTED_DIR_TOKEN_PATTERNS = [
+    r"(?<![\w.-])(?:\./)?(?:[^\s'\"]*/)?\.claude(?:/workflows)?/*(?=[\s\"';&|)]|$)",
+]
+
+# Verweis-/Kopierbefehle als KOMMANDOWORT (#407): Segmentanfang, nach
+# ; & | ( oder Praefix (sudo/env/VAR=x), im Roh-Text auch nach `-c "`/`eval "`.
+# Kein `\bln\b` — das traefe `ls -ln`; `pip install`/`npm install` zaehlen nicht.
+_LINK_COMMAND_RE = re.compile(
+    r"(?:^|[;&|(\n]|(?:-c|\beval)\s+['\"])\s*"
+    r"(?:(?:sudo|env|command|nice|nohup|time|exec|[A-Za-z_]\w*=\S*)\s+)*"
+    r"(?:[^\s;&|()'\"]*/)?(?:ln|link|install|rsync)(?=[\s;&|)'\"]|$)"
+)
+
 # Approval-/Erfolgs-Marker: Dateien, deren blosse Existenz einen Freigabe-
 # oder Erfolgszustand BEHAUPTET. Diese darf der Agent NIEMALS selbst per Bash
 # erzeugen/aendern/loeschen — das waere "specification gaming" (der Agent
@@ -240,21 +256,33 @@ def _segment_whitelisted(segment: list, entries: list) -> bool:
     return any(_whitelist_matches(shlex.join(segment), allowed) for allowed in entries)
 
 
-def _protected_outside_whitelist(scan_cmd: str, command: str) -> bool:
+def _protected_outside_whitelist(scan_cmd: str, command: str, dirs: bool = False) -> bool:
     """Nennt ein NICHT-whitelisted Segment einen geschuetzten Pfad? (#299, 2b)
 
     `workflow.py status 2>&1 | tee out.log`: der Pfad steht nur im
     whitelisted Segment -> zaehlt fuer 3b nicht. Nicht zerlegbar -> wie
-    bisher auf den ganzen Befehl (fail-open).
+    bisher auf den ganzen Befehl (fail-open). `dirs`: Zustandsordner (#407).
     """
+    def hit(text: str) -> bool:
+        return _references_protected(text) or (dirs and _writes_state_dir(text))
+
     segments = _git_segments(scan_cmd)
     if segments is None:
-        return _references_protected(scan_cmd) and not _is_whitelisted(command)
+        return hit(scan_cmd) and not _is_whitelisted(command)
     entries = _whitelist_entries()
     return any(
-        _references_protected(shlex.join(seg)) and not _segment_whitelisted(seg, entries)
+        hit(shlex.join(seg)) and not _segment_whitelisted(seg, entries)
         for seg in segments
     )
+
+
+def _writes_state_dir(text: str) -> bool:
+    """Zustandsordner-Token UND Schreib-/Verweisbefehl im selben Segment (#407).
+
+    `ls .claude && rm docs/x` bleibt frei: der Ordner wird nur gelesen.
+    """
+    return (_matches_file_token(text, PROTECTED_DIR_TOKEN_PATTERNS)
+            and _has_write_indicator(text, links=True))
 
 
 def _strip_leading_separators(token: str) -> str:
@@ -412,10 +440,12 @@ def _has_real_redirect(command: str) -> bool:
     return False
 
 
-def _has_write_indicator(command: str) -> bool:
+def _has_write_indicator(command: str, links: bool = False) -> bool:
     for p in WRITE_INDICATORS:
         if re.search(p, command):
             return True
+    if links and _LINK_COMMAND_RE.search(command):  # ln/link/install/rsync (#407)
+        return True
     return _has_real_redirect(command)
 
 
@@ -952,10 +982,13 @@ def main():
     _state_msg = "BLOCKED: Direct state file manipulation. Use workflow.py CLI."
     if redirect_hit:
         block(_state_msg)
+    # #407: Verweis-Befehle und Zustandsordner nur bei aktivem Workflow (AC-9).
+    wf_active = workflow_enforced and bool(get_active_workflow_name())
     if workflow_enforced and (
-        _protected_outside_whitelist(scan_cmd, command) or _cd_context_protected(scan_cmd)
+        _protected_outside_whitelist(scan_cmd, command, wf_active)
+        or _cd_context_protected(scan_cmd)
     ):
-        if _has_write_indicator(scan_cmd):
+        if _has_write_indicator(scan_cmd, links=wf_active):
             block(_state_msg)
 
     # 4. Secrets guard
