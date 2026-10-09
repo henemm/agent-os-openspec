@@ -389,13 +389,12 @@ def test_mutation_unverankerte_regex_wuerde_worktree_pfad_freigeben(tmp_path, mo
 # AC-10
 # ---------------------------------------------------------------------------
 
-def _unreleased_entry_409(changelog: str) -> str:
-    m = re.search(r"^## \[Unreleased\]\s*$(.*?)(?=^## \[)", changelog, re.M | re.S)
-    assert m, "CHANGELOG.md hat keinen [Unreleased]-Abschnitt"
-    section = m.group(1)
-    lines = section.splitlines()
-    start = next((i for i, l in enumerate(lines) if "#409" in l), None)
-    assert start is not None, "Kein Eintrag zu #409 unter [Unreleased]"
+def _changelog_entry_409(changelog: str) -> str:
+    # Release-stabil: nicht an [Unreleased] gebunden — beim Release wandert der
+    # Eintrag in den Versionsabschnitt (wie tests/test_bug_typ_entfernt_333.py).
+    lines = changelog.splitlines()
+    start = next((i for i, l in enumerate(lines) if l.startswith("- **#409")), None)
+    assert start is not None, "Kein Eintrag zu #409 im CHANGELOG"
     entry = [lines[start]]
     for line in lines[start + 1:]:
         if line.startswith("- ") or line.startswith("#"):
@@ -408,11 +407,12 @@ def test_changelog_nennt_scharfschaltung():
     """AC-10.
     GIVEN die Aenderung ist umgesetzt
     WHEN CHANGELOG.md gelesen wird
-    THEN steht unter [Unreleased] ein Eintrag zu #409 mit dem Hinweis, dass beide
+    THEN steht im CHANGELOG (release-stabil, nicht nur unter [Unreleased]) ein
+         Eintrag zu #409 mit dem Hinweis, dass beide
          Gates in Worktree-Sitzungen jetzt erstmals greifen (24-h-Artefaktgrenze,
          `tests/` in diesen Gates nicht frei).
     """
-    entry = _unreleased_entry_409((REPO_ROOT / "CHANGELOG.md").read_text())
+    entry = _changelog_entry_409((REPO_ROOT / "CHANGELOG.md").read_text())
     assert re.search(r"worktree", entry, re.I), "Eintrag nennt Worktree-Sitzungen nicht"
     assert re.search(r"erstmals|scharf", entry, re.I), (
         "Eintrag sagt nicht, dass beide Gates jetzt erstmals greifen (Scharfschaltung)"
