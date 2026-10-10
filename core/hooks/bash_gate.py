@@ -375,33 +375,207 @@ def _dir_token_in_cd_context(segments: list) -> bool:
     return False
 
 
+def _split_redirects(seg: list) -> tuple:
+    """Schreib-Umleitungsziele und Restsegment ohne Umleitungen (#418).
+
+    `>`, `>>`, `>|`, `&>`, `>&`: Ziel ist das naechste Token, ausser fd-Ziffer,
+    `-` und `/dev/null`. Eingabe-Umleitungen und die fd-Ziffer davor (`2>x`)
+    fallen nur aus dem Rest, damit `cp a b 2>/dev/null` `b` als letztes behaelt.
+    """
+    targets, rest, i = [], [], 0
+    while i < len(seg):
+        tok = seg[i]
+        if tok.isdigit() and i + 1 < len(seg) and _is_git_redirect(seg[i + 1]):
+            i += 1
+            continue
+        if _is_git_redirect(tok):
+            dest = seg[i + 1] if i + 1 < len(seg) else ""
+            if ">" in tok and "<" not in tok and not (
+                    dest.isdigit() or dest in ("-", "/dev/null")):
+                targets.append(dest)
+            i += 2
+            continue
+        rest.append(tok)
+        i += 1
+    return targets, rest
+
+
+def _command_args(rest: list) -> tuple:
+    """Kommandowort (ohne Pfad) und Argumente; Praefixe und Freitext raus (#418)."""
+    i = 0
+    while i < len(rest) and (rest[i] in ("sudo", "command", "env")
+                             or re.match(r"^[A-Za-z_]\w*=", rest[i])):
+        i += 1
+    if i >= len(rest):
+        return "", []
+    args, skip = [], False
+    for tok in rest[i + 1:]:
+        if skip:
+            skip = False
+        elif tok in SECRETS_FREETEXT_FLAGS:
+            skip = True
+        else:
+            args.append(tok)
+    return os.path.basename(rest[i]), args
+
+
+def _positional(args: list, value_flags: tuple = ()) -> list:
+    """Nicht-Flag-Argumente; Werte von `value_flags` und Flags fallen weg, `--` beendet Flags."""
+    out, skip, only_pos = [], False, False
+    for tok in args:
+        if skip:
+            skip = False
+        elif only_pos or not tok.startswith("-") or tok == "-":
+            out.append(tok)
+        elif tok == "--":
+            only_pos = True
+        elif tok in value_flags:
+            skip = True
+    return out
+
+
+def _copy_targets(args: list) -> list:
+    """cp/install/ln: letztes Argument, bei `-t DIR` je Quelle `DIR/<basename>`."""
+    target_dir = None
+    for i, tok in enumerate(args):
+        if tok == "-t" and i + 1 < len(args):
+            target_dir = args[i + 1]
+        elif tok.startswith("--target-directory="):
+            target_dir = tok.split("=", 1)[1]
+    pos = _positional(args, ("-t", "-m", "-o", "-g", "-S"))
+    if target_dir is not None:
+        return [os.path.join(target_dir, os.path.basename(p.rstrip("/"))) for p in pos]
+    return pos[-1:]
+
+
+def _sed_targets(args: list) -> list:
+    """sed nur In-Place (`-i`, `-ni`, `-i.bak`, `-i ''`, `--in-place[=SUF]`)."""
+    inplace = explicit = skip = False
+    pos = []
+    for tok in args:
+        if skip:
+            skip = False
+        elif tok.startswith("--in-place"):
+            inplace = True
+        elif tok in ("--expression", "--file"):
+            explicit = skip = True
+        elif tok.startswith(("--expression=", "--file=")):
+            explicit = True
+        elif tok.startswith("-") and not tok.startswith("--") and len(tok) > 1:
+            for j, ch in enumerate(tok[1:]):
+                if ch == "i":
+                    inplace = True
+                    break
+                if ch in "ef":
+                    explicit = True
+                    skip = j == len(tok) - 2
+                    break
+        elif tok:
+            pos.append(tok)
+    if not inplace:
+        return []
+    return pos if explicit else pos[1:]
+
+
+def _perl_targets(args: list) -> list:
+    """perl nur mit `-i`-Cluster (`-pi`, `-i.bak`); `-e`-Skript wird uebersprungen."""
+    inplace = has_e = skip = False
+    pos = []
+    for tok in args:
+        if skip:
+            skip = False
+        elif tok.startswith("-") and not tok.startswith("--") and len(tok) > 1:
+            for j, ch in enumerate(tok[1:]):
+                if ch == "i":
+                    inplace = True
+                    break
+                if ch in "eE":
+                    has_e = True
+                    skip = j == len(tok) - 2
+                    break
+                if ch in "IMmlx0FCdD":
+                    break
+        elif tok:
+            pos.append(tok)
+    if not inplace:
+        return []
+    return pos if has_e else pos[1:]
+
+
+def _git_write_targets(args: list) -> list:
+    """git checkout/restore/rm/mv: alle Pfadargumente (Branchnamen loesen nie auf die Config auf)."""
+    pos = _positional(args, ("-C", "-c"))
+    if not pos or pos[0] not in ("checkout", "restore", "rm", "mv"):
+        return []
+    return _positional(args[args.index(pos[0]) + 1:], ("-s", "--source", "-b", "-B"))
+
+
+_CONFIG_WRITERS = {
+    "cp": _copy_targets, "install": _copy_targets, "ln": _copy_targets,
+    "mv": lambda a: _positional(a, ("-t", "-S")),
+    "rm": _positional, "unlink": _positional, "tee": _positional,
+    "truncate": lambda a: _positional(a, ("-s", "-r")),
+    "touch": lambda a: _positional(a, ("-d", "-t", "-r")),
+    "sed": _sed_targets, "perl": _perl_targets, "git": _git_write_targets,
+    "dd": lambda a: [t[3:] for t in a if t.startswith("of=")],
+    "yq": lambda a: _positional(a) if ("-i" in a or "--inplace" in a) else [],
+}
+
+
+def _config_write_targets(seg: list) -> list:
+    """Nur die Tokens, die das Segment beschreibt, ersetzt, entfernt oder verlinkt (#418).
+
+    Lese-Quellen zaehlen nie. Leere Tokens (`sed -i ''`) fallen weg, sonst
+    traefe die Aufloesung die Basis selbst.
+    """
+    targets, rest = _split_redirects(seg)
+    cmd, args = _command_args(rest)
+    writer = _CONFIG_WRITERS.get(cmd)
+    if writer is not None:
+        targets += writer(args)
+    return [t for t in targets if t]
+
+
+def _cd_bases(seg: list, bases: list, cwd: Path) -> list:
+    """Basis nach `cd`/`pushd` nachfuehren (#418).
+
+    Nicht aufloesbar (`cd $X`, `cd -`, `cd` ohne Ziel, Glob, Backtick, `popd`):
+    alte Basis UND cwd bleiben im Spiel — kein neuer Block-Grund.
+    """
+    args = [a for a in seg[1:] if not a.startswith("-")]
+    target = args[0] if args else ""
+    if seg[0] == "popd" or not target or any(ch in target for ch in "$`*?["):
+        return list(dict.fromkeys(bases + [cwd]))
+    return [(b / os.path.expanduser(target)).resolve() for b in bases]
+
+
 def _writes_effective_config(segments: list, cwd: Path) -> bool:
-    """Schreibt ein Segment auf die WIRKSAME Gate-Config (#410)?
+    """Schreibt ein Segment auf die WIRKSAME Gate-Config (#410, #418)?
 
     Wirksam = `find_config_file(find_project_root())` (im Worktree die Datei im
-    Hauptordner). Die Worktree-Kopie loest auf eine andere Datei auf und bleibt
-    frei. Aufgeloest wird erst, wenn ein Segment einen Schreib-Indikator hat.
-    Fehler bei der Aufloesung: fail-open.
+    Hauptordner). Verglichen werden nur echte Schreibziele, aufgeloest gegen die
+    ueber `cd`/`pushd` nachgefuehrte Basis. Die Worktree-Kopie loest auf eine
+    andere Datei auf und bleibt frei. Fehler: fail-open.
     """
     effective = None
+    bases = [cwd]
     for seg in segments:
-        if not _has_write_indicator(shlex.join(seg)):
-            continue
         try:
+            if seg[0] in ("cd", "pushd", "popd"):
+                bases = _cd_bases(seg, bases, cwd)
+                continue
+            targets = _config_write_targets(seg)
+            if not targets:
+                continue
             if effective is None:
                 from config_loader import find_config_file
                 found = find_config_file(find_project_root())
                 if found is None:
                     return False
                 effective = Path(found).resolve()
-            skip_next = False
-            for tok in seg:
-                if skip_next:
-                    skip_next = False
-                elif tok in SECRETS_FREETEXT_FLAGS:
-                    skip_next = True
-                elif not tok.startswith("-") and (cwd / tok).resolve() == effective:
-                    return True
+            if any((b / os.path.expanduser(t)).resolve() == effective
+                   for b in bases for t in targets):
+                return True
         except Exception:
             return False
     return False
