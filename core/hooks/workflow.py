@@ -31,6 +31,7 @@ Usage:
 """
 
 from hook_utils import setup_path, find_project_root
+from hook_utils import UnsafeStateError, atomic_write_json, read_state_json
 setup_path()
 
 import hashlib as _hashlib
@@ -312,23 +313,13 @@ def _active_name() -> "str | None":
 
 
 def _atomic_write(path: Path, data: dict) -> None:
-    """Write JSON atomically via tempfile + rename."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w") as f:
-            json.dump(data, f, indent=2)
-        os.rename(tmp, str(path))
-    except Exception:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
+    """Write JSON atomically via tempfile + rename (hook_utils.atomic_write_json)."""
+    atomic_write_json(path, data)
 
 
 def _read_workflow(path: Path) -> dict:
-    return json.loads(path.read_text())
+    """State nur aus echter eigener Datei lesen (#416, wirft UnsafeStateError)."""
+    return read_state_json(path, find_project_root())
 
 
 def _active_name_from_env() -> str:
@@ -2090,6 +2081,11 @@ def cmd_cleanup_stale_locks(args: list[str]) -> None:
                 if phase == "phase6_implement":
                     skipped.append(f"  SKIPPED {wf_name} (aktiv in {phase})")
                     continue
+            except UnsafeStateError as exc:
+                # #416: unsicherer State → Sperren NICHT loeschen
+                skipped.append(
+                    f"  SKIPPED {wf_name} (unsicherer State: {exc.reason})")
+                continue
             except Exception:
                 pass
         # Archived or past phase6 → safe to remove
@@ -2260,7 +2256,12 @@ def main():
         print(f"Unknown command: {cmd}", file=sys.stderr)
         sys.exit(1)
 
-    COMMANDS[cmd](sys.argv[2:])
+    try:
+        COMMANDS[cmd](sys.argv[2:])
+    except UnsafeStateError as exc:
+        # #416: unsicherer State → Meldung statt Traceback, kein Weiterarbeiten
+        print(f"BLOCKED: {exc}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

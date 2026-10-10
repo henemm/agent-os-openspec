@@ -316,12 +316,18 @@ def _extract_issue_number(workflow_name: str) -> "str | None":
 
 
 def _read_workflow_phase(workflow_name: str) -> "str | None":
-    """current_phase aus .claude/workflows/<name>.json."""
+    """current_phase aus .claude/workflows/<name>.json.
+
+    Unsicherer State (Verweis, #416) → None, wie jeder andere Lesefehler.
+    """
     try:
-        from hook_utils import find_project_root
-        path = (find_project_root() / ".claude" / "workflows"
-                / f"{workflow_name}.json")
-        data = json.loads(path.read_text())
+        from hook_utils import UnsafeStateError, find_project_root, read_state_json
+        root = find_project_root()
+        path = root / ".claude" / "workflows" / f"{workflow_name}.json"
+        try:
+            data = read_state_json(path, root)
+        except UnsafeStateError:
+            return None
         phase = data.get("current_phase")
         return phase if isinstance(phase, str) and phase else None
     except Exception:

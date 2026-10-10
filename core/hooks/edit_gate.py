@@ -147,6 +147,9 @@ def _read_active_workflow() -> dict | None:
     Falls back to scanning all workflows if env var is not set.
     The .active symlink is intentionally not used — it causes drift in
     parallel sessions where each session has a different active workflow.
+
+    #416: gelesen wird nur aus echter eigener Datei; ein Verweis wirft
+    `hook_utils.UnsafeStateError` an den Aufrufer weiter (kein "kein Workflow").
     """
     name = get_active_workflow_name()
     if not name:
@@ -155,20 +158,24 @@ def _read_active_workflow() -> dict | None:
     wf_file = wf_dir / f"{name}.json"
     if wf_file.exists():
         try:
-            return json.loads(wf_file.read_text())
+            return hook_utils.read_state_json(wf_file, _root)
         except (OSError, json.JSONDecodeError):
             pass
     arch = wf_dir / "_archive" / f"{name}.json"
     if arch.exists():
         try:
-            return json.loads(arch.read_text())
+            return hook_utils.read_state_json(arch, _root)
         except (OSError, json.JSONDecodeError):
             pass
     return None
 
 
 def _find_workflow_for_file(file_path: str) -> dict | None:
-    """Find workflow that owns a file via affected_files match."""
+    """Find workflow that owns a file via affected_files match.
+
+    #416: ein unsicherer State wird nicht uebersprungen — ob er die Datei
+    besitzt, ist unbekannt; `UnsafeStateError` geht an den Aufrufer.
+    """
     wf_dir = _root / ".claude" / "workflows"
     if not wf_dir.exists():
         return None
@@ -178,7 +185,7 @@ def _find_workflow_for_file(file_path: str) -> dict | None:
         rel = rel[len(root_str):].lstrip("/")
     for f in wf_dir.glob("*.json"):
         try:
-            data = json.loads(f.read_text())
+            data = hook_utils.read_state_json(f, _root)
         except (json.JSONDecodeError, OSError):
             continue
         phase = data.get("current_phase", "phase0_idle")
@@ -247,24 +254,30 @@ def _find_workflow_by_spec_file(file_path: str) -> dict | None:
     (auch der Scan unten erfasst es per `glob("*.json")` korrekt nicht).
     `_read_active_workflow()` selbst bleibt unveraendert — andere Aufrufer
     nutzen den Archiv-Fallback absichtlich.
+
+    #416: ein unsicherer State liefert keinen vertrauenswuerdigen `spec_file`
+    und wird hier nicht ausgewertet. Laeuft VOR den Always-Allowed-Pfaden —
+    Docs muessen zur Bereinigung editierbar bleiben; den Code-Edit blockt
+    Schritt 6 in main() mit der Verweis-Meldung.
     """
+    _unsafe = (OSError, json.JSONDecodeError, hook_utils.UnsafeStateError)
     name = get_active_workflow_name()
     if name:
         wf_file = _root / ".claude" / "workflows" / f"{name}.json"
         if wf_file.exists():
             try:
-                candidate = json.loads(wf_file.read_text())
+                candidate = hook_utils.read_state_json(wf_file, _root)
                 if _matches_spec_file(candidate, file_path):
                     return candidate
-            except (OSError, json.JSONDecodeError):
+            except _unsafe:
                 pass
     wf_dir = _root / ".claude" / "workflows"
     if not wf_dir.exists():
         return None
     for f in sorted(wf_dir.glob("*.json")):
         try:
-            data = json.loads(f.read_text())
-        except (json.JSONDecodeError, OSError):
+            data = hook_utils.read_state_json(f, _root)
+        except _unsafe:
             continue
         if _matches_spec_file(data, file_path):
             return data
@@ -316,7 +329,10 @@ def _framework_impl_workflow_active() -> bool:
     Dann entfaellt fuer core/hooks/ und core/agents/ die zusaetzliche Override-
     Pflicht; Phase, RED-Artefakte, AC- und LoC-Pruefung gelten wie bei jedem Code.
     """
-    workflow = _read_active_workflow()
+    try:
+        workflow = _read_active_workflow()
+    except hook_utils.UnsafeStateError as exc:
+        block(f"BLOCKED: {exc}")  # #416: kein vertrauenswuerdiger State
     return bool(workflow) and workflow.get("current_phase") in IMPL_PHASES
 
 
@@ -499,7 +515,8 @@ def _check_loc_delta(config: dict, workflow: dict) -> str | None:
                 target = wf_dir / f"{name}.json"
                 if target.exists():
                     import tempfile
-                    data = json.loads(target.read_text())
+                    # #416: Fund wirft → except unten, kein Zurueckschreiben
+                    data = hook_utils.read_state_json(target, _root)
                     data["loc_delta_current"] = f"+{prod_total}"
                     data["loc_delta_test_current"] = f"+{test_total}"
                     fd, tmp = tempfile.mkstemp(dir=str(target.parent), suffix=".tmp")
@@ -641,10 +658,14 @@ def main():
     if is_colocated_test_file(file_path):
         allow()
 
-    # 6. Find workflow for file
-    workflow = _read_active_workflow()
-    if not workflow:
-        workflow = _find_workflow_for_file(file_path)
+    # 6. Find workflow for file. #416: unsicherer State (Verweis) = keine
+    # Freigabe — blocken vor Override-, Phase- und TDD-Pruefung.
+    try:
+        workflow = _read_active_workflow()
+        if not workflow:
+            workflow = _find_workflow_for_file(file_path)
+    except hook_utils.UnsafeStateError as exc:
+        block(f"BLOCKED: {exc}")
 
     # 7. No workflow — same override fallback as the infrastructure check in
     # step 4. Without it, a valid global override runs into a dead end in

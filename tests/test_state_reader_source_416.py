@@ -570,3 +570,39 @@ def test_phase_listener_save_workflow_schreibt_atomar(tmp_path, monkeypatch):
     if os.stat(state).st_ino == ino_vorher:
         fehler.append("kein neuer Inode")
     assert not fehler, fehler
+
+
+# --------------------------------------------------------------------- #
+# F001 (Adversary Runde 1): cleanup-stale-locks darf bei unsicherem State
+# keine Sperren löschen.
+# --------------------------------------------------------------------- #
+
+def _lege_sperren_an(root: Path) -> list:
+    claude = root / ".claude"
+    markers = [claude / f"pending_validation_{WF}.json",
+               claude / f"user_approved_validation_{WF}"]
+    markers[0].write_text("{}")
+    markers[1].write_text("")
+    return markers
+
+
+@pytest.mark.parametrize("richtung", RICHTUNGEN)
+def test_cleanup_stale_locks_behaelt_sperre_bei_unsicherem_state(
+        tmp_path, richtung):
+    root = _sandbox(tmp_path)
+    _lege_sperren_an(root)
+    _mache_unsicher(root, richtung)
+    r = _run_workflow(root, ["cleanup-stale-locks"])
+    claude = root / ".claude"
+    assert (claude / f"pending_validation_{WF}.json").exists(), r.stdout + r.stderr
+    assert (claude / f"user_approved_validation_{WF}").exists(), r.stdout + r.stderr
+    assert "SKIPPED" in r.stdout, r.stdout + r.stderr
+
+
+def test_cleanup_stale_locks_entfernt_sperre_bei_normalem_state(tmp_path):
+    root = _sandbox(tmp_path, dict(FAKE_STATE, current_phase="phase8_complete"))
+    markers = _lege_sperren_an(root)
+    r = _run_workflow(root, ["cleanup-stale-locks"])
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert not any(m.exists() for m in markers), r.stdout + r.stderr
+    assert "Removed:" in r.stdout

@@ -250,6 +250,9 @@ def main() -> None:
     try:
         import workflow as _wf
         result = _wf.read_active_workflow_fast()
+    except hook_utils.UnsafeStateError as exc:
+        # #416: kein vertrauenswuerdiger State = keine Freigabe fuer Code-Edits
+        block(f"BLOCKED [tdd_enforcement]: {exc}")
     except Exception:
         allow()
 
