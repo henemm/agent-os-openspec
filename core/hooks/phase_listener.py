@@ -16,6 +16,7 @@ Exit Codes: 0 always (never blocks, only updates state)
 
 from hook_utils import setup_path, find_project_root, get_user_message, get_active_workflow_name, gate_diagnostics, resolve_active_workflow, framework_disabled
 from hook_utils import pending_validation_lock_path, read_pending_validation_lock, approval_marker_path
+from hook_utils import read_state_json, atomic_write_json, UnsafeStateError
 setup_path()
 
 import json
@@ -345,17 +346,32 @@ def _read_active_workflow() -> tuple[dict | None, Path | None]:
     if not env_name:
         return None, None
     wf_file = _root / ".claude" / "workflows" / f"{env_name}.json"
-    if wf_file.exists():
-        try:
-            return json.loads(wf_file.read_text()), wf_file
-        except (OSError, json.JSONDecodeError):
-            pass
-    return None, None
+    # Verweis auf den State (#416): UnsafeStateError laeuft bewusst durch —
+    # main() behandelt den Fund getrennt von "kein Workflow".
+    try:
+        return read_state_json(wf_file, _root), wf_file
+    except (OSError, ValueError):
+        return None, None
 
 
 def _save_workflow(data: dict, path: Path) -> None:
     data["last_updated"] = datetime.now().isoformat()
-    path.write_text(json.dumps(data, indent=2))
+    # Atomar (#416): neuer Inode, nie durch einen Verweis hindurch schreiben.
+    atomic_write_json(path, data)
+
+
+def _finish_unsafe(exc: Exception, message: str, stop: list, cont: list) -> None:
+    """Unsicherer State (#416): fail-open mit Warnung, keine Freigabe, kein Schreiben.
+
+    Nur der Not-Aus (Stop-Lock) wirkt weiter — er schraenkt ein und haengt
+    nicht am Workflow-State.
+    """
+    if _matches(message, stop) and not _matches(message, cont):
+        _set_stop_lock(True)
+    elif _matches(message, cont):
+        _set_stop_lock(False)
+    _notify(f"WARNUNG: {exc} Freigaben und Phasenwechsel bleiben aus.")
+    _finish()
 
 
 def _create_override_token(workflow_name: str) -> None:
@@ -449,7 +465,10 @@ def main():
     override = phrases.get("override", OVERRIDE_PHRASES)
     green = phrases.get("green", GREEN_PHRASES)
 
-    wf_data, wf_path = _read_active_workflow()
+    try:
+        wf_data, wf_path = _read_active_workflow()
+    except UnsafeStateError as exc:
+        _finish_unsafe(exc, message, stop, cont)
 
     # Override token (works even without workflow)
     override_discarded = None

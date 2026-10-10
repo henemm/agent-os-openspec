@@ -23,6 +23,7 @@ from hook_utils import setup_path
 setup_path()
 
 from hook_utils import adopt_payload_cwd, block, find_project_root, framework_disabled, resolve_active_workflow  # noqa: E402
+from hook_utils import read_state_json, UnsafeStateError  # noqa: E402
 from workflow import expected_footer_command  # noqa: E402
 
 # Marker-Zeile: „❗ Du: ..." bzw. „‼️ Du: ..." (Variation Selector optional).
@@ -150,12 +151,17 @@ def _footer_commands(message: str) -> list:
 def _expected_command(name: str) -> "str | None":
     """Erwarteter Slash-Befehl aus dem Workflow-State, oder None (fail-open)."""
     try:
-        path = find_project_root() / ".claude" / "workflows" / f"{name}.json"
-        data = json.loads(path.read_text())
+        root = find_project_root()
+        path = root / ".claude" / "workflows" / f"{name}.json"
+        data = read_state_json(path, root)
         if not isinstance(data, dict):
             return None
         data.setdefault("name", name)
         expected = expected_footer_command(data)
+    except UnsafeStateError as exc:
+        # #416: kein Abgleich gegen einen moeglicherweise gefaelschten State.
+        print(f"WARNUNG: {exc}", file=sys.stderr)
+        return None
     except Exception:
         return None
     if not isinstance(expected, str) or not expected.startswith("/"):

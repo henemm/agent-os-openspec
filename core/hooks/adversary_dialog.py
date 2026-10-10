@@ -32,7 +32,7 @@ from pathlib import Path
 
 from hook_utils import (
     extract_ac_entries, find_project_root, find_worktree_root, is_gated_code_path,
-    resolve_active_workflow,
+    resolve_active_workflow, read_state_json, UnsafeStateError,
 )
 
 # Circuit Breaker: max iterations before escalation to user
@@ -943,9 +943,11 @@ def _active_workflow_is_fast_track() -> bool:
         name = resolve_active_workflow()[0]
         if not name:
             return False
-        state = find_project_root() / ".claude" / "workflows" / f"{name}.json"
-        wf = json.loads(state.read_text())
-    except (OSError, ValueError):
+        root = find_project_root()
+        state = root / ".claude" / "workflows" / f"{name}.json"
+        wf = read_state_json(state, root)
+    except (OSError, ValueError, UnsafeStateError):
+        # UnsafeStateError (#416): Verweis auf den State -> keine Freigabe.
         return False
     return isinstance(wf, dict) and wf.get("workflow_type") in _FAST_TRACK_TYPES
 
@@ -1012,9 +1014,12 @@ def _persist_adversary_metrics(scan: str) -> str:
     name = resolve_active_workflow()[0]
     if not name:
         return "WARNUNG: Kein aktiver Workflow — Kennzahlen nicht persistiert."
-    state = find_project_root() / ".claude" / "workflows" / f"{name}.json"
+    root = find_project_root()
+    state = root / ".claude" / "workflows" / f"{name}.json"
     try:
-        wf = json.loads(state.read_text())
+        wf = read_state_json(state, root)
+    except UnsafeStateError as exc:
+        return f"WARNUNG: {exc} Kennzahlen nicht persistiert."
     except (OSError, ValueError):
         wf = None
     if not isinstance(wf, dict):
@@ -1342,9 +1347,13 @@ def _cmd_required_files() -> int:
     Gate prueft. Exit 1 ohne aktiven Workflow oder bei einem git-Fehler.
     """
     name = resolve_active_workflow()[0]
-    state = find_project_root() / ".claude" / "workflows" / f"{name}.json"
+    root = find_project_root()
+    state = root / ".claude" / "workflows" / f"{name}.json"
     try:
-        wf = json.loads(state.read_text()) if name else None
+        wf = read_state_json(state, root) if name else None
+    except UnsafeStateError as exc:
+        print(exc, file=sys.stderr)
+        return 1
     except (OSError, ValueError):
         wf = None
     if not isinstance(wf, dict):

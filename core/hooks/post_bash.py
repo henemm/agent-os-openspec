@@ -16,7 +16,7 @@ geschrieben — ein gruener Testlauf ersetzt den Adversary-Dialog nicht.
 Exit Codes: 0 always (never blocks)
 """
 
-from hook_utils import setup_path, find_project_root, get_tool_result, get_active_workflow_name, framework_disabled, strip_ansi
+from hook_utils import setup_path, find_project_root, get_tool_result, get_active_workflow_name, framework_disabled, strip_ansi, read_state_json, UnsafeStateError
 setup_path()
 
 import json
@@ -134,15 +134,15 @@ def _record_test_run(result: str, runner: str) -> None:
     wf_file = _root / ".claude" / "workflows" / f"{name}.json"
     if wf_file.exists():
         try:
-            data = json.loads(wf_file.read_text())
+            data = read_state_json(wf_file, _root)
             data["last_test_run"] = {
                 "result": result,
                 "runner": runner,
                 "at": datetime.now().isoformat(timespec="seconds"),
             }
             _atomic_write(wf_file, data)
-        except (OSError, json.JSONDecodeError):
-            pass
+        except (OSError, json.JSONDecodeError, UnsafeStateError):
+            pass  # #416: bei Verweis still, nicht zurueckschreiben
 
 
 def main():

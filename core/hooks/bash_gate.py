@@ -23,7 +23,7 @@ from hook_utils import (
     SECRETS_SENSITIVE_PATTERNS, SECRETS_ALWAYS_BLOCKED, SECRETS_FREETEXT_FLAGS as _SHARED_FREETEXT_FLAGS,
     git_subcommands, git_head_subcommands, is_git_subcommand, is_pure_git_command,
     framework_disabled, _git_segments, git_runs_foreign_code,
-    _git_lex, _is_git_redirect,
+    _git_lex, _is_git_redirect, read_state_json, UnsafeStateError,
 )
 setup_path()
 
@@ -728,6 +728,9 @@ def _read_active_workflow() -> dict | None:
 
     Resolution is env/settings only — the .active symlink is intentionally
     not used (single source of truth, matching workflow.py).
+
+    #416: nur aus echter eigener Datei; ein Verweis wirft `UnsafeStateError`
+    an den Aufrufer (Commit-Gate verweigert, kein "kein Workflow").
     """
     name = get_active_workflow_name()
     if not name:
@@ -735,7 +738,7 @@ def _read_active_workflow() -> dict | None:
     wf_file = _root / ".claude" / "workflows" / f"{name}.json"
     if wf_file.exists():
         try:
-            return json.loads(wf_file.read_text())
+            return read_state_json(wf_file, _root)
         except (OSError, json.JSONDecodeError):
             pass
     return None
@@ -845,14 +848,14 @@ def _write_e2e_scope(wf: dict, scope: str) -> None:
     if not wf_file.exists():
         return
     try:
-        data = json.loads(wf_file.read_text())
+        data = read_state_json(wf_file, _root)
         data["e2e_scope"] = scope
         fd, tmp = tempfile.mkstemp(dir=str(wf_file.parent), suffix=".tmp")
         with os.fdopen(fd, "w") as f:
             json.dump(data, f, indent=2)
         os.rename(tmp, str(wf_file))
-    except (OSError, json.JSONDecodeError):
-        pass
+    except (OSError, json.JSONDecodeError, UnsafeStateError):
+        pass  # #416: bei Verweis nicht zurueckschreiben (kein "Waschen")
 
 
 # Wertnehmende Optionen von `git commit` (#259 §3): ihr Wert ist keine Pfadangabe.
@@ -1307,7 +1310,11 @@ def main():
                     block(f"BLOCKED: {req_file} has unstaged changes. Stage it first.")
 
         # 5b. Rebase-Pflicht: Branch darf nicht hinter origin/main zurückliegen
-        wf = _read_active_workflow()
+        try:
+            wf = _read_active_workflow()
+        except UnsafeStateError as exc:
+            # #416: kein vertrauenswuerdiger State = keine Commit-Freigabe
+            block(f"BLOCKED: {exc}")
         if wf:
             try:
                 fetch = subprocess.run(

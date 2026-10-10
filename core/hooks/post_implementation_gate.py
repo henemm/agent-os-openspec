@@ -42,6 +42,7 @@ _setup()
 
 from hook_utils import get_tool_input, find_project_root, block, allow, get_active_workflow_name, framework_disabled  # noqa: E402
 from hook_utils import is_hook_always_allowed  # noqa: E402
+from hook_utils import UnsafeStateError  # noqa: E402
 from hook_utils import (  # noqa: E402
     pending_validation_lock_path as _lock_path,
     read_pending_validation_lock as _read_lock,
@@ -122,6 +123,10 @@ def main() -> None:
     try:
         import workflow as _wf
         result = _wf.read_active_workflow_fast()
+    except UnsafeStateError as exc:
+        # #416: fail-open mit Warnung — Code-Edits blockt edit_gate.
+        print(f"WARNUNG: {exc}", file=sys.stderr)
+        allow()
     except Exception:
         allow()
 

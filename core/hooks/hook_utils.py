@@ -13,12 +13,15 @@ Usage in any hook:
     from config_loader import load_config, find_project_root
 """
 
+import errno
 import json
 import os
 import re
 import shlex
+import stat
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -1385,6 +1388,133 @@ def find_project_root() -> Path:
         if (parent / ".git").is_dir():
             return parent
     return cwd
+
+
+# --- Workflow-State an der Quelle pruefen (#416) ----------------------------
+# Ein harter Verweis (st_nlink > 1) oder ein Symlink in der Kette ab `.claude`
+# macht den State faelschbar. Gelesen wird per dir_fd-Walk mit O_NOFOLLOW und
+# fstat auf demselben Deskriptor — zwischen Pruefung und Lesen kann nichts
+# getauscht werden (kein TOCTOU).
+
+class UnsafeStateError(Exception):
+    """Workflow-State nicht vertrauenswuerdig (Verweis/keine normale Datei).
+
+    Erbt bewusst NICHT von OSError/ValueError: Leser, die diese fangen und als
+    "kein Workflow" werten (fail-open), duerfen einen Fund nicht verschlucken.
+    """
+
+    def __init__(self, path, reason: str):
+        self.path = str(path)
+        self.reason = reason
+        super().__init__(
+            f"Workflow-State {path} wird nicht gelesen: {reason}. Ein Verweis "
+            f"auf den State kann gefälscht sein — Verweis bzw. State-Datei "
+            f"entfernen und den Workflow frisch starten (workflow.py start). "
+            f"Nicht kopieren.")
+
+
+_UNSAFE_LINK_ERRNOS = (errno.ELOOP, errno.ENOTDIR, errno.EMLINK)
+
+
+def _state_walk_start(path, root) -> "tuple[str, list[str]]":
+    """(vertrauenswuerdiger Startordner, zu pruefende Glieder) fuer `path`.
+
+    Liegt `path` unter der Wurzel (unaufgeloest oder per realpath), wird ab
+    der Wurzel jedes Glied geprueft; sonst nur das letzte Glied. Das ist in
+    Produktion nicht erreichbar: alle Aufrufer bauen den Pfad aus ihrer
+    eigenen Wurzel.
+    """
+    p = os.path.abspath(str(path))
+    for base in (os.path.abspath(str(root)), os.path.realpath(str(root))):
+        prefix = base.rstrip(os.sep) + os.sep
+        if p.startswith(prefix) and len(p) > len(prefix):
+            return os.path.realpath(base), p[len(prefix):].split(os.sep)
+    return os.path.dirname(p), [os.path.basename(p)]
+
+
+def _raise_if_link(exc: OSError, path, dir_fd: int, part: str) -> None:
+    """ELOOP/ENOTDIR/EMLINK an einem Glied → UnsafeStateError; sonst nichts."""
+    if exc.errno not in _UNSAFE_LINK_ERRNOS:
+        return
+    try:
+        is_link = stat.S_ISLNK(os.lstat(part, dir_fd=dir_fd).st_mode)
+    except OSError:
+        is_link = False
+    kind = "symbolischer Verweis" if is_link else "kein Ordner/keine Datei"
+    raise UnsafeStateError(path, f"{kind} in der Pfadkette ({part})") from None
+
+
+def _open_state_fd(path, root) -> int:
+    """Oeffnet die State-Datei ohne einem Verweis in der Kette zu folgen."""
+    base, parts = _state_walk_start(path, root)
+    dir_fd = os.open(base, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for part in parts[:-1]:
+            try:
+                nxt = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                              dir_fd=dir_fd)
+            except OSError as exc:
+                _raise_if_link(exc, path, dir_fd, part)
+                raise
+            os.close(dir_fd)
+            dir_fd = nxt
+        try:
+            return os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                           dir_fd=dir_fd)
+        except OSError as exc:
+            _raise_if_link(exc, path, dir_fd, parts[-1])
+            raise
+    finally:
+        os.close(dir_fd)
+
+
+def read_state_json(path, root=None) -> object:
+    """Liest einen Workflow-State nur aus echter eigener Datei (#416).
+
+    Fehlende Datei → FileNotFoundError, kaputtes JSON → json.JSONDecodeError
+    (wie bisher). Verweis in der Kette, harter Verweis oder keine normale
+    Datei → UnsafeStateError. Es wird nichts geschrieben oder kopiert.
+    """
+    if root is None:
+        root = find_project_root()
+    fd = _open_state_fd(path, root)
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise UnsafeStateError(path, "keine normale Datei")
+        if st.st_nlink != 1:
+            raise UnsafeStateError(
+                path, f"harter Verweis, Linkzahl {st.st_nlink}")
+        chunks = []
+        while True:
+            chunk = os.read(fd, 65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+    finally:
+        os.close(fd)
+    return json.loads(b"".join(chunks).decode("utf-8"))
+
+
+def atomic_write_json(path, data) -> None:
+    """JSON atomar schreiben: tempfile im selben Ordner + os.replace.
+
+    Neuer Inode: bricht harte Verweise und ersetzt einen Symlink an der
+    Zielstelle durch eine normale Datei.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=2)
+        os.replace(tmp, str(path))
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def pending_validation_lock_path(project_root: Path, wf_name: str) -> Path:
