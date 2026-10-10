@@ -434,7 +434,7 @@ python3 /path/to/agent-os-openspec/setup.py --version
 | `core/hooks/qa_gate.py` | QA-Gate: Test-Output validieren oder per `--run` den konfigurierten Testbefehl (`qa_gate.test_command`) selbst ausfuehren, Verdict setzen |
 | `core/hooks/override_token.py` | Shared Override-Token Management (TTL, Multi-WF) |
 | `core/hooks/migrate_state.py` | v2 → v3 State-Migration |
-| `core/hooks/hook_utils.py` | Shared Bootstrap (Imports, Parsing, Exit-Helpers) |
+| `core/hooks/hook_utils.py` | Shared Bootstrap (Imports, Parsing, Exit-Helpers); `read_state_json` liest Workflow-State nur als eigene normale Datei (#416) |
 | `core/hooks/config_loader.py` | Config-Loader (YAML + Local Overrides) |
 | `core/hooks/adversary_dialog.py` | Adversary Dialog System (Spec-Checkliste, Tri-State Verdict) |
 | `core/hooks/precondition_origins.py` | Eigenstaendiges CLI-Werkzeug, KEIN Hook/Gate: sammelt per Regex Herkunft von Testvorbedingungen ein (Sprachprofile in `config.yaml`) |
