@@ -80,6 +80,7 @@ def test_teil_c_cd_im_befehl_blockt(tmp_path):
     wrong = _expect([
         f"cd docs && sed -i s/a/b/ ../{CFG}",
         f"cd docs; echo x > ../{CFG}",
+        f"cd docs && popd && sed -i s/a/b/ {CFG}",
     ], _root(tmp_path / "root"), 2, OVERRIDE_HINT)
     _main, wt = _worktree_sandbox(tmp_path / "wtmain", CFG)
     wrong += _expect([f"cd ../../.. && sed -i s/a/b/ {CFG}"], wt, 2,
@@ -99,7 +100,7 @@ def test_gegenprobe_echte_schreibzugriffe_blocken_weiter(tmp_path):
         f"echo x > {CFG}", f"echo x >> {CFG}", f"sed -i s/a/b/ {CFG}",
         f"sed -i.bak s/a/b/ {CFG}", f"cp x {CFG}", f"mv x {CFG}",
         f"mv {CFG} old", f"cat x | tee {CFG}", f"truncate -s0 {CFG}",
-        f"rm {CFG}",
+        f"rm {CFG}", f"git rm {CFG}", f"git mv {CFG} x",
     ], _root(tmp_path), 2, OVERRIDE_HINT))
 
 
