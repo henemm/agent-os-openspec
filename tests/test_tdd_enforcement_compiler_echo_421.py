@@ -83,7 +83,7 @@ class TestMessageNamesOriginalLine:
         content = (
             "❌ Foo.swift:1:1: error: boom\n"
             + ECHO_PLAIN + "\n"
-            "[test output here]\n"
+            "TODO: hier kommt die Testausgabe\n"
             "error: Testing failed\n"
         )
         msg = tdd_enforcement._validate_artifact(_artifact(tmp_path, content), tmp_path)

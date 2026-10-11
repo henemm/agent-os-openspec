@@ -101,6 +101,12 @@ _TAP_SUMMARY_RE = re.compile(
 # Woerter am Zeilenanfang ('Error: ...', 'ERROR') nicht als Zitat gelten.
 _QUOTED_LINE_RE = re.compile(r"^\s*[E>](?:\s.*)?$")
 
+# Quellzeilen-Echo des Compilers (Issue #421): Swift 6 (xcodebuild/xcbeautify)
+# zitiert die betroffene Quellzeile als 'NN |     code', ggf. mit ANSI-Farbcodes.
+# Das ist zitierter Fremdinhalt wie die pytest-Zitate oben. Geprueft wird auf
+# der ANSI-bereinigten Zeile; unnummerierte Gutter-/Tabellenzeilen bleiben Rahmen.
+_COMPILER_ECHO_RE = re.compile(r"^\s*\d+\s\|")
+
 # Kopf eines aufgefangenen Ausgabeblocks:
 # '----------------------------- Captured stdout call -----------------------------'
 # Auch 'Captured log call', 'Captured stderr setup', 'Captured stdout teardown'.
@@ -120,6 +126,8 @@ def _iter_frame_lines(content: str):
 
     Die Zeilennummern beziehen sich auf das Original, damit eine Fundstelle in
     der Blockier-Meldung benannt werden kann.
+    Compiler-Quellzeilen-Echo ('NN | code', auch farbig) gilt ebenfalls als
+    Zitat und wird uebersprungen (Issue #421).
     """
     in_captured = False
     for lineno, line in enumerate(content.splitlines(), start=1):
@@ -134,6 +142,8 @@ def _iter_frame_lines(content: str):
         if _QUOTED_LINE_RE.match(line):
             continue
         if _TAP_SUMMARY_RE.match(line):
+            continue
+        if _COMPILER_ECHO_RE.match(hook_utils.strip_ansi(line)):
             continue
         yield lineno, line
 
