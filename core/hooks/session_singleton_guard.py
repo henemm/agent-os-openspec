@@ -74,6 +74,22 @@ def _locks_dir() -> Path:
     return find_project_root() / ".claude" / "session-locks"
 
 
+def _read_lock(path: Path) -> "dict | None":
+    """Eintrag nur aus eigener normaler Datei (#422); Verweis/fehlt/kaputt → None."""
+    from hook_utils import find_project_root, read_state_json
+    try:
+        data = read_state_json(path, find_project_root())
+    except Exception:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _write_lock(path: Path, entry: dict) -> None:
+    """Atomar, nie durch einen Verweis (#422); Fund in der Kette → UnsafeStateError."""
+    from hook_utils import atomic_write_json, find_project_root
+    atomic_write_json(path, entry, root=find_project_root())
+
+
 def _safe_sid(session_id: str) -> str:
     """Dateiname-sicherer Slug der session_id."""
     return re.sub(r"[^A-Za-z0-9_-]", "_", session_id) or "_"
@@ -169,9 +185,8 @@ def _read_entries(locks: Path) -> dict:
     if not locks.exists():
         return out
     for f in locks.glob("*.json"):
-        try:
-            data = json.loads(f.read_text())
-        except Exception:
+        data = _read_lock(f)
+        if data is None:
             continue
         sid = data.get("session_id")
         if sid:
@@ -532,7 +547,7 @@ def _reregister(own_file: Path, session_id: str, cwd: str) -> None:
     # Ein Hook darf hier NICHT auf stdout/stderr schreiben (AC-25) — der Fehler
     # wird daher bewusst und lokal verschluckt, nicht global.
     try:
-        own_file.write_text(json.dumps(entry))
+        _write_lock(own_file, entry)
     except Exception:
         return
 
@@ -549,11 +564,8 @@ def _heartbeat(session_id: str, cwd: str) -> None:
         if not own_file.exists():
             _reregister(own_file, session_id, cwd)
             return
-        try:
-            entry = json.loads(own_file.read_text())
-        except Exception:
-            return
-        if not isinstance(entry, dict):
+        entry = _read_lock(own_file)
+        if entry is None:
             return
 
         now = time.time()
@@ -592,7 +604,7 @@ def _heartbeat(session_id: str, cwd: str) -> None:
 
         # Ein gemeinsamer Schreibvorgang fuer beide Zweige.
         if changed:
-            own_file.write_text(json.dumps(entry))
+            _write_lock(own_file, entry)
     except Exception:
         pass
 
@@ -616,13 +628,9 @@ def _do_register(payload: dict) -> None:
     # started_at bewahren: erneutes register (z.B. nach /clear) verliert
     # keine Inhaberschaft.
     started_at = now
-    if own_file.exists():
-        try:
-            prev = json.loads(own_file.read_text())
-            if isinstance(prev.get("started_at"), (int, float)):
-                started_at = prev["started_at"]
-        except Exception:
-            pass
+    prev = _read_lock(own_file) or {}
+    if isinstance(prev.get("started_at"), (int, float)):
+        started_at = prev["started_at"]
 
     _reap_dead(_read_entries(locks), now)
 
@@ -631,7 +639,10 @@ def _do_register(payload: dict) -> None:
     entry = _build_entry(session_id, cwd, started_at)
     _enrich_entry(entry, session_id, cwd)
 
-    own_file.write_text(json.dumps(entry))
+    try:
+        _write_lock(own_file, entry)
+    except Exception:
+        pass  # Fund (#422) oder Schreibfehler: nie Exit 1
     sys.exit(0)
 
 
@@ -724,14 +735,7 @@ def _find_claim_target(locks: Path) -> "tuple | None":
 
     if sid:
         path = locks / f"{_safe_sid(sid)}.json"
-        entry = None
-        try:
-            data = json.loads(path.read_text())
-            if isinstance(data, dict):
-                entry = data
-        except Exception:
-            entry = None
-        return (sid, path, entry)
+        return (sid, path, _read_lock(path))
 
     # Fallback: genau EIN Eintrag mit dem aktuellen Arbeitsverzeichnis.
     try:
@@ -807,7 +811,7 @@ def _claim_impl(argv: list) -> None:
     # nicht still bleiben: sonst sieht der Operator Exit 0 und gar nichts.
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(entry))
+        _write_lock(path, entry)
     except Exception as exc:
         print(f"claim: Schreibfehler ({type(exc).__name__}) — nichts geaendert.")
         return

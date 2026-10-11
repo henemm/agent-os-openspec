@@ -352,20 +352,6 @@ def _infrastructure_dirs(config: dict) -> list:
     return dirs
 
 
-def _is_stop_locked() -> bool:
-    try:
-        from hook_utils import _find_worktree_root
-        wt = _find_worktree_root()
-        lock = (wt / ".claude" / "stop_lock.json") if wt is not None else (_root / ".claude" / "stop_lock.json")
-    except Exception:
-        lock = _root / ".claude" / "stop_lock.json"
-    if not lock.exists():
-        return False
-    try:
-        return json.loads(lock.read_text()).get("enabled", False)
-    except (json.JSONDecodeError, OSError):
-        return False
-
 
 # --- S2: Acceptance Criteria check ---
 
@@ -650,8 +636,9 @@ def main():
             )
 
     # 5. Stop-lock
-    if _is_stop_locked():
-        block("BLOCKED: Stop-lock active.")
+    if hook_utils.is_stop_locked(_root):
+        block(f"BLOCKED: Stop-lock active. "
+              f"{hook_utils.stop_lock_state(_root)[1]}".rstrip())
 
     # 5b. Testdatei neben dem Code (#335: `foo_test.go`, `x.test.ts`) — erst NACH
     # Infrastruktur (4) und Stop-Lock (5): ein Testname macht einen Hook nicht frei.

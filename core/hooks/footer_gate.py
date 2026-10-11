@@ -23,7 +23,7 @@ from hook_utils import setup_path
 setup_path()
 
 from hook_utils import adopt_payload_cwd, block, find_project_root, framework_disabled, resolve_active_workflow  # noqa: E402
-from hook_utils import read_state_json, UnsafeStateError  # noqa: E402
+from hook_utils import atomic_write_json, read_state_json, UnsafeStateError  # noqa: E402
 from workflow import expected_footer_command  # noqa: E402
 
 # Marker-Zeile: „❗ Du: ..." bzw. „‼️ Du: ..." (Variation Selector optional).
@@ -85,9 +85,14 @@ def _turn_id(payload: dict, message: str) -> str:
 
 
 def _read_state() -> dict:
+    """Nur aus eigener normaler Datei (#422); Verweis → leer, mit Log."""
     try:
-        data = json.loads(_state_path().read_text())
+        path = _state_path()
+        data = read_state_json(path, path.parent.parent)
         return data if isinstance(data, dict) else {}
+    except UnsafeStateError as exc:
+        print(f"WARNUNG: footer_gate_state: {exc}", file=sys.stderr)
+        return {}
     except Exception:
         return {}
 
@@ -115,13 +120,12 @@ def _blocked_within_window(state: dict) -> bool:
 def _remember(turn_id: str) -> None:
     try:
         path = _state_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({
+        atomic_write_json(path, {
             "last_turn_id": turn_id,
             "last_block_at": datetime.now().isoformat(),
-        }))
+        }, root=path.parent.parent)
     except Exception:
-        pass
+        pass  # Fund (#422) oder Schreibfehler: nicht schreiben, fail-open
 
 
 def _footer_commands(message: str) -> list:
