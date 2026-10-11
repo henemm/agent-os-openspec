@@ -374,28 +374,38 @@ def _finish_unsafe(exc: Exception, message: str, stop: list, cont: list) -> None
     _finish()
 
 
-def _create_override_token(workflow_name: str) -> None:
+def _create_override_token(workflow_name: str) -> bool:
+    """True nur, wenn das Token geschrieben wurde; sonst Warnung (#425)."""
     try:
         from override_token import create_token
-        create_token(workflow_name)
     except ImportError:
-        # Fallback: inline token creation (#422: nur echte eigene Datei)
-        token_file = _root / ".claude" / "user_override_token.json"
-        tokens = {}
+        create_token = None
+    if create_token is not None:
         try:
-            raw = read_state_json(token_file, _root)
-            tokens = raw.get("tokens", {}) if raw.get("version") == 2 else {}
-        except (ValueError, OSError, AttributeError, UnsafeStateError):
-            pass
-        tokens[workflow_name] = {
-            "created": datetime.now().isoformat(),
-            "granted_by": "user_prompt",
-        }
-        try:
-            atomic_write_json(token_file, {"version": 2, "tokens": tokens},
-                              root=_root)
+            create_token(workflow_name)
         except UnsafeStateError as exc:
             _notify(f"WARNUNG: Override-Token nicht geschrieben: {exc}")
+            return False
+        return True
+    # Fallback: inline token creation (#422: nur echte eigene Datei)
+    token_file = _root / ".claude" / "user_override_token.json"
+    tokens = {}
+    try:
+        raw = read_state_json(token_file, _root)
+        tokens = raw.get("tokens", {}) if raw.get("version") == 2 else {}
+    except (ValueError, OSError, AttributeError, UnsafeStateError):
+        pass
+    tokens[workflow_name] = {
+        "created": datetime.now().isoformat(),
+        "granted_by": "user_prompt",
+    }
+    try:
+        atomic_write_json(token_file, {"version": 2, "tokens": tokens},
+                          root=_root)
+    except UnsafeStateError as exc:
+        _notify(f"WARNUNG: Override-Token nicht geschrieben: {exc}")
+        return False
+    return True
 
 
 def _stop_lock_path() -> Path:
@@ -479,8 +489,8 @@ def main():
     override_discarded = None
     if _matches(message, override, leading_only=True, max_extra_words=OVERRIDE_EXTRA_WORDS):
         wf_name = wf_data["name"] if wf_data else "__global__"
-        _create_override_token(wf_name)
-        _notify(f"Override token created for workflow: {wf_name} {_trigger(message)}")
+        if _create_override_token(wf_name):  # #425: keine falsche Erfolgsmeldung
+            _notify(f"Override token created for workflow: {wf_name} {_trigger(message)}")
     else:
         override_discarded = _discard_notice(message, override, OVERRIDE_EXTRA_WORDS)
 

@@ -1497,14 +1497,14 @@ def _open_state_fd(path, root) -> int:
         os.close(dir_fd)
 
 
-def _read_state_bytes(path, root) -> bytes:
-    """Leserkern (#416/#422): Bytes nur aus echter eigener Datei."""
-    fd = _open_state_fd(path, root)
+def _read_checked_fd(fd: int, path) -> bytes:
+    """Prueft den offenen fd und liest alle Bytes; schliesst fd selbst (#425)."""
     try:
         st = os.fstat(fd)
         if not stat.S_ISREG(st.st_mode):
             raise UnsafeStateError(path, "keine normale Datei")
-        if st.st_nlink != 1:
+        # nlink 0 = nach dem Oeffnen ersetzt/geloescht, kein Verweis (#425)
+        if st.st_nlink > 1:
             raise UnsafeStateError(
                 path, f"harter Verweis, Linkzahl {st.st_nlink}")
         chunks = []
@@ -1516,6 +1516,11 @@ def _read_state_bytes(path, root) -> bytes:
     finally:
         os.close(fd)
     return b"".join(chunks)
+
+
+def _read_state_bytes(path, root) -> bytes:
+    """Leserkern (#416/#422): Bytes nur aus echter eigener Datei."""
+    return _read_checked_fd(_open_state_fd(path, root), path)
 
 
 def read_state_json(path, root=None) -> object:
@@ -1559,7 +1564,7 @@ def _atomic_write_at(path, payload: bytes, root) -> None:
     geprueften Ordner-fd, os.replace dort. Verweis in der Kette →
     UnsafeStateError, nichts geschrieben."""
     dir_fd, name = _walk_state_dirs(path, root, create=True)
-    tmp = f".{name}.{os.urandom(8).hex()}.tmp"
+    tmp = f".{os.urandom(8).hex()}.tmp"  # zielunabhaengig, NAME_MAX (#425)
     try:
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
                      0o600, dir_fd=dir_fd)

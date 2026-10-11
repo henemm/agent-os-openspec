@@ -62,11 +62,12 @@ def _load_tokens() -> dict[str, dict]:
 
 
 def _save_tokens(tokens: dict[str, dict]) -> None:
+    """#422: atomar, Ordnerkette geprueft — nie durch einen Verweis.
+
+    #425: UnsafeStateError laeuft durch, damit der Aufrufer warnen kann.
+    """
     data = {"version": 2, "tokens": tokens}
-    try:  # #422: atomar, Ordnerkette geprueft — nie durch einen Verweis
-        atomic_write_json(_get_token_file(), data, root=find_project_root())
-    except UnsafeStateError as exc:
-        print(f"WARNUNG: Override-Token nicht geschrieben: {exc}", file=sys.stderr)
+    atomic_write_json(_get_token_file(), data, root=find_project_root())
 
 
 def _is_expired(created_str: str) -> bool:
@@ -103,7 +104,10 @@ def has_valid_token(workflow_name: str = None) -> bool:
 
 
 def create_token(workflow_name: str) -> None:
-    """Create or update an override token for a workflow."""
+    """Create or update an override token for a workflow.
+
+    Raises UnsafeStateError, wenn der Token-Pfad hinter einem Verweis liegt (#425).
+    """
     tokens = _load_tokens()
     # Prune expired tokens
     tokens = {
@@ -119,6 +123,7 @@ def create_token(workflow_name: str) -> None:
 
 
 def remove_token(workflow_name: str) -> None:
+    """Raises UnsafeStateError wie `create_token` (#425)."""
     tokens = _load_tokens()
     if workflow_name in tokens:
         del tokens[workflow_name]
