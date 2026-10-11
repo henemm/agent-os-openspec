@@ -16,7 +16,7 @@ Exit Codes: 0 always (never blocks, only updates state)
 
 from hook_utils import setup_path, find_project_root, get_user_message, get_active_workflow_name, gate_diagnostics, resolve_active_workflow, framework_disabled
 from hook_utils import pending_validation_lock_path, read_pending_validation_lock, approval_marker_path
-from hook_utils import read_state_json, atomic_write_json, UnsafeStateError
+from hook_utils import read_state_json, atomic_write_json, atomic_write_text, UnsafeStateError
 setup_path()
 
 import json
@@ -379,21 +379,23 @@ def _create_override_token(workflow_name: str) -> None:
         from override_token import create_token
         create_token(workflow_name)
     except ImportError:
-        # Fallback: inline token creation
+        # Fallback: inline token creation (#422: nur echte eigene Datei)
         token_file = _root / ".claude" / "user_override_token.json"
         tokens = {}
-        if token_file.exists():
-            try:
-                raw = json.loads(token_file.read_text())
-                tokens = raw.get("tokens", {}) if raw.get("version") == 2 else {}
-            except (json.JSONDecodeError, OSError):
-                pass
+        try:
+            raw = read_state_json(token_file, _root)
+            tokens = raw.get("tokens", {}) if raw.get("version") == 2 else {}
+        except (ValueError, OSError, AttributeError, UnsafeStateError):
+            pass
         tokens[workflow_name] = {
             "created": datetime.now().isoformat(),
             "granted_by": "user_prompt",
         }
-        token_file.parent.mkdir(parents=True, exist_ok=True)
-        token_file.write_text(json.dumps({"version": 2, "tokens": tokens}, indent=2))
+        try:
+            atomic_write_json(token_file, {"version": 2, "tokens": tokens},
+                              root=_root)
+        except UnsafeStateError as exc:
+            _notify(f"WARNUNG: Override-Token nicht geschrieben: {exc}")
 
 
 def _stop_lock_path() -> Path:
@@ -431,8 +433,11 @@ def _emit_status_note() -> "str | None":
 
 def _set_stop_lock(enabled: bool) -> None:
     lock_file = _stop_lock_path()
-    lock_file.parent.mkdir(parents=True, exist_ok=True)
-    lock_file.write_text(json.dumps({"enabled": enabled}))
+    try:  # #422: atomar, Ordnerkette ab Worktree/Projekt geprueft
+        atomic_write_json(lock_file, {"enabled": enabled},
+                          root=lock_file.parent.parent)
+    except UnsafeStateError as exc:
+        _notify(f"WARNUNG: Stop-Lock nicht geschrieben: {exc}")
 
 
 # --- Main ---
@@ -610,16 +615,18 @@ def main():
             _notify(f"GREEN approved {_trigger(message)}.")
             # Post-Implementation-Gate: Marker an den aktuellen Prüflauf binden (#134) —
             # Inhalt = `created`-Wert des lebenden Locks.
+            # #422: Lock und Vermerk nur als echte eigene Datei; Fund → kein Vermerk.
             try:
                 lock_path = pending_validation_lock_path(_root, wf_data['name'])
-                lock = read_pending_validation_lock(lock_path)
+                lock = read_pending_validation_lock(lock_path, _root)
                 if lock is not None and "created" in lock:
                     approval_path = approval_marker_path(_root, wf_data['name'])
-                    approval_path.parent.mkdir(parents=True, exist_ok=True)
-                    approval_path.write_text(str(lock["created"]))
+                    atomic_write_text(approval_path, str(lock["created"]), root=_root)
                     _notify(f"Post-implementation gate entsperrt für '{wf_data['name']}'.")
                 # Kein Lock vorhanden (Freigabe vor dem ersten Edit) → bewusst KEIN Marker,
                 # fail-closed statt Sonderfall auf der Lese-Seite.
+            except UnsafeStateError as exc:
+                _notify(f"WARNUNG: Freigabevermerk nicht geschrieben: {exc}")
             except OSError:
                 pass
         elif not wf_data.get("green_approved"):

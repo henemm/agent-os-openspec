@@ -993,6 +993,16 @@ def _count_lock_writes(monkeypatch, locks: Path) -> list:
         return original(self, *args, **kwargs)
 
     monkeypatch.setattr(Path, "write_text", spy)
+
+    # #422: Lock-Dateien werden atomar ueber ssg._write_lock geschrieben.
+    original_lock = ssg._write_lock
+
+    def lock_spy(path, entry):
+        if locks in Path(path).parents:
+            written.append(Path(path))
+        return original_lock(path, entry)
+
+    monkeypatch.setattr(ssg, "_write_lock", lock_spy)
     return written
 
 
@@ -1588,12 +1598,14 @@ def test_claim_reports_write_failure_instead_of_staying_silent(
     lock = _write_lock(locks)
     before = lock.read_text()
 
-    lock.chmod(0o400)                      # z.B. Rechtefehler / read-only Mount
+    # #422: atomarer Schreiber ersetzt die Datei per os.replace — ein
+    # Schreibfehler entsteht daher am Verzeichnis (Rechtefehler / read-only Mount).
+    locks.chmod(0o500)
     try:
         assert _run_claim(["--issue", "42"]) == 0, "Schreibfehler bricht claim ab"
         out = capsys.readouterr().out
     finally:
-        lock.chmod(0o600)
+        locks.chmod(0o700)
 
     assert "Schreibfehler" in out, f"Fehlschlag bleibt still — stdout: {out!r}"
     assert "eingetragen" not in out, "Erfolgsmeldung trotz fehlgeschlagenem Write"

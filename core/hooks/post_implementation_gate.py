@@ -25,7 +25,6 @@ Lock-Dateien:
                                                  des Locks zum Zeitpunkt der Freigabe, #134)
 """
 
-import json
 import os
 import sys
 import time
@@ -45,10 +44,44 @@ from hook_utils import is_hook_always_allowed  # noqa: E402
 from hook_utils import UnsafeStateError  # noqa: E402
 from hook_utils import (  # noqa: E402
     pending_validation_lock_path as _lock_path,
-    read_pending_validation_lock as _read_lock,
+    read_pending_validation_lock,
     approval_marker_path as _approval_path,
     log_gate_event,
+    read_state_text,
+    atomic_write_json,
 )
+
+
+def _read_lock(lock_path: Path, root: Path) -> "dict | None":
+    """Pending-Lock lesen; Verweis (#422) → explizit blocken, nie Exit 1."""
+    try:
+        return read_pending_validation_lock(lock_path, root)
+    except UnsafeStateError as exc:
+        block(
+            f"BLOCKED [post_implementation_gate]: {exc}\n"
+            f"  Pfad: {lock_path}\n"
+            f"  Der Pending-Lock ist ein Verweis und wird nicht ausgewertet;\n"
+            f"  das Gate bleibt zu. Entfernen des Verweises löst den Fund."
+        )
+
+
+_ABSENT = object()
+
+
+def _read_marker(approval_path: Path, root: Path):
+    """Freigabevermerk lesen; fehlend oder Verweis (#422) → _ABSENT,
+    unlesbar → None (zählt als nicht passend)."""
+    if not os.path.lexists(approval_path):
+        return _ABSENT
+    try:
+        return read_state_text(approval_path, root).strip()
+    except UnsafeStateError as exc:
+        print(f"WARNUNG: {exc}", file=sys.stderr)
+        return _ABSENT
+    except FileNotFoundError:
+        return _ABSENT
+    except (OSError, ValueError):
+        return None
 
 # Batch-Fenster: innerhalb dieser Zeit nach dem ersten Edit kein Gate.
 # Default ohne Config/bei Kill-Switch: 15 Minuten (bisheriges Verhalten).
@@ -74,13 +107,16 @@ _BYPASS_PHASES = {"phase6b_adversary", "phase7_validate", "phase8_complete", "ph
 
 def _write_lock(lock_path: Path, wf_name: str, workflow_created) -> None:
     # workflow_created bindet den Lock an die Lauf-Instanz, nicht nur an den Namen (#134)
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    lock_path.write_text(json.dumps({
-        "workflow": wf_name,
-        "workflow_created": workflow_created,
-        "created": time.time(),
-        "created_iso": __import__("datetime").datetime.now().isoformat(),
-    }, indent=2))
+    # #422: atomar ohne einem Verweis zu folgen; Fund → nicht schreiben, warnen.
+    try:
+        atomic_write_json(lock_path, {
+            "workflow": wf_name,
+            "workflow_created": workflow_created,
+            "created": time.time(),
+            "created_iso": __import__("datetime").datetime.now().isoformat(),
+        }, root=find_project_root())
+    except UnsafeStateError as exc:
+        print(f"WARNUNG: Pending-Lock nicht geschrieben: {exc}", file=sys.stderr)
 
 
 def _green_text() -> str:
@@ -149,7 +185,7 @@ def main() -> None:
     approval_path = _approval_path(project_root, wf_name)
 
     # Lock VOR der Marker-Prüfung lesen: der Marker gilt nur für genau diesen Lauf (#134)
-    lock = _read_lock(lock_path)
+    lock = _read_lock(lock_path, project_root)
 
     # Lock einer frueheren Lebensdauer eines gleichnamigen Workflows zaehlt nicht (#134).
     # Ein Lock ohne den Schluessel (Alt-Format vor #134) ist nicht zuordenbar und
@@ -164,12 +200,8 @@ def main() -> None:
             f"(Workflow-Name wiederverwendet: {wf_name}).",
         )
 
-    if approval_path.exists():
-        try:
-            marker_content = approval_path.read_text().strip()
-        except OSError:
-            marker_content = None
-
+    marker_content = _read_marker(approval_path, project_root)
+    if marker_content is not _ABSENT:
         if lock is not None and marker_content == str(lock.get("created")):
             # Freigabe passt exakt zum aktuell lebenden Prüflauf
             _clear_lock(lock_path, approval_path)

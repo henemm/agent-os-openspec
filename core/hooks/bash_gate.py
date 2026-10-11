@@ -24,6 +24,7 @@ from hook_utils import (
     git_subcommands, git_head_subcommands, is_git_subcommand, is_pure_git_command,
     framework_disabled, _git_segments, git_runs_foreign_code,
     _git_lex, _is_git_redirect, read_state_json, UnsafeStateError,
+    is_stop_locked, stop_lock_state,
 )
 setup_path()
 
@@ -183,20 +184,6 @@ def _measurement_root() -> Path:
         worktree_root = None
     return worktree_root if worktree_root is not None else _root
 
-
-def _is_stop_locked() -> bool:
-    try:
-        from hook_utils import _find_worktree_root
-        wt = _find_worktree_root()
-        lock = (wt / ".claude" / "stop_lock.json") if wt is not None else (_root / ".claude" / "stop_lock.json")
-    except Exception:
-        lock = _root / ".claude" / "stop_lock.json"
-    if not lock.exists():
-        return False
-    try:
-        return json.loads(lock.read_text()).get("enabled", False)
-    except (json.JSONDecodeError, OSError):
-        return False
 
 
 def _whitelist_matches(command: str, entry: str) -> bool:
@@ -1145,8 +1132,8 @@ def main():
     workflow_enforced = not framework_disabled()
 
     # 1. Stop-lock
-    if workflow_enforced and _is_stop_locked():
-        block("BLOCKED: Stop-lock active.")
+    if workflow_enforced and is_stop_locked(_root):
+        block(f"BLOCKED: Stop-lock active. {stop_lock_state(_root)[1]}".rstrip())
 
     # 1b. Wirksame Gate-Config (#410): Schutz, kein Workflow-Zwang — gilt ohne
     #     Workflow und vor jedem Schnellweg; Ausweg nur der Override-Token.

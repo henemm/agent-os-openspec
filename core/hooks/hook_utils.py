@@ -1406,11 +1406,16 @@ class UnsafeStateError(Exception):
     def __init__(self, path, reason: str):
         self.path = str(path)
         self.reason = reason
-        super().__init__(
-            f"Workflow-State {path} wird nicht gelesen: {reason}. Ein Verweis "
-            f"auf den State kann gefälscht sein — Verweis bzw. State-Datei "
-            f"entfernen und den Workflow frisch starten (workflow.py start). "
-            f"Nicht kopieren.")
+        if f"{os.sep}workflows{os.sep}" in self.path:
+            msg = (f"Workflow-State {path} wird nicht gelesen: {reason}. Ein "
+                   f"Verweis auf den State kann gefälscht sein — Verweis bzw. "
+                   f"State-Datei entfernen und den Workflow frisch starten "
+                   f"(workflow.py start). Nicht kopieren.")
+        else:  # #422: uebrige Zustandsdateien
+            msg = (f"Zustandsdatei {path} wird nicht verwendet: {reason}. Ein "
+                   f"Verweis kann gefälscht sein — den Verweis entfernen, dann "
+                   f"ist der Fund gelöst. Nicht kopieren.")
+        super().__init__(msg)
 
 
 _UNSAFE_LINK_ERRNOS = (errno.ELOOP, errno.ENOTDIR, errno.EMLINK)
@@ -1444,39 +1449,56 @@ def _raise_if_link(exc: OSError, path, dir_fd: int, part: str) -> None:
     raise UnsafeStateError(path, f"{kind} in der Pfadkette ({part})") from None
 
 
-def _open_state_fd(path, root) -> int:
-    """Oeffnet die State-Datei ohne einem Verweis in der Kette zu folgen."""
+def _open_dir_part(path, dir_fd: int, part: str, create: bool) -> int:
+    """Ein Ordnerglied ohne Verweis oeffnen; fehlend + `create` → anlegen."""
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    for attempt in (0, 1):
+        try:
+            return os.open(part, flags, dir_fd=dir_fd)
+        except FileNotFoundError:
+            if not create or attempt:
+                raise
+            try:
+                os.mkdir(part, dir_fd=dir_fd)
+            except FileExistsError:
+                pass
+        except OSError as exc:
+            _raise_if_link(exc, path, dir_fd, part)
+            raise
+    raise FileNotFoundError(path)  # nicht erreichbar
+
+
+def _walk_state_dirs(path, root, create: bool = False) -> "tuple[int, str]":
+    """Ordnerkette ab der Wurzel ohne Verweis oeffnen → (Ordner-fd, Name)."""
     base, parts = _state_walk_start(path, root)
     dir_fd = os.open(base, os.O_RDONLY | os.O_DIRECTORY)
     try:
         for part in parts[:-1]:
-            try:
-                nxt = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
-                              dir_fd=dir_fd)
-            except OSError as exc:
-                _raise_if_link(exc, path, dir_fd, part)
-                raise
+            nxt = _open_dir_part(path, dir_fd, part, create)
             os.close(dir_fd)
             dir_fd = nxt
+    except BaseException:
+        os.close(dir_fd)
+        raise
+    return dir_fd, parts[-1]
+
+
+def _open_state_fd(path, root) -> int:
+    """Oeffnet die State-Datei ohne einem Verweis in der Kette zu folgen."""
+    dir_fd, name = _walk_state_dirs(path, root)
+    try:
         try:
-            return os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+            return os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
                            dir_fd=dir_fd)
         except OSError as exc:
-            _raise_if_link(exc, path, dir_fd, parts[-1])
+            _raise_if_link(exc, path, dir_fd, name)
             raise
     finally:
         os.close(dir_fd)
 
 
-def read_state_json(path, root=None) -> object:
-    """Liest einen Workflow-State nur aus echter eigener Datei (#416).
-
-    Fehlende Datei → FileNotFoundError, kaputtes JSON → json.JSONDecodeError
-    (wie bisher). Verweis in der Kette, harter Verweis oder keine normale
-    Datei → UnsafeStateError. Es wird nichts geschrieben oder kopiert.
-    """
-    if root is None:
-        root = find_project_root()
+def _read_state_bytes(path, root) -> bytes:
+    """Leserkern (#416/#422): Bytes nur aus echter eigener Datei."""
     fd = _open_state_fd(path, root)
     try:
         st = os.fstat(fd)
@@ -1493,21 +1515,36 @@ def read_state_json(path, root=None) -> object:
             chunks.append(chunk)
     finally:
         os.close(fd)
-    return json.loads(b"".join(chunks).decode("utf-8"))
+    return b"".join(chunks)
 
 
-def atomic_write_json(path, data) -> None:
-    """JSON atomar schreiben: tempfile im selben Ordner + os.replace.
+def read_state_json(path, root=None) -> object:
+    """Liest einen Workflow-State nur aus echter eigener Datei (#416).
 
-    Neuer Inode: bricht harte Verweise und ersetzt einen Symlink an der
-    Zielstelle durch eine normale Datei.
+    Fehlende Datei → FileNotFoundError, kaputtes JSON → json.JSONDecodeError
+    (wie bisher). Verweis in der Kette, harter Verweis oder keine normale
+    Datei → UnsafeStateError. Es wird nichts geschrieben oder kopiert.
     """
+    if root is None:
+        root = find_project_root()
+    return json.loads(_read_state_bytes(path, root).decode("utf-8"))
+
+
+def read_state_text(path, root=None) -> str:
+    """Wie `read_state_json`, liefert aber den Text (#422)."""
+    if root is None:
+        root = find_project_root()
+    return _read_state_bytes(path, root).decode("utf-8")
+
+
+def _atomic_write_legacy(path, payload: bytes) -> None:
+    """Altes Verhalten ohne Wurzel: tempfile im Elternordner + os.replace."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
     try:
-        with os.fdopen(fd, "w") as f:
-            json.dump(data, f, indent=2)
+        with os.fdopen(fd, "wb") as f:
+            f.write(payload)
         os.replace(tmp, str(path))
     except Exception:
         try:
@@ -1517,19 +1554,95 @@ def atomic_write_json(path, data) -> None:
         raise
 
 
+def _atomic_write_at(path, payload: bytes, root) -> None:
+    """Mit Wurzel (#422): Ordnerkette per dir_fd pruefen, tempfile im
+    geprueften Ordner-fd, os.replace dort. Verweis in der Kette →
+    UnsafeStateError, nichts geschrieben."""
+    dir_fd, name = _walk_state_dirs(path, root, create=True)
+    tmp = f".{name}.{os.urandom(8).hex()}.tmp"
+    try:
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                     0o600, dir_fd=dir_fd)
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(payload)
+            os.replace(tmp, name, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
+        except BaseException:
+            try:
+                os.unlink(tmp, dir_fd=dir_fd)
+            except OSError:
+                pass
+            raise
+    finally:
+        os.close(dir_fd)
+
+
+def atomic_write_text(path, text: str, root=None) -> None:
+    """Text atomar schreiben; mit `root` ohne einem Verweis zu folgen (#422)."""
+    payload = text.encode("utf-8")
+    if root is None:
+        _atomic_write_legacy(path, payload)
+    else:
+        _atomic_write_at(path, payload, root)
+
+
+def atomic_write_json(path, data, root=None) -> None:
+    """JSON atomar schreiben: tempfile im selben Ordner + os.replace.
+
+    Neuer Inode: bricht harte Verweise und ersetzt einen Symlink an der
+    Zielstelle durch eine normale Datei. Mit `root` wird die Ordnerkette
+    wie beim Lesen geprueft (#422); ohne `root` altes Verhalten.
+    """
+    atomic_write_text(path, json.dumps(data, indent=2), root=root)
+
+
+def _stop_lock_location(root=None) -> "tuple[Path, Path]":
+    """(Stop-Lock-Pfad, Wurzel fuer den Walk): Worktree, sonst Projekt."""
+    try:
+        base = _find_worktree_root()
+    except Exception:
+        base = None
+    if base is None:
+        base = root if root is not None else find_project_root()
+    return Path(base) / ".claude" / "stop_lock.json", Path(base)
+
+
+def stop_lock_state(root=None) -> "tuple[bool, str]":
+    """(gesperrt, Fund-Meldung). Verweis = gesperrt (#422); fehlend/kaputt = frei."""
+    path, base = _stop_lock_location(root)
+    try:
+        data = read_state_json(path, base)
+    except UnsafeStateError as exc:
+        if not os.path.lexists(path):  # fehlt hinter dem Ordner-Verweis: frei
+            return False, ""
+        return True, (f"{exc} Der Stop-Lock gilt als aktiv, solange der "
+                      f"Verweis besteht; Entfernen des Verweises löst ihn.")
+    except (OSError, ValueError):
+        return False, ""
+    return bool(isinstance(data, dict) and data.get("enabled", False)), ""
+
+
+def is_stop_locked(root=None) -> bool:
+    """Gemeinsame Stop-Lock-Pruefung fuer edit_gate und bash_gate (#422)."""
+    return stop_lock_state(root)[0]
+
+
 def pending_validation_lock_path(project_root: Path, wf_name: str) -> Path:
     """Lock-Datei des post_implementation_gate fuer einen Workflow (#134)."""
     return project_root / ".claude" / f"pending_validation_{wf_name}.json"
 
 
-def read_pending_validation_lock(lock_path: Path) -> "dict | None":
-    """Lock lesen; fehlend oder kaputt → None."""
-    if not lock_path.exists():
-        return None
+def read_pending_validation_lock(lock_path: Path, root=None) -> "dict | None":
+    """Lock lesen; fehlend oder kaputt → None.
+
+    Nur aus echter eigener Datei (#422): Verweis → UnsafeStateError, der
+    Aufrufer entscheidet (Gate blockt, phase_listener schreibt keinen Vermerk).
+    """
     try:
-        return json.loads(lock_path.read_text())
-    except (OSError, json.JSONDecodeError):
+        data = read_state_json(lock_path, root)
+    except (OSError, ValueError):
         return None
+    return data if isinstance(data, dict) else None
 
 
 def approval_marker_path(project_root: Path, wf_name: str) -> Path:
@@ -1543,6 +1656,23 @@ def _workflow_file_exists(root: Path, name: str) -> bool:
         return (root / ".claude" / "workflows" / f"{name}.json").exists()
     except OSError:
         return False
+
+
+def _read_active_file(base: Path) -> str:
+    """active_workflow nur aus eigener normaler Datei (#422).
+
+    Fehlt/unlesbar → "". Verweis → "" (wie nicht vorhanden) mit Log, der
+    Aufrufer faellt auf settings.local.json zurueck.
+    """
+    path = Path(base) / ".claude" / "active_workflow"
+    try:
+        return read_state_text(path, base).strip()
+    except UnsafeStateError as exc:
+        if os.path.lexists(path):
+            print(f"WARNUNG: active_workflow: {exc}", file=sys.stderr)
+        return ""
+    except (OSError, ValueError):
+        return ""
 
 
 def resolve_active_workflow() -> "tuple[str, str]":
@@ -1584,14 +1714,9 @@ def resolve_active_workflow() -> "tuple[str, str]":
 
     if worktree_root is not None:
         # 1. Worktree-local active_workflow file (written by workflow.py start/switch)
-        try:
-            active_file = worktree_root / ".claude" / "active_workflow"
-            if active_file.exists():
-                name = active_file.read_text().strip()
-                if name:
-                    return name, "file"
-        except OSError:
-            pass
+        name = _read_active_file(worktree_root)
+        if name:
+            return name, "file"
         # 2. Worktree-local settings.local.json (updated live, not frozen like env)
         try:
             settings_path = worktree_root / ".claude" / "settings.local.json"
@@ -1609,14 +1734,9 @@ def resolve_active_workflow() -> "tuple[str, str]":
         return "", "none"
 
     # Main repo session: existing priority chain
-    try:
-        active_file = root / ".claude" / "active_workflow"
-        if active_file.exists():
-            name = active_file.read_text().strip()
-            if name:
-                return name, "file"
-    except OSError:
-        pass
+    name = _read_active_file(root)
+    if name:
+        return name, "file"
     try:
         settings_path = root / ".claude" / "settings.local.json"
         if settings_path.exists():

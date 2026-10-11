@@ -16,9 +16,10 @@ Token file format (v2 — multi-workflow):
 """
 
 from hook_utils import setup_path, find_project_root
+from hook_utils import read_state_json, atomic_write_json, UnsafeStateError
 setup_path()
 
-import json
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -30,12 +31,19 @@ def _get_token_file() -> Path:
 
 
 def _load_tokens() -> dict[str, dict]:
-    """Load all tokens, handling both v1 and v2 format."""
-    if not _get_token_file().exists():
-        return {}
+    """Load all tokens, handling both v1 and v2 format.
+
+    #422: nur aus echter eigener Datei. Ein Verweis zaehlt wie kein Token —
+    der Fund wird hier abgefangen und nie an Aufrufer weitergereicht.
+    """
     try:
-        data = json.loads(_get_token_file().read_text())
-    except (json.JSONDecodeError, OSError):
+        data = read_state_json(_get_token_file(), find_project_root())
+    except UnsafeStateError as exc:
+        print(f"WARNUNG: {exc}", file=sys.stderr)
+        return {}
+    except (ValueError, OSError):
+        return {}
+    if not isinstance(data, dict):
         return {}
 
     if data.get("version") == 2:
@@ -54,11 +62,11 @@ def _load_tokens() -> dict[str, dict]:
 
 
 def _save_tokens(tokens: dict[str, dict]) -> None:
-    token_file = _get_token_file()
-    token_file.parent.mkdir(parents=True, exist_ok=True)
     data = {"version": 2, "tokens": tokens}
-    with open(token_file, "w") as f:
-        json.dump(data, f, indent=2)
+    try:  # #422: atomar, Ordnerkette geprueft — nie durch einen Verweis
+        atomic_write_json(_get_token_file(), data, root=find_project_root())
+    except UnsafeStateError as exc:
+        print(f"WARNUNG: Override-Token nicht geschrieben: {exc}", file=sys.stderr)
 
 
 def _is_expired(created_str: str) -> bool:

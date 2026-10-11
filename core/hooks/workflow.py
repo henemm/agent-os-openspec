@@ -2115,14 +2115,18 @@ def _sessions_age(last_seen) -> str:
 
 
 def _read_session_entries() -> list:
-    """Registereintraege aus .claude/session-locks/*.json des eigenen Projekts."""
-    locks = find_project_root() / ".claude" / "session-locks"
+    """Registereintraege aus .claude/session-locks/*.json des eigenen Projekts.
+
+    Nur eigene normale Dateien (#422): ein Verweis-Eintrag wird uebersprungen.
+    """
+    root = find_project_root()
+    locks = root / ".claude" / "session-locks"
     entries: list = []
     if not locks.is_dir():
         return entries
     for f in sorted(locks.glob("*.json")):
         try:
-            data = json.loads(f.read_text())
+            data = read_state_json(f, root)
         except Exception:
             continue
         if isinstance(data, dict) and data.get("session_id"):
