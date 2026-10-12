@@ -419,3 +419,95 @@ def test_changelog_nennt_scharfschaltung():
     )
     assert "24" in entry, "Eintrag nennt die 24-h-Artefaktgrenze nicht"
     assert "tests/" in entry, "Eintrag nennt nicht, dass tests/ in diesen Gates nicht frei ist"
+
+
+# ---------------------------------------------------------------------------
+# #411: Randfaelle der Freigabe-Liste (F001 `..`, F002 NUL-Byte, F003 Praefixe)
+# ---------------------------------------------------------------------------
+
+def _proj_411(tmp_path, monkeypatch) -> Path:
+    proj = tmp_path.resolve() / "proj"
+    (proj / "src").mkdir(parents=True)
+    (proj / "docs").mkdir()
+    (proj / ".git").mkdir()
+    monkeypatch.chdir(proj)
+    _patch_roots(monkeypatch, None, proj)
+    return proj
+
+
+def test_relativer_pfad_mit_punktpunkt_ist_nicht_frei(tmp_path, monkeypatch):
+    """AC-1.
+    GIVEN relativer Pfad `docs/../src/x.py` (zeigt auf Code)
+    WHEN is_hook_always_allowed ihn prueft
+    THEN False.
+    """
+    _proj_411(tmp_path, monkeypatch)
+    assert _allowed("docs/../src/x.py") is False
+    assert _allowed("./docs/../src/x.py") is False
+
+
+def test_ausbruch_nach_oben_ist_nicht_frei(tmp_path, monkeypatch):
+    """AC-2.
+    GIVEN Pfade, die nach oben aus der Wurzel ausbrechen
+    WHEN geprueft
+    THEN False (auch ueber ein Worktree-Praefix).
+    """
+    _proj_411(tmp_path, monkeypatch)
+    assert _allowed("../x") is False
+    assert _allowed("docs/../../x") is False
+    assert _allowed(".claude/worktrees/a/../../../src/x.py") is False
+    # Pfade mit freigegebener Endung duerfen beim Ausbruch nach oben nicht frei
+    # sein (toetet den Mutanten ohne Ausbruch-Pruefung).
+    assert _allowed("../x.md") is False
+    assert _allowed("docs/../../x.md") is False
+    assert _allowed("../../etc/x.txt") is False
+
+
+def test_nul_byte_im_pfad_ist_nicht_frei_ohne_absturz(tmp_path, monkeypatch):
+    """AC-3.
+    GIVEN Pfad mit NUL-Byte (absolut und relativ)
+    WHEN geprueft
+    THEN keine Ausnahme, Ergebnis False.
+    """
+    proj = _proj_411(tmp_path, monkeypatch)
+    assert _allowed("docs/a\x00.md") is False
+    assert _allowed(str(proj / "docs" / "a\x00.md")) is False
+
+
+def test_verschachtelte_worktree_praefixe(tmp_path, monkeypatch):
+    """AC-4.
+    GIVEN verschachteltes Praefix `.claude/worktrees/a/.claude/worktrees/b/...`
+    WHEN geprueft
+    THEN Code nicht frei, `docs/x.md` frei — absolut wie relativ.
+    """
+    proj = _proj_411(tmp_path, monkeypatch)
+    nested = ".claude/worktrees/a/.claude/worktrees/b"
+    assert _allowed(f"{nested}/src/x.py") is False
+    assert _allowed(f"{nested}/docs/x.md") is True
+    assert _allowed(str(proj / nested / "src" / "x.py")) is False
+    assert _allowed(str(proj / nested / "docs" / "x.md")) is True
+
+
+def test_harmlose_pfade_bleiben_frei(tmp_path, monkeypatch):
+    """AC-5.
+    GIVEN harmlose Pfade
+    WHEN geprueft
+    THEN weiter True.
+    """
+    _proj_411(tmp_path, monkeypatch)
+    assert _allowed("docs/a.md") is True
+    assert _allowed("./docs/a.md") is True
+    assert _allowed(".claude/x") is True
+
+
+def test_gates_stuerzen_bei_nul_byte_nicht_ab(tmp_path):
+    """AC-6.
+    GIVEN Edit-Aufruf mit NUL-Byte im Pfad, echte Worktree-Struktur
+    WHEN tdd_enforcement.py / post_implementation_gate.py als Prozess laufen
+    THEN kein Traceback und kein Exit 1.
+    """
+    _main, wt = _make_gate_fixture(tmp_path)
+    for script in ("tdd_enforcement.py", "post_implementation_gate.py"):
+        r = _run_hook(script, wt, _edit_payload(wt / "docs" / "a\x00.md"))
+        assert "Traceback" not in r.stderr, f"{script}: {r.stderr}"
+        assert r.returncode in (0, 2), f"{script}: rc={r.returncode} {r.stderr}"
