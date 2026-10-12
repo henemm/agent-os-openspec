@@ -46,9 +46,20 @@ Das `status`-Kommando ist der eigentliche Wiedereinstiegs-Check: Es zeigt die Qu
 
 ## What Happens
 
-Completes and archives the current workflow, or removes it if in early phases.
+Completes and archives the current workflow, or removes it if in early phases. Workflows ohne Bau (PO-Entscheidung „nichts bauen" oder keine Spec) werden per `abandon` archiviert.
 
 ## Execute Reset
+
+**Erst prüfen, ob überhaupt gebaut wurde** (`$WF status`):
+
+- Hat der Workflow das Feld `no_build_reason` (PO-Entscheidung „nichts bauen", gesetzt per `workflow.py no-build --reason "..."`) **oder** wurde nie eine `spec_file` geschrieben, dann **nicht** `finish`, sondern:
+
+  ```bash
+  $WF abandon --reason "<Begründung>"
+  ```
+
+  Begründung für `workflow.py abandon --reason` = Inhalt von `no_build_reason`; fehlt das Feld, den PO nach dem Grund fragen.
+- Nur bei geschriebener Spec und abgeschlossener Arbeit gilt `finish` (unten).
 
 ```bash
 # Complete and archive the current workflow
