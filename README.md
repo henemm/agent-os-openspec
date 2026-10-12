@@ -197,6 +197,7 @@ python3 .claude/hooks/workflow.py phase phase4_approved
 python3 .claude/hooks/workflow.py set-field spec_file "docs/specs/auth/login.md"
 python3 .claude/hooks/workflow.py set-field github_issue 42
 python3 .claude/hooks/workflow.py set-affected-files src/auth.py src/login.py
+python3 .claude/hooks/workflow.py no-build --reason "analysis: nothing to build"   # phase1/phase2 only; footer then points to /99-reset
 
 # TDD artifacts
 python3 .claude/hooks/workflow.py add-artifact test_output "logs/test.log" "3 failed" phase5_tdd_red
