@@ -150,6 +150,35 @@ def test_workflow_py_und_git_commit_bleiben_frei(tmp_path):
         f"python3 {main}/.claude/hooks/workflow.py status",
         "git add f", "git log -1", "git status", "gh pr view",
     ], wt, 0, cwd=wt))
+    # Ohne aktiven Workflow greift das Commit-Gate nicht; 1c darf git commit nicht sperren.
+    (wt / ".claude" / "active_workflow").unlink()
+    _fail("AC-11 git commit ohne Workflow",
+          _expect(["git commit -m x", f"git -C {main} commit -m x"], wt, 0, cwd=wt))
+
+
+def test_mv_mit_zielordner_flag_blockt(tmp_path):
+    """AC-2 (Adversary F2): mv -t DIR f -> DIR ist Schreibziel."""
+    main, wt = _wt(tmp_path)
+    _fail("AC-2 mv -t", _expect([f"mv -t {main} f", "mv -t ../../.. f",
+                                 f"mv --target-directory={main} f"],
+                                wt, 2, OVERRIDE_HINT, cwd=wt))
+    _fail("AC-9 mv -t eigener Worktree",
+          _expect([f"mv -t {wt} f", "mkdir -p d && mv -t d f"], wt, 0, cwd=wt))
+
+
+def test_git_mit_C_in_hauptordner_blockt(tmp_path):
+    """AC-2/AC-5 (Adversary F3): git -C <haupt> checkout|restore|rm|mv -> Exit 2."""
+    main, wt = _wt(tmp_path)
+    _fail("git -C schreibend", _expect([
+        f"git -C {main} checkout -- a.txt", f"git -C {main} restore a.txt",
+        f"git -C {main} rm a.txt", f"git -C {main} mv a.txt b.txt",
+        "git -C ../../.. checkout -- a.txt", "git -C ../../.. restore a.txt",
+        "git -C ../../.. rm a.txt", "git -C ../../.. mv a.txt b.txt",
+    ], wt, 2, OVERRIDE_HINT, cwd=wt))
+    _fail("git -C lesend / eigener Worktree", _expect([
+        f"git -C {main} status", f"git -C {main} log -1", f"git -C {main} diff",
+        f"git -C {wt} checkout -- f", "git -C $X checkout -- a.txt",
+    ], wt, 0, cwd=wt))
 
 
 def test_hauptordner_sitzung_unveraendert(tmp_path):

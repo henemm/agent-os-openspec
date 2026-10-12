@@ -490,16 +490,26 @@ def _perl_targets(args: list) -> list:
 
 
 def _git_write_targets(args: list) -> list:
-    """git checkout/restore/rm/mv: alle Pfadargumente (Branchnamen loesen nie auf die Config auf)."""
+    """git checkout/restore/rm/mv: alle Pfadargumente (Branchnamen loesen nie auf die Config auf).
+
+    `-C <pfad>` (auch mehrfach, kumulativ) wird relativen Pfaden vorangestellt (#417).
+    """
     pos = _positional(args, ("-C", "-c"))
     if not pos or pos[0] not in ("checkout", "restore", "rm", "mv"):
         return []
-    return _positional(args[args.index(pos[0]) + 1:], ("-s", "--source", "-b", "-B"))
+    sub = args.index(pos[0])
+    cdir = ""
+    for i, tok in enumerate(args[:sub]):
+        if tok == "-C" and i + 1 < sub:
+            cdir = os.path.join(cdir, args[i + 1])
+    paths = _positional(args[sub + 1:], ("-s", "--source", "-b", "-B"))
+    return [os.path.join(cdir, p) for p in paths] if cdir else paths
 
 
 _CONFIG_WRITERS = {
     "cp": _copy_targets, "install": _copy_targets, "ln": _copy_targets,
-    "mv": lambda a: _positional(a, ("-t", "-S")),
+    # mv: Quellen UND Ziel zaehlen; bei `-t DIR` zusaetzlich `DIR/<basename>` (#417).
+    "mv": lambda a: list(dict.fromkeys(_positional(a, ("-t", "-S")) + _copy_targets(a))),
     "rm": _positional, "unlink": _positional, "tee": _positional,
     "truncate": lambda a: _positional(a, ("-s", "-r")),
     "touch": lambda a: _positional(a, ("-d", "-t", "-r")),
@@ -536,6 +546,23 @@ def _cd_bases(seg: list, bases: list, cwd: Path) -> list:
     return [(b / os.path.expanduser(target)).resolve() for b in bases]
 
 
+def _segment_write_targets(segments: list, cwd: Path):
+    """Je Schreib-Segment `(basen, ziele)`; Basis ueber `cd`/`pushd`/`popd` nachgefuehrt (#418, #417).
+
+    Gemeinsame Zielerkennung fuer 1b (wirksame Config) und 1c (Haupt-Ordner).
+    Segmente ohne Schreibziel fallen weg. Fehler in einem Segment beenden die
+    Aufzaehlung (fail-open beim Aufrufer).
+    """
+    bases = [cwd]
+    for seg in segments:
+        if seg[0] in ("cd", "pushd", "popd"):
+            bases = _cd_bases(seg, bases, cwd)
+            continue
+        targets = _config_write_targets(seg)
+        if targets:
+            yield bases, targets
+
+
 def _writes_effective_config(segments: list, cwd: Path) -> bool:
     """Schreibt ein Segment auf die WIRKSAME Gate-Config (#410, #418)?
 
@@ -545,15 +572,8 @@ def _writes_effective_config(segments: list, cwd: Path) -> bool:
     andere Datei auf und bleibt frei. Fehler: fail-open.
     """
     effective = None
-    bases = [cwd]
-    for seg in segments:
-        try:
-            if seg[0] in ("cd", "pushd", "popd"):
-                bases = _cd_bases(seg, bases, cwd)
-                continue
-            targets = _config_write_targets(seg)
-            if not targets:
-                continue
+    try:
+        for bases, targets in _segment_write_targets(segments, cwd):
             if effective is None:
                 from config_loader import find_config_file
                 found = find_config_file(find_project_root())
@@ -563,9 +583,40 @@ def _writes_effective_config(segments: list, cwd: Path) -> bool:
             if any((b / os.path.expanduser(t)).resolve() == effective
                    for b in bases for t in targets):
                 return True
-        except Exception:
-            return False
+    except Exception:
+        return False
     return False
+
+
+# Bewusste Parallelkopie des Regex aus worktree_write_guard.py (kein geteilter Import).
+_WORKTREE_CWD_RE = re.compile(r"^(?P<main>.*)/\.claude/worktrees/(?P<name>[^/]+)")
+
+
+def _writes_main_repo(segments: list, cwd: Path) -> "str | None":
+    """Schreibziel im Haupt-Ordner, aber ausserhalb des eigenen Worktrees (#417)?
+
+    Nur aktiv, wenn `cwd` in einem Worktree liegt; sonst `None` (Haupt-Ordner-
+    Sitzung unveraendert). Fremde Worktrees unter dem Haupt-Ordner bleiben
+    gesperrt. Nicht aufloesbare Ziele (`$VAR`, Glob, Backtick) und Fehler:
+    fail-open. Liefert das aufgeloeste Ziel oder `None`.
+    """
+    try:
+        m = _WORKTREE_CWD_RE.match(str(cwd))
+        if not m:
+            return None
+        main_dir = Path(m.group("main")).resolve()
+        own = (Path(m.group("main")) / ".claude" / "worktrees" / m.group("name")).resolve()
+        for bases, targets in _segment_write_targets(segments, cwd):
+            for t in targets:
+                if any(ch in t for ch in "$`*?["):
+                    continue
+                for b in bases:
+                    hit = (b / os.path.expanduser(t)).resolve()
+                    if hit.is_relative_to(main_dir) and not hit.is_relative_to(own):
+                        return str(hit)
+    except Exception:
+        return None
+    return None
 
 
 def _references_protected(command: str) -> bool:
@@ -1142,6 +1193,17 @@ def main():
         block(
             "BLOCKED: Schreibzugriff auf die wirksame Gate-Config (Kill-Switches).\n"
             "  Aenderungen gehoeren in die Worktree-Kopie und wirken nach dem Merge.\n"
+            "  Bewusst gewollt? User tippt 'override'."
+        )
+
+    # 1c. Haupt-Ordner aus einer Worktree-Sitzung (#417): Schutz vor Split-Brain,
+    #     kein Workflow-Zwang — gilt wie 1b ohne Workflow und bei framework_disabled().
+    main_hit = _writes_main_repo(_git_segments(scan_cmd) or [], Path.cwd())
+    if main_hit and not _any_override_token():
+        block(
+            "BLOCKED: Schreibzugriff aus dem Worktree in den Haupt-Ordner (Worktree-Pflicht).\n"
+            f"  Ziel: {main_hit}\n"
+            "  Aenderungen gehoeren in den eigenen Worktree und kommen per Merge an.\n"
             "  Bewusst gewollt? User tippt 'override'."
         )
 
