@@ -46,3 +46,36 @@ Issue #411 (Epic #429, Meilenstein 3.41): Drei Restbefunde aus der Adversary-Pr�
   `.claude/worktrees/a/../../../src/x.py` die Prüfung — oder umgekehrt; in der Spec festlegen.
 - Auch absolute Pfade durchlaufen die Präfix-Schleife (F003 gilt für beide Pfadarten).
 - Abgrenzung #417 (Bash-Schreibziele): anderer Code (`bash_gate.py`), keine Überschneidung.
+
+## Analysis
+
+### Type
+Bug (Sicherheitslücke in Gate-Hilfsfunktion, Regression aus #409)
+
+### Affected Files (with changes)
+| File | Change Type | Description |
+|------|-------------|-------------|
+| core/hooks/hook_utils.py | MODIFY | `_relative_for_allowlist`: Normalisierung, Präfix-Schleife, ValueError fangen |
+| tests/test_always_allowed_worktree_409.py | MODIFY | Je ein Test pro Befund F001/F002/F003 (+ Regressionsfälle) |
+| CHANGELOG.md | MODIFY | Eintrag unter [Unreleased] |
+
+### Scope Assessment
+- Files: 3
+- Estimated LoC: +~15 Code / +~40 Tests
+- Risk Level: MEDIUM (Gate-Hilfsfunktion; Fehler öffnet Schutzlücke oder blockt `docs/`-Edits)
+
+### Technical Approach
+Reihenfolge in `_relative_for_allowlist` (festgelegt):
+1. Pfad bestimmen wie bisher (absolut: `resolve()` + relativ zur Wurzel; relativ: `\` → `/`).
+2. `posixpath.normpath` auf den relativen String. Beginnt das Ergebnis mit `..` (Ausbruch nach oben) → `""` zurückgeben (= nicht frei, Regex passt nicht; `None` wäre "frei").
+3. Worktree-Präfix `.claude/worktrees/<n>/` in Schleife entfernen, bis keiner mehr passt (F003, gilt für absolut und relativ).
+4. Normalisieren zuerst, Präfix danach: so umgeht `.claude/worktrees/a/../../../src/x.py` die Prüfung nicht (wird zu `../src/x.py` → nicht frei).
+5. F002: `ValueError` zusätzlich zu `OSError, RuntimeError` fangen; bei NUL-Byte `""` (nicht frei, fail-safe), nicht `None`.
+Harmlose Pfade bleiben unverändert (`docs/a.md`, `./docs/a.md` → `docs/a.md`, `.claude/x`).
+
+### Dependencies
+Nur `posixpath` (stdlib) neu; Aufrufer `tdd_enforcement.py:256`, `post_implementation_gate.py:155` bleiben unverändert.
+
+### Open Questions
+- [x] Reihenfolge Präfix/Normalisierung → Normalisieren zuerst (s. oben)
+- [x] Rückgabe bei Ausbruch/NUL → `""` (nicht frei)
