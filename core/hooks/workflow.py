@@ -163,6 +163,9 @@ NEXT_STEP = {
 
 STATUS_NOTE_PREFIX = "[agent-os-openspec]"
 
+# Phasen, in denen `no-build` erlaubt ist und next_step() den Marker auswertet (#424).
+_NO_BUILD_PHASES = ("phase1_context", "phase2_analyse")
+
 
 def next_step(data: dict) -> "str | None":
     """Naechster Pflicht-Schritt fuer den Zustand, oder None (Phase 8 / unklar).
@@ -178,6 +181,8 @@ def next_step(data: dict) -> "str | None":
     phase = data.get("current_phase")
     if not isinstance(phase, str) or phase not in NEXT_STEP:
         return None
+    if phase in _NO_BUILD_PHASES and data.get("no_build_reason"):
+        return "/99-reset"  # PO-Entscheidung "nichts bauen" (#424)
     if phase == "phase3_spec" and data.get("spec_file"):
         return "Freigabe der Spec (Stichwort: approved)"
     if phase == "phase5_tdd_red" and (
@@ -1302,6 +1307,24 @@ def cmd_status(args: list[str]) -> None:
     print(f"Execution Log: {'Written' if log_written else 'Pending — run write-log before complete'}")
 
 
+def _reset_approvals_on_backstep(data: dict, current: str, target: str) -> None:
+    """Rueckspruenge entwerten die Freigaben, die das Ziel noch nicht hat (#405).
+
+    Ziel vor phase4_approved: spec_approved und green_approved zurueck;
+    Ziel vor phase6_implement: nur green_approved. Vorwaertswechsel, gleiche
+    Phase und Ziel ab phase6_implement aendern nichts.
+    """
+    if current not in PHASES or target not in PHASES:
+        return
+    cur_idx, tgt_idx = PHASES.index(current), PHASES.index(target)
+    if tgt_idx >= cur_idx:
+        return
+    if tgt_idx < PHASES.index("phase4_approved"):
+        data["spec_approved"] = False
+    if tgt_idx < PHASES.index("phase6_implement"):
+        data["green_approved"] = False
+
+
 def cmd_phase(args: list[str]) -> None:
     if not args:
         print("Usage: workflow.py phase <phase>", file=sys.stderr)
@@ -1322,6 +1345,7 @@ def cmd_phase(args: list[str]) -> None:
     # Vor record_transition, damit die Budget-Pruefung den neuen Stand sieht (#250).
     if target == "phase6_implement" and current == "phase6b_adversary":
         data["fix_loop_iterations"] = data.get("fix_loop_iterations", 0) + 1
+    _reset_approvals_on_backstep(data, current, target)
     exceeded = record_transition(data, target, trigger)
     data["current_phase"] = target
     _save_active(data)
@@ -1363,6 +1387,7 @@ _SET_FIELD_PROTECTED = {
     "name": "workflow.py start <name>",
     "base_commit": "wird von workflow.py start gesetzt (Basis der Phase-8-Abdeckung)",
     "qa_run_stamp": "wird von qa_gate.py gesetzt",
+    "no_build_reason": "workflow.py no-build --reason \"<Begruendung>\"",
 }
 
 # Nach der Freigabe nur noch mit Override-Token des Users per set-field (#379).
@@ -1377,6 +1402,20 @@ def _is_approved(data: dict) -> bool:
     phase = data.get("current_phase", "phase0_idle")
     idx = PHASES.index(phase) if phase in PHASES else len(PHASES)
     return idx >= PHASES.index("phase4_approved")
+
+
+def _ever_approved(data: dict) -> bool:
+    """Je eine Phase ab phase4_approved erreicht? Belege: `phase_transitions`
+    (`from`/`to`) und `phase_log` — ueberdauern den Ruecksprung-Reset (#405)."""
+    seen = set()
+    for t in data.get("phase_transitions", []) or []:
+        if isinstance(t, dict):
+            seen.update((t.get("from"), t.get("to")))
+    for e in data.get("phase_log", []) or []:
+        if isinstance(e, dict):
+            seen.add(e.get("phase"))
+    gate = PHASES.index("phase4_approved")
+    return any(p in PHASES and PHASES.index(p) >= gate for p in seen)
 
 
 def _user_override(name: str) -> bool:
@@ -1394,14 +1433,15 @@ def _check_set_field_type(data: dict, name: str, value: str) -> str | None:
     Der feature-fast-Zweig von `_validate_transition` prueft beim Abschluss kein
     Adversary-Verdict — ein freigegebener `feature`-Workflow verloere durch die
     Umklassifizierung sonst jeden Pruefnachweis. Vor der Freigabe bleibt der
-    Wechsel frei: dann greift das Freigabe-Gate noch. Rueckfall-Rezept fuer
+    Wechsel frei: dann greift das Freigabe-Gate noch. Ein Ruecksprung mit
+    zurueckgesetzter Freigabe (#405) bleibt gesperrt. Rueckfall-Rezept fuer
     Alt-Workflows vom Typ `bug` (#333) bleibt ueber `override` moeglich.
     """
     if value not in ("feature", "feature-fast"):
         return f"Unbekannter workflow_type {value!r}. Gueltig: feature, feature-fast"
     if value != "feature-fast" or data.get("workflow_type") == "feature-fast":
         return None
-    if not _is_approved(data) or _user_override(name):
+    if not (_is_approved(data) or _ever_approved(data)) or _user_override(name):
         return None
     phase = data.get("current_phase", "phase0_idle")
     return (
@@ -1742,6 +1782,34 @@ def cmd_abandon(args: list[str]) -> None:
         link.unlink()
     _persist_env(None)
     print(f"Workflow {name} abgebrochen (abandoned) und archiviert — NICHT abgeschlossen.")
+    print(f"  Grund: {reason}")
+
+
+def cmd_no_build(args: list[str]) -> None:
+    """Haelt die PO-Entscheidung "nichts bauen" fest (#424).
+
+    Nur in phase1_context/phase2_analyse; danach nennt next_step() /99-reset,
+    das den Workflow per `abandon` archiviert.
+    """
+    reason = ""
+    if len(args) >= 2 and args[0] == "--reason":
+        reason = args[1].strip()
+    if not reason:
+        print("Usage: workflow.py no-build --reason \"<warum nichts gebaut wird>\"", file=sys.stderr)
+        print("  Die Begruendung ist Pflicht.", file=sys.stderr)
+        sys.exit(1)
+    data, name = _read_active()
+    phase = data.get("current_phase")
+    if phase not in _NO_BUILD_PHASES:
+        print(
+            f"BLOCKED: no-build nur in phase1_context/phase2_analyse erlaubt "
+            f"(aktuell: {phase}). Spaeter gilt der normale Abschluss.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    data["no_build_reason"] = reason
+    _save_active(data)
+    print(f"Workflow {name}: nichts bauen vermerkt. Naechster Schritt: /99-reset")
     print(f"  Grund: {reason}")
 
 
@@ -2238,6 +2306,7 @@ COMMANDS = {
     # und blockiert die ganze Kommandozeile (gregor_zwanzig#1478).
     "finish": cmd_complete,
     "abandon": cmd_abandon,
+    "no-build": cmd_no_build,
     "list": cmd_list,
     "find": cmd_find,
     "deploy-config": cmd_deploy_config,
