@@ -16,6 +16,7 @@ Usage in any hook:
 import errno
 import json
 import os
+import posixpath
 import re
 import shlex
 import stat
@@ -1825,10 +1826,13 @@ def _relative_for_allowlist(file_path: str) -> "str | None":
 
     Relative Pfade bleiben relativ. Absolute Pfade werden gegen die laengste
     passende Wurzel relativiert (`is_relative_to`, nicht `startswith` — sonst
-    passt `/proj` auf `/proj2/...`). Ein fuehrendes `.claude/worktrees/<n>/`
-    wird immer abgeschnitten (#409).
+    passt `/proj` auf `/proj2/...`). Danach wird `..`/`.` normalisiert und jedes
+    fuehrende `.claude/worktrees/<n>/` abgeschnitten (#409, #411).
+    `""` = nicht frei (NUL-Byte, Ausbruch nach oben): kein Muster passt darauf.
     """
     raw = str(file_path or "")
+    if "\x00" in raw:
+        return ""  # NUL-Byte: resolve() wuerde ValueError werfen (#411)
     path = Path(raw)
     if not path.is_absolute():
         rel = raw.replace("\\", "/")
@@ -1837,6 +1841,8 @@ def _relative_for_allowlist(file_path: str) -> "str | None":
             path = path.resolve()
         except (OSError, RuntimeError):
             pass
+        except ValueError:
+            return ""
         roots = _hook_candidate_roots()
         if not roots:
             # Keine Wurzel ermittelbar: fail-safe nur den Dateinamen bewerten
@@ -1846,7 +1852,16 @@ def _relative_for_allowlist(file_path: str) -> "str | None":
         if root is None:
             return None
         rel = path.relative_to(root).as_posix()
-    return _WORKTREE_PREFIX_RE.sub("", rel, count=1)
+    # Erst normalisieren, dann Praefix abschneiden (#411): so faellt
+    # `.claude/worktrees/a/../../../src/x.py` als Ausbruch auf.
+    rel = posixpath.normpath(rel)
+    if rel == ".." or rel.startswith("../") or posixpath.isabs(rel):
+        return ""
+    while True:
+        stripped = _WORKTREE_PREFIX_RE.sub("", rel, count=1)
+        if stripped == rel:
+            return rel
+        rel = stripped
 
 
 def is_hook_always_allowed(file_path: str) -> bool:

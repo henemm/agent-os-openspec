@@ -456,6 +456,11 @@ def test_ausbruch_nach_oben_ist_nicht_frei(tmp_path, monkeypatch):
     assert _allowed("../x") is False
     assert _allowed("docs/../../x") is False
     assert _allowed(".claude/worktrees/a/../../../src/x.py") is False
+    # Pfade mit freigegebener Endung duerfen beim Ausbruch nach oben nicht frei
+    # sein (toetet den Mutanten ohne Ausbruch-Pruefung).
+    assert _allowed("../x.md") is False
+    assert _allowed("docs/../../x.md") is False
+    assert _allowed("../../etc/x.txt") is False
 
 
 def test_nul_byte_im_pfad_ist_nicht_frei_ohne_absturz(tmp_path, monkeypatch):
