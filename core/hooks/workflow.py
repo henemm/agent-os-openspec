@@ -414,7 +414,14 @@ def write_qa_run_stamp(stamp: dict) -> bool:
     Nur fuer qa_gate.py per Import. Bewusst KEIN CLI-Unterbefehl: der Stempel
     soll belegen, dass das Gate selbst gemessen hat — ein Befehl, der beliebiges
     JSON annimmt, liesse ihn per Bash faelschen (Sperre via _SET_FIELD_PROTECTED).
+    #404 F003: Einstiegspunkt muss qa_gate.py sein, sonst PermissionError.
+    #404 F001: Ort statt Name — nur das qa_gate.py neben dieser Datei zaehlt.
     """
+    main_file = getattr(sys.modules.get("__main__"), "__file__", "") or ""
+    expected = Path(__file__).resolve().parent / "qa_gate.py"
+    if not main_file or Path(main_file).resolve() != expected:
+        raise PermissionError(
+            "qa_run_stamp: nur qa_gate.py --run darf den Stempel schreiben (#404)")
     found = read_active_workflow_fast()
     if found is None:
         return False
