@@ -134,3 +134,16 @@ def test_bash_gate_allows_freetext_mentions(project, command):
     """AC-6: Freitext/Suche, die den Namen nennt, wird nicht wegen des Stempels geblockt."""
     r = _bash_gate(project, command)
     assert "qa_gate.py --run" not in _out(r), _out(r)
+
+
+def test_same_named_foreign_qa_gate_is_refused(project, tmp_path):
+    """AC-2, F001: Fremddatei namens `qa_gate.py` ausserhalb von core/hooks
+    -> PermissionError, kein Stempel (Ort statt Name wird geprueft)."""
+    fake_dir = tmp_path / "x"
+    fake_dir.mkdir()
+    script = fake_dir / "qa_gate.py"
+    script.write_text(FORGE_CODE + "\n")
+    r = _py(project, [str(script)])
+    assert r.returncode != 0, _out(r)
+    assert "PermissionError" in _out(r), _out(r)
+    assert STAMP not in _state(project)
