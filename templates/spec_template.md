@@ -11,6 +11,11 @@ test_targets: []
 
 # Entity Name
 
+<!-- Nach der Freigabe (#439) ist nur der freigegebene Teil eingefroren. Ohne neue
+     Freigabe änderbar bleiben: Frontmatter, Approval, Implementation Details,
+     Known Limitations, Test Plan, Changelog und die eingerückten `- Test:`-Zeilen
+     unter den AC. Alles andere ändert nur der Rücksprung nach phase3_spec. -->
+
 ## Approval
 
 - [ ] Approved

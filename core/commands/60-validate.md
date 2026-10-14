@@ -162,16 +162,18 @@ Task (general-purpose/sonnet, run_in_background: true): "Du bist der docs-update
 
   Aktualisiere alle betroffene Dokumentation.
 
-  Die Spec-Datei selbst NICHT bearbeiten — sie ist nach der Freigabe eingefroren
-  (#230): kein Status-Feld setzen, keine AC-Checkboxen abhaken."
+  Die Spec-Datei selbst NICHT bearbeiten — der freigegebene Teil ist nach der
+  Freigabe eingefroren (#230, #439)."
 ```
 
-**Warum `spec_file_path` nur Lesekontext ist (#230):** Das PO-Briefing ist per SHA-256 an
-die gelesene Spec-Fassung gebunden. Fasst der docs-updater die Spec an, verschiebt sich der
-Hash und Step 4 (`phase phase8_complete`) bricht mit „PO-Briefing ist veraltet" ab. Deshalb
-gilt: Die Spec ist nach Freigabe eingefroren und darf nicht mehr bearbeitet werden —
-`edit_gate.py` (Schritt 1d) blockiert solche Schreibzugriffe technisch. Eine wirklich
-gewollte Nachbesserung braucht das Wort „override" vom User.
+**Warum `spec_file_path` nur Lesekontext ist (#230, #439):** Das PO-Briefing ist per
+Teil-Hash (`spec_frozen_sha256`) an den freigegebenen Teil der Spec gebunden. Ändert der
+docs-updater ihn, bricht Step 4 (`phase phase8_complete`) mit „PO-Briefing ist veraltet"
+ab. Deshalb gilt: Der freigegebene Teil ist eingefroren — `edit_gate.py` (Schritt 1d)
+blockiert solche Schreibzugriffe technisch, auch mit „override". Bewegliche Teile
+(Frontmatter, Approval, Implementation Details, Known Limitations, Test Plan, Changelog,
+`- Test:`-Zeilen) bleiben änderbar. Eine gewollte Änderung am Freigegebenen geht nur über
+`workflow.py phase phase3_spec`, neues Briefing und neue Freigabe.
 
 ### Step 4: Workflow State aktualisieren
 

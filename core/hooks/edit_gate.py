@@ -7,9 +7,10 @@ Replaces 17 separate hooks with 1. Sequential short-circuit logic:
 1. Protected State Files → BLOCK
 1b. Orchestrator-Only Files (settings.json, settings.local.json, active_workflow) → BLOCK
 1c. Path Origin (ausserhalb Projekt/Worktree) → ALLOW
-1d. Spec-Freeze: spec_file eines Workflows in Phase >= phase4_approved → BLOCK
-    (ohne Override-Token; muss VOR Schritt 2 stehen, sonst winken die
-    Always-Allowed-Regeln "docs/" bzw. ".md" die Spec bedingungslos durch)
+1d. Spec-Freeze: spec_file eines Workflows in Phase >= phase4_approved →
+    BLOCK, wenn der Edit den freigegebenen Teil aendert (Teil-Hash, #439;
+    Override-Tokens oeffnen das nicht). Muss VOR Schritt 2 stehen, sonst
+    winken die Always-Allowed-Regeln "docs/" bzw. ".md" die Spec durch.
 2. Always-Allowed (docs, tests, scripts, .md, .json) → ALLOW
 3. Not code file → ALLOW
 4. Infrastructure (.claude/hooks/, Config-Ergaenzung, im Framework-Repo auch
@@ -301,6 +302,118 @@ def _approved_phases() -> list:
         ]
 
 
+_SPEC_SIM_HINT = "Edit präzisieren oder Write verwenden"
+
+
+class _SpecSimError(Exception):
+    """Neue Fassung der Spec nicht sicher berechenbar (#439, fail-closed)."""
+
+
+def _spec_tool_name(tool_input: dict) -> str:
+    """Tool aus dem stdin-Payload; fehlt es, eindeutig aus den Feldern ableiten."""
+    name = str(hook_utils._STDIN_PAYLOAD.get("tool_name") or "")
+    if name:
+        return name
+    kinds = [n for n, key in (("MultiEdit", "edits"), ("Edit", "old_string"),
+                              ("Write", "content")) if key in tool_input]
+    return kinds[0] if len(kinds) == 1 else ""
+
+
+def _apply_spec_edit(text: str, edit) -> str:
+    """Ein Edit als exakter str.replace; fehlend/mehrdeutig → _SpecSimError."""
+    if not isinstance(edit, dict):
+        raise _SpecSimError("Edit-Eintrag ist kein Objekt")
+    old, new = edit.get("old_string"), edit.get("new_string")
+    if not isinstance(old, str) or not old or not isinstance(new, str):
+        raise _SpecSimError("old_string/new_string fehlen")
+    count = text.count(old)
+    if count == 0:
+        raise _SpecSimError("old_string kommt in der Datei nicht vor")
+    if edit.get("replace_all") is True:
+        return text.replace(old, new)
+    if count > 1:
+        raise _SpecSimError(f"old_string ist mehrdeutig ({count} Fundstellen)")
+    return text.replace(old, new, 1)
+
+
+def _spec_edit_variants(texts: "list[str]", edit) -> "list[str]":
+    """Alle plausiblen Ergebnisse eines Edits auf allen bisherigen Varianten.
+
+    Die erste Variante ist der exakte str.replace auf der Hauptfassung (wirft
+    bei Zweifel). Bei leerem new_string entfernt Claude Code ggf. auch das
+    folgende \\n — diese Fassung wird zusaetzlich simuliert (F002); sie und
+    Folgevarianten sind best effort (nicht anwendbar = kommt nicht vor).
+    """
+    out = [_apply_spec_edit(texts[0], edit)]
+    for i, text in enumerate(texts):
+        tries = [edit] if i else []
+        old = edit.get("old_string")
+        if edit.get("new_string") == "" and not old.endswith("\n"):
+            tries.append(dict(edit, old_string=old + "\n"))
+        for variant in tries:
+            try:
+                out.append(_apply_spec_edit(text, variant))
+            except _SpecSimError:
+                pass
+    return out
+
+
+def _simulate_spec_write(file_path: str, tool_input: dict) -> "tuple[str, list[str]]":
+    """(aktueller Inhalt, simulierte neue Fassungen) — jeder Zweifel wirft."""
+    try:
+        current = Path(file_path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise _SpecSimError(f"Datei nicht lesbar: {exc.__class__.__name__}")
+    tool = _spec_tool_name(tool_input)
+    if tool == "Write":
+        content = tool_input.get("content")
+        if not isinstance(content, str):
+            raise _SpecSimError("Write ohne Inhalt")
+        return current, [content]
+    if tool == "Edit":
+        return current, _spec_edit_variants([current], tool_input)
+    if tool == "MultiEdit":
+        edits = tool_input.get("edits")
+        if not isinstance(edits, list) or not edits:
+            raise _SpecSimError("MultiEdit ohne Edit-Liste")
+        variants = [current]
+        for edit in edits:
+            variants = _spec_edit_variants(variants, edit)
+        return current, variants
+    raise _SpecSimError(f"Werkzeug nicht erkennbar ({tool or 'unbekannt'})")
+
+
+def _check_spec_freeze(workflow: dict, file_path: str, tool_input: dict) -> None:
+    """Schritt 1d (#439): blockt Aenderungen am freigegebenen Teil der Spec.
+
+    Legacy-Briefing (nur Gesamt-Hash) → Gesamt-Freeze bis `set-briefing`
+    migriert. Sonst Teil-Hash aktuell vs. simuliert: gleich → zurueck an
+    main() (weitere Pruefungen), verschieden → Block. Kein Override-Ausweg.
+    """
+    name = workflow.get("name", "unknown")
+    phase = workflow.get("current_phase", "")
+    where = f"{Path(file_path).name}, Workflow {name}, Phase {phase}"
+    backstep = ("→ Änderung am Freigegebenen: `workflow.py phase phase3_spec`, neues "
+                "Briefing, neue Freigabe. 'override' öffnet den Spec-Freeze nicht (#439).")
+    entry = workflow.get("po_briefing")
+    if isinstance(entry, dict) and entry.get("file") and not entry.get("spec_frozen_sha256"):
+        block("BLOCKED: Freigegebene Spec mit altem Briefing-Stempel (nur Gesamt-Hash) "
+              f"— jede Änderung ist gesperrt ({where}).\n"
+              "→ Erst `workflow.py set-briefing <pfad>` ausführen (migriert den Stempel), "
+              "danach sind Änderungen an beweglichen Teilen erlaubt.\n" + backstep)
+    try:
+        current, variants = _simulate_spec_write(file_path, tool_input)
+    except _SpecSimError as exc:
+        block(f"BLOCKED: Spec-Freeze ({where}): neue Fassung nicht sicher berechenbar "
+              f"— {exc}. {_SPEC_SIM_HINT}.")
+    before = hook_utils.frozen_spec_sha256(current)
+    if any(hook_utils.frozen_spec_sha256(v) != before for v in variants):
+        block(f"BLOCKED: Das ändert, was freigegeben wurde ({where}).\n" + backstep + "\n"
+              "→ Ohne Token änderbar sind nur: Frontmatter, `- Test:`-Zeilen im "
+              "AC-Abschnitt, Known Limitations, Implementation Details, Test Plan, "
+              "Changelog, Approval.")
+
+
 def _has_override_token(workflow_name: str = None) -> bool:
     try:
         from override_token import has_valid_token
@@ -577,30 +690,22 @@ def main():
     if _is_outside_project(file_path):
         allow()
 
-    # 1d. Spec-Freeze nach Freigabe (#230): eine freigegebene Spec darf nicht
-    # mehr angefasst werden — jede Aenderung verschiebt spec_sha256() und
-    # blockt damit jede spaetere Transition >= phase4_approved ueber
-    # _check_po_briefing() ("PO-Briefing ist veraltet"), inklusive
-    # phase8_complete. Muss VOR Schritt 2/2b stehen: "docs/" und r"\.md$"
-    # wuerden die Spec sonst bedingungslos durchwinken.
+    # 1d. Spec-Freeze nach Freigabe (#230, Teil-Freeze #439): ab
+    # phase4_approved darf nur noch der bewegliche Teil der Spec geaendert
+    # werden. Verglichen wird der Teil-Hash der aktuellen Datei mit dem der
+    # simulierten neuen Fassung; Override-Tokens oeffnen diesen Schritt NICHT.
+    # Muss VOR Schritt 2/2b stehen: "docs/" und r"\.md$" wuerden die Spec
+    # sonst bedingungslos durchwinken. Gleicher Teil-Hash → weiter mit 2ff.
     spec_workflow = _find_workflow_by_spec_file(file_path)
     if spec_workflow is not None:
         _phases = _approved_phases()
         _phase = spec_workflow.get("current_phase", "phase0_idle")
         if _phase in _phases and _phases.index(_phase) >= _phases.index("phase4_approved"):
-            _wf_name = spec_workflow.get("name", "unknown")
-            if not (_has_override_token(_wf_name)
-                    or _has_override_token("__infra__")
-                    or _has_override_token()):
-                block(
-                    "BLOCKED: Freigegebene Spec darf nicht mehr geaendert werden "
-                    f"({Path(file_path).name}, Phase {_phase}).\n"
-                    "→ Jede Aenderung verschiebt den PO-Briefing-Hash und blockt "
-                    "phase8_complete (#230).\n"
-                    "→ Regulaerer Weg fuer eine gewollte Nachbesserung: User tippt "
-                    "'override' (gilt 1 h, protokolliert in "
-                    ".claude/user_override_token.json)."
-                )
+            try:
+                _check_spec_freeze(spec_workflow, file_path, tool_input)
+            except Exception as exc:  # fail-closed: Absturz (Exit 1) liesse durch
+                block("BLOCKED: Spec-Freeze-Pruefung fehlgeschlagen "
+                      f"({exc.__class__.__name__}) — {_SPEC_SIM_HINT}.")
 
     # 2. Always-allowed directories (component match — avoids false positives
     # when project folder names happen to contain "test/" etc.)

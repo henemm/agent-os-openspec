@@ -14,6 +14,7 @@ Usage in any hook:
 """
 
 import errno
+import hashlib
 import json
 import os
 import posixpath
@@ -702,6 +703,172 @@ def strip_ansi(text: str) -> str:
     auf den bereinigten Text an, sonst verdeckt z.B. '\\x1b[31mFAIL' das Wort.
     """
     return _ANSI_RE.sub("", text)
+
+
+# --- Spec-Freeze: Abschnitts-Zerleger und Teil-Hash (#439) ------------------
+# Eingefroren ist alles, was NICHT auf dieser Allowlist steht (fail-closed).
+# Schluessel = normalisierte H2-Ueberschrift (klein, ab "(" weg, Whitespace
+# kollabiert). Exakter Abgleich, kein Praefix: "Known Limitation" bleibt fest.
+SPEC_MOVABLE_SECTIONS = frozenset({
+    "known limitations", "bekannte einschränkungen",
+    "implementation details", "implementierungsdetails",
+    "changelog", "test plan", "testplan", "approval", "freigabe",
+})
+_SPEC_AC_SECTION = "acceptance criteria"
+_SPEC_H2_RE = re.compile(r"^ {0,3}##[ \t](.*)$")
+_SPEC_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+_SPEC_TEST_LINE_RE = re.compile(r"^[ \t]+- Test:")
+_SPEC_BULLET_RE = re.compile(r"^(?:[-*+]|\d+[.)])(?:[ \t]|$)")
+_SPEC_AC_TEXT_RE = re.compile(
+    r"AC-(?:[A-Za-z0-9]+-)?\d|\b(?:given|when|then)\b", re.IGNORECASE)
+
+
+def normalize_spec_heading(title: str) -> str:
+    """H2-Titel → Schluessel der Alias-Tabelle (#439)."""
+    return " ".join(title.lower().split("(", 1)[0].split())
+
+
+def _spec_fence_flags(lines: "list[str]") -> "list[bool]":
+    """Je Zeile: liegt sie in (oder auf der Grenze) einer Code-Fence?
+
+    CommonMark: 0–3 Leerzeichen, >= 3 Backticks/Tilden; geschlossen nur vom
+    selben Zeichen mit mindestens derselben Laenge. Eine offene Fence macht
+    den Rest der Datei zum Fence-Inhalt.
+    """
+    flags, open_char, open_len = [], "", 0
+    for line in lines:
+        m = _SPEC_FENCE_RE.match(line)
+        if open_char:
+            flags.append(True)
+            if m and m.group(1)[0] == open_char and len(m.group(1)) >= open_len \
+                    and not m.group(2).strip():
+                open_char, open_len = "", 0
+            continue
+        if m and not (m.group(1)[0] == "`" and "`" in m.group(2)):
+            open_char, open_len = m.group(1)[0], len(m.group(1))
+            flags.append(True)
+            continue
+        flags.append(False)
+    return flags
+
+
+def _spec_frontmatter_end(lines: "list[str]") -> int:
+    """Zeilenzahl des Frontmatters (inkl. beider '---'), sonst 0."""
+    if not lines or lines[0].rstrip() != "---":
+        return 0
+    for i in range(1, len(lines)):
+        if lines[i].rstrip() == "---":
+            return i + 1
+    return 0
+
+
+def split_spec_sections(content: str) -> "list[dict]":
+    """Zerlegt eine Spec in Abschnitte (#439).
+
+    Liefert Dicts mit `title` (Ueberschriftentext bzw. "(Frontmatter)" /
+    "(Kopf)"), `heading` (Ueberschriftenzeile oder ""), `kind`
+    ("frontmatter" | "preamble" | "movable" | "frozen" | "ac"), `start`
+    (Index der ersten Zeile) und `lines` als Liste (zeile, in_fence).
+    Zeilenenden: \\r\\n und einzelnes \\r gelten als \\n (CommonMark).
+    """
+    lines = content.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    fm_end = _spec_frontmatter_end(lines)
+    fences = [False] * fm_end + _spec_fence_flags(lines[fm_end:])
+    sections = []
+    if fm_end:
+        sections.append({"title": "(Frontmatter)", "heading": "", "kind": "frontmatter",
+                         "start": 0, "lines": [(l, False) for l in lines[:fm_end]]})
+    current = {"title": "(Kopf)", "heading": "", "kind": "preamble",
+               "start": fm_end, "lines": []}
+    sections.append(current)
+    for idx in range(fm_end, len(lines)):
+        line, in_fence = lines[idx], fences[idx]
+        m = None if in_fence else _SPEC_H2_RE.match(line)
+        if m:
+            key = normalize_spec_heading(m.group(1))
+            kind = ("movable" if key in SPEC_MOVABLE_SECTIONS
+                    else "ac" if key == _SPEC_AC_SECTION else "frozen")
+            current = {"title": m.group(1).strip(), "heading": line.rstrip(),
+                       "kind": kind, "start": idx, "lines": []}
+            sections.append(current)
+            continue
+        current["lines"].append((line, in_fence))
+    return sections
+
+
+def _indent_width(line: str) -> int:
+    expanded = line.expandtabs(4)
+    return len(expanded) - len(expanded.lstrip(" "))
+
+
+def _spec_ac_frozen_lines(lines: "list[tuple[str, bool]]") -> "list[str]":
+    """AC-Abschnitt ohne eingerueckte `- Test:`-Zeilen samt Fortsetzungen.
+
+    Fortsetzung = nicht leer, tiefer eingerueckt als die Test-Zeile, kein
+    neuer Bullet. Eine Leerzeile beendet sie. Fence-Inhalt bleibt fest.
+    Fortsetzungen mit AC-Label oder Given/When/Then bleiben eingefroren
+    (sonst liesse sich AC-Text in einer Fortsetzung verstecken, F003).
+    """
+    kept, test_indent = [], None
+    for line, in_fence in lines:
+        if test_indent is not None:
+            stripped = line.strip()
+            if (not in_fence and stripped and _indent_width(line) > test_indent
+                    and not _SPEC_BULLET_RE.match(stripped)):
+                if _SPEC_AC_TEXT_RE.search(line):
+                    kept.append(line)
+                continue
+            test_indent = None
+        if not in_fence and _SPEC_TEST_LINE_RE.match(line):
+            test_indent = _indent_width(line)
+            continue
+        kept.append(line)
+    return kept
+
+
+def frozen_spec_sha256(content: str) -> str:
+    """SHA-256 nur ueber den freigegebenen (eingefrorenen) Teil der Spec (#439).
+
+    Bewegliche Abschnitte und Frontmatter fallen heraus, im AC-Abschnitt die
+    `- Test:`-Zeilen. Jeder eingefrorene Abschnitt geht als
+    [Ueberschriftenzeile, Body ohne Trailing-Whitespace] in eine JSON-Liste
+    ein — Abschnittsgrenzen sind damit Teil des Hashes (Verschieben und
+    Zerteilen aendern ihn). Der Legacy-Gesamt-Hash `workflow.spec_sha256`
+    bleibt davon unberuehrt.
+    """
+    parts = []
+    for sec in split_spec_sections(content):
+        if sec["kind"] in ("frontmatter", "movable"):
+            continue
+        if sec["kind"] == "ac":
+            body_lines = _spec_ac_frozen_lines(sec["lines"])
+        else:
+            body_lines = [line for line, _ in sec["lines"]]
+        parts.append([sec["heading"], "\n".join(body_lines).rstrip()])
+    encoded = json.dumps(parts, ensure_ascii=False)
+    # surrogatepass: ein einzelnes Surrogat (JSON "\ud800") darf den Hash
+    # nicht zum Absturz bringen — sonst Exit 1 im Gate = fail-open (#439 F001).
+    return hashlib.sha256(encoded.encode("utf-8", "surrogatepass")).hexdigest()
+
+
+def spec_sections_at(content: str, needle: str) -> "list[str]":
+    """Titel der Abschnitte, in denen `needle` in `content` vorkommt (#439 Spur)."""
+    norm = content.replace("\r\n", "\n").replace("\r", "\n")
+    needle = needle.replace("\r\n", "\n").replace("\r", "\n")
+    if not needle:
+        return []
+    sections = split_spec_sections(norm)
+    found, pos = [], norm.find(needle)
+    while pos >= 0:
+        line_no = norm.count("\n", 0, pos)
+        title = sections[0]["title"]
+        for sec in sections:
+            if sec["start"] <= line_no:
+                title = sec["title"]
+        if title not in found:
+            found.append(title)
+        pos = norm.find(needle, pos + 1)
+    return found
 
 
 def setup_path():

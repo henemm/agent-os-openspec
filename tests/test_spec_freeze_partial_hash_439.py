@@ -794,6 +794,56 @@ def test_workflow_ohne_briefing_nutzt_teilhash_vergleich(tmp_path, wf_type):
     _assert_rueckspung_block(bad, f"AC-22 {wf_type} eingefroren")
 
 
+# --- Adversary-Funde (Runde 1) -------------------------------------------------
+
+@pytest.mark.parametrize("tool", ["Edit", "MultiEdit", "Write"])
+def test_f001_lone_surrogate_blockt_statt_absturz(tmp_path, tool):
+    """F001 — GIVEN eingefrorener Purpose WHEN new_string/content ein einzelnes
+    Surrogat (\\ud800) enthaelt THEN blockt das Gate (Exit 2), statt mit Exit 1
+    abzustuerzen (Exit 1 = Edit geht durch, fail-open)."""
+    proj, home, spec_path = _approved_project(tmp_path)
+    old, new = "Der Zweck ist klar umrissen.", "A\ud800B"
+    if tool == "Edit":
+        payload = {"file_path": str(spec_path), "old_string": old, "new_string": new}
+    elif tool == "MultiEdit":
+        payload = {"file_path": str(spec_path),
+                   "edits": [{"old_string": old, "new_string": new}]}
+    else:
+        payload = {"file_path": str(spec_path), "content": SPEC.replace(old, new)}
+    r = _run_gate(proj, home, tool, payload)
+    assert r.returncode == 2, f"{tool}: rc={r.returncode} stderr={r.stderr!r}"
+    _frozen_fn()("A\ud800B")  # darf nicht werfen
+
+
+SPEC_F002 = SPEC.replace("- Doppelt vorhanden.\n\n## Definition of Done",
+                         "- Letzte Grenze X\n## Definition of Done")
+
+
+def test_f002_leerer_new_string_mit_zeilenende_blockt(tmp_path):
+    """F002 — GIVEN letzte Zeile eines beweglichen Abschnitts direkt vor einer
+    eingefrorenen H2 WHEN ein Edit mit leerem new_string das Zeilenende loescht
+    (Claude Code entfernt dabei ggf. das folgende \\n) THEN blockt das Gate,
+    weil die Variante ohne \\n die Ueberschrift zerstoert."""
+    assert "- Letzte Grenze X\n## Definition of Done" in SPEC_F002
+    proj, home, spec_path = _approved_project(tmp_path, spec=SPEC_F002)
+    r = _edit(proj, home, spec_path, "Letzte Grenze X", "")
+    _assert_rueckspung_block(r, "F002 leerer new_string")
+
+
+def test_f003_fortsetzung_mit_ac_text_eingefroren(tmp_path):
+    """F003 — GIVEN `- Test:`-Zeile mit Fortsetzung WHEN eine Fortsetzung mit
+    AC-Label oder Given/When/Then hinzukommt THEN Block; eine normale
+    Fortsetzung (Testpfad-Umbruch) bleibt erlaubt."""
+    proj, home, spec_path = _approved_project(tmp_path)
+    cont = "    Fortsetzung der Testzeile"
+    for hidden in ("    **AC-31:** Given x When y Then z", "    then passiert nichts"):
+        r = _edit(proj, home, spec_path, cont, cont + "\n" + hidden)
+        _assert_rueckspung_block(r, f"F003 {hidden!r}")
+    ok = _edit(proj, home, spec_path, cont,
+               cont + "\n    `tests/test_demo.py::test_zwei_umbruch`")
+    _assert_allowed(ok, "F003 normale Fortsetzung")
+
+
 # --- AC-26: Legacy-Hashfunktionen byte-identisch ------------------------------
 
 LEGACY_BRIEFING = "docs/briefings/fix-230-briefing-hash.md"

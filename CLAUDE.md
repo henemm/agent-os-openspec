@@ -273,6 +273,7 @@ Sofort-Pause fuer Claude:
 Einmal-Bypass fuer Gates:
 - User sagt **"override"** → `phase_listener.py` erstellt Token
 - `edit_gate.py` prueft Token und ueberspringt Phase-/TDD-Check
+- Oeffnet NICHT den Spec-Freeze (#439): nach der Freigabe sind nur bewegliche Spec-Teile (Frontmatter, `- Test:`-Zeilen, Known Limitations, Implementation Details, Test Plan, Changelog, Approval) aenderbar; Freigegebenes nur per Ruecksprung nach `phase3_spec`
 - Keywords konfigurierbar via `openspec.yaml` → `override_token`
 
 ## Hook-Architektur (4 Kern-Gates + ergänzende Guards)
@@ -284,7 +285,7 @@ Registrierung zentral in `hooks/hooks.json` (Plugin-Modus) bzw. `.claude/setting
 **PreToolUse, alle Tools:** `session_singleton_guard.py guard` — erzwingt Worktree-Pflicht (blockt Schreib-Tools im Haupt-Repo) → `secret_egress_guard.py` — blockt ausgeschriebene `.env`-Werte in JEDEM Tool-Input und, nur bei Bash, Umleitungsziele ausserhalb der Sicherheitszone (Issue #97/#237). Bewusst ohne Matcher: der Wert-Check gilt fuer alle Tools, nicht nur Bash.
 
 **PreToolUse Edit|Write|MultiEdit** (in dieser Reihenfolge): `worktree_write_guard.py` → `claude_md_protection.py` → `edit_gate.py` → `tdd_enforcement.py` → `post_implementation_gate.py` → [module hooks]
-  Intern (edit_gate.py, das Kern-Gate): Protected State → Always-Allowed → Code-Check → Infra → Stop-Lock → Workflow → Phase → Override → TDD
+  Intern (edit_gate.py, das Kern-Gate): Protected State → Spec-Freeze (Teil-Hash, #439) → Always-Allowed → Code-Check → Infra → Stop-Lock → Workflow → Phase → Override → TDD
 
 **PreToolUse Bash:** `secrets_guard.py` → `bash_gate.py` → [module hooks]
   Intern (bash_gate.py, das Kern-Gate): Stop-Lock → Config-Schutz (Schreibzugriff auf wirksame Gate-Config, Ausweg "override") → Git Fast-Path → State-Integrity → Secrets → Commit-Gates
@@ -294,7 +295,7 @@ Registrierung zentral in `hooks/hooks.json` (Plugin-Modus) bzw. `.claude/setting
 **PostToolUse Bash:** `post_bash.py` → [module hooks]
   Intern: Test-Output-Detection → `last_test_run` (Hinweis, kein Verdict)
 
-**PostToolUse Edit|Write|MultiEdit:** `edit_verify.py` — prueft, dass die Aenderung tatsaechlich auf Disk gelandet ist
+**PostToolUse Edit|Write|MultiEdit:** `edit_verify.py` — prueft, dass die Aenderung tatsaechlich auf Disk gelandet ist; protokolliert Aenderungen an einer freigegebenen Spec in `spec_post_approval_edits` (#439, fail-open)
 
 **UserPromptSubmit:** `phase_listener.py` → [module hooks]
   Intern: Override → Stop-Lock → Approval (inkl. ADR-Reflexions-Gate via `workflow.py::_check_adr`) → New-UI → GREEN
@@ -337,7 +338,7 @@ Reboot. Bestandsproblem, kein Regressionsschaden.
 2. **CHANGELOG.md** bei jeder Änderung aktualisieren
 3. **Versionsnummer** in setup.py bei Releases erhöhen
 4. **Tests** für Hooks: Manuell in einem Test-Projekt validieren
-5. **`core/hooks/` und `core/agents/` sind Infrastruktur**: Ohne laufenden Workflow ab phase6 verlangt `edit_gate.py` dafür einen Override-Token — der User tippt **"override"** (gilt 1 h, wird in `.claude/user_override_token.json` protokolliert). Mit Workflow ab phase6 entfällt er (#322); Phase-, TDD- und Adversary-Prüfung gelten stattdessen. Niemals per Bash/`sed` am Gate vorbeischreiben: der Umweg ist kein Freibrief, sondern ein Fehler.
+5. **`core/hooks/` und `core/agents/` sind Infrastruktur**: Ohne laufenden Workflow ab phase6 verlangt `edit_gate.py` dafür einen Override-Token — der User tippt **"override"** (gilt 1 h, wird in `.claude/user_override_token.json` protokolliert). Mit Workflow ab phase6 entfällt er (#322); Phase-, TDD- und Adversary-Prüfung gelten stattdessen. Der Override öffnet nie den freigegebenen Teil einer Spec (#439). Niemals per Bash/`sed` am Gate vorbeischreiben: der Umweg ist kein Freibrief, sondern ein Fehler.
 
 ### Verzeichnis-Konventionen
 
