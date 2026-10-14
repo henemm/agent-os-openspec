@@ -899,19 +899,30 @@ def _version(text: str) -> str:
     return m.group(1) if m else ""
 
 
+def _changelog_entry_422(changelog: str) -> str:
+    # Release-stabil: nicht an [Unreleased] gebunden — beim Release wandert der
+    # Eintrag in den Versionsabschnitt (wie tests/test_always_allowed_worktree_409.py).
+    lines = changelog.splitlines()
+    start = next((i for i, l in enumerate(lines) if l.startswith("- **#422")), None)
+    assert start is not None, "Kein Eintrag zu #422 im CHANGELOG"
+    entry = [lines[start]]
+    for line in lines[start + 1:]:
+        if line.startswith("- ") or line.startswith("#"):
+            break
+        entry.append(line)
+    return "\n".join(entry)
+
+
 def test_changelog_und_claude_md_nennen_limitations_und_funktionen():
-    changelog = (REPO_ROOT / "CHANGELOG.md").read_text()
-    m = re.search(r"^## \[Unreleased\](.*?)(?=^## \[)", changelog, re.S | re.M)
-    assert m, "CHANGELOG.md: kein [Unreleased]-Block"
-    block = m.group(1)
+    block = _changelog_entry_422((REPO_ROOT / "CHANGELOG.md").read_text())
     fehler = []
     for muss in ("#422", "settings.local.json"):
         if muss not in block:
-            fehler.append(f"[Unreleased] nennt {muss!r} nicht")
+            fehler.append(f"CHANGELOG-Eintrag #422 nennt {muss!r} nicht")
     klein = block.lower()
     for muss in ("link anlegen", "direktes schreiben ohne link"):
         if muss not in klein:
-            fehler.append(f"[Unreleased] nennt Known Limitation {muss!r} nicht")
+            fehler.append(f"CHANGELOG-Eintrag #422 nennt Known Limitation {muss!r} nicht")
 
     claude_md = (REPO_ROOT / "CLAUDE.md").read_text()
     zeilen = [z for z in claude_md.splitlines() if "core/hooks/hook_utils.py" in z]
@@ -919,10 +930,9 @@ def test_changelog_und_claude_md_nennen_limitations_und_funktionen():
         if not any(fn in z for z in zeilen):
             fehler.append(f"CLAUDE.md: hook_utils-Zeile nennt {fn} nicht")
 
-    r = subprocess.run(["git", "show", "origin/main:CLAUDE.md"], cwd=str(REPO_ROOT),
-                       capture_output=True, text=True)
-    assert r.returncode == 0, f"origin/main:CLAUDE.md nicht lesbar: {r.stderr}"
-    if _version(claude_md) != _version(r.stdout):
-        fehler.append(f"Versions-Bump in CLAUDE.md: {_version(r.stdout)} → "
-                      f"{_version(claude_md)}")
+    # Release-stabil: CLAUDE.md-Version gegen plugin.json statt gegen origin/main.
+    plugin = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text())
+    if _version(claude_md) != plugin.get("version"):
+        fehler.append(f"CLAUDE.md-Version {_version(claude_md)} != "
+                      f"plugin.json-Version {plugin.get('version')}")
     assert not fehler, fehler
