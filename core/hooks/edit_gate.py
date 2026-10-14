@@ -640,7 +640,8 @@ def main():
 
     tool_input = get_tool_input()
     file_path = tool_input.get("file_path", "")
-    if not file_path:
+    # #440: Muell-Payload (Zahl, Liste, null) → kein Pfad, kein Schreibziel
+    if not isinstance(file_path, str) or not file_path:
         allow()
 
     config = _load_config_values()

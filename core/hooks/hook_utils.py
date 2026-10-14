@@ -718,9 +718,6 @@ _SPEC_AC_SECTION = "acceptance criteria"
 _SPEC_H2_RE = re.compile(r"^ {0,3}##[ \t](.*)$")
 _SPEC_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 _SPEC_TEST_LINE_RE = re.compile(r"^[ \t]+- Test:")
-_SPEC_BULLET_RE = re.compile(r"^(?:[-*+]|\d+[.)])(?:[ \t]|$)")
-_SPEC_AC_TEXT_RE = re.compile(
-    r"AC-(?:[A-Za-z0-9]+-)?\d|\b(?:given|when|then)\b", re.IGNORECASE)
 
 
 def normalize_spec_heading(title: str) -> str:
@@ -796,34 +793,16 @@ def split_spec_sections(content: str) -> "list[dict]":
     return sections
 
 
-def _indent_width(line: str) -> int:
-    expanded = line.expandtabs(4)
-    return len(expanded) - len(expanded.lstrip(" "))
-
-
 def _spec_ac_frozen_lines(lines: "list[tuple[str, bool]]") -> "list[str]":
-    """AC-Abschnitt ohne eingerueckte `- Test:`-Zeilen samt Fortsetzungen.
+    """AC-Abschnitt ohne die eingerueckten `- Test:`-Zeilen (#439, #440).
 
-    Fortsetzung = nicht leer, tiefer eingerueckt als die Test-Zeile, kein
-    neuer Bullet. Eine Leerzeile beendet sie. Fence-Inhalt bleibt fest.
-    Fortsetzungen mit AC-Label oder Given/When/Then bleiben eingefroren
-    (sonst liesse sich AC-Text in einer Fortsetzung verstecken, F003).
+    Beweglich ist ausschliesslich die `- Test:`-Zeile selbst (ausserhalb
+    einer Fence). Jede andere Zeile bleibt eingefroren — auch tiefer
+    eingerueckte Folgezeilen: keine Fortsetzungslogik, keine Woerterliste
+    (fail-closed, #440).
     """
-    kept, test_indent = [], None
-    for line, in_fence in lines:
-        if test_indent is not None:
-            stripped = line.strip()
-            if (not in_fence and stripped and _indent_width(line) > test_indent
-                    and not _SPEC_BULLET_RE.match(stripped)):
-                if _SPEC_AC_TEXT_RE.search(line):
-                    kept.append(line)
-                continue
-            test_indent = None
-        if not in_fence and _SPEC_TEST_LINE_RE.match(line):
-            test_indent = _indent_width(line)
-            continue
-        kept.append(line)
-    return kept
+    return [line for line, in_fence in lines
+            if in_fence or not _SPEC_TEST_LINE_RE.match(line)]
 
 
 def frozen_spec_sha256(content: str) -> str:
@@ -909,7 +888,7 @@ def adopt_payload_cwd(data) -> None:
 
 def get_tool_input() -> dict:
     """Parse tool input from CLAUDE_TOOL_INPUT env var or stdin.
-    Returns parsed dict or empty dict on failure."""
+    Returns parsed dict; empty dict on failure or if it is not a dict (#440)."""
     tool_input = os.environ.get("CLAUDE_TOOL_INPUT", "")
 
     if not tool_input:
@@ -919,14 +898,16 @@ def get_tool_input() -> dict:
                 _STDIN_PAYLOAD.clear()
                 _STDIN_PAYLOAD.update(data)
             adopt_payload_cwd(data)
-            return data.get("tool_input", {})
+            result = data.get("tool_input", {}) if isinstance(data, dict) else {}
+            return result if isinstance(result, dict) else {}
         except (json.JSONDecodeError, Exception):
             return {}
 
     try:
-        return json.loads(tool_input) if isinstance(tool_input, str) else tool_input
+        result = json.loads(tool_input) if isinstance(tool_input, str) else tool_input
     except json.JSONDecodeError:
         return {}
+    return result if isinstance(result, dict) else {}
 
 
 def get_user_message() -> str:
