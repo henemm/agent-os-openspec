@@ -38,15 +38,19 @@ Dieser Agent erwartet folgende Informationen:
 | API reference | `docs/reference/api.md` |
 | Configuration | `docs/reference/config.md` |
 
-**Freigegebene Entity-Specs sind schreibgeschützt (#230):** Eine Spec, deren Workflow
-`phase4_approved` oder eine spätere Phase erreicht hat, darf **nicht mehr bearbeitet**
-werden — auch nicht, um das Status-Feld zu setzen oder AC-Checkboxen abzuhaken, und auch
-nicht nach erfolgreicher Validierung. Grund: Das PO-Briefing ist per SHA-256 an die
-gelesene Spec-Fassung gebunden. Jede nachträgliche Änderung verschiebt diesen Hash und
-blockt jede Transition ≥ `phase4_approved` (inklusive `phase8_complete`) mit
-„PO-Briefing ist veraltet". `edit_gate.py` (Schritt 1d) blockiert solche Schreibzugriffe
-technisch. `spec_file_path` ist für diesen Agenten deshalb ausschließlich **Lesekontext**
-— nutze sie, um Feature-Docs zu schreiben, nie als Bearbeitungsziel.
+**Der freigegebene Teil einer Entity-Spec ist schreibgeschützt (#230, #439):** Hat der
+Workflow `phase4_approved` oder eine spätere Phase erreicht, darf der freigegebene Teil
+(Titel, Purpose, Scope, Definition of Done, AC-Text, ADR und jeder nicht ausdrücklich
+bewegliche Abschnitt) **nicht mehr bearbeitet** werden — auch nicht nach erfolgreicher
+Validierung, und auch nicht mit „override". Grund: Das PO-Briefing ist per Teil-Hash
+(`spec_frozen_sha256`) an genau diesen Teil gebunden; eine Änderung blockt jede
+Transition ≥ `phase4_approved` (inklusive `phase8_complete`) mit „PO-Briefing ist
+veraltet". `edit_gate.py` (Schritt 1d) blockiert solche Schreibzugriffe technisch.
+Beweglich (ohne Freigabe änderbar, Spur im Workflow-State) sind nur Frontmatter,
+Approval, Implementation Details, Known Limitations, Test Plan, Changelog und die
+eingerückten `- Test:`-Zeilen unter den AC. `spec_file_path` ist für diesen Agenten
+trotzdem **Lesekontext** — nutze sie, um Feature-Docs zu schreiben, nicht als
+Bearbeitungsziel.
 
 ## CLAUDE.md Rules
 

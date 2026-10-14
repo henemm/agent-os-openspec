@@ -324,7 +324,15 @@ def _check_briefing(root: Path, spec_rel: str, problems: list[str]) -> None:
         )
         return
 
-    current = hashlib.sha256((root / spec_rel).read_bytes()).hexdigest()
+    # #439: Doppelstempel → bevorzugt den Teil-Hash (nur der freigegebene Teil).
+    # Ältere workflow.py-Kopie ohne frozen_spec_sha256 → Byte-Gesamt-Hash.
+    frozen_fn = getattr(workflow, "frozen_spec_sha256", None)
+    stored_frozen = front.get("spec_frozen_sha256", "")
+    if frozen_fn is not None and stored_frozen:
+        spec_text = (root / spec_rel).read_bytes().decode("utf-8", errors="replace")
+        stored, current = stored_frozen, frozen_fn(spec_text)
+    else:
+        current = hashlib.sha256((root / spec_rel).read_bytes()).hexdigest()
     if stored != current:
         problems.append(
             f"{rel}: Briefing ist VERALTET — es beschreibt eine andere Fassung von "

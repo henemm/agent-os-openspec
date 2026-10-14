@@ -786,6 +786,12 @@ def spec_sha256(content: str) -> str:
     return _hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
+# Teil-Hash nur ueber den freigegebenen Teil (#439). Eine Quelle (hook_utils),
+# hier re-exportiert: das CI-Gate ruft `workflow.frozen_spec_sha256` per
+# getattr auf und faellt bei aelteren Kopien auf den Byte-Gesamt-Hash zurueck.
+from hook_utils import frozen_spec_sha256  # noqa: E402,F401
+
+
 def _read_spec_content(data: dict) -> "str | None":
     spec_file = data.get("spec_file")
     if not spec_file:
@@ -900,14 +906,19 @@ def parse_briefing_frontmatter(content: str) -> dict:
     return out
 
 
-def stamp_briefing_frontmatter(content: str, spec_rel: str, sha: str) -> str:
-    """Schreibe `spec_file`/`spec_sha256` in den Frontmatter des Briefings.
+def stamp_briefing_frontmatter(content: str, spec_rel: str, sha: str,
+                               frozen_sha: "str | None" = None) -> str:
+    """Schreibe `spec_file`/`spec_sha256` (und ggf. `spec_frozen_sha256`, #439)
+    in den Frontmatter des Briefings.
 
     Vorhandener Frontmatter wird ergänzt bzw. der alte Stempel ersetzt (nie
     gedoppelt); fehlt er, wird einer vorangestellt. Der übrige Inhalt bleibt
     unangetastet.
     """
     stamp = {"spec_file": spec_rel, "spec_sha256": sha}
+    if frozen_sha:
+        stamp["spec_frozen_sha256"] = frozen_sha
+    replaced = set(stamp) | {"spec_frozen_sha256"}
     if content.startswith("---"):
         end = content.find("\n---", 3)
         if end >= 0:
@@ -915,7 +926,7 @@ def stamp_briefing_frontmatter(content: str, spec_rel: str, sha: str) -> str:
             rest = content[end + 4:]
             kept = [
                 line for line in head.splitlines()
-                if line.partition(":")[0].strip() not in stamp
+                if line.partition(":")[0].strip() not in replaced
             ]
             lines = [l for l in kept if l.strip()] + [f"{k}: {v}" for k, v in stamp.items()]
             return "---\n" + "\n".join(lines) + "\n---" + rest
@@ -977,8 +988,15 @@ def _check_po_briefing(data: dict) -> "str | None":
     # 6. Aktualität: das Briefing muss zu DIESER Spec-Fassung gehören. Sonst
     #    gibt der PO ein Briefing frei, das eine zwischenzeitlich umgeschriebene
     #    Spec beschreibt — das Gate wäre eine Attrappe.
-    stored = entry.get("spec_sha256")
-    if stored and stored != spec_sha256(spec_content):
+    #    #439: bevorzugt der Teil-Hash (nur der freigegebene Teil); fehlt er
+    #    (Legacy-Briefing), gilt der Gesamt-Hash.
+    frozen = entry.get("spec_frozen_sha256")
+    if frozen:
+        stale = frozen != frozen_spec_sha256(spec_content)
+    else:
+        stored = entry.get("spec_sha256")
+        stale = bool(stored) and stored != spec_sha256(spec_content)
+    if stale:
         return (
             "PO-Briefing ist veraltet — die Spec wurde nach dem Briefing geändert."
             + hint
@@ -1492,6 +1510,33 @@ def cmd_set_field(args: list[str]) -> None:
     print(f"Set {key} = {value} on workflow {name}")
 
 
+def _post_approval_briefing_error(data: dict, rel: str, spec_content: str) -> "str | None":
+    """Nach der Freigabe nur noch Stempel-Migration (#439), sonst Fehlertext.
+
+    Vor `phase4_approved` → None (normales Registrieren). Ohne bisher
+    registriertes Briefing (Fast Track, Gate aus) gibt es keinen Stempel zu
+    schuetzen → None. Sonst erlaubt nur, wenn dasselbe Briefing registriert
+    ist und sein gespeicherter Gesamt-Hash exakt zum aktuellen Spec-Inhalt
+    passt — dann wird nur der Doppelstempel nachgetragen.
+    """
+    phase = data.get("current_phase", "phase0_idle")
+    if phase not in PHASES or PHASES.index(phase) < PHASES.index("phase4_approved"):
+        return None
+    entry = data.get("po_briefing")
+    if not (isinstance(entry, dict) and entry.get("file")):
+        return None
+    if (entry.get("file") == rel
+            and entry.get("spec_sha256") == spec_sha256(spec_content)):
+        return None
+    return (
+        f"Spec ist freigegeben (Phase {phase}) — set-briefing stempelt danach nur "
+        "noch ein bereits registriertes Briefing um, dessen Gesamt-Hash exakt zur "
+        "aktuellen Spec passt. Das ist hier nicht der Fall.\n"
+        "→ Änderung am Freigegebenen: `workflow.py phase phase3_spec`, neues "
+        "Briefing, neue Freigabe."
+    )
+
+
 def cmd_set_briefing(args: list[str]) -> None:
     """Registriere das unabhängige PO-Briefing für die anstehende Freigabe.
 
@@ -1534,10 +1579,17 @@ def cmd_set_briefing(args: list[str]) -> None:
         )
         sys.exit(1)
 
+    migrate_err = _post_approval_briefing_error(data, rel, spec_content)
+    if migrate_err:
+        print(f"BLOCKED: {migrate_err}", file=sys.stderr)
+        sys.exit(1)
+
     sha = spec_sha256(spec_content)
+    frozen_sha = frozen_spec_sha256(spec_content)
     data["po_briefing"] = {
         "file": rel,
         "spec_sha256": sha,
+        "spec_frozen_sha256": frozen_sha,
         "created": datetime.now().isoformat(timespec="seconds"),
     }
     _save_active(data)
@@ -1548,7 +1600,8 @@ def cmd_set_briefing(args: list[str]) -> None:
     # Briefing serverseitig erkennbar (scripts/ci_spec_gate.py).
     try:
         briefing_path.write_text(
-            stamp_briefing_frontmatter(briefing, str(data.get("spec_file", "")), sha)
+            stamp_briefing_frontmatter(briefing, str(data.get("spec_file", "")), sha,
+                                       frozen_sha)
         )
     except Exception as exc:
         print(

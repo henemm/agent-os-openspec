@@ -544,3 +544,41 @@ def test_20_set_briefing_restamps_existing_frontmatter(tmp_path):
     written = (tmp_path / REL_BRIEFING).read_text()
     assert written.count("spec_sha256:") == 1, written[:400]
     assert f"spec_sha256: {_spec_sha(new_spec)}" in written
+
+
+# --- #439: Teil-Hash-Stempel (spec_frozen_sha256) --------------------------
+
+SPEC_BODY_439 = SPEC_BODY + "\n## Known Limitations\n\n- Eine bekannte Grenze.\n"
+
+
+def test_teilhash_stempel_bewegliche_aenderung_gueltig_eingefrorene_veraltet(tmp_path):
+    """AC-23 (#439) — GIVEN ein per echtem `set-briefing` gestempeltes Briefing
+    (State traegt spec_frozen_sha256), Workflow danach freigegeben
+    WHEN nur Known Limitations geaendert wird THEN ist das Briefing aktuell
+    (Transition nach phase5 klappt); WHEN danach eingefrorener Text (Purpose,
+    z. B. per Bash) geaendert wird THEN meldet das Gate 'PO-Briefing ist veraltet'."""
+    _write(tmp_path, REL_SPEC, SPEC_BODY_439)
+    _write(tmp_path, REL_BRIEFING, BRIEFING_COMPLETE)
+    wf_file = _make_workflow(tmp_path, phase="phase3_spec", spec_approved=False)
+    r = _run_workflow(_env(tmp_path), ["set-briefing", REL_BRIEFING], cwd=str(tmp_path))
+    assert r.returncode == 0, f"Fixture: set-briefing scheitert: {r.stderr!r}"
+
+    data = json.loads(wf_file.read_text())
+    assert data["po_briefing"].get("spec_frozen_sha256"), (
+        f"set-briefing muss den Teil-Hash stempeln (#439): {data['po_briefing']}"
+    )
+    data.update({"current_phase": "phase4_approved", "spec_approved": True})
+    wf_file.write_text(json.dumps(data))
+
+    _write(tmp_path, REL_SPEC,
+           SPEC_BODY_439.replace("Eine bekannte Grenze.", "Eine geänderte Grenze."))
+    ok = _run_phase(_env(tmp_path), "phase5_tdd_red", cwd=str(tmp_path))
+    assert ok.returncode == 0, (
+        f"Bewegliche Änderung darf das Briefing nicht veralten lassen. stderr={ok.stderr!r}"
+    )
+
+    _write(tmp_path, REL_SPEC,
+           SPEC_BODY_439.replace("Ein Feature, das etwas tut.", "Ein ganz anderes Feature."))
+    stale = _run_phase(_env(tmp_path), "phase6_implement", cwd=str(tmp_path))
+    assert stale.returncode != 0, f"Eingefrorene Änderung muss blocken: {stale.stdout!r}"
+    assert "PO-Briefing ist veraltet" in stale.stderr, stale.stderr
