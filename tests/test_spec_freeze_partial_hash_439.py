@@ -906,6 +906,42 @@ def test_spur_nach_edit_an_beweglichem_teil(tmp_path):
     assert edits[1].get("tool") == "Write" and edits[1].get("sections") == ["*"], edits[1]
 
 
+def test_spur_nach_multiedit_an_beweglichem_teil(tmp_path):
+    """AC-27 — GIVEN ein MultiEdit mit zwei Edits an beweglichen Abschnitten
+    (Known Limitations, Changelog), vom Edit-Gate erlaubt und auf Disk geschrieben
+    WHEN edit_verify.py danach laeuft
+    THEN steht ein Eintrag {ts, tool == "MultiEdit", sections} in
+    spec_post_approval_edits, der beide beweglichen Abschnitte enthaelt."""
+    proj, home, spec_path = _approved_project(tmp_path)
+    edits = [
+        {"old_string": "- Eine bekannte Grenze.", "new_string": "- Nachgetragene Grenze."},
+        {"old_string": "- 2026-10-13: Initial",
+         "new_string": "- 2026-10-13: Initial\n- 2026-10-14: Nachtrag"},
+    ]
+    tool_input = {"file_path": str(spec_path), "edits": edits}
+    gate = _run_gate(proj, home, "MultiEdit", tool_input)
+    _assert_allowed(gate, "AC-27 MultiEdit beweglich")
+
+    text = spec_path.read_text()
+    for e in edits:
+        assert text.count(e["old_string"]) >= 1, f"Fixture-Fehler: {e['old_string']!r}"
+        text = text.replace(e["old_string"], e["new_string"], 1)
+    spec_path.write_text(text)
+
+    r = _run_verify(proj, home, {"tool_name": "MultiEdit", "tool_input": tool_input})
+    assert r.returncode == 0, r.stderr
+
+    trace = _state(proj).get("spec_post_approval_edits")
+    assert isinstance(trace, list) and len(trace) == 1, (
+        f"Spur fehlt: spec_post_approval_edits={trace!r}"
+    )
+    entry = trace[0]
+    assert entry.get("ts") and entry.get("tool") == "MultiEdit", entry
+    sections = [str(s).lower() for s in (entry.get("sections") or [])]
+    assert any("known limitations" in s for s in sections), entry
+    assert any("changelog" in s for s in sections), entry
+
+
 # --- AC-28: keine Spur bei geblocktem Edit oder fremder Datei -----------------
 
 def test_keine_spur_bei_geblocktem_edit_oder_fremder_datei(tmp_path):
