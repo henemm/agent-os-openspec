@@ -416,10 +416,17 @@ def test_f003_import_fallback_erfolgsmeldung_nur_bei_erfolg(tmp_path, fall):
 # --------------------------------------------------------------------- #
 
 def test_changelog_nennt_425_und_qa_gate_ausnahme():
-    changelog = (REPO_ROOT / "CHANGELOG.md").read_text()
-    m = re.search(r"^## \[Unreleased\](.*?)(?=^## \[)", changelog, re.S | re.M)
-    assert m, "CHANGELOG.md: kein [Unreleased]-Block"
-    block = m.group(1)
-    fehler = [f"[Unreleased] nennt {muss!r} nicht"
+    # Release-stabil: Eintrag über den Marker finden, nicht über [Unreleased]
+    # (wie tests/test_always_allowed_worktree_409.py).
+    lines = (REPO_ROOT / "CHANGELOG.md").read_text().splitlines()
+    start = next((i for i, l in enumerate(lines) if l.startswith("- **#425")), None)
+    assert start is not None, "Kein Eintrag zu #425 im CHANGELOG"
+    entry = [lines[start]]
+    for line in lines[start + 1:]:
+        if line.startswith("- ") or line.startswith("#"):
+            break
+        entry.append(line)
+    block = "\n".join(entry)
+    fehler = [f"CHANGELOG-Eintrag #425 nennt {muss!r} nicht"
               for muss in ("#425", "qa_gate") if muss not in block]
     assert not fehler, fehler
