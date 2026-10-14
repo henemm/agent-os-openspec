@@ -262,3 +262,92 @@ def test_14_briefing_word_limit_from_config_blocks(tmp_path):
     r = _run(root, [CODE_REL, SPEC_REL, BRIEFING_REL])
     assert r.returncode != 0, f"stdout={r.stdout!r} stderr={r.stderr!r}"
     assert "Briefing zu lang" in (r.stdout + r.stderr)
+
+
+# --- #439: Teil-Hash (spec_frozen_sha256) und Fallback ---------------------
+
+HOOKS_DIR = REPO_ROOT / "core" / "hooks"
+
+
+def _workflow_module():
+    sys.path.insert(0, str(HOOKS_DIR))
+    import workflow
+    return workflow
+
+
+def _frozen_or_dummy(content: str) -> str:
+    """Teil-Hash, falls `workflow.frozen_spec_sha256` schon existiert, sonst Platzhalter.
+
+    So scheitert der Test vor der Implementierung am Gate-Verhalten, nicht hier."""
+    fn = getattr(_workflow_module(), "frozen_spec_sha256", None)
+    return fn(content) if fn is not None else "f" * 64
+
+
+def _briefing_doppelstempel(full_sha: str, frozen_sha: str) -> str:
+    return _briefing(full_sha).replace(
+        f"spec_sha256: {full_sha}\n",
+        f"spec_sha256: {full_sha}\nspec_frozen_sha256: {frozen_sha}\n",
+    )
+
+
+SPEC_MOVABLE_CHANGED = SPEC_COMPLETE.replace(
+    "- 2026-09-19: Initial", "- 2026-09-19: Initial\n- 2026-10-14: Testname korrigiert")
+SPEC_FROZEN_CHANGED = SPEC_COMPLETE.replace(
+    "Etwas Nützliches für Nutzer.", "Etwas ganz anderes für Nutzer.")
+
+
+def test_ci_gate_prueft_teilhash(tmp_path):
+    """AC-24 (#439) — GIVEN ein PR mit Doppelstempel-Briefing (spec_sha256 +
+    spec_frozen_sha256 der freigegebenen Fassung)
+    WHEN nur der Changelog der Spec geändert wurde THEN bleibt das CI-Gate grün;
+    WHEN der Purpose geändert wurde THEN meldet es das Briefing als veraltet."""
+    assert SPEC_MOVABLE_CHANGED != SPEC_COMPLETE and SPEC_FROZEN_CHANGED != SPEC_COMPLETE
+    briefing = _briefing_doppelstempel(_sha(SPEC_COMPLETE), _frozen_or_dummy(SPEC_COMPLETE))
+
+    ok_root = _project(tmp_path / "ok", spec=SPEC_MOVABLE_CHANGED, briefing=briefing)
+    ok = _run(ok_root, [CODE_REL, SPEC_REL, BRIEFING_REL])
+    assert ok.returncode == 0, (
+        f"Bewegliche Änderung darf im CI nicht als veraltet gelten. stdout={ok.stdout!r}"
+    )
+
+    bad_root = _project(tmp_path / "bad", spec=SPEC_FROZEN_CHANGED, briefing=briefing)
+    bad = _run(bad_root, [CODE_REL, SPEC_REL, BRIEFING_REL])
+    assert bad.returncode != 0, f"stdout={bad.stdout!r}"
+    assert "veraltet" in (bad.stdout + bad.stderr).lower()
+
+
+def _old_hooks_copy(root: Path) -> None:
+    """Ältere Projekt-Kopie der Hooks unter .claude/hooks — ohne frozen_spec_sha256.
+
+    .claude/hooks hat in `_hook_dir_candidates` Vorrang vor den Hooks neben dem
+    Script. Die Kopie entsteht aus dem aktuellen Stand; die neue Funktion wird
+    nach dem Laden entfernt, damit der Test auch nach der Implementierung eine
+    'alte' Kopie simuliert."""
+    dest = root / ".claude" / "hooks"
+    dest.mkdir(parents=True, exist_ok=True)
+    for src in HOOKS_DIR.glob("*.py"):
+        (dest / src.name).write_text(src.read_text())
+    wf = dest / "workflow.py"
+    wf.write_text(wf.read_text() + '\n\nglobals().pop("frozen_spec_sha256", None)\n')
+
+
+def test_ci_gate_fallback_aeltere_workflow_kopie(tmp_path):
+    """AC-25 (#439) — GIVEN eine ältere Projekt-Kopie von workflow.py ohne
+    frozen_spec_sha256 und ein Doppelstempel-Briefing
+    WHEN das CI-Gate läuft
+    THEN fällt es auf den Byte-Gesamt-Hash zurück und stürzt nicht ab: passende
+    Fassung grün, auch bewegliche Änderung gilt dann als veraltet."""
+    briefing = _briefing_doppelstempel(_sha(SPEC_COMPLETE), _frozen_or_dummy(SPEC_COMPLETE))
+
+    same = _project(tmp_path / "same", briefing=briefing)
+    _old_hooks_copy(same)
+    r = _run(same, [CODE_REL, SPEC_REL, BRIEFING_REL])
+    assert r.returncode == 0, f"stdout={r.stdout!r} stderr={r.stderr!r}"
+    assert "Traceback" not in r.stderr, r.stderr
+
+    moved = _project(tmp_path / "moved", spec=SPEC_MOVABLE_CHANGED, briefing=briefing)
+    _old_hooks_copy(moved)
+    r2 = _run(moved, [CODE_REL, SPEC_REL, BRIEFING_REL])
+    assert "Traceback" not in r2.stderr, r2.stderr
+    assert r2.returncode != 0, f"Fallback muss den Gesamt-Hash prüfen. stdout={r2.stdout!r}"
+    assert "veraltet" in (r2.stdout + r2.stderr).lower()

@@ -15,6 +15,12 @@ Fake-Projekt (`.git` + `.claude/workflows/`), JSON-Payload über stdin,
 `OPENSPEC_ACTIVE_WORKFLOW`-Env + `CLAUDE_PROJECT_DIR` + isoliertes `HOME`.
 Kein Mocking — echte Dateien in tmp_path.
 
+Nachtrag #439 (Teil-Freeze): Das Gate simuliert die neue Fassung aus
+`old_string`/`new_string`; der Harness sendet deshalb echte Edit-Payloads.
+Ein Edit am AC-Text ist eingefrorener Text → Block mit Ruecksprung-Hinweis
+auf `phase3_spec`; ein Override-Token oeffnet den Spec-Freeze nicht mehr
+(`test_edit_with_override_allowed` ist umgedreht, AC-6 der Spec #439).
+
 RED-Erwartung (gegen den aktuellen Code, vor Implementierung von #230):
   * AC-2 (test_edit_at_approval_blocked)     → FÄLLT: returncode 0 statt 2
     (docs/.md-Kurzschluss lässt den Edit unconditional durch)
@@ -25,9 +31,7 @@ RED-Erwartung (gegen den aktuellen Code, vor Implementierung von #230):
   * AC-6 (test_template_placeholder_removed) → FÄLLT: Platzhalter steht noch drin
 Regressionsschutz (schon grün, MUSS grün bleiben — Bestandsverhalten):
   * AC-1 (test_edit_before_approval_allowed)
-  * AC-3 (test_edit_with_override_allowed)   — heute schon 0, weil ALLES erlaubt ist;
-    bleibt nach dem Fix 0, aber dann WEIL der Override-Token greift, nicht mehr
-    weil der docs/.md-Kurzschluss alles durchwinkt.
+  * AC-3 (test_edit_with_override_allowed)   — seit #439 umgedreht: trotz Token Block.
 """
 
 import json
@@ -47,8 +51,16 @@ TEMPLATE_MD = REPO_ROOT / "docs" / "specs" / "_template.md"
 
 # --- Subprozess-Harness ---
 
-def _run_edit_gate(env: dict, file_path: str, cwd: str) -> subprocess.CompletedProcess:
-    payload = json.dumps({"tool_input": {"file_path": file_path}})
+# Echter Edit am eingefrorenen AC-Text der Fixture-Spec (#439).
+FROZEN_OLD = "- **AC-1:** Platzhalter."
+FROZEN_NEW = "- **AC-1:** Nachtraeglich umgeschrieben."
+RUECKSPRUNG = "phase3_spec"
+
+
+def _run_edit_gate(env: dict, file_path: str, cwd: str,
+                   old: str = FROZEN_OLD, new: str = FROZEN_NEW) -> subprocess.CompletedProcess:
+    payload = json.dumps({"tool_name": "Edit", "tool_input": {
+        "file_path": file_path, "old_string": old, "new_string": new}})
     full_env = dict(os.environ)
     full_env.update(env)
     return subprocess.run(
@@ -138,8 +150,10 @@ def test_edit_at_approval_blocked(tmp_path):
         f"Freigegebene Spec (phase4_approved) muss ohne Override blockiert werden, "
         f"aber returncode={result.returncode}. stderr={result.stderr!r}"
     )
-    assert "override" in result.stderr.lower(), (
-        f"Blockmeldung muss auf den Override-Weg verweisen. stderr={result.stderr!r}"
+    # #439: der Ausweg ist der Ruecksprung, nicht mehr 'override'.
+    assert RUECKSPRUNG in result.stderr, (
+        f"Blockmeldung muss auf den Ruecksprung nach {RUECKSPRUNG} verweisen. "
+        f"stderr={result.stderr!r}"
     )
 
 
@@ -162,13 +176,18 @@ def test_edit_after_approval_blocked(tmp_path):
         f"Spec darf auch in phase8_complete nicht mehr durch docs-updater "
         f"angefasst werden, aber returncode={result.returncode}. stderr={result.stderr!r}"
     )
+    assert RUECKSPRUNG in result.stderr, result.stderr
 
 
-# --- AC-3: Override-Token gibt die Änderung trotzdem frei (Regressionsschutz) ---
+# --- AC-3 (#230) / AC-6 (#439): Override-Token oeffnet den Spec-Freeze NICHT mehr ---
 
 def test_edit_with_override_allowed(tmp_path):
-    """AC-3: Gleicher Zustand wie AC-2 (phase8_complete), aber mit gültigem
-    Override-Token für den Workflow → allow() (Exit 0) trotz Freeze."""
+    """AC-6 (#439, umgedreht) — GIVEN phase8_complete, gueltiger Override-Token
+    fuer den Workflow WHEN der eingefrorene AC-Text per Edit geaendert wird
+    THEN blockt das Gate trotzdem (Exit 2) mit Ruecksprung-Hinweis auf phase3_spec.
+
+    Name bleibt aus Rueckverfolgbarkeit (Spec #439 nennt ihn), die Erwartung ist
+    seit #439 das Gegenteil: override oeffnet den Spec-Freeze nicht mehr."""
     proj = _make_project(tmp_path)
     home = tmp_path / "home"
     (home / ".claude").mkdir(parents=True)
@@ -178,9 +197,13 @@ def test_edit_with_override_allowed(tmp_path):
 
     result = _run_edit_gate(_env(proj, "override-wf", home), str(spec), cwd=str(proj))
 
-    assert result.returncode == 0, (
-        f"Mit gültigem Override-Token muss die Änderung trotz Freeze erlaubt sein, "
-        f"aber returncode={result.returncode}. stderr={result.stderr!r}"
+    assert result.returncode == 2, (
+        f"Ein Override-Token darf Aenderungen am freigegebenen Text nicht mehr "
+        f"freigeben (#439), aber returncode={result.returncode}. stderr={result.stderr!r}"
+    )
+    assert RUECKSPRUNG in result.stderr, (
+        f"Blockmeldung muss auf den Ruecksprung nach {RUECKSPRUNG} verweisen. "
+        f"stderr={result.stderr!r}"
     )
 
 
