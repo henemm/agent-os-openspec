@@ -489,14 +489,20 @@ def test_eingerueckte_given_when_then_eingefroren(tmp_path):
 # --- AC-8: Fortsetzung beweglich, neuer Bullet nicht -------------------------
 
 def test_test_zeile_fortsetzung_beweglich_neuer_bullet_nicht(tmp_path):
-    """AC-8 — GIVEN eine `- Test:`-Zeile mit Fortsetzungszeile
-    WHEN Zeile und Fortsetzung geaendert werden THEN erlaubt;
-    WHEN dagegen ein neuer Bullet ohne `- Test:` eingefuegt wird THEN Block."""
+    """AC-8 (neu gefasst durch #440, AC-9) — GIVEN eine `- Test:`-Zeile mit
+    Fortsetzungszeile WHEN nur die `- Test:`-Zeile geaendert wird THEN erlaubt;
+    WHEN die Fortsetzung (mit) geaendert wird THEN Block;
+    WHEN ein neuer Bullet ohne `- Test:` eingefuegt wird THEN Block."""
     proj, home, spec_path = _approved_project(tmp_path)
     r = _edit(proj, home, spec_path,
-              "  - Test: `tests/test_demo.py::test_zwei`\n    Fortsetzung der Testzeile",
-              "  - Test: `tests/test_demo.py::test_zwei_neu`\n    Andere Fortsetzung")
-    _assert_allowed(r, "AC-8 Test-Zeile + Fortsetzung")
+              "  - Test: `tests/test_demo.py::test_zwei`\n",
+              "  - Test: `tests/test_demo.py::test_zwei_neu`\n")
+    _assert_allowed(r, "AC-8 nur Test-Zeile")
+
+    r1 = _edit(proj, home, spec_path,
+               "  - Test: `tests/test_demo.py::test_zwei`\n    Fortsetzung der Testzeile",
+               "  - Test: `tests/test_demo.py::test_zwei_neu`\n    Andere Fortsetzung")
+    _assert_rueckspung_block(r1, "AC-8 Fortsetzung geaendert (#440)")
 
     r2 = _edit(proj, home, spec_path,
                "  - Test: `tests/test_demo.py::test_alt`\n",
@@ -831,17 +837,20 @@ def test_f002_leerer_new_string_mit_zeilenende_blockt(tmp_path):
 
 
 def test_f003_fortsetzung_mit_ac_text_eingefroren(tmp_path):
-    """F003 — GIVEN `- Test:`-Zeile mit Fortsetzung WHEN eine Fortsetzung mit
-    AC-Label oder Given/When/Then hinzukommt THEN Block; eine normale
-    Fortsetzung (Testpfad-Umbruch) bleibt erlaubt."""
+    """F003 (neu gefasst durch #440, AC-9) — GIVEN `- Test:`-Zeile mit
+    Fortsetzung WHEN irgendeine Fortsetzung hinzukommt (AC-Label,
+    Given/When/Then oder auch ein normaler Testpfad-Umbruch) THEN Block;
+    nur die `- Test:`-Zeile selbst zu aendern bleibt erlaubt."""
     proj, home, spec_path = _approved_project(tmp_path)
     cont = "    Fortsetzung der Testzeile"
-    for hidden in ("    **AC-31:** Given x When y Then z", "    then passiert nichts"):
+    for hidden in ("    **AC-31:** Given x When y Then z", "    then passiert nichts",
+                   "    `tests/test_demo.py::test_zwei_umbruch`"):
         r = _edit(proj, home, spec_path, cont, cont + "\n" + hidden)
         _assert_rueckspung_block(r, f"F003 {hidden!r}")
-    ok = _edit(proj, home, spec_path, cont,
-               cont + "\n    `tests/test_demo.py::test_zwei_umbruch`")
-    _assert_allowed(ok, "F003 normale Fortsetzung")
+    ok = _edit(proj, home, spec_path,
+               "  - Test: `tests/test_demo.py::test_zwei`\n",
+               "  - Test: `tests/test_demo.py::test_zwei_umbruch`\n")
+    _assert_allowed(ok, "F003 nur Test-Zeile")
 
 
 # --- AC-26: Legacy-Hashfunktionen byte-identisch ------------------------------
