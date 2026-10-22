@@ -50,6 +50,7 @@ agent-os-openspec/
 │   │   ├── workflow.py                  # Workflow State CLI (isolierte JSON-Files)
 │   │   ├── qa_gate.py                   # QA-Gate: Test-Output validieren oder per --run konfigurierten Testbefehl selbst ausfuehren, Verdict setzen
 │   │   ├── adversary_dialog.py          # Adversary-Dialog: Spec-Checkliste, Tri-State-Verdict
+│   │   ├── evidence_gate.py             # Opt-in Evidence-Gate vor phase8_complete (Simulator-Beleg, #447)
 │   │   ├── override_token.py            # Shared Override-Token Management (TTL, Multi-WF)
 │   │   ├── migrate_state.py             # v2 → v3 State-Migration
 │   │   ├── precondition_origins.py      # Eigenstaendiges CLI-Werkzeug (KEIN Hook/Gate, nicht in hooks.json): Herkunft von Testvorbedingungen einsammeln
@@ -438,6 +439,7 @@ python3 /path/to/agent-os-openspec/setup.py --version
 | `core/hooks/hook_utils.py` | Shared Bootstrap (Imports, Parsing, Exit-Helpers); `read_state_json` liest Workflow-State nur als eigene normale Datei (#416); `read_state_text`, `atomic_write_text`, `is_stop_locked` für die übrigen Zustandsdateien (#422) |
 | `core/hooks/config_loader.py` | Config-Loader (YAML + Local Overrides) |
 | `core/hooks/adversary_dialog.py` | Adversary Dialog System (Spec-Checkliste, Tri-State Verdict) |
+| `core/hooks/evidence_gate.py` | Opt-in Evidence-Gate (`evidence_checks` in `config.yaml`): `phase8_complete` nur mit maschinell erzeugtem, zum Code passendem Simulator-Beleg; Beleg-Dateien per `edit_gate.py`/`bash_gate.py` schreibgesperrt (#447) |
 | `core/hooks/precondition_origins.py` | Eigenstaendiges CLI-Werkzeug, KEIN Hook/Gate: sammelt per Regex Herkunft von Testvorbedingungen ein (Sprachprofile in `config.yaml`) |
 | `core/agents/fresh-eyes-inspector.md` | Unabhaengiger UI-Beobachter ohne Bug-Kontext |
 | `core/agents/po-briefer.md` | Unabhaengiges PO-Freigabe-Briefing (Spec vs. Ursprungsanfrage) |

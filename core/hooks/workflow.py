@@ -1050,6 +1050,9 @@ def _validate_transition(data: dict, target: str) -> str | None:
             briefing_err = _check_po_briefing(data)
             if briefing_err:
                 return briefing_err
+        # #447: sonst waere das Evidence-Gate per `start --type feature-fast` umgehbar.
+        if target == "phase8_complete":
+            return _evidence_reason(target, data)
         return None
 
     current = data.get("current_phase", "phase0_idle")
@@ -1114,8 +1117,19 @@ def _validate_transition(data: dict, target: str) -> str | None:
             reason = f"Nachweis-Prüfung nicht verfügbar ({type(exc).__name__}: {exc})"
         if reason:
             return f"Adversary verdict ohne gültigen Dialog-Nachweis — {reason}"
+        # #447: Evidence-Gate (opt-in) erst nach bestandenem Dialog-Check.
+        return _evidence_reason(target, data)
 
     return None
+
+
+def _evidence_reason(target: str, data: dict) -> "str | None":
+    """Evidence-Gate (#447): ohne `evidence_checks` None; fail-closed bei Ladefehler."""
+    try:
+        import evidence_gate
+        return evidence_gate.check_evidence(target, data)
+    except Exception as exc:
+        return f"Evidence-Gate nicht verfügbar ({type(exc).__name__}: {exc})"
 
 
 def _start_base_commit() -> "str | None":

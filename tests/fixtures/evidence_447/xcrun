@@ -1,0 +1,12 @@
+#!/bin/sh
+# Fake-`xcrun` fuer tests/test_evidence_gate_447.py (#447). Die Tests kopieren es in einen
+# Ordner vorn im PATH des Gate-Prozesses. Gesteuert NUR ueber diese Test-Variablen — der
+# Produktivcode kennt keine davon (AC-26):
+#   FAKE_XCRUN_LOG   Argumente je Aufruf anhaengen    FAKE_XCRUN_OUT   Datei als stdout ausgeben
+#   FAKE_XCRUN_TEXT  Text als stdout (vor _OUT)       FAKE_XCRUN_RC    Exit-Code (Standard 0)
+#   FAKE_XCRUN_SLEEP Sekunden warten
+[ -n "$FAKE_XCRUN_LOG" ] && printf '%s\n' "$*" >> "$FAKE_XCRUN_LOG"
+[ -n "$FAKE_XCRUN_SLEEP" ] && sleep "$FAKE_XCRUN_SLEEP"
+if [ -n "$FAKE_XCRUN_TEXT" ]; then printf '%s' "$FAKE_XCRUN_TEXT"
+elif [ -n "$FAKE_XCRUN_OUT" ]; then cat "$FAKE_XCRUN_OUT"; fi
+exit "${FAKE_XCRUN_RC:-0}"

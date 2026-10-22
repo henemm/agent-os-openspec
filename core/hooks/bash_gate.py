@@ -64,6 +64,11 @@ PROTECTED_FILE_PATTERNS = [
     r"\.claude/user_approved_validation_[^\s]*",
 ]
 
+# Simulator-Beleg (#447): Beleg-Datei und Ordner `simulator-run/`. Bewusst NICHT in
+# PROTECTED_FILE_PATTERNS — dort trafe 3b schon eine blosse Erwaehnung (`echo "… <pfad>"
+# >> notes.md`). Geprueft werden nur echte Schreibziele. Parallelkopie in edit_gate.py.
+PROOF_FILE_PATTERNS = [r"(?:^|/)docs/artifacts/[^/]+/simulator-run(?:\.txt|/.*)?$"]
+
 # Zustandsordner als ganzes Token (#407): `.claude`, `.claude/workflows`
 # (optional ./, Praefixpfad, abschliessender Slash). Nur fuer 3b. Bewusst
 # NICHT `.claude/worktrees/…` und `.claude/hooks` (wie _cd_into_claude).
@@ -590,6 +595,50 @@ def _writes_effective_config(segments: list, cwd: Path) -> bool:
 
 # Bewusste Parallelkopie des Regex aus worktree_write_guard.py (kein geteilter Import).
 _WORKTREE_CWD_RE = re.compile(r"^(?P<main>.*)/\.claude/worktrees/(?P<name>[^/]+)")
+
+
+def _into_dir_targets(seg: list, bases: list) -> list:
+    """`cp|mv|install|ln SRC… DIR`: je Quelle `DIR/<basename>` (#447).
+
+    Nur wenn das Ziel auf `/` endet oder gegen eine Basis ein vorhandener Ordner ist;
+    `-t DIR` deckt `_copy_targets` bereits ab.
+    """
+    cmd, args = _command_args(_split_redirects(seg)[1])
+    if cmd not in ("cp", "mv", "install", "ln") or "-t" in args \
+            or any(a.startswith("--target-directory") for a in args):
+        return []
+    pos = _positional(args, ("-m", "-o", "-g", "-S"))
+    if len(pos) < 2:
+        return []
+    dest = pos[-1]
+    if not (dest.endswith("/") or any((b / os.path.expanduser(dest)).is_dir() for b in bases)):
+        return []
+    return [os.path.join(dest, os.path.basename(p.rstrip("/"))) for p in pos[:-1]]
+
+
+def _writes_proof_file(segments: list, cwd: Path) -> bool:
+    """Schreibt ein Segment auf den Simulator-Beleg (#447)? Nur echte Schreibziele.
+
+    Verglichen werden das normalisierte Ziel und das gegen die (per `cd` nachgefuehrte)
+    Basis aufgeloeste Ziel; Kopieren in einen Ordner zaehlt als `<ordner>/<basename>`.
+    Fehler: fail-open wie 1b/1c.
+    """
+    def hit(path: str) -> bool:
+        norm = os.path.normpath(path).replace(os.sep, "/")
+        return any(re.search(p, norm) for p in PROOF_FILE_PATTERNS)
+
+    try:
+        bases = [cwd]
+        for seg in segments:
+            if seg[0] in ("cd", "pushd", "popd"):
+                bases = _cd_bases(seg, bases, cwd)
+                continue
+            for t in _config_write_targets(seg) + _into_dir_targets(seg, bases):
+                if hit(t) or any(hit(str(b / os.path.expanduser(t))) for b in bases):
+                    return True
+    except Exception:
+        return False
+    return False
 
 
 def _writes_main_repo(segments: list, cwd: Path) -> "str | None":
@@ -1206,6 +1255,12 @@ def main():
             "  Aenderungen gehoeren in den eigenen Worktree und kommen per Merge an.\n"
             "  Bewusst gewollt? User tippt 'override'."
         )
+
+    # 1d. Simulator-Beleg (#447): nur echte Schreibziele, VOR dem Git-Schnellweg
+    #     (`git status > <beleg>`). Lesen und der Erzeuger-Aufruf bleiben frei.
+    if workflow_enforced and _writes_proof_file(_git_segments(scan_cmd) or [], Path.cwd()):
+        block("BLOCKED: Simulator-Beleg (#447) — nur der Erzeuger schreibt ihn "
+              "(scripts/sim.sh test-proof).")
 
     # Umleitung auf State/Marker hinter einem erlaubten Befehl (#316): VOR dem
     # Git-Schnellweg berechnen, sonst endet `git status > <state>` dort.
