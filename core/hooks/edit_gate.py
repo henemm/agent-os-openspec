@@ -46,6 +46,11 @@ PROTECTED_STATE_FILES = [
     ".claude/workflows/", "workflow_state.json", "user_override_token.json",
 ]
 
+# Simulator-Beleg (#447): nur der Erzeuger (scripts/sim_proof.py) schreibt ihn.
+# Eng gefasst: Beleg-Datei und Ordner `simulator-run/`, sonst nichts unter docs/artifacts/.
+# Parallelkopie in bash_gate.py (PROOF_FILE_PATTERNS).
+PROOF_FILE_RE = re.compile(r"(?:^|/)docs/artifacts/[^/]+/simulator-run(?:\.txt|/.*)?$")
+
 # Orchestrator-only files — agents must never touch these directly
 ORCHESTRATOR_FILES = [
     ".claude/settings.json",
@@ -655,6 +660,9 @@ def main():
     for pf in PROTECTED_STATE_FILES:
         if pf in file_path:
             block(f"BLOCKED: Protected state file: {pf}")
+    if PROOF_FILE_RE.search(os.path.normpath(file_path).replace(os.sep, "/")):
+        block("BLOCKED: Simulator-Beleg (#447) — nur der Erzeuger schreibt ihn "
+              "(scripts/sim.sh test-proof).")
 
     # 1b. Orchestrator-only files (checked before json$ always-allowed pattern)
     #     Exception (#48): the GLOBAL user config under ~/.claude/ is not a

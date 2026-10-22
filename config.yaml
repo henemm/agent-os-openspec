@@ -325,6 +325,21 @@ session_banner:
 adversary_coverage_gate:
   enabled: true
 
+# Evidence-Gate (Issue #447, opt-in): phase8_complete (auch complete/finish und
+# Fast Track) nur mit maschinell erzeugtem Beleg unter docs/artifacts/<workflow>/.
+# Default: aus (Abschnitt auskommentiert = keine Wirkung, kein Git-/xcrun-Aufruf).
+# Kaputte Config weist ab statt abzuschalten. Verifier `xcresult_proof`: Beleg von
+# scripts/sim.sh test-proof; das Gate leitet das Testergebnis per
+# `xcrun xcresulttool` neu aus run.xcresult ab (nur macOS mit Xcode).
+# `file`: reiner Dateiname ohne `/` und `..`. `exempt_paths`: fnmatch-Muster auf
+# repo-relative Pfade, die keinen Beleg brauchen. Ausweg: "override" des Workflows.
+# evidence_checks:
+#   phase8_complete:
+#     - verifier: xcresult_proof
+#       file: simulator-run.txt
+#   exempt_paths:
+#     - "scripts/*"
+
 # qa_gate --run (#345): fuehrt test_command selbst aus (nie von der Kommandozeile),
 # z.B. "python3 -m pytest tests/ -q"; leer = Abbruch. `--timeout <s>` > run_timeout.
 qa_gate:
