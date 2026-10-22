@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.42.0] - 2026-10-22
+
 ### Added
 
 - **#447 (Evidence-Gate, opt-in, + Schreibsperre für den Simulator-Beleg):** Neues Modul `core/hooks/evidence_gate.py` mit `check_evidence(target, data, *, runner=None)` und Verifier-Registry `VERIFIERS` (erstes Mitglied `xcresult_proof`). Ein Projekt schaltet es per Config ein (`evidence_checks.phase8_complete: [{verifier: xcresult_proof, file: simulator-run.txt}]`, optional `evidence_checks.exempt_paths` als fnmatch-Muster auf repo-relative Pfade). Dann ist `phase8_complete` (auch über `complete`/`finish`, Same-Phase wie #337, und im Fast Track — dort nur für `phase8_complete`) nur mit einem Beleg `docs/artifacts/<wf>/simulator-run.txt` im Format von `scripts/sim_proof.py` erreichbar: Jede Code-Datei der #259-Änderungsmenge muss mit aktuellem Hash im Block `## Geprüfte Dateien` stehen (Obermenge erlaubt, `head:` ungebunden), `summary.json` muss zur `summary:`-Prüfsumme passen, `run.xcresult` muss existieren, und das Gate leitet das Ergebnis per `xcrun xcresulttool get test-results summary --compact` selbst neu ab (Timeout 120 s) und vergleicht `result` und die vier Zähler semantisch mit `summary.json`, `ergebnis:` und `tests:`; verlangt `Passed` und mindestens einen bestandenen Test. Der Aufruf in `workflow._validate_transition` liegt nach dem Dialog-Check (#253/#259). Ohne `evidence_checks` (fehlend, `{}` oder leere Liste) ändert sich nichts — kein Git-, kein `xcrun`-Aufruf. Kaputte Config (Struktur, unbekannter Verifier, `file` mit Pfadtrenner/`..`, nicht ladbares YAML, das `evidence_checks` nennt) weist ab; ebenso fehlender Git-Arbeitsbaum, `ChangeSetError`, Workflow-Name mit `/`/`..`, Symlink-Ausbruch aus dem Projekt, fehlendes `xcrun`, Nicht-null-Exit, ungültiges JSON und Timeout. Ausweg: gültiges „override“ des Workflows (öffnet nur das Evidence-Gate, nicht das Dialog-Gate; Hinweis „Evidence-Gate per override umgangen“ auf stderr) oder `exempt_paths`. **Schreibsperre (gilt in allen Projekten, auch ohne Config):** `edit_gate.py` blockt Write/Edit auf `docs/artifacts/<wf>/simulator-run.txt` und alles unter `docs/artifacts/<wf>/simulator-run/`; `bash_gate.py` (Prüfung 1d, bei Workflow-Durchsetzung, vor dem Git-Schnellweg) blockt echte Schreibziele dorthin (Umleitung, `tee`, `cp`, `mv`, `sed -i`, `rm` usw. wie in `_segment_write_targets`, zusätzlich `cp`/`mv`/`install`/`ln` in den Ordner `docs/artifacts/<wf>/`). Lesen, Doku mit Pfad-Erwähnung und der Erzeuger-Aufruf (`scripts/sim.sh test-proof`, `python3 scripts/sim_proof.py …`) bleiben frei. **Nebenwirkung:** Konsumenten mit eigenen Dateien `docs/artifacts/*/simulator-run.txt` bzw. Ordnern `docs/artifacts/*/simulator-run/` können diese nicht mehr per Write/Edit oder Bash-Schreibbefehl ändern oder löschen. Bekannte Grenzen: älteres `run.xcresult` wiederverwendbar (`head:` ungebunden), Testklasse nicht gegen die Spec geprüft, Sperre wirkt nur über die Hooks, „override“ ist workflow- statt gate-gebunden. Tests: `tests/test_evidence_gate_447.py`.
@@ -3950,6 +3952,8 @@ python3 /home/hem/agent-os-openspec/migrate_to_plugin.py /path/to/project --appl
 
 ## [Unreleased]
 
+## [3.42.0] - 2026-10-22
+
 ## [3.37.0] - 2026-10-05
 
 ### Added — gregor_zwanzig Improvement Bundle (from production experience)
@@ -4358,6 +4362,8 @@ adversary_gate, adversary_verdict_guard, claude_md_protection, docs_location_gua
 ---
 
 ## [Unreleased]
+
+## [3.42.0] - 2026-10-22
 
 ## [3.37.0] - 2026-10-05
 
