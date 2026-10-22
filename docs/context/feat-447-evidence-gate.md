@@ -173,3 +173,16 @@ Feature (opt-in Gate + Schreibsperre), Hochrisiko-Bereich (Phase-8-Gate, alle Ko
 
 ### Open Questions
 - Keine blockierenden. Die in #447 referenzierte Analyse `feat-145-s2-gate.md` ist nicht auffindbar; maßgeblich ist der Issue-Text (Restrisiko verdeckter Anforderungen, im Spec benennen).
+
+## Hinweise aus Phase 5 (RED) für die Umsetzung
+Tests: `tests/test_evidence_gate_447.py` (63 rot, 2 grün als Wächter: AC-25 own-token-no-dialog, AC-29).
+- `runner` ersetzt `subprocess.run(argv_list, **kw)`, liefert `CompletedProcess` mit Text-stdout, nur für den xcrun-Aufruf. Nur AC-17 (Timeout via `TimeoutExpired`) und AC-26 übergeben ihn; sonst Fake-`xcrun` im PATH.
+- Config im Testprojekt: `.claude/config.yaml`; `exempt_paths` steht UNTER `evidence_checks`.
+- Bündel: `docs/artifacts/<wf>/simulator-run/run.xcresult`; xcrun-Aufruf `xcrun xcresulttool get test-results summary --path <bundle> --compact`.
+- Fake-xcrun liefert inhaltsgleiches, nicht bytegleiches JSON → semantischer Vergleich nötig.
+- AC-26: `evidence_gate.py` darf weder `os.environ` noch `getenv` enthalten (Quelltext-Prüfung).
+- AC-3: `load_config` liefert bei kaputtem YAML nur Warnung + Defaults → das Gate muss Nicht-Ladbarkeit selbst erkennen.
+- AC-6: Test schaltet `adversary_coverage_gate` ab, damit der Dialog-Check nicht vorher scheitert.
+- Erwartete Meldungsinhalte: AC-9 `simulator-run.txt` + wf-Name; AC-10/11 Dateipfad; AC-15 Exit-Code als Wort; AC-18 JSON-Feldname; AC-19 `ergebnis`/`tests`; AC-2/3 `config`/`evidence_checks`; AC-6 `Änderungsmenge`/`nicht ermittelbar`/`Git-Arbeitsbaum`; AC-12 `summary`; AC-13 `xcresult` (ohne xcrun-Aufruf); AC-17 `timeout`/`zeitlimit`.
+- **Falle AC-29(b):** `echo "Beleg: docs/artifacts/wf-447/simulator-run.txt" >> docs/notes.md` muss erlaubt bleiben. Die neuen Muster dürfen daher nicht in die 3b-Prüfung „geschützter Pfad irgendwo + Schreibindikator“ fallen, sondern müssen ans tatsächliche Schreibziel gebunden sein (Umleitungsziel, Ziel-Token von cp/mv/tee/sed -i/rm).
+- LoC: Testdatei ~600 Zeilen (über 500er-Limit) → bei Bedarf `test_loc_limit_override`.
