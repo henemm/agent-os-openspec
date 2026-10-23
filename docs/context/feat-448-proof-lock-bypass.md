@@ -48,3 +48,68 @@ Issue #448 (Folgebefund aus dem Adversary-Dialog zu #447). Die Schreibsperre fü
   - `resolve()` auf einen noch nicht existierenden Zielpfad löst nur die existierenden Elternordner auf. Das genügt für den Fall `lnk/simulator-run.txt`.
   - Ein Symlink, der *in* das Projekt *auf* `docs/artifacts/<wf>` zeigt, muss treffen. Ein Pfad außerhalb des Projekts mit gleichem Muster trifft heute schon (Regex auf `normpath`).
 - **Defensive Tiefe:** Das Evidence-Gate prüft das Ergebnisbündel neu. Ein gefälschter Beleg braucht ein passendes `run.xcresult`. Einstufung daher MEDIUM.
+
+## Analysis
+
+### Type
+Feature (Härtung einer bestehenden Sperre; Folgebefund aus dem Adversary-Dialog zu #447)
+
+### Ist-Zustand (Probe-Matrix, 2026-10-23, gegen `bash_gate.py`/`edit_gate.py` auf `main` 3.42.0)
+Messung mit den Helfern `_sandbox`/`_bash_gate`/`_edit_gate` aus `tests/test_evidence_gate_447.py`
+(Skript nur im Scratchpad, nicht im Repo). Exit 2 = blockiert, 0 = durchgelassen.
+
+| Form | heute | Soll |
+|------|-------|------|
+| `bash -c '… > PROOF'`, `sh -c`, `bash -lc`, `sudo bash -c`, `/bin/sh -c`, `eval '…'` | 0 | 2 |
+| `X=PROOF; echo x > $X`, `export X=PROOF; echo x > "$X"` | 0 | 2 |
+| `python3 -c "open(PROOF,'w')…"`, `python3 - <<EOF`, `echo "…" \| python3`, `node -e "…writeFileSync…"`, `perl -e 'open(F,">PROOF")'` | 0 | 2 |
+| `bash <<EOF … > PROOF EOF` | 2 (zufällig: Heredoc-Rumpf wird mitzerlegt) | 2 |
+| `rsync … PROOF`, `curl -o PROOF`, `wget -O PROOF`, `patch PROOF`, `ed PROOF`, `tar -xf a -C ART`, `unzip a -d ART` | 0 | 2 |
+| `… \| timeout 5 tee PROOF`, `… \| nohup tee PROOF` (Präfix nicht erkannt) | 0 | 2 |
+| `cp -l PROOF hl`, `ln PROOF hl` (Hardlink auf den Beleg) | 0 | 2 |
+| `ln -s ART l2 && echo x > l2/simulator-run.txt` (Link im selben Befehl) | 0 | 2 |
+| `mv ART t && echo x > t/simulator-run.txt && mv t ART` (Vorfahr umbenannt) | 0 | 2 |
+| Bash `echo x > lnk/simulator-run.txt` bei bestehendem Symlink `lnk → ART` | 0 | 2 |
+| Write `lnk/simulator-run.txt` (relativ und absolut) bei bestehendem Symlink | 0 | 2 |
+| **Negativkontrollen:** `python3 -c "print(open(PROOF).read())"`, `bash -c 'cat PROOF'`, `bash scripts/x.sh PROOF`, `echo "PROOF" > "$LOG"`, `curl -o /tmp/x URL`, `tar -xf a -C /tmp`, Erzeuger `python3 scripts/sim_proof.py … RUN/run.xcresult …`, `scripts/sim.sh test-proof …`, Doku-Erwähnung, `ART/other.txt` | 0 | 0 |
+
+Ergebnis: 27 von 28 Angriffsformen kommen heute durch; alle 10 Negativkontrollen sind frei.
+Die Matrix ist die RED-Liste für Phase 5 und die Fehlalarm-Grenze (zusätzlich zu AC-29 aus #447).
+
+### Affected Files (with changes)
+| File | Change Type | Description |
+|------|-------------|-------------|
+| `core/hooks/bash_gate.py` | MODIFY | `_writes_proof_file` erweitern: rekursive Zerlegung, Variablen, Inline-Interpreter, eigene Zusatz-Schreiber, Präfixe, Vorfahr-/Link-Regel, `resolve()`-Prüfung |
+| `core/hooks/edit_gate.py` | MODIFY | Beleg-Prüfung zusätzlich auf aufgelösten Pfad (normpath ODER resolved) |
+| `tests/test_proof_lock_448.py` | CREATE | Probe-Matrix als parametrisierte Tests (Angriff → 2, Negativ → 0) |
+| `docs/specs/feat-448-proof-lock-bypass.md` | CREATE | Spec mit ACs + Known Limitations |
+| `CHANGELOG.md` | MODIFY | Eintrag unter [Unreleased] |
+
+`docs/specs/feat-447-evidence-gate.md` bleibt unberührt (freigegeben, Spec-Freeze); die neue Spec verweist darauf.
+
+### Scope Assessment
+- Files: 5 (2 Code, 1 Test, Spec, CHANGELOG)
+- Estimated LoC: bash_gate +90–120, edit_gate +10, Tests +130
+- Risk Level: MEDIUM — Bash-Gate läuft bei jedem Befehl in jedem Projekt (Fehlalarm-Risiko); Wirkung aber auf Beleg-Pfade beschränkt, und das Evidence-Gate prüft den Beleg ohnehin neu gegen `run.xcresult`.
+
+### Technical Approach (Entscheidungen als Tech Lead)
+1. **Nur Sperre 1d erweitern, nicht `_CONFIG_WRITERS`.** Zusatz-Schreiber in einer eigenen Tabelle, die nur `_writes_proof_file` nutzt. Grund: 1b/1c haben eigene Fehlalarm-Grenzen (#417/#418); eine stille Verschärfung dort ist nicht Teil dieses Auftrags. Gleiche Lücke dort → Folge-Issue **#452**.
+2. **Verschachtelte Shells:** Segment mit Kommandowort `bash|sh|zsh|dash|ksh` (auch mit Pfad, nach Präfixen) und einem Flag-Bündel, das `c` enthält (`-c`, `-lc`, `-ec`), sowie `eval …`: Nutzlast neu mit `_git_segments` zerlegen und dieselbe Prüfung rekursiv anwenden, `cd`-Basen werden übernommen. Tiefenlimit 3; darüber oder bei Parse-Fehler Rückfall auf „Beleg-Pfad erwähnt + Schreibindikator“ statt stillem Durchlassen.
+3. **Variablen:** Zuweisungen im selben Befehl (`X=…` als eigenes Segment, `export X=…`, `declare`/`local` nicht nötig) einsammeln und `$X`/`${X}` in Zielen ersetzen. Kein „Erwähnung + nicht auflösbares Ziel → Block“ (träfe `echo "PROOF" > "$LOG"`). Shell-Zustand überlebt keinen Bash-Aufruf, daher genügt der Befehl selbst.
+4. **Inline-Interpreter:** Nur Inline-Code zählt — `python|python3|node|perl|ruby` mit `-c`/`-e`, mit `-` bzw. ohne Skript-Argument bei Heredoc/Pipe-Eingabe. Aufrufe mit Skriptdatei (Erzeuger `scripts/sim_proof.py`) bleiben frei. Block, wenn der Code das Beleg-Muster erwähnt UND einen **eigenen, engen** Schreibindikator enthält: `open(…, 'w'|'a'|'x'|'+')`, `write_text`, `write_bytes`, `writeFile`, `appendFile`, `createWriteStream`, `shutil.copy*/move`, `os.rename/replace/remove/unlink/symlink/link`, `.touch(`, `.unlink(`, `.rename(`, `.symlink_to(`, Perl `open(… ">…")`. Die vorhandene Liste `WRITE_INDICATORS` ist ungeeignet: `open\(` träfe auch reines Lesen (Negativkontrolle `py read`).
+5. **Zusatz-Schreiber (nur 1d):** `rsync` (letztes Positionsargument), `curl -o/--output`, `wget -O/--output-document`, `patch` (Datei-Argument und `-o`), `ed`/`ex` (Datei-Argument), `tar -C DIR` und `unzip -d DIR` als Ordnerziel (Treffer, wenn DIR = `docs/artifacts/<x>` oder darunter im Beleg-Bereich).
+6. **Präfixe:** `timeout N`, `nohup`, `nice [-n N]`, `stdbuf …`, `time`, `exec` vor dem Kommandowort überspringen (nur in der 1d-Erkennung).
+7. **Vorfahr- und Link-Regel:** `mv`, `ln` (hart und `-s`), `cp -l/-s/-al`, `rsync`, deren Quelle **oder** Ziel `docs/artifacts/<x>` selbst, `docs/artifacts` oder einen Beleg-Pfad ist, zählen als Zugriff auf den Beleg. Deckt Hardlink, Symlink im selben Befehl und Umbenennen-Schreiben-Zurückbenennen ab.
+8. **Symlink-Auflösung (F002), beide Gates:** Treffer, wenn normalisierter Pfad **oder** aufgelöster Pfad (`Path.resolve()`, in `try` gekapselt) das Muster trifft. Nie nur einer der beiden: in Konsumentenprojekten kann `docs/artifacts` selbst ein Symlink sein, der aufgelöste Pfad verlöre dann das Muster.
+
+### Dependencies
+- Upstream (wiederverwendet, unverändert): `hook_utils._git_segments`/`_git_lex`, `_split_redirects`, `_command_args`, `_positional`, `_copy_targets`, `_into_dir_targets`, `_cd_bases`, `strip_heredoc_bodies` (Achtung: Heredoc-Rumpf für Interpreter-Erkennung aus dem Rohtext `command` lesen, nicht aus `scan_cmd`, falls dort entfernt).
+- Downstream: nur Prüfung 1d im Bash-Gate und Schritt 1 im Edit-Gate. 1b/1c unverändert.
+
+### Befunde, die gegen den Plan sprechen
+- **Vollständigkeit bleibt unerreichbar:** Skriptdateien, die intern schreiben (`python3 x.py`, `bash x.sh`), `xargs`, `find -exec`, Base64-/zusammengesetzte Pfade, Umbenennen von `docs` oder des Projektordners. Gehören als Known Limitations in die Spec. Zielniveau: kein trivialer Einzeiler.
+- **Komplexität im Kern-Gate wächst** (+~100 LoC in `bash_gate.py`). Abfederung: alles in Hilfsfunktionen rund um `_writes_proof_file`, fail-open bei Ausnahmen wie 1b/1c.
+- **Vorfahr-Regel (7)** kann seltene legitime Befehle treffen (`mv docs/artifacts/<wf> …` zum Aufräumen). Wird bewusst in Kauf genommen und in der Fehlermeldung benannt; Ausweg Override ist **nicht** vorgesehen (die Beleg-Sperre hat heute keinen).
+
+### Open Questions
+- Keine offenen PO-Fragen. Die Abgrenzung 1b/1c ist als Tech-Lead-Entscheidung getroffen und als #452 ausgelagert.
