@@ -14,6 +14,7 @@ RUN = ART/simulator-run.
 
 import ast
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -76,6 +77,7 @@ INTERP_OPTS = [
     ("node-eval", f"node --eval \"require('fs').writeFileSync('{P}','x')\"", 2),
     ("node-p", f"node -p \"require('fs').writeFileSync('{P}','x')\"", 2),
     ("python3-m-module-free", f"python3 -m modul {P}", 0),
+    ("python3-open-mode-kw", f"python3 -c \"open('{P}', mode='w')\"", 2),
 ]
 
 
@@ -91,6 +93,8 @@ NEW_PREFIXES = [
     ("flock-cmd", f"flock /tmp/l tee {P}"),
     ("flock-c", f"flock /tmp/l -c 'echo x > {P}'"),
     ("ionice", f"ionice -c 3 tee {P}"),
+    ("ionice-t", f"ionice -t tee {P}"),
+    ("ionice-t-c3", f"ionice -t -c 3 tee {P}"),
     ("setsid", f"setsid tee {P}"),
     ("taskset", f"taskset 1 tee {P}"),
     ("chronic", f"chronic tee {P}"),
@@ -109,6 +113,12 @@ GLOB_BRACE = [
     ("brace-list", f"tee {ART}/simulator-run.{{txt,x}}", 2),
     # Glob ohne Treffer auf dem Dateisystem bleibt literal und trifft den Beleg nicht
     ("glob-no-hit-free", f"tee {ART}/simulator-run.q?q", 0),
+    # Brace-Ueberlauf (>128 Varianten) mit `simulator-run` im Token: fail-closed
+    ("brace-overflow", f"tee {ART}/" + "{,x}" * 10 + "simulator-run.txt", 2),
+    ("star-t", f"tee {ART}/simulator-run.t*", 2),
+    ("star-bare", f"tee {ART}/simulator-run*", 2),
+    ("cp-star", f"cp /tmp/x {ART}/simulator-run.t*", 2),
+    ("cp-star-png-free", f"cp /tmp/x {ART}/*.png", 0),
 ]
 
 
@@ -171,6 +181,8 @@ RECURSIVE = [
     ("cp-r-dot-into-art", "cp -r {ext}/fake/. " + ART + "/", 2),
     # Quelle ohne simulator-run-Eintrag bleibt frei
     ("cp-r-screenshots-free", "cp -r screenshots/ " + ART + "/", 0),
+    # unlesbare Quelle (Modus 000) darf die Pruefung des restlichen Befehls nicht abbrechen
+    ("cp-r-locked-then-tee", "cp -r {ext}/locked docs/artifacts/ ; tee " + P, 2),
 ]
 
 
@@ -182,7 +194,18 @@ def test_recursive_copy_into_area_blocked_only_with_proof_entry(tmp_path, name, 
     _write(root, "screenshots/a.png", "png\n")
     _write(root, "screenshots/b.png", "png\n")
     cmd = cmd.format(ext=ext)
-    _check(_bash_gate(root, cmd), cmd, rc)
+    if "locked" not in name:
+        _check(_bash_gate(root, cmd), cmd, rc)
+        return
+    if os.geteuid() == 0:
+        pytest.skip("root liest auch Modus 000")
+    locked = ext / "locked"
+    _write(locked, "a.txt", "x\n")
+    locked.chmod(0)
+    try:
+        _check(_bash_gate(root, cmd), cmd, rc)
+    finally:
+        locked.chmod(0o755)
 
 
 # ------------------------------------------------------------------ AC-8 shred/chmod/chown (F003f)
@@ -204,6 +227,7 @@ def test_shred_chmod_chown_on_exact_proof_blocked(tmp_path, name, cmd, rc):
 CHILD_ENV = [
     ("assign-sh-c", f"X={P} sh -c 'tee $X <<< x'"),
     ("assign-python-environ", f"X={P} python3 -c \"import os; open(os.environ['X'],'w')\""),
+    ("assign-python-getenv", f"X={P} python3 -c \"import os; open(os.getenv('X'),'w')\""),
 ]
 
 
@@ -218,6 +242,7 @@ SHELL_CALLS = [
     ("python-subprocess-list", f"python3 -c \"import subprocess; subprocess.run(['tee','{P}'])\""),
     ("node-execSync", f"node -e \"require('child_process').execSync('cp /tmp/a {P}')\""),
     ("perl-system", f"perl -e 'system(\"cp /tmp/a {P}\")'"),
+    ("ruby-backtick", f"ruby -e '`cp /tmp/a {P}`'"),
 ]
 
 
@@ -234,6 +259,8 @@ TAR_CREATE = [
     ("tar-file-eq-c", f"tar --file={P} -c {ART}/shot.png", 2),
     ("tar-xf-proof-free", f"tar -xf {P} -C /tmp/out", 0),
     ("tar-cf-elsewhere-free", f"tar -cf /tmp/a.tar {ART}", 0),
+    ("tar-cfP-attached", f"tar -cf{P} x", 2),
+    ("tar-cvfP-attached", f"tar -cvf{P} x", 2),
 ]
 
 
@@ -247,6 +274,11 @@ READ_ELSEWHERE = [
     ("read-proof-write-elsewhere-free",
      f"python3 -c \"d=open('{P}').read(); open('/tmp/out','w').write(d)\"", 0),
     ("same-statement-write-blocked", f"python3 -c \"open('{P}','w')\"", 2),
+    # node: Backtick ist Template-Literal, `.exec(` ist RegExp-Methode — beides nur Lesen
+    ("node-template-literal-read-free",
+     f"node -e 'console.log(`${{require(\"fs\").readFileSync(\"{P}\")}}`)'", 0),
+    ("node-regexp-exec-read-free",
+     f"node -e 'console.log(/x/.exec(require(\"fs\").readFileSync(\"{P}\",\"utf8\")))'", 0),
 ]
 
 
@@ -297,6 +329,8 @@ DESTROYERS = [
     ("rm-rf-artifacts", "rm -rf docs/artifacts"),
     ("git-rm-r-art", f"git rm -r {ART}"),
     ("mkdir-p-run-sub", f"mkdir -p {RUN}/x"),
+    ("rm-f-art-star", f"rm -f {ART}/*"),
+    ("rm-rf-art-star", f"rm -rf {ART}/*"),
 ]
 
 

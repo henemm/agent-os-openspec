@@ -97,8 +97,12 @@ Alles im 1d-Abschnitt von `bash_gate.py`; jede Ausnahme führt weiterhin zu „k
 - **Mehrstufige Variablen-Indirektion im Inline-Code** (`a = 'P'; b = a; open(b, 'w')`) sowie **aus Teilstrings zusammengesetzte Pfade** werden nicht aufgelöst; nur einstufige Zuweisung wird verfolgt (ADR-3).
 - **Skriptdateien, `find -exec`, Base64- und zur Laufzeit zusammengesetzte Pfade, Umbenennen von `docs/`:** unverändert wie in #448 dokumentiert.
 - **`_proof_fallback` bleibt grob** (Beobachtung, in diesem Issue nicht geändert): Bei Tiefe > 3, Parse-Fehler in der Nutzlast oder Daten-Heredocs mit Interpreter blockt sie „Beleg erwähnt + Schreibindikator“ auch für Doku-Text. Live erlebt: Ein Heredoc, der Analysetext mit Beleg-Pfad in eine Kontextdatei schrieb, wurde geblockt. Ausweg: Datei mit dem Write-Werkzeug schreiben.
-- **Glob-Expansion** gilt nur für `?` und `[` gegen vorhandene Dateien; ein Glob, der erst durch den Befehl selbst Treffer erzeugt, wird nicht erkannt.
+- **Glob-Expansion** (`*`, `?`, `[`) gilt nur gegen vorhandene Dateien; ein Glob, der erst durch den Befehl selbst Treffer erzeugt, wird nicht erkannt.
+- **Restbefunde der 2. Gegenprüfung (Folge-Issue #455, vom PO angenommen):** `cp`/`install` mit Glob/Brace im Zielordner ohne `-t` (`cp X docs/artifacts/*`, F007); `Path(P).open('w')` (F008); Brace-Überlauf mit zerlegtem Wort ohne zusammenhängendes `simulator-run` im Token (F009); Fehlalarm bei reinem Lesen von P über Shell-Aufruf wie `subprocess.check_output(['cat', P])` (F010).
 - **Rekursive Kopie (F003e)** prüft den Quellinhalt zum Zeitpunkt des Hooks; Inhalt, der erst im selben Befehl entsteht, wird nicht gesehen.
+- **Weitere Inline-Schreibwege nicht erkannt:** `os.truncate`, `os.open(…, O_WRONLY)`, `os.chmod`, `os.utime` sowie `cd ART` (bzw. `os.chdir`) mit anschließend relativem Namen im Inline-Code.
+- **Brace-Überlauf:** Ergibt die Brace-Expansion mehr als 128 Varianten, wird sie abgebrochen und fail-closed gewertet, sobald das Token `simulator-run` enthält.
+- **`*`-Glob nicht für `rm`/`unlink`:** Zerstörer bleiben frei (ADR-1), `rm -f ART/*` blockt nicht; `rm P` (exakter Pfad) blockt wie in #447.
 - **Schutz nur über die Hooks** (Known Limitation 3 aus #447 bleibt). Defensive Tiefe: Das Evidence-Gate prüft den Beleg zusätzlich gegen `run.xcresult`.
 
 ## Definition of Done
