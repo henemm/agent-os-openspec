@@ -30,7 +30,28 @@ from test_evidence_gate_447 import (  # noqa: E402
 P = PROOF
 LOCK_MSG = "Simulator-Beleg"  # Kern der 1d-Meldung (#447)
 REPO = Path(__file__).resolve().parent.parent
-BASE_COMMIT = "b599ee3"
+_SCOPE_SKIP = "Basis für Scope-Prüfung nicht verfügbar (z. B. flacher CI-Checkout)"
+
+
+def _scope_base() -> str:
+    """Abzweigung der laufenden Änderung von main (`git merge-base HEAD origin/main`).
+
+    Nicht ermittelbar (kein origin/main, flacher Checkout, Fehler) oder nicht als Commit
+    auflösbar → pytest.skip statt Fehlschlag.
+    """
+    try:
+        r = subprocess.run(["git", "merge-base", "HEAD", "origin/main"], cwd=str(REPO),
+                           capture_output=True, text=True, env=_env())
+        base = r.stdout.strip()
+        if r.returncode != 0 or not base:
+            pytest.skip(_SCOPE_SKIP)
+        chk = subprocess.run(["git", "cat-file", "-e", f"{base}^{{commit}}"], cwd=str(REPO),
+                             capture_output=True, text=True, env=_env())
+    except OSError:
+        pytest.skip(_SCOPE_SKIP)
+    if chk.returncode != 0:
+        pytest.skip(_SCOPE_SKIP)
+    return base
 
 
 # ------------------------------------------------------------------ Aufbau
@@ -366,23 +387,29 @@ def _segment(source: str, name: str) -> str:
 
 @pytest.mark.parametrize("part", ["_CONFIG_WRITERS", "_copy_targets", "hook_utils"])
 def test_shared_pieces_unchanged_and_existing_suites_green(part):
-    """Statische Prüfung gegen den Stand vor #453 (Commit b599ee3).
+    """Scope-Wächter der laufenden Änderung gegen ihre Abzweigung von main.
+
+    Basis ist `git merge-base HEAD origin/main` (für #453: b599ee3). Fehlt sie (z. B. flacher
+    CI-Checkout), wird übersprungen; liegt der Code schon auf main (Basis == HEAD), ist der
+    Vergleich trivial gleich. Ein Branch, der diese Bausteine bewusst ändert (z. B. #452),
+    muss diesen Test anpassen.
 
     Die vier Regressionssuiten (tests/test_proof_lock_448.py, tests/test_evidence_gate_447.py,
     tests/test_bash_gate_config_lock_418.py, tests/test_bash_gate_main_write_417.py) laufen
     separat (Test Plan), nicht als Subprozess dieses Tests — zu teuer.
     """
+    base = _scope_base()
     if part == "hook_utils":
-        r = subprocess.run(["git", "diff", "--quiet", BASE_COMMIT, "--",
+        r = subprocess.run(["git", "diff", "--quiet", base, "--",
                             "core/hooks/hook_utils.py"], cwd=str(REPO), capture_output=True,
                            text=True, env=_env())
         assert r.returncode == 0, f"core/hooks/hook_utils.py verändert: {r.stderr.strip()}"
         return
-    old = subprocess.run(["git", "show", f"{BASE_COMMIT}:core/hooks/bash_gate.py"],
+    old = subprocess.run(["git", "show", f"{base}:core/hooks/bash_gate.py"],
                          cwd=str(REPO), capture_output=True, text=True, env=_env())
     assert old.returncode == 0, old.stderr
     new = (REPO / "core/hooks/bash_gate.py").read_text()
-    assert _segment(new, part) == _segment(old.stdout, part), f"{part} verändert gegenüber {BASE_COMMIT}"
+    assert _segment(new, part) == _segment(old.stdout, part), f"{part} verändert gegenüber {base}"
 
 
 # ------------------------------------------------------------------ AC-18 fail-open
