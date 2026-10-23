@@ -616,29 +616,206 @@ def _into_dir_targets(seg: list, bases: list) -> list:
     return [os.path.join(dest, os.path.basename(p.rstrip("/"))) for p in pos[:-1]]
 
 
-def _writes_proof_file(segments: list, cwd: Path) -> bool:
-    """Schreibt ein Segment auf den Simulator-Beleg (#447)? Nur echte Schreibziele.
+# --- 1d-Haertung (#448): nur fuer den Beleg, `_CONFIG_WRITERS` bleibt fuer 1b/1c unveraendert (#452).
+# Vorfahr-/Link-Regel: `docs/artifacts`, `docs/artifacts/<x>` oder ein Beleg-Pfad.
+_PROOF_LINK_PATTERNS = PROOF_FILE_PATTERNS + [r"(?:^|/)docs/artifacts(?:/[^/]+)?$"]
+# Ordnerziel (`tar -C`, `unzip -d`): Beleg-Bereich `docs/artifacts` und darunter.
+_PROOF_AREA_PATTERNS = [r"(?:^|/)docs/artifacts(?:/.*)?$"]
+_PROOF_MENTION_RE = re.compile(r"docs/artifacts/[^/\s'\"]+/simulator-run")
+# Enger Schreibindikator fuer Inline-Code (ADR 3): reines `open(PROOF)` bleibt frei.
+_INLINE_WRITE_RE = re.compile(
+    r"open\s*\([^)]*,\s*['\"][rbt]*[wax+][rwabxt+]*['\"]"
+    r"|open\s*\(\s*(?:my\s+)?[$\w]+\s*,\s*['\"]\s*\+?>"
+    r"|write_text|write_bytes|writeFile|appendFile|createWriteStream"
+    r"|shutil\.(?:copy\w*|move)|os\.(?:rename|replace|remove|unlink|symlink|link)\b"
+    r"|\.(?:touch|unlink|rename|symlink_to)\s*\(")
+_INTERPRETER_RE = re.compile(r"^(?:python[\d.]*|node|perl|ruby)$")
+_ASSIGN_RE = re.compile(r"^[A-Za-z_]\w*=")
+# Praefixe vor dem Kommandowort -> Flags, die einen Wert nehmen.
+_PROOF_PREFIXES = {
+    "sudo": ("-u", "-g", "-C", "-D", "-h", "-p", "-U", "-r", "-t"), "command": (),
+    "env": ("-u", "-C", "-S"), "timeout": ("-s", "--signal", "-k", "--kill-after"),
+    "nohup": (), "nice": ("-n", "--adjustment"), "stdbuf": ("-i", "-o", "-e"),
+    "time": ("-f", "-o"), "exec": ("-a",),
+}
 
-    Verglichen werden das normalisierte Ziel und das gegen die (per `cd` nachgefuehrte)
-    Basis aufgeloeste Ziel; Kopieren in einen Ordner zaehlt als `<ordner>/<basename>`.
-    Fehler: fail-open wie 1b/1c.
+
+def _opt_values(args: list, flags: tuple) -> list:
+    """Werte von `-o X`, `-sSo X` (Buendel endet auf das Flag), `--output X`, `--output=X`."""
+    out = []
+    for i, tok in enumerate(args):
+        nxt = args[i + 1] if i + 1 < len(args) else ""
+        for f in flags:
+            if f.startswith("--") and tok.startswith(f + "="):
+                out.append(tok.split("=", 1)[1])
+            elif tok == f or (len(f) == 2 and re.match(rf"^-[A-Za-z]*{f[1]}$", tok)):
+                out.append(nxt)
+    return [o for o in out if o]
+
+
+def _tar_dir(a: list) -> list:
+    """`tar -C DIR` nur beim Entpacken (`-x`, `xf`, `--extract`); Packen liest nur."""
+    extract = any(re.match(r"^-?[A-Za-z]*x[A-Za-z]*$", t) or t in ("--extract", "--get")
+                  for t in a[:1] + [t for t in a if t.startswith("-")])
+    return _opt_values(a, ("-C", "--directory")) if extract else []
+
+
+# Zusatz-Schreiber nur fuer 1d; `rsync` deckt die Vorfahr-/Link-Regel (Quelle UND Ziel) ab.
+_PROOF_WRITERS = {
+    "curl": lambda a: _opt_values(a, ("-o", "--output")),
+    "wget": lambda a: _opt_values(a, ("-O", "--output-document")),
+    "patch": lambda a: _positional(a, ("-o", "-i", "-p", "-d", "-r", "-D", "-B", "-F", "-V", "-z"))[:1]
+    + _opt_values(a, ("-o", "--output")),
+    "ed": _positional, "ex": _positional,
+}
+_PROOF_DIR_WRITERS = {"tar": _tar_dir, "unzip": lambda a: _opt_values(a, ("-d",))}
+
+
+def _skip_prefixes(rest: list) -> list:
+    """Praefixe (`sudo`, `env`, `timeout 5`, `nice -n 5`, `VAR=…`, …) bis zum Kommandowort."""
+    i = 0
+    while i < len(rest):
+        word = os.path.basename(rest[i])
+        if _ASSIGN_RE.match(rest[i]):
+            i += 1
+            continue
+        if word not in _PROOF_PREFIXES:
+            break
+        i += 1
+        while i < len(rest) and rest[i][:1] == "-" and rest[i] != "-":
+            i += 2 if rest[i] in _PROOF_PREFIXES[word] else 1
+        if word == "timeout" and i < len(rest):
+            i += 1  # Dauer
+    return rest[i:]
+
+
+def _nested_payload(cmd: str, args: list) -> "str | None":
+    """Nutzlast von `bash|sh|zsh|dash|ksh -c '…'` (Buendel mit `c`) bzw. `eval …`."""
+    if cmd == "eval":
+        return " ".join(args)
+    if cmd not in ("bash", "sh", "zsh", "dash", "ksh"):
+        return None
+    i = 0
+    while i < len(args):
+        tok = args[i]
+        if re.match(r"^-[A-Za-z]*c[A-Za-z]*$", tok):
+            return next((a for a in args[i + 1:] if not a.startswith("-")), "")
+        if tok in ("-o", "-O", "+o", "+O"):
+            i += 1
+        elif not tok.startswith(("-", "+")):
+            return None  # Skriptdatei: Inhalt unsichtbar (Known Limitation)
+        i += 1
+    return None
+
+
+def _inline_code(cmd: str, args: list, raw: str) -> "str | None":
+    """Inline-Code eines Interpreters: `-c`/`-e`-Argument, ohne Skript der Rohtext (stdin)."""
+    if not _INTERPRETER_RE.match(cmd):
+        return None
+    for i, tok in enumerate(args):
+        if re.match(r"^-[A-Za-z]*[ceE]$", tok):
+            return args[i + 1] if i + 1 < len(args) else ""
+        if not tok.startswith("-"):
+            return None  # Skriptdatei (Erzeuger `scripts/sim_proof.py`) zaehlt nicht
+    return raw  # `-` bzw. ohne Argument: Code kommt per Heredoc/Pipe aus dem Befehl
+
+
+def _link_paths(cmd: str, args: list) -> list:
+    """Quellen UND Ziele von mv, ln, cp -l/-s/-al, rsync (Vorfahr-/Link-Regel)."""
+    if cmd == "cp" and not any(t in ("--link", "--symbolic-link") or
+                               re.match(r"^-[A-Za-z]*[ls]", t) for t in args):
+        return []
+    if cmd not in ("mv", "ln", "cp", "rsync"):
+        return []
+    return _positional(args, ("-S", "-e", "--suffix", "--rsh"))
+
+
+def _proof_path_hit(t: str, bases: list, patterns: list) -> bool:
+    """Trifft das Ziel normalisiert ODER aufgeloest (Symlinks, ADR 2) ein Muster?"""
+    paths = [t] + [str(b / os.path.expanduser(t)) for b in bases]
+    if any(re.search(p, os.path.normpath(c).replace(os.sep, "/")) for c in paths for p in patterns):
+        return True
+    for b in bases:
+        try:
+            real = str((b / os.path.expanduser(t)).resolve()).replace(os.sep, "/")
+        except (OSError, RuntimeError, ValueError):
+            continue
+        if any(re.search(p, real) for p in patterns):
+            return True
+    return False
+
+
+def _proof_fallback(text: str) -> bool:
+    """Tiefe > 3 oder Parse-Fehler in der Nutzlast (AC-20): Erwaehnung + Schreibindikator."""
+    return bool(_PROOF_MENTION_RE.search(text)) and (
+        _has_write_indicator(text) or bool(_INLINE_WRITE_RE.search(text)))
+
+
+def _proof_segment_hit(seg: list, cwd: Path, bases: list, depth: int, raw: str) -> bool:
+    """Ein Segment: Umleitungen, verschachtelte Shell, Inline-Code, Schreiber, Link-Regel."""
+    targets, rest = _split_redirects(seg)
+    rest = _skip_prefixes(rest)
+    dirs = []
+    if rest:
+        cmd, args = os.path.basename(rest[0]), rest[1:]
+        payload = _nested_payload(cmd, args)
+        if payload is not None and _proof_text_hit(payload, payload, cwd, bases, depth + 1):
+            return True
+        code = _inline_code(cmd, args, raw)
+        if code and _PROOF_MENTION_RE.search(code) and _INLINE_WRITE_RE.search(code):
+            return True
+        if any(_proof_path_hit(t, bases, _PROOF_LINK_PATTERNS) for t in _link_paths(cmd, args)):
+            return True
+        targets += (_config_write_targets(rest) + _into_dir_targets(rest, bases)
+                    + _PROOF_WRITERS.get(cmd, lambda a: [])(args))
+        dirs = _PROOF_DIR_WRITERS.get(cmd, lambda a: [])(args)
+    return (any(_proof_path_hit(t, bases, PROOF_FILE_PATTERNS) for t in targets if t)
+            or any(_proof_path_hit(d, bases, _PROOF_AREA_PATTERNS) for d in dirs))
+
+
+def _proof_text_hit(text: str, raw: str, cwd: Path, bases: list, depth: int) -> bool:
+    """Befehlstext zerlegen; Zuweisungen (`X=…`, `export X=…`) ersetzen `$X`/`${X}`, `cd` fuehrt nach.
+
+    Verschachtelte Shells rekursiv bis Tiefe 3; darueber oder bei Parse-Fehler der
+    Nutzlast Rueckfall auf `_proof_fallback`. Parse-Fehler auf oberster Ebene: frei.
     """
-    def hit(path: str) -> bool:
-        norm = os.path.normpath(path).replace(os.sep, "/")
-        return any(re.search(p, norm) for p in PROOF_FILE_PATTERNS)
+    if depth > 3:
+        return _proof_fallback(text)
+    segments = _git_segments(text)
+    if segments is None:
+        return depth > 0 and _proof_fallback(text)
+    env = {}
 
+    def subst(tok: str) -> str:
+        return re.sub(r"\$(?:\{(\w+)\}|(\w+))",
+                      lambda m: env.get(m.group(1) or m.group(2), m.group(0)), tok)
+
+    for seg in segments:
+        if seg[0] == "export" or all(_ASSIGN_RE.match(t) for t in seg):
+            for t in seg:
+                if _ASSIGN_RE.match(t):
+                    name, value = t.split("=", 1)
+                    env[name] = subst(value)
+            continue
+        seg = [subst(t) for t in seg]
+        if seg[0] in ("cd", "pushd", "popd"):
+            bases = _cd_bases(seg, bases, cwd)
+        elif _proof_segment_hit(seg, cwd, bases, depth, raw):
+            return True
+    return False
+
+
+def _writes_proof_file(scan_cmd: str, cwd: Path, raw: str = "") -> bool:
+    """Schreibt, verlinkt oder verschiebt der Befehl den Simulator-Beleg (#447, #448)?
+
+    Nur echte Schreibziele (plus Vorfahr-/Link-Regel); zerlegt wird `scan_cmd`
+    (Daten-Heredocs entfernt), Inline-Interpreter-Code kommt aus dem Rohtext `raw`.
+    Ausnahmen: fail-open wie 1b/1c.
+    """
     try:
-        bases = [cwd]
-        for seg in segments:
-            if seg[0] in ("cd", "pushd", "popd"):
-                bases = _cd_bases(seg, bases, cwd)
-                continue
-            for t in _config_write_targets(seg) + _into_dir_targets(seg, bases):
-                if hit(t) or any(hit(str(b / os.path.expanduser(t))) for b in bases):
-                    return True
+        return _proof_text_hit(scan_cmd, raw or scan_cmd, cwd, [cwd], 0)
     except Exception:
         return False
-    return False
 
 
 def _writes_main_repo(segments: list, cwd: Path) -> "str | None":
@@ -1258,9 +1435,11 @@ def main():
 
     # 1d. Simulator-Beleg (#447): nur echte Schreibziele, VOR dem Git-Schnellweg
     #     (`git status > <beleg>`). Lesen und der Erzeuger-Aufruf bleiben frei.
-    if workflow_enforced and _writes_proof_file(_git_segments(scan_cmd) or [], Path.cwd()):
+    if workflow_enforced and _writes_proof_file(scan_cmd, Path.cwd(), command):
         block("BLOCKED: Simulator-Beleg (#447) — nur der Erzeuger schreibt ihn "
-              "(scripts/sim.sh test-proof).")
+              "(scripts/sim.sh test-proof).\n"
+              "  Auch Umbenennen, Verlinken oder Kopieren des Ordners docs/artifacts/<wf> "
+              "zaehlt als Zugriff auf den Beleg (#448).")
 
     # Umleitung auf State/Marker hinter einem erlaubten Befehl (#316): VOR dem
     # Git-Schnellweg berechnen, sonst endet `git status > <state>` dort.
