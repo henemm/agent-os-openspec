@@ -236,6 +236,19 @@ def _is_worktree_cwd(cwd: str) -> bool:
     return bool(re.search(r"/\.claude/worktrees/[^/]+", cwd or ""))
 
 
+def _is_git_dir(cwd: str) -> bool:
+    """True, wenn cwd oder ein Elternordner ein .git (Ordner ODER Datei) enthaelt.
+
+    Reiner Dateisystem-Check, kein Subprozess. Fail-safe: nicht existierender
+    oder nicht lesbarer Pfad, jede Exception -> False (= nichts erzwingen).
+    """
+    try:
+        p = Path(cwd)
+        return any((q / ".git").exists() for q in (p, *p.parents))
+    except Exception:
+        return False
+
+
 def _is_rescue_command(tool_name: str, tool_input: dict) -> bool:
     """EnterWorktree ist der einzige erlaubte Rettungsweg."""
     return tool_name == "EnterWorktree"
@@ -667,6 +680,10 @@ def _do_guard(payload: dict) -> None:
 
     # Worktree-Sitzungen haben eigene Isolation — kein weiterer Check.
     if _is_worktree_cwd(cwd):
+        sys.exit(0)
+
+    # Ohne Git ist kein Worktree moeglich (EnterWorktree scheitert) — nichts zu erzwingen (#445).
+    if not _is_git_dir(cwd):
         sys.exit(0)
 
     # EnterWorktree ist der einzige Rettungsweg aus dem Hauptverzeichnis.
