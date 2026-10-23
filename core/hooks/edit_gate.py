@@ -660,7 +660,14 @@ def main():
     for pf in PROTECTED_STATE_FILES:
         if pf in file_path:
             block(f"BLOCKED: Protected state file: {pf}")
-    if PROOF_FILE_RE.search(os.path.normpath(file_path).replace(os.sep, "/")):
+    # Beleg (#447): normpath ODER aufgeloester Pfad (#448, Symlink-Ordner); nie nur einer,
+    # sonst verliert ein Projekt mit Symlink-`docs/artifacts` den Schutz.
+    try:
+        _proof_real = str(Path(file_path).expanduser().resolve()).replace(os.sep, "/")
+    except (OSError, RuntimeError, ValueError):
+        _proof_real = ""
+    if PROOF_FILE_RE.search(os.path.normpath(file_path).replace(os.sep, "/")) \
+            or (_proof_real and PROOF_FILE_RE.search(_proof_real)):
         block("BLOCKED: Simulator-Beleg (#447) — nur der Erzeuger schreibt ihn "
               "(scripts/sim.sh test-proof).")
 
