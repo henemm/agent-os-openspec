@@ -624,12 +624,32 @@ _PROOF_AREA_PATTERNS = [r"(?:^|/)docs/artifacts(?:/.*)?$"]
 _PROOF_MENTION_RE = re.compile(r"docs/artifacts/[^/\s'\"]+/simulator-run")
 # Enger Schreibindikator fuer Inline-Code (ADR 3): reines `open(PROOF)` bleibt frei.
 _INLINE_WRITE_RE = re.compile(
-    r"open\s*\([^)]*,\s*['\"][rbt]*[wax+][rwabxt+]*['\"]"
+    # #453: eine Klammerebene im ersten Argument (`os.getenv('X')`), Keyword `mode=`.
+    r"open\s*\((?:[^()]|\([^()]*\))*,\s*(?:mode\s*=\s*)?['\"][rbt]*[wax+][rwabxt+]*['\"]"
     r"|open\s*\(\s*(?:my\s+)?[$\w]+\s*,\s*['\"]\s*\+?>"
     r"|write_text|write_bytes|writeFile|appendFile|createWriteStream"
     r"|shutil\.(?:copy\w*|move)|os\.(?:rename|replace|remove|unlink|symlink|link)\b"
-    r"|\.(?:touch|unlink|rename|symlink_to)\s*\(")
+    r"|\.(?:touch|unlink|rename|symlink_to)\s*\("
+    # #453: ruby-Schreiber und Shell-Aufrufe aus dem Inline-Code (F006).
+    r"|\bFile\.(?:bin)?write|\bIO\.(?:bin)?write"
+    r"|os\.(?:system|popen|exec\w*|spawn\w*)|subprocess\."
+    # `exec(` nicht als Methode (`/re/.exec(…)`); Backtick nur ruby/perl (`_inline_hit`).
+    r"|child_process|execSync|execFileSync|spawnSync|\bsystem\s*\(|(?<![.\w])exec\s*\(|\bqx\b")
 _INTERPRETER_RE = re.compile(r"^(?:python[\d.]*|node|perl|ruby)$")
+# Je Interpreter: Code-Flag (Regex) und Optionen, die den naechsten Token als Wert nehmen (#453).
+_INTERP_OPTS = {
+    "python": (r"^-[A-Za-z]*c$", ("-W", "-X", "-Q")),
+    "node": (r"^-[A-Za-z]*[ep]$|^--(?:eval|print)(?:=|$)",
+             ("-r", "--require", "--input-type", "-C", "--conditions", "--import", "--loader")),
+    "perl": (r"^-[A-Za-z]*[eE]$", ("-I", "-M", "-x")),
+    "ruby": (r"^-[A-Za-z]*e$", ("-I", "-r", "-C", "-E", "--encoding")),
+}
+# Inline-Code liest die Umgebung (Praefix-Zuweisung `X=P python3 -c …`, #453 F005).
+_ENV_READ_RE = re.compile(r"environ|getenv|process\.env|\$ENV\{|\bENV\[")
+# Einstufige Zuweisung eines Literals bzw. `Path('…')` an einen Bezeichner (ADR-3, #453).
+_LITERAL_ASSIGN_RE = re.compile(
+    r"^\s*(?:(?:my|let|const|var)\s+)?\$?([A-Za-z_]\w*)\s*=\s*"
+    r"(?:[\w.]+\(\s*)?(['\"])[^'\"]*\2\s*\)?\s*$")
 _ASSIGN_RE = re.compile(r"^[A-Za-z_]\w*=")
 # Praefixe vor dem Kommandowort -> Flags, die einen Wert nehmen.
 _PROOF_PREFIXES = {
@@ -637,19 +657,30 @@ _PROOF_PREFIXES = {
     "env": ("-u", "-C", "-S"), "timeout": ("-s", "--signal", "-k", "--kill-after"),
     "nohup": (), "nice": ("-n", "--adjustment"), "stdbuf": ("-i", "-o", "-e"),
     "time": ("-f", "-o"), "exec": ("-a",),
+    # #453 (F002, ADR-2): geschlossene Liste erweitert.
+    "doas": ("-u", "-C"), "busybox": (), "flock": ("-w", "-E", "--timeout", "--conflict-exit-code"),
+    "ionice": ("-c", "-n", "-p", "--class", "--classdata", "--pid"), "setsid": (), "taskset": (), "chronic": (), "builtin": (),
+    "xargs": ("-a", "-d", "-E", "-I", "-L", "-n", "-P", "-s", "--arg-file", "--delimiter",
+              "--eof", "--replace", "--max-lines", "--max-args", "--max-procs", "--max-chars"),
 }
 
 
 def _opt_values(args: list, flags: tuple) -> list:
-    """Werte von `-o X`, `-sSo X` (Buendel endet auf das Flag), `--output X`, `--output=X`."""
+    """Werte von `-o X`, `-sSo X` (Buendel endet auf das Flag), `--output X`, `--output=X`.
+
+    #453: angehaengter Wert (`-oDATEI`, `-sSoDATEI`): getopt, Rest nach dem ersten Flag-Buchstaben.
+    """
     out = []
     for i, tok in enumerate(args):
         nxt = args[i + 1] if i + 1 < len(args) else ""
         for f in flags:
+            attached = len(f) == 2 and re.match(rf"^-[A-Za-z]*?{f[1]}(.+)$", tok)
             if f.startswith("--") and tok.startswith(f + "="):
                 out.append(tok.split("=", 1)[1])
             elif tok == f or (len(f) == 2 and re.match(rf"^-[A-Za-z]*{f[1]}$", tok)):
                 out.append(nxt)
+            elif attached:
+                out.append(attached.group(1))
     return [o for o in out if o]
 
 
@@ -660,33 +691,60 @@ def _tar_dir(a: list) -> list:
     return _opt_values(a, ("-C", "--directory")) if extract else []
 
 
+def _tar_archive(a: list) -> list:
+    """`tar` packen (`c`/`r`/`u`/`A`, `--create`/`--append`/`--update`): Archiv `-f` ist Ziel (#453)."""
+    # Modus-Buchstaben bis zum ersten `f`; danach ist der Rest der Archivpfad (getopt, `-cfP`).
+    bundles = [m.group(1) for m in (re.match(r"^-([A-Za-z]+)", t) for t in a) if m] + \
+        [t for t in a[:1] if re.match(r"^[A-Za-z]+$", t)]
+    create = any(re.search(r"[cruA]", t.split("f")[0]) for t in bundles) or any(
+        t in ("--create", "--append", "--update", "--catenate", "--concatenate") for t in a)
+    if not create:
+        return []
+    old = a[1:2] if a and re.match(r"^[A-Za-z]*f[A-Za-z]*$", a[0]) else []
+    return _opt_values(a, ("-f", "--file")) + old
+
+
 # Zusatz-Schreiber nur fuer 1d; `rsync` deckt die Vorfahr-/Link-Regel (Quelle UND Ziel) ab.
 _PROOF_WRITERS = {
     "curl": lambda a: _opt_values(a, ("-o", "--output")),
     "wget": lambda a: _opt_values(a, ("-O", "--output-document")),
     "patch": lambda a: _positional(a, ("-o", "-i", "-p", "-d", "-r", "-D", "-B", "-F", "-V", "-z"))[:1]
     + _opt_values(a, ("-o", "--output")),
-    "ed": _positional, "ex": _positional,
+    "ed": _positional, "ex": _positional, "tar": _tar_archive,
+    # #453 (F003f, ADR-1): nur der exakte Beleg-Pfad; Modus/Eigentuemer trifft nie das Muster.
+    "shred": lambda a: _positional(a, ("-n", "-s", "--iterations", "--size", "--random-source")),
+    "chmod": _positional, "chown": _positional,
 }
 _PROOF_DIR_WRITERS = {"tar": _tar_dir, "unzip": lambda a: _opt_values(a, ("-d",))}
 
 
-def _skip_prefixes(rest: list) -> list:
-    """Praefixe (`sudo`, `env`, `timeout 5`, `nice -n 5`, `VAR=…`, …) bis zum Kommandowort."""
-    i = 0
+def _skip_prefixes(rest: list) -> tuple:
+    """Praefixe (`sudo`, `env`, `timeout 5`, `nice -n 5`, `VAR=…`, …) bis zum Kommandowort.
+
+    Liefert `(rest, zuweisungen)`; die Praefix-Zuweisungen bilden die Kindumgebung (#453 F005).
+    `flock DATEI -c CMD` wird zu `sh -c CMD`, `taskset MASKE` und `flock DATEI` ueberspringen
+    ein Positionsargument.
+    """
+    i, local = 0, {}
     while i < len(rest):
         word = os.path.basename(rest[i])
         if _ASSIGN_RE.match(rest[i]):
+            name, value = rest[i].split("=", 1)
+            local[name] = value
             i += 1
             continue
         if word not in _PROOF_PREFIXES:
             break
         i += 1
         while i < len(rest) and rest[i][:1] == "-" and rest[i] != "-":
+            if word == "flock" and rest[i] in ("-c", "--command"):
+                return ["sh", "-c"] + rest[i + 1:i + 2], local
             i += 2 if rest[i] in _PROOF_PREFIXES[word] else 1
-        if word == "timeout" and i < len(rest):
-            i += 1  # Dauer
-    return rest[i:]
+        if word in ("timeout", "taskset", "flock") and i < len(rest):
+            i += 1  # Dauer, CPU-Maske bzw. Lock-Datei
+            if word == "flock" and i < len(rest) and rest[i] in ("-c", "--command"):
+                return ["sh", "-c"] + rest[i + 1:i + 2], local
+    return rest[i:], local
 
 
 def _nested_payload(cmd: str, args: list) -> "str | None":
@@ -712,16 +770,129 @@ def _inline_code(cmd: str, args: list, raw: str) -> "str | None":
     """Inline-Code eines Interpreters: `-c`/`-e`-Argument, ohne Skript der Rohtext (stdin)."""
     if not _INTERPRETER_RE.match(cmd):
         return None
-    for i, tok in enumerate(args):
-        if re.match(r"^-[A-Za-z]*[ceE]$", tok):
+    code_re, value_opts = _INTERP_OPTS[re.sub(r"[\d.]+$", "", cmd)]
+    i = 0
+    while i < len(args):
+        tok = args[i]
+        if re.match(code_re, tok):
+            if tok.startswith("--") and "=" in tok:
+                return tok.split("=", 1)[1]
             return args[i + 1] if i + 1 < len(args) else ""
-        if not tok.startswith("-"):
-            return None  # Skriptdatei (Erzeuger `scripts/sim_proof.py`) zaehlt nicht
+        if not tok.startswith("-") or (cmd.startswith("python") and tok.startswith("-m")):
+            return None  # Skriptdatei bzw. `-m MODUL` (Erzeuger `scripts/sim_proof.py`) zaehlt nicht
+        i += 2 if tok in value_opts else 1
     return raw  # `-` bzw. ohne Argument: Code kommt per Heredoc/Pipe aus dem Befehl
 
 
+def _statements(code: str) -> list:
+    """Anweisungen: Trennung an Zeilenumbruch, `;` nur ausserhalb von Quotes derselben Zeile (#453)."""
+    out = []
+    for line in code.split("\n"):
+        cur, quote, esc = "", "", False
+        for ch in line:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif quote:
+                quote = "" if ch == quote else quote
+            elif ch in "'\"`":
+                quote = ch
+            elif ch == ";":
+                out.append(cur)
+                cur = ""
+                continue
+            cur += ch
+        out.append(cur)
+    return out
+
+
+def _inline_hit(code: str, env: dict, backtick: bool = False) -> bool:
+    """Eine Anweisung mit Beleg-Erwaehnung UND Schreibindikator (ADR-3, #453)?
+
+    Erwaehnung: Beleg-Pfad, ein zuvor einstufig damit belegter Bezeichner oder ein
+    Umgebungs-Lesezugriff, wenn die Kindumgebung den Beleg-Pfad traegt (F005).
+    """
+    env_hit = any(_PROOF_MENTION_RE.search(v) for v in env.values())
+    names = []
+    for stmt in _statements(code):
+        mention = (bool(_PROOF_MENTION_RE.search(stmt))
+                   or (env_hit and bool(_ENV_READ_RE.search(stmt)))
+                   or any(re.search(rf"\b{n}\b", stmt) for n in names))
+        if mention and (_INLINE_WRITE_RE.search(stmt) or (backtick and "`" in stmt)):
+            return True
+        m = _LITERAL_ASSIGN_RE.match(stmt)
+        if m and _PROOF_MENTION_RE.search(stmt):
+            names.append(m.group(1))
+    return False
+
+
+def _cp_target_dir(args: list) -> tuple:
+    """`cp -t DIR`, `-vt DIR`, `-tDIR`, `--target-directory[=]DIR` (getopt) -> `(DIR, quellen)` (#453)."""
+    tdir, pos, i = None, [], 0
+    while i < len(args):
+        tok, nxt = args[i], (args[i + 1] if i + 1 < len(args) else "")
+        m = re.match(r"^-([A-Za-z]*?)t(.*)$", tok)
+        if tok == "--target-directory":
+            tdir, i = nxt, i + 1
+        elif tok.startswith("--target-directory="):
+            tdir = tok.split("=", 1)[1]
+        elif m and "S" not in m.group(1):
+            tdir = m.group(2) or nxt
+            i += 0 if m.group(2) else 1
+        elif tok in ("-S", "--suffix"):
+            i += 1
+        elif not tok.startswith("-") or tok == "-":
+            pos.append(tok)
+        i += 1
+    return tdir, pos
+
+
+def _cp_dir_targets(cmd: str, args: list) -> list:
+    """`cp`/`install` mit Zielordner-Option: je Quelle `DIR/<basename>` (#453 F003b)."""
+    if cmd not in ("cp", "install"):
+        return []
+    tdir, pos = _cp_target_dir(args)
+    return [os.path.join(tdir, os.path.basename(p.rstrip("/"))) for p in pos] if tdir else []
+
+
+def _recursive_copy_hit(cmd: str, args: list, bases: list) -> bool:
+    """`cp -r/-R/-a` nach `docs/artifacts[/<x>]`: liegt `simulator-run(.txt)` an Beleg-Stelle (#453)?
+
+    Quelle `X` landet unter `DEST/basename(X)`, `X/.` (oder fehlendes DEST) direkt in `DEST`.
+    Geprueft werden nur zwei Ebenen der Quelle, tiefer kann das Muster nicht treffen.
+    """
+    if cmd != "cp" or not any(t in ("--recursive", "--archive") or re.match(r"^-[A-Za-z]*[rRa]", t)
+                              for t in args):
+        return False
+    tdir, pos = _cp_target_dir(args)
+    dest, srcs = (tdir, pos) if tdir else ((pos or [""])[-1], pos[:-1])
+    if not srcs or not re.search(r"(?:^|/)docs/artifacts(?:/[^/]+)?$", dest.rstrip("/")):
+        return False
+    for b in bases:
+        d = b / os.path.expanduser(dest)
+        for s in srcs:
+            src = b / os.path.expanduser(s)
+            name = os.path.basename(s.rstrip("/"))
+            into = d if name in (".", "") or not d.is_dir() else d / name
+            try:  # unlesbar: kein Treffer hier, Rest des Befehls wird weiter geprueft
+                if not src.is_dir():
+                    continue
+                rels = [e.name for e in os.scandir(src)]
+                rels += [os.path.join(n, e.name) for n in rels if (src / n).is_dir()
+                         for e in os.scandir(src / n)]
+            except OSError:
+                continue
+            if any(re.search(p, str(into / r).replace(os.sep, "/"))
+                   for r in rels for p in PROOF_FILE_PATTERNS):
+                return True
+    return False
+
+
 def _link_paths(cmd: str, args: list) -> list:
-    """Quellen UND Ziele von mv, ln, cp -l/-s/-al, rsync (Vorfahr-/Link-Regel)."""
+    """Quellen UND Ziele von mv, ln, cp -l/-s/-al, rsync, `git mv` (Vorfahr-/Link-Regel)."""
+    if cmd == "git":  # #453 F003d: nur `git mv`; `git rm` ist Zerstoerer (ADR-1)
+        return _git_write_targets(args) if _positional(args, ("-C", "-c"))[:1] == ["mv"] else []
     if cmd == "cp" and not any(t in ("--link", "--symbolic-link") or
                                re.match(r"^-[A-Za-z]*[ls]", t) for t in args):
         return []
@@ -730,7 +901,46 @@ def _link_paths(cmd: str, args: list) -> list:
     return _positional(args, ("-S", "-e", "--suffix", "--rsh"))
 
 
-def _proof_path_hit(t: str, bases: list, patterns: list) -> bool:
+def _expand_target(t: str, bases: list, star: bool = True) -> "list | None":
+    """Brace-Listen (verschachtelt, mit Komma) und Globs `?`/`[`/`*` gegen Vorhandenes (#453 F003a).
+
+    Ohne Glob-Treffer bleibt der Literal-Pfad (Bash-Semantik); `${X}` bleibt unberuehrt.
+    Ueberlauf der Brace-Expansion: `None` (Aufrufer wertet fail-closed). Unlesbare Ordner:
+    kein Glob-Treffer fuer dieses Ziel, der Rest des Befehls wird weiter geprueft.
+    """
+    import glob
+    out, todo = [], [t]
+    while todo and len(out) + len(todo) < 128:
+        cur = todo.pop()
+        m = re.search(r"\{([^{}]*,[^{}]*)\}", cur)
+        if m:
+            todo += [cur[:m.start()] + alt + cur[m.end():] for alt in m.group(1).split(",")]
+        else:
+            out.append(cur)
+    if todo:
+        return None
+    hits = []
+    for c in (c for c in out if any(ch in c for ch in ("?[*" if star else "?["))):
+        for b in bases:
+            try:
+                hits += glob.glob(os.path.join(str(b), os.path.expanduser(c)))
+            except OSError:
+                continue
+    return out + hits
+
+
+def _proof_path_hit(t: str, bases: list, patterns: list, star: bool = True) -> bool:
+    """Trifft ein Ziel (nach Brace/Glob, #453) normalisiert ODER aufgeloest ein Muster?
+
+    Brace-Ueberlauf mit `simulator-run` im Token: Treffer (fail-closed, #453).
+    """
+    variants = _expand_target(t, bases, star)
+    if variants is None:
+        return "simulator-run" in t
+    return any(_proof_path_hit_one(v, bases, patterns) for v in variants)
+
+
+def _proof_path_hit_one(t: str, bases: list, patterns: list) -> bool:
     """Trifft das Ziel normalisiert ODER aufgeloest (Symlinks, ADR 2) ein Muster?"""
     paths = [t] + [str(b / os.path.expanduser(t)) for b in bases]
     if any(re.search(p, os.path.normpath(c).replace(os.sep, "/")) for c in paths for p in patterns):
@@ -751,25 +961,41 @@ def _proof_fallback(text: str) -> bool:
         _has_write_indicator(text) or bool(_INLINE_WRITE_RE.search(text)))
 
 
-def _proof_segment_hit(seg: list, cwd: Path, bases: list, depth: int, raw: str) -> bool:
-    """Ein Segment: Umleitungen, verschachtelte Shell, Inline-Code, Schreiber, Link-Regel."""
+def _env_subst(text: str, env: dict) -> str:
+    """`$X`/`${X}` aus der Kindumgebung ersetzen (nur Nutzlast, nie eigene Argumente, #453)."""
+    return re.sub(r"\$(?:\{(\w+)\}|(\w+))",
+                  lambda m: env.get(m.group(1) or m.group(2), m.group(0)), text)
+
+
+def _proof_segment_hit(seg: list, cwd: Path, bases: list, depth: int, raw: str,
+                       child: "dict | None" = None) -> bool:
+    """Ein Segment: Umleitungen, verschachtelte Shell, Inline-Code, Schreiber, Link-Regel.
+
+    `child`: exportierte Variablen; Praefix-Zuweisungen des Segments kommen hinzu (#453 F005).
+    """
     targets, rest = _split_redirects(seg)
-    rest = _skip_prefixes(rest)
+    rest, local = _skip_prefixes(rest)
+    env = {**(child or {}), **local}
     dirs = []
     if rest:
         cmd, args = os.path.basename(rest[0]), rest[1:]
         payload = _nested_payload(cmd, args)
-        if payload is not None and _proof_text_hit(payload, payload, cwd, bases, depth + 1):
-            return True
+        if payload is not None:
+            payload = _env_subst(payload, env)
+            if _proof_text_hit(payload, payload, cwd, bases, depth + 1):
+                return True
         code = _inline_code(cmd, args, raw)
-        if code and _PROOF_MENTION_RE.search(code) and _INLINE_WRITE_RE.search(code):
+        if code and _inline_hit(code, env, cmd in ("perl", "ruby")):  # Backtick = Shell
             return True
         if any(_proof_path_hit(t, bases, _PROOF_LINK_PATTERNS) for t in _link_paths(cmd, args)):
             return True
+        if _recursive_copy_hit(cmd, args, bases):
+            return True
         targets += (_config_write_targets(rest) + _into_dir_targets(rest, bases)
-                    + _PROOF_WRITERS.get(cmd, lambda a: [])(args))
+                    + _cp_dir_targets(cmd, args) + _PROOF_WRITERS.get(cmd, lambda a: [])(args))
         dirs = _PROOF_DIR_WRITERS.get(cmd, lambda a: [])(args)
-    return (any(_proof_path_hit(t, bases, PROOF_FILE_PATTERNS) for t in targets if t)
+    star = not rest or os.path.basename(rest[0]) not in ("rm", "unlink")  # Zerstoerer: kein `*` (ADR-1)
+    return (any(_proof_path_hit(t, bases, PROOF_FILE_PATTERNS, star) for t in targets if t)
             or any(_proof_path_hit(d, bases, _PROOF_AREA_PATTERNS) for d in dirs))
 
 
@@ -784,7 +1010,7 @@ def _proof_text_hit(text: str, raw: str, cwd: Path, bases: list, depth: int) -> 
     segments = _git_segments(text)
     if segments is None:
         return depth > 0 and _proof_fallback(text)
-    env = {}
+    env, exported = {}, set()
 
     def subst(tok: str) -> str:
         return re.sub(r"\$(?:\{(\w+)\}|(\w+))",
@@ -796,11 +1022,14 @@ def _proof_text_hit(text: str, raw: str, cwd: Path, bases: list, depth: int) -> 
                 if _ASSIGN_RE.match(t):
                     name, value = t.split("=", 1)
                     env[name] = subst(value)
+                if seg[0] == "export":
+                    exported.add(t.split("=", 1)[0])
             continue
         seg = [subst(t) for t in seg]
         if seg[0] in ("cd", "pushd", "popd"):
             bases = _cd_bases(seg, bases, cwd)
-        elif _proof_segment_hit(seg, cwd, bases, depth, raw):
+        elif _proof_segment_hit(seg, cwd, bases, depth, raw,
+                                {k: v for k, v in env.items() if k in exported}):
             return True
     return False
 
