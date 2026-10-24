@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.42.2] - 2026-10-24
+
 ### Fixed
 
 - **#445 (Sitzungs-Wächter sperrte Ordner ohne Git aus):** `session_singleton_guard.py` erzwingt die Worktree-Pflicht nur noch, wenn der Arbeitsordner oder ein Elternordner ein `.git` (Ordner oder Datei) enthält. Neue Hilfsfunktion `_is_git_dir` (reiner Dateisystem-Check, kein Subprozess); in `_do_guard` direkt nach dem Worktree-Ausstieg. Vorher blockte der Wächter Bash/Edit/Write/Task/Agent auch in Ordnern ohne Git und verwies auf `EnterWorktree`, das dort mit „not in a git repository“ scheitert — Ausweg nur per „override“. Heartbeat und Hinweistext unverändert; in Git-Projekten gilt die Pflicht wie bisher. Nicht existierender oder nicht lesbarer `cwd` gilt als „kein Git“ (fail-safe: erlauben). Bekannte Grenze: Projekte mit eigenem `WorktreeCreate`-Hook ohne Git werden nicht mehr zur Worktree-Pflicht gezwungen. Tests: `tests/test_session_singleton_guard.py`; Block-Tests in `tests/test_sync_main_169.py` laufen jetzt in einem Ordner mit `.git`.
