@@ -179,25 +179,83 @@ def _hermetic_guard(monkeypatch, tmp_path):
     monkeypatch.setattr(ssg, "_locks_dir", lambda: locks)
 
 
+def _repo_cwd(tmp_path: Path) -> str:
+    """Echtes Repo-Verzeichnis (.git-Ordner) — der Waechter erzwingt nur dort (#445)."""
+    repo = tmp_path / "myproject"
+    (repo / ".git").mkdir(parents=True, exist_ok=True)
+    return str(repo)
+
+
 def test_guard_edit_blocked_in_main_repo(tmp_path, monkeypatch):
     """Edit is a blocking tool — blocked in main repo."""
     _hermetic_guard(monkeypatch, tmp_path)
-    payload = _make_guard_payload("Edit", MAIN_CWD)
+    payload = _make_guard_payload("Edit", _repo_cwd(tmp_path))
     assert _run_guard(payload) == 2
 
 
 def test_guard_write_blocked_in_main_repo(tmp_path, monkeypatch):
     """Write is a blocking tool — blocked in main repo."""
     _hermetic_guard(monkeypatch, tmp_path)
-    payload = _make_guard_payload("Write", MAIN_CWD)
+    payload = _make_guard_payload("Write", _repo_cwd(tmp_path))
     assert _run_guard(payload) == 2
 
 
 def test_guard_bash_blocked_in_main_repo(tmp_path, monkeypatch):
     """Bash is a blocking tool — blocked in main repo."""
     _hermetic_guard(monkeypatch, tmp_path)
-    payload = _make_guard_payload("Bash", MAIN_CWD)
+    payload = _make_guard_payload("Bash", _repo_cwd(tmp_path))
     assert _run_guard(payload) == 2
+
+
+# --- Issue #445: kein Git -> kein Worktree moeglich -> nichts erzwingen ---
+
+def test_no_git_dir_allows_bash_edit_write(tmp_path, monkeypatch):
+    """AC-1: Ordner ohne .git (auch in keinem Elternordner) -> Exit 0."""
+    _hermetic_guard(monkeypatch, tmp_path)
+    plain = tmp_path / "notes"
+    plain.mkdir()
+    for tool in ("Bash", "Edit", "Write"):
+        assert _run_guard(_make_guard_payload(tool, str(plain))) == 0, tool
+
+
+def test_git_dir_without_worktree_still_blocks(tmp_path, monkeypatch):
+    """AC-2: .git als Ordner, kein Worktree -> weiter Exit 2."""
+    _hermetic_guard(monkeypatch, tmp_path)
+    cwd = _repo_cwd(tmp_path)
+    for tool in ("Bash", "Edit", "Write"):
+        assert _run_guard(_make_guard_payload(tool, cwd)) == 2, tool
+
+
+def test_git_file_counts_as_git(tmp_path, monkeypatch):
+    """AC-3: .git als Datei (Worktree/Submodul-Stil) zaehlt als Git."""
+    _hermetic_guard(monkeypatch, tmp_path)
+    repo = tmp_path / "sub"
+    repo.mkdir()
+    (repo / ".git").write_text("gitdir: /elsewhere\n")
+    assert _run_guard(_make_guard_payload("Edit", str(repo))) == 2
+
+
+def test_git_in_parent_dir_still_blocks(tmp_path, monkeypatch):
+    """AC-4: .git nur im Elternordner, Sitzung im Unterordner -> Exit 2."""
+    _hermetic_guard(monkeypatch, tmp_path)
+    child = Path(_repo_cwd(tmp_path)) / "src" / "deep"
+    child.mkdir(parents=True)
+    assert _run_guard(_make_guard_payload("Bash", str(child))) == 2
+
+
+def test_nonexistent_cwd_allows(tmp_path, monkeypatch):
+    """AC-5: nicht existierender cwd -> fail-safe Exit 0."""
+    _hermetic_guard(monkeypatch, tmp_path)
+    assert _run_guard(_make_guard_payload("Edit", str(tmp_path / "gibt-es-nicht"))) == 0
+
+
+def test_no_git_dir_still_heartbeats(tmp_path, monkeypatch):
+    """AC-6: Heartbeat laeuft auch im Nicht-Git-Fall vor dem Ausstieg."""
+    locks, _ = _heartbeat_env(monkeypatch, tmp_path)
+    plain = tmp_path / "notes"
+    plain.mkdir()
+    assert _run_guard(_make_guard_payload("Edit", str(plain))) == 0
+    assert (locks / "sess-abc.json").exists()
 
 
 def test_guard_edit_allowed_in_worktree():
@@ -615,7 +673,7 @@ def test_guard_without_lock_file_reregisters(tmp_path, monkeypatch):
     # Auch der Block-Pfad (Haupt-Repo) darf den Eintrag nicht verhindern:
     # der Heartbeat laeuft vor allen Ausstiegspfaden.
     lock.unlink()
-    assert _run_guard(_make_guard_payload("Edit", MAIN_CWD)) == 2
+    assert _run_guard(_make_guard_payload("Edit", _repo_cwd(tmp_path))) == 2
     assert lock.exists(), "Re-Register unterbleibt auf dem Block-Pfad"
 
 

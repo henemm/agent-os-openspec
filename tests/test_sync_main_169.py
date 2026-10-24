@@ -85,10 +85,12 @@ def _sync(cwd, monkeypatch):
 # --- Guard-Ausnahme (AC-1..3) ------------------------------------------------
 
 def test_exact_sync_main_call_allowed_in_main(tmp_path):
+    (tmp_path / ".git").mkdir()  # Haupt-Ordner = Git-Ordner (#445)
     assert _guard("Bash", tmp_path, f"python3 {GUARD} sync-main") == 0
 
 
 def test_project_shim_path_allowed_in_main(tmp_path):
+    (tmp_path / ".git").mkdir()  # Haupt-Ordner = Git-Ordner (#445)
     hooks = tmp_path / ".claude" / "hooks"
     hooks.mkdir(parents=True)
     (hooks / "session_singleton_guard.py").write_text("# shim\n")
@@ -110,11 +112,13 @@ def test_project_shim_path_allowed_in_main(tmp_path):
     "",
 ])
 def test_other_bash_blocked_in_main(tmp_path, cmd):
+    (tmp_path / ".git").mkdir()  # ohne Git erlaubt der Guard alles (#445)
     assert _guard("Bash", tmp_path, cmd) == 2
 
 
 @pytest.mark.parametrize("tool", ["Edit", "Write", "MultiEdit", "Task", "Agent"])
 def test_other_tools_still_blocked(tmp_path, tool):
+    (tmp_path / ".git").mkdir()  # ohne Git erlaubt der Guard alles (#445)
     assert _guard(tool, tmp_path, f"python3 {GUARD} sync-main") == 2
 
 
@@ -198,6 +202,7 @@ def test_sync_aborts_when_upstream_is_local_branch(tmp_path, monkeypatch):
 
 
 def test_carriage_return_not_allowed(tmp_path):
+    (tmp_path / ".git").mkdir()  # ohne Git erlaubt der Guard alles (#445)
     assert _guard("Bash", tmp_path, f"python3 {GUARD} sync-main\r") == 2
 
 
