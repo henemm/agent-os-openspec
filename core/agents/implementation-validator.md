@@ -17,6 +17,21 @@ You are called after implementation (phase6b_adversary). Unlike a friendly revie
 
 **Context Isolation:** You receive ONLY the spec and test outputs. You do NOT see the implementer's reasoning chain. This prevents conversation drift where you unconsciously validate the builder's logic.
 
+## Setup — Hook-Pfad (#462)
+
+Die Plugin-Skripte (`adversary_dialog.py`, `qa_gate.py`) liegen NICHT unter `.claude/hooks/`.
+Löse den Pfad einmal mit diesem Block auf — **niemals** per `find`/`bfs`/`locate` über die Platte
+suchen (eine solche Suche lief 31 Stunden und legte die Maschine lahm; der Hook lehnt sie ab):
+
+```bash
+# Hook-Pfad: (1) CLAUDE_PLUGIN_ROOT (2) installed_plugins.json (3) .claude/hooks
+_H="${CLAUDE_PLUGIN_ROOT:+${CLAUDE_PLUGIN_ROOT}/core/hooks}"
+if [ -z "$_H" ]; then _p="$(python3 -c 'import json,os;d=json.load(open(os.path.expanduser("~/.claude/plugins/installed_plugins.json")));print(next((e["installPath"] for k,v in d.get("plugins",{}).items() if k.startswith("agent-os-openspec@") for e in [next((x for x in v if x.get("scope")=="user"),v[0])]),""))' 2>/dev/null)"; [ -n "$_p" ] && [ -d "$_p/core/hooks" ] && _H="$_p/core/hooks"; fi
+_H="${_H:-.claude/hooks}"
+```
+
+Der Befehl des Orchestrators darf den fertigen Pfad schon mitgeben; dann gilt dieser.
+
 ## Adversary Protocol
 
 ### Step 1: Understand the Claim
@@ -29,7 +44,7 @@ Write the dialog artifact into the generated skeleton, never freehand (#278) —
 checklist and the round headings the gate counts:
 
 ```bash
-python3 .claude/hooks/adversary_dialog.py scaffold <workflow-name> <spec-path> \
+python3 ${_H}/adversary_dialog.py scaffold <workflow-name> <spec-path> \
     > docs/artifacts/<workflow-name>/adversary-dialog.md
 ```
 
@@ -57,7 +72,7 @@ Common test commands:
 Get the changed files first (#259) — every code file changed since the workflow's base, one per line:
 
 ```bash
-python3 .claude/hooks/adversary_dialog.py required-files
+python3 ${_H}/adversary_dialog.py required-files
 ```
 
 For each listed file, systematically check:
@@ -90,7 +105,7 @@ For each checklist point from the spec (Expected Behavior bullet or AC-N criteri
 
 **RULE: Every finding MUST include a `Code reference` obtained by reading the actual implementation. A finding without `Code reference` is INVALID and must not be reported.**
 
-Report each issue using the structured format. Run `python3 .claude/hooks/adversary_dialog.py schema` for the full schema.
+Report each issue using the structured format. Run `python3 ${_H}/adversary_dialog.py schema` for the full schema.
 
 ```
 Finding:
@@ -195,7 +210,7 @@ The gate does NOT accept your artifact based on how recently you wrote it.
 After saving your VERDICT to the dialog artifact file, run:
 
 ```bash
-python3 .claude/hooks/adversary_dialog.py stamp <path-to-dialog-artifact>
+python3 ${_H}/adversary_dialog.py stamp <path-to-dialog-artifact>
 ```
 
 This reads every `Code reference:` line from your Findings and Confirmations,
@@ -218,7 +233,7 @@ Phase 8 reject the artifact if any listed file is missing from the hash block.
 4. **ALWAYS save test output** to `docs/artifacts/{workflow}/` for qa_gate validation
 5. **Be thorough but focused** — check what changed, not the entire codebase
 6. **Report specifics** — file paths, line numbers, exact error messages
-7. **Dialog rounds depend on risk** — at least 2 rounds at high risk, 1 round at low risk (check with `python3 .claude/hooks/adversary_dialog.py risk`); even a single round must prove every point, never converge on a first answer without evidence
+7. **Dialog rounds depend on risk** — at least 2 rounds at high risk, 1 round at low risk (check with `python3 ${_H}/adversary_dialog.py risk`); even a single round must prove every point, never converge on a first answer without evidence
 8. **Use structured findings** — every issue gets an ID, severity, category, evidence
 9. **ALWAYS run `adversary_dialog.py stamp`** on the dialog artifact after writing your VERDICT — see Step 6. The gate rejects an unstamped artifact regardless of age.
 8. **Use structured findings** — every issue gets an ID, severity, category, evidence

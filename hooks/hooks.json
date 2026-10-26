@@ -96,6 +96,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/post_bash.py",
             "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/process_watchdog.py hook",
+            "timeout": 15
           }
         ]
       },
@@ -139,6 +144,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/session_singleton_guard.py cleanup",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/process_watchdog.py end",
+            "timeout": 15
           }
         ]
       }
