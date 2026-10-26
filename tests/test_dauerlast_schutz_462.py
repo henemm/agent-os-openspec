@@ -30,6 +30,12 @@ def test_agent_ruft_skripte_ueber_hook_pfad_auf():
     assert "python3 ${_H}/adversary_dialog.py scaffold" in text
 
 
+def test_kein_agent_ruft_skripte_ueber_festen_pfad_auf():
+    """#464: weder `python3 .claude/hooks/...` noch eine Suche — nur `${_H}`."""
+    for agent in (REPO_ROOT / "core" / "agents").glob("*.md"):
+        assert "python3 .claude/hooks/" not in agent.read_text(), agent.name
+
+
 # --- Teil 2 -------------------------------------------------------------------
 
 def _gate(command: str, tmp_path: Path) -> subprocess.CompletedProcess:
