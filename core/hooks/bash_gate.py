@@ -1047,6 +1047,76 @@ def _writes_proof_file(scan_cmd: str, cwd: Path, raw: str = "") -> bool:
         return False
 
 
+# --- Suche ab Wurzel/Home (#462) -------------------------------------------
+# Eine Suche ueber die ganze Platte laeuft Stunden und treibt die Maschine in
+# Dauerlast (31 h `bfs -S dfs /`). Reine Mustererkennung ohne Modell; ein
+# Unterordner (`find ./docs`) bleibt frei.
+_SEARCH_BROAD = {"/", "~", "$HOME", "${HOME}", "/home", "/Users", "/root", "/Volumes", "/mnt"}
+_FIND_FLAGS = {"-H", "-L", "-P", "-E", "-X", "-x", "-s", "-d"}
+_FIND_VALUE_OPTS = {"-S", "-j", "-D", "-f"}
+_FD_VALUE_OPTS = ("-e", "-E", "-t", "-d", "-x", "-X", "-j", "-S", "-c",
+                  "--extension", "--exclude", "--type", "--max-depth")
+_GREP_VALUE_OPTS = ("-e", "-f", "-m", "-A", "-B", "-C", "--include", "--exclude",
+                    "--exclude-dir", "--file", "--regexp")
+_RG_VALUE_OPTS = ("-e", "-f", "-g", "-t", "-T", "-m", "-A", "-B", "-C", "-j", "--glob",
+                  "--type", "--max-count", "--regexp", "--file", "--iglob")
+
+
+def _is_broad_root(path: str) -> bool:
+    p = path.rstrip("/") or "/"
+    home = os.path.expanduser("~").rstrip("/")
+    return p in _SEARCH_BROAD or (bool(home) and p == home)
+
+
+def _search_roots(cmd: str, args: list) -> list:
+    """Suchwurzeln eines rekursiven Such-Aufrufs; leer, wenn `cmd` keiner ist."""
+    if cmd in ("find", "bfs"):
+        roots, skip = [], False
+        for tok in args:
+            if skip:
+                skip = False
+            elif tok in _FIND_VALUE_OPTS:
+                skip = True
+            elif tok in _FIND_FLAGS:
+                continue
+            elif tok.startswith(("-", "(", "!")) or tok == ",":
+                break
+            else:
+                roots.append(tok)
+        return roots
+    if cmd in ("fd", "fdfind"):
+        return _positional(args, _FD_VALUE_OPTS)[1:]
+    if cmd in ("rg", "ag", "ack"):
+        pos = _positional(args, _RG_VALUE_OPTS)
+    elif cmd in ("grep", "egrep", "fgrep"):
+        recursive = any(a in ("--recursive", "--dereference-recursive")
+                        or (a.startswith("-") and not a.startswith("--") and re.search(r"[rR]", a))
+                        for a in args)
+        if not recursive:
+            return []
+        pos = _positional(args, _GREP_VALUE_OPTS)
+    else:
+        return []
+    has_pattern = any(a in ("-e", "-f", "--regexp", "--file") for a in args)
+    return pos if has_pattern else pos[1:]
+
+
+def _broad_search_hit(scan_cmd: str) -> "str | None":
+    """Erstes Such-Kommando, das ab `/`, `~` oder $HOME sucht; sonst None (fail-open)."""
+    try:
+        for seg in _git_segments(scan_cmd) or []:
+            rest, _ = _skip_prefixes(seg)
+            if not rest:
+                continue
+            cmd = os.path.basename(rest[0])
+            for root in _search_roots(cmd, rest[1:]):
+                if _is_broad_root(root):
+                    return f"{cmd} {root}"
+    except Exception:
+        return None
+    return None
+
+
 def _writes_main_repo(segments: list, cwd: Path) -> "str | None":
     """Schreibziel im Haupt-Ordner, aber ausserhalb des eigenen Worktrees (#417)?
 
@@ -1669,6 +1739,17 @@ def main():
               "(scripts/sim.sh test-proof).\n"
               "  Auch Umbenennen, Verlinken oder Kopieren des Ordners docs/artifacts/<wf> "
               "zaehlt als Zugriff auf den Beleg (#448).")
+
+    # 1e. Suche ab Wurzel/Home (#462): Schutz vor Dauerlast, kein Workflow-Zwang.
+    search_hit = _broad_search_hit(scan_cmd)
+    if search_hit and not _any_override_token():
+        block(
+            f"BLOCKED: Suche ueber die ganze Platte ({search_hit}) — Dauerlast-Schutz (#462).\n"
+            "  Suche im Projekt (`find ./docs ...`) oder nutze den bekannten Pfad.\n"
+            "  Plugin-Skripte (adversary_dialog.py, workflow.py, ...) liegen unter\n"
+            "  ${CLAUDE_PLUGIN_ROOT}/core/hooks/ bzw. $_H aus dem Setup-Block — nie suchen.\n"
+            "  Bewusst gewollt? User tippt 'override'."
+        )
 
     # Umleitung auf State/Marker hinter einem erlaubten Befehl (#316): VOR dem
     # Git-Schnellweg berechnen, sonst endet `git status > <state>` dort.

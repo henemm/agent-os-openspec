@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.43.0] - 2026-10-26
+
+### Added
+
+- **#462 (Schutz gegen Dauerlast durch Werkzeuge):** Zwei Claude-Sitzungen ließen `bfs -S dfs / -name adversary_dialog.py` laufen (31 h bzw. 1 h 23 min, Load über 100 auf dem Mac). Drei Teile: (1) `core/agents/implementation-validator.md` löst den Hook-Pfad wie die Skills über einen `_H`-Setup-Block auf (`CLAUDE_PLUGIN_ROOT` → `installed_plugins.json` → `.claude/hooks`) und ruft `adversary_dialog.py` darüber auf; der feste Pfad `.claude/hooks/` existiert im Plugin-Modus nicht und war der Anlass der Platten-Suche. (2) Neue Prüfung 1e in `bash_gate.py` (Schutz, kein Workflow-Zwang, Ausweg „override“): `find`, `bfs`, `fd`, `grep -r`, `rg`, `ag`, `ack` mit Suchwurzel `/`, `~`, `$HOME`, `/home`, `/Users`, `/root`, `/Volumes` oder `/mnt` werden abgelehnt, mit Hinweis auf den richtigen Pfad; Unterordner (`find ./docs`, `~/projekt`), Suche im Arbeitsordner und reine Erwähnungen in `echo`/`git log --grep` bleiben frei. Fail-open bei nicht zerlegbaren Befehlen. (3) Neues `core/hooks/process_watchdog.py`: Suche ab Wurzel/Home, die länger als 60 s läuft, wird mit SIGTERM beendet; andere Prozesse über 10 min und 300 s CPU-Zeit werden nur gemeldet; `xcodebuild` und `sim.sh` sind ausgenommen; keine `ulimit`-Obergrenze. Modi `hook` (PostToolUse Bash, Meldung an Claude), `end` (SessionEnd) und `service` (alle Prozesse unter einer `claude`-Instanz). Registriert in `hooks/hooks.json` (und damit im Copy-Modus). Für wartende Sitzungen ohne Hook: `scripts/install_watchdog_service.sh` installiert `scripts/launchd/com.henemm.process-watchdog.plist` (einmal pro Minute, Log `~/Library/Logs/process-watchdog.log`). **Offen:** Installation und Probelauf auf dem Mac; die Agenten `po-briefer`, `feature-planner`, `bug-investigator` nennen weiter `.claude/hooks/workflow.py` (eigene Folge-Aufgabe). Tests: `tests/test_dauerlast_schutz_462.py`.
+
 ## [3.42.2] - 2026-10-24
 
 ### Fixed
