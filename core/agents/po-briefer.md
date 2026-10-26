@@ -108,8 +108,10 @@ Gib am Ende deines Reports genau diese Zeile aus, damit der Orchestrator das
 Briefing registriert (bindet es per SHA-256 an die gelesene Spec-Fassung):
 
 ```
-python3 .claude/hooks/workflow.py set-briefing docs/briefings/<workflow-name>.md
+python3 ${_H}/workflow.py set-briefing docs/briefings/<workflow-name>.md
 ```
+
+(`_H` ist der Hook-Pfad aus dem Setup-Block des Orchestrator-Befehls; nie auf der Platte suchen, #462.)
 
 ---
 

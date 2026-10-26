@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.43.1] - 2026-10-26
+
+### Fixed
+
+- **#464 (Hook-Pfad in drei weiteren Agenten):** `bug-investigator`, `feature-planner` und `po-briefer` riefen `python3 .claude/hooks/workflow.py` auf; im Plugin-Modus existiert dieser Pfad nicht (gleiche Ursache wie die Plattensuche aus #462). `bug-investigator` und `feature-planner` lösen den Hook-Pfad jetzt über denselben `_H`-Setup-Block wie die Skills auf; `po-briefer` (ohne Bash-Werkzeug) nennt `${_H}` für die vom Orchestrator auszuführende Registrierungszeile. Test: `tests/test_dauerlast_schutz_462.py` prüft, dass kein Agent mehr `python3 .claude/hooks/` aufruft.
+
 ## [3.43.0] - 2026-10-26
 
 ### Added
