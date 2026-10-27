@@ -411,6 +411,33 @@ def _command_args(rest: list) -> tuple:
     return os.path.basename(rest[i]), args
 
 
+_QA_STAMP_NAME_RE = re.compile(r"\b(?:write_)?qa_run_stamp\b")
+_PYTHON_EXEC_RE = re.compile(r"(?<![\w.-])python[\d.]*(?![\w-])")
+
+
+def _forges_qa_stamp(command: str) -> bool:
+    """Stempel-Name + Python-Ausfuehrung im Kommando, Freitext ausgenommen (#404 F003).
+
+    Roh-Tokens des VOLLEN Kommandos (Heredoc-Bodies und `-c`-Code sind Code,
+    kein Freitext); nur Werte von SECRETS_FREETEXT_FLAGS fallen weg (#30/#53).
+    Nicht zerlegbar -> Roh-Scan (fail-closed).
+    """
+    try:
+        tokens = shlex.split(command, posix=True)
+    except ValueError:
+        tokens = [command]
+    kept, skip = [], False
+    for tok in tokens:
+        if skip:
+            skip = False
+        elif tok in SECRETS_FREETEXT_FLAGS:
+            skip = True
+        else:
+            kept.append(tok)
+    text = "\n".join(kept)
+    return bool(_QA_STAMP_NAME_RE.search(text) and _PYTHON_EXEC_RE.search(text))
+
+
 def _positional(args: list, value_flags: tuple = ()) -> list:
     """Nicht-Flag-Argumente; Werte von `value_flags` und Flags fallen weg, `--` beendet Flags."""
     out, skip, only_pos = [], False, False
@@ -1824,6 +1851,11 @@ def main():
     ):
         if _has_write_indicator(scan_cmd, links=wf_active):
             block(_state_msg)
+
+    # 3c. QA-Stempel (#404 F003): Schreibversuch per Python im Bash-Kommando.
+    if workflow_enforced and _forges_qa_stamp(command):
+        block("BLOCKED: QA-Stempel darf nur qa_gate.py --run schreiben "
+              "(write_qa_run_stamp per Python ist gesperrt, #404).")
 
     # 4. Secrets guard
     sensitive_patterns = config.get("secrets_guard", {}).get("sensitive_patterns", SENSITIVE_PATTERNS)
