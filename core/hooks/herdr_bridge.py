@@ -163,7 +163,9 @@ def build_report(data) -> "dict | None":
     phase_nr = f"{workflow.PHASE_NUMBERS[phase]}/{workflow.TOTAL_PHASES}"
     nxt = workflow.expected_footer_command(data) or ""
     if nxt and not nxt.startswith("/"):
-        nxt = "approved"  # Freitext-Schritt = Freigabe-Phrase
+        # Freitext-Schritt: "Auto-..." fuehrt Claude selbst aus (#470),
+        # sonst ist es die Freigabe-Phrase des PO.
+        nxt = "auto" if nxt.startswith("Auto-") else "approved"
     head = f"#{issue}" if issue else name
     return {
         "title": _clean(f"{head} {phase_nr} {step}"),

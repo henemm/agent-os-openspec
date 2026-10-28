@@ -171,6 +171,13 @@ Datei: `docs/specs/fast/[name].md`
 
 Nach User-Freigabe ("approved") direkt zu `/50-implement`.
 
+**Auto-Modus (`autonomy.mode: auto`, #470):** Auch der Fast Track braucht dann ein
+unabhängiges PO-Briefing mit `## Ampel` — die Ausnahme `skip_fast_track` gilt im
+Auto-Modus nicht. Also nach der Mini-Spec den `po-briefer` laufen lassen
+(`/30-write-spec` Step 3b), `workflow.py set-briefing <pfad>` und danach
+`workflow.py auto-approve`: `AUTO_APPROVE=done` → direkt weiter zu `/50-implement`,
+`AUTO_APPROVE=human` → der PO gibt wie bisher mit "approved" frei.
+
 ## Was beim Fast Track IMMER aktiv bleibt
 
 - **Spec + User-Freigabe** — keine Implementierung ohne "approved"

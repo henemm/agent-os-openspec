@@ -94,6 +94,8 @@ Teil B von #468: Im Auto-Modus (`autonomy.mode: auto`) gibt die Ampel im unabhae
 - Bestehende Briefings ohne `## Ampel` gelten im Auto-Modus als rot (PO entscheidet); im manual-Modus ist die Ampel ohne Wirkung.
 - Gelesen wird die wirksame Config des Hauptordners; eine Worktree-lokale Abweichung wirkt nicht.
 - Der Listener-Pfad (`approved`) bleibt vollstaendig erhalten und wird nicht durch die Ampel eingeschraenkt.
+- Bedrohungsmodell: Der Auto-Modus schuetzt gegen versehentliche und naheliegende Umgehungen (lokale Overrides, Unterordner-Configs, veraltete oder ausgetauschte Briefings, FIFO/Device statt Datei). Er schuetzt NICHT gegen einen Agenten, der das System gezielt austrickst. Alle Entscheidungen im Auto-Pfad lesen nur eine Config-Quelle (`trusted_config()`: Wurzel wie `bash_gate`, nur YAML der wirksamen Datei, Fehler → human).
+- Akzeptiertes Restrisiko (Adversary F009): Ein gezielt praepariertes Briefing kann eine fuer Menschen sichtbar rote Zeile so formatieren, dass `parse_ampel` sie nicht als Widerspruch erkennt. Ebenso bleibt die Urheberschaft des Briefings unbewiesen (siehe oben). Mitigation statt technischer Sperre: Audit-Eintrag in `approvals` mit Hashes, Auflistung automatischer Freigaben in der Abschlussmeldung (#472), CI-Spec-Gate im Pull Request.
 
 ## Definition of Done
 

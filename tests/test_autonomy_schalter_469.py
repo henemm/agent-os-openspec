@@ -3,8 +3,9 @@
 Spec: docs/specs/feat-469-autonomie-schalter.md
 
 Festgelegte Vertraege (die Spec nennt sie nur sinngemaess):
-- `workflow.autonomy_mode()` liest ueber `config_loader.load_config()` (zur Laufzeit
-  aufgeloest, damit ein Monkeypatch von `config_loader.load_config` greift).
+- `workflow.autonomy_mode()` liest ueber `workflow.trusted_config()` (zur Laufzeit
+  aufgeloest, damit ein Monkeypatch greift). Seit #470 (AC-1) nur die wirksame
+  Config-Datei ohne `settings.local.json`; vorher `config_loader.load_config()`.
 - `workflow.record_approval(data, gate, by, reason, evidence=None)` gibt den
   angehaengten Eintrag zurueck; Schluessel gate/by/mode/at/reason/evidence;
   `at` ist mit `datetime.fromisoformat` parsebar.
@@ -135,19 +136,19 @@ def test_other_values_fall_back_to_manual(inproc, monkeypatch):
     bad_modes = ["AUTO", " auto", "auto ", True, 1, "yes", None, "manual"]
     failures = []
     for value in bad_modes:
-        monkeypatch.setattr(inproc.config_loader, "load_config",
+        monkeypatch.setattr(inproc.workflow, "trusted_config",
                             lambda v=value: {"autonomy": {"mode": v}})
         got = wf.autonomy_mode()
         if got != "manual":
             failures.append((value, got))
     for section in ["auto", ["auto"], 5, True]:
-        monkeypatch.setattr(inproc.config_loader, "load_config",
+        monkeypatch.setattr(inproc.workflow, "trusted_config",
                             lambda s=section: {"autonomy": s})
         got = wf.autonomy_mode()
         if got != "manual":
             failures.append((f"section={section!r}", got))
     # Gegenprobe: der Literal-String wirkt weiterhin (kein Dauer-manual).
-    monkeypatch.setattr(inproc.config_loader, "load_config",
+    monkeypatch.setattr(inproc.workflow, "trusted_config",
                         lambda: {"autonomy": {"mode": "auto"}})
     assert wf.autonomy_mode() == "auto"
     assert not failures, failures
@@ -156,13 +157,13 @@ def test_other_values_fall_back_to_manual(inproc, monkeypatch):
 # --- AC-4 -------------------------------------------------------------------
 
 def test_broken_config_falls_back_to_manual(inproc, monkeypatch):
-    """AC-4: Ausnahme in load_config oder kaputte YAML -> manual, kein Wurf."""
+    """AC-4: Ausnahme beim Config-Lesen oder kaputte YAML -> manual, kein Wurf."""
     wf = inproc.workflow
 
     def boom():
         raise RuntimeError("config kaputt")
 
-    monkeypatch.setattr(inproc.config_loader, "load_config", boom)
+    monkeypatch.setattr(inproc.workflow, "trusted_config", boom)
     assert wf.autonomy_mode() == "manual"
     monkeypatch.undo()
 
@@ -225,7 +226,7 @@ def test_set_field_approvals_blocked(tmp_path):
 
 def test_record_approval_appends_entry(inproc, monkeypatch):
     """AC-9: Eintrag mit gate/by/mode/at/reason/evidence, haengt an."""
-    monkeypatch.setattr(inproc.config_loader, "load_config",
+    monkeypatch.setattr(inproc.workflow, "trusted_config",
                         lambda: {"autonomy": {"mode": "auto"}})
     wf = inproc.workflow
     data = {"name": "x", "approvals": []}
@@ -250,7 +251,7 @@ def test_record_approval_appends_entry(inproc, monkeypatch):
 
 def test_record_approval_creates_missing_list(inproc, monkeypatch):
     """AC-10: fehlender Schluessel `approvals` wird angelegt."""
-    monkeypatch.setattr(inproc.config_loader, "load_config", lambda: {})
+    monkeypatch.setattr(inproc.workflow, "trusted_config", lambda: {})
     data = {"name": "alt"}
     inproc.workflow.record_approval(data, "spec", "user", "Grund")
     assert isinstance(data.get("approvals"), list)

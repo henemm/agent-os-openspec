@@ -192,6 +192,15 @@ def inproc(tmp_path, monkeypatch):
     reset()
 
 
+def _write_inproc_briefing(root: Path, ampel: str = "gruen") -> str:
+    """Briefing-Datei fuer In-Process-Tests anlegen; liefert ihren SHA-256 (F005)."""
+    path = root / REL_BRIEFING
+    path.parent.mkdir(parents=True, exist_ok=True)
+    text = _briefing(ampel)
+    path.write_text(text)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 # --- AC-1 -------------------------------------------------------------------
 
 def test_autonomy_mode_ignores_settings_local(inproc):
@@ -426,11 +435,14 @@ def test_next_step_auto_only_with_green_ampel(inproc):
     """AC-15: Auto-Schritt nur bei auto + phase3_spec + Spec + gruener Ampel."""
     wf, root = inproc.workflow, inproc.root
 
+    briefing_sha = _write_inproc_briefing(root)
+
     def data(ampel):
         d = {"name": WF, "workflow_type": "feature", "current_phase": "phase3_spec",
              "spec_file": REL_SPEC}
         if ampel is not None:
-            d["po_briefing"] = {"file": REL_BRIEFING, "ampel": ampel}
+            d["po_briefing"] = {"file": REL_BRIEFING, "ampel": ampel,
+                                "briefing_sha256": briefing_sha}
         return d
 
     def set_mode(mode):
@@ -498,12 +510,14 @@ def test_herdr_report_next_auto(inproc):
     """AC-17: Auto-Schritt -> tokens.next == "auto"; Freigabe-Schritt -> "approved"."""
     import herdr_bridge  # noqa: PLC0415
     root = inproc.root
+    briefing_sha = _write_inproc_briefing(root)
 
     def report(ampel):
         d = {"name": "feat-470-demo", "current_phase": "phase3_spec",
              "spec_file": REL_SPEC}
         if ampel:
-            d["po_briefing"] = {"file": REL_BRIEFING, "ampel": ampel}
+            d["po_briefing"] = {"file": REL_BRIEFING, "ampel": ampel,
+                                "briefing_sha256": briefing_sha}
         return herdr_bridge.build_report(d)
 
     (root / "openspec.yaml").write_text("autonomy:\n  mode: auto\n")
@@ -618,3 +632,395 @@ def test_listener_and_auto_paths_set_same_state_fields(tmp_path):
     assert auto_state["phase_transitions"][-1]["trigger"] == "auto"
     assert not listener_state.get("approvals")
     assert len(auto_state["approvals"]) == 1
+
+
+# --- Regressionen aus dem Adversary-Dialog (BROKEN, Runde 1) -----------------
+
+@pytest.mark.parametrize("where", ["settings.local.json", ".claude/settings.local.json"])
+def test_regression_f001_local_adr_kill_switch_ignored_in_auto_path(tmp_path, where):
+    """F001: `adr_gate.enabled: false` in settings.local.json schaltet das ADR-Gate
+    im Auto-Pfad NICHT ab — leeres ADR bleibt human."""
+    proj = _project(tmp_path, spec=SPEC_ADR_MISSING)
+    local = proj / where
+    local.parent.mkdir(parents=True, exist_ok=True)
+    local.write_text(json.dumps({"adr_gate": {"enabled": False}}))
+    _assert_human_unchanged(proj)
+
+
+@pytest.mark.parametrize("where", ["settings.local.json", ".claude/settings.local.json"])
+def test_regression_f002_local_briefing_kill_switch_ignored_in_auto_path(tmp_path, where):
+    """F002: `po_briefing_gate.enabled: false` in settings.local.json oeffnet den
+    Auto-Pfad nicht fuer eine nach dem Briefing umgeschriebene Spec."""
+    proj = _project(tmp_path)
+    spec = proj / REL_SPEC
+    spec.write_text(spec.read_text().replace("Ein Feature, das etwas tut.",
+                                             "Ganz andere Spec nach dem Briefing."))
+    local = proj / where
+    local.parent.mkdir(parents=True, exist_ok=True)
+    local.write_text(json.dumps({"po_briefing_gate": {"enabled": False}}))
+    _assert_human_unchanged(proj)
+
+
+def test_regression_f002_staleness_checked_despite_effective_kill_switch(tmp_path):
+    """F002: Auch ein Kill-Switch in der WIRKSAMEN Config hebt die Spec-Aktualitaet
+    (spec_frozen_sha256 gegen frozen_spec_sha256) im Auto-Pfad nicht auf."""
+    proj = _project(tmp_path)
+    (proj / "openspec.yaml").write_text(
+        "autonomy:\n  mode: auto\npo_briefing_gate:\n  enabled: false\n")
+    spec = proj / REL_SPEC
+    spec.write_text(spec.read_text().replace("Ein Feature, das etwas tut.",
+                                             "Ganz andere Spec nach dem Briefing."))
+    verdict, res = _auto_approve(proj)
+    assert verdict == "human", res.stdout
+    assert _state(proj)["current_phase"] == "phase3_spec"
+
+    # Fehlender Teil-Hash im registrierten Eintrag: ebenfalls human.
+    proj2 = _project(tmp_path / "nofrozen")
+    data = _state(proj2)
+    data["po_briefing"].pop("spec_frozen_sha256", None)
+    _wf_path(proj2).write_text(json.dumps(data))
+    _assert_human_unchanged(proj2)
+
+
+def test_regression_f003_briefing_outside_project_blocked(tmp_path):
+    """F003: `set-briefing ../x.md` und Symlinks nach draussen werden abgelehnt;
+    ein nach der Registrierung gegen einen Symlink nach draussen getauschtes
+    Briefing ergibt im Auto-Pfad human."""
+    proj = _project(tmp_path, register=False)
+    outside = proj.parent / "outside.md"
+    outside.write_text(_briefing("gruen"))
+
+    res = _cli(["set-briefing", "../outside.md"], proj)
+    assert res.returncode != 0 and "ausserhalb" in res.stderr, (res.stdout, res.stderr)
+    link = proj / "docs" / "briefings" / "link.md"
+    os.symlink(outside, link)
+    res = _cli(["set-briefing", "docs/briefings/link.md"], proj)
+    assert res.returncode != 0 and "ausserhalb" in res.stderr, (res.stdout, res.stderr)
+    assert "po_briefing" not in _state(proj)
+
+    # Gueltig registriert, danach durch Symlink auf identischen Inhalt draussen ersetzt.
+    proj2 = _project(tmp_path / "swap")
+    inside = proj2 / REL_BRIEFING
+    outside2 = proj2.parent / "outside2.md"
+    outside2.write_text(inside.read_text())
+    inside.unlink()
+    os.symlink(outside2, inside)
+    _assert_human_unchanged(proj2)
+
+    # Gegenprobe: ein Symlink INNERHALB des Projekts bleibt erlaubt.
+    proj3 = _project(tmp_path / "inner", register=False)
+    real = proj3 / "docs" / "briefings" / "real.md"
+    real.write_text(_briefing("gruen"))
+    os.symlink(real, proj3 / "docs" / "briefings" / "alias.md")
+    res = _cli(["set-briefing", "docs/briefings/alias.md"], proj3)
+    assert res.returncode == 0, (res.stdout, res.stderr)
+
+
+def test_regression_f004_parse_ampel_hidden_and_markup_lines():
+    """F004: Code-Fences/HTML-Kommentare (auch ungeschlossen) verbergen nichts
+    Gruenes; Ampel-Zeilen mit Markdown-Markup zaehlen als Widerspruch."""
+    from workflow import parse_ampel  # noqa: PLC0415
+    green = "\n## Ampel\n\nAmpel: gruen\n"
+    red_cases = {
+        "fence unclosed": "```\n" + BRIEFING_BASE + green,
+        "tilde fence unclosed": BRIEFING_BASE + "\n~~~\n" + green,
+        "fence closed around": BRIEFING_BASE + "\n```" + green + "```\n",
+        "comment unclosed": "<!--\n" + BRIEFING_BASE + green,
+        "comment around": BRIEFING_BASE + "\n<!--" + green + "-->\n",
+        "bold rot": BRIEFING_BASE + "\n**Ampel: rot**\n" + green,
+        "bold key rot": BRIEFING_BASE + "\n**Ampel:** rot\n" + green,
+        "bullet rot": BRIEFING_BASE + "\n- Ampel: rot, weil\n" + green,
+        "star bullet rot": BRIEFING_BASE + "\n* Ampel: rot\n" + green,
+        "quote rot": BRIEFING_BASE + "\n> Ampel: rot\n" + green,
+        "underscore rot": BRIEFING_BASE + "\n_Ampel_: rot\n" + green,
+    }
+    for label, text in red_cases.items():
+        assert parse_ampel(text) == "red", label
+    # Gegenproben: sichtbar eindeutig gruen bleibt gruen.
+    assert parse_ampel(BRIEFING_BASE + green) == "green"
+    assert parse_ampel(BRIEFING_BASE + "\n<!-- Notiz -->\n" + green) == "green"
+    assert parse_ampel(BRIEFING_BASE + "\n```\nbeispiel\n```\n" + green) == "green"
+    assert parse_ampel(BRIEFING_BASE + "\n```\nAmpel: rot\n```\n" + green) == "green"
+
+
+def test_regression_f005_next_step_requires_current_briefing_file(inproc):
+    """F005: next_step zeigt den Auto-Schritt nur, wenn die Briefing-Datei zum
+    registrierten Hash passt; sonst der normale Freigabe-Schritt mit ❗."""
+    wf, root = inproc.workflow, inproc.root
+    (root / "openspec.yaml").write_text("autonomy:\n  mode: auto\n")
+    inproc.reset()
+    sha = _write_inproc_briefing(root)
+    data = {"name": WF, "workflow_type": "feature", "current_phase": "phase3_spec",
+            "spec_file": REL_SPEC,
+            "po_briefing": {"file": REL_BRIEFING, "ampel": "green", "briefing_sha256": sha}}
+    assert wf.next_step(dict(data)) == AUTO_STEP
+
+    path = root / REL_BRIEFING
+    path.write_text(path.read_text() + "\nNachtrag.\n")
+    assert wf.next_step(dict(data)) == HUMAN_STEP
+    note = wf.status_note(dict(data))
+    assert note and HUMAN_STEP in note and "❗" in note, note
+
+    # Ohne registrierten Hash: ebenfalls kein Auto-Schritt.
+    no_hash = dict(data, po_briefing={"file": REL_BRIEFING, "ampel": "green"})
+    assert wf.next_step(no_hash) == HUMAN_STEP
+
+
+def test_regression_f006_budget_question_printed_in_auto_path(tmp_path):
+    """F006: Budget-Rueckfrage wird bei Auto-Freigabe ausgegeben; die Zeilen
+    AUTO_APPROVE=/REASON= bleiben eindeutig."""
+    proj = _project(tmp_path)
+    (proj / "openspec.yaml").write_text(
+        "autonomy:\n  mode: auto\n"
+        "effort_budget:\n  feature:\n    max_fix_loops: 0\n")
+    _write_state(proj, fix_loop_iterations=1)
+    verdict, res = _auto_approve(proj)
+    assert verdict == "done", res.stdout
+    assert "RÜCKFRAGE AN DEN PO" in res.stdout, res.stdout
+    assert len(re.findall(r"^AUTO_APPROVE=", res.stdout, re.M)) == 1, res.stdout
+    assert len(re.findall(r"^REASON=", res.stdout, re.M)) == 1, res.stdout
+    assert res.stdout.index("AUTO_APPROVE=") < res.stdout.index("RÜCKFRAGE")
+    assert _state(proj).get("budget_events"), "Budget-Ereignis muss protokolliert sein"
+
+
+# --- Regressionen aus dem Adversary-Dialog (BROKEN, Runde 2) — Ursachen-Fix ---
+# Eine Config-Quelle fuer den Auto-Pfad: `workflow.trusted_config()`, Wurzel
+# `hook_utils.find_project_root()` (wie bash_gate._writes_effective_config).
+
+_SUB_CONFIGS = ("openspec.yaml", "config.yaml", ".claude/openspec.yaml")
+
+
+def _cli_in(proj: Path, cwd: Path, args, *, project_dir: bool = False):
+    """CLI-Aufruf mit beliebigem cwd; CLAUDE_PROJECT_DIR standardmaessig UNGESETZT."""
+    env = _env(proj)
+    if not project_dir:
+        env.pop("CLAUDE_PROJECT_DIR", None)
+    env["OPENSPEC_ACTIVE_WORKFLOW"] = WF
+    return subprocess.run([sys.executable, str(WORKFLOW_PY), *args],
+                          capture_output=True, text=True, env=env,
+                          cwd=str(cwd), timeout=30)
+
+
+def _verdict(res) -> str:
+    m = re.search(r"^AUTO_APPROVE=(\w+)\s*$", res.stdout, re.M)
+    assert res.returncode == 0 and m, (res.returncode, res.stdout, res.stderr)
+    return m.group(1)
+
+
+def _sub_config(proj: Path, rel: str, text: str) -> Path:
+    sub = proj / "sub"
+    target = sub / rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text)
+    return sub
+
+
+@pytest.mark.parametrize("rel", _SUB_CONFIGS)
+def test_regression_f008_subdir_config_cannot_enable_auto(tmp_path, rel):
+    """F008: Unterordner-Config mit `autonomy.mode: auto`, cwd dort, ohne
+    CLAUDE_PROJECT_DIR — die echte Config (manual) entscheidet: human."""
+    proj = _project(tmp_path, mode="manual")
+    sub = _sub_config(proj, rel, "autonomy:\n  mode: auto\n")
+    before = _wf_path(proj).read_bytes()
+    res = _cli_in(proj, sub, ["auto-approve"])
+    assert _verdict(res) == "human", res.stdout
+    assert _wf_path(proj).read_bytes() == before
+    res = _cli_in(proj, sub, ["autonomy"])
+    assert res.stdout.strip() == "AUTONOMY=manual", res.stdout
+
+
+@pytest.mark.parametrize("rel", _SUB_CONFIGS)
+def test_regression_f008_subdir_kill_switches_ignored(tmp_path, rel):
+    """F008: Kill-Switches (ADR-/Briefing-Gate) in einer Unterordner-Config
+    wirken im Auto-Pfad nicht."""
+    off = ("autonomy:\n  mode: auto\nadr_gate:\n  enabled: false\n"
+           "po_briefing_gate:\n  enabled: false\n")
+    # a) ADR leer
+    proj = _project(tmp_path / "adr", spec=SPEC_ADR_MISSING)
+    sub = _sub_config(proj, rel, off)
+    before = _wf_path(proj).read_bytes()
+    assert _verdict(_cli_in(proj, sub, ["auto-approve"])) == "human"
+    assert _wf_path(proj).read_bytes() == before
+    # b) Briefing passt nicht mehr zur Spec (Briefing-Gate muss greifen)
+    proj = _project(tmp_path / "brief")
+    spec = proj / REL_SPEC
+    spec.write_text(spec.read_text().replace("Ein Feature, das etwas tut.",
+                                             "Ganz andere Spec nach dem Briefing."))
+    sub = _sub_config(proj, rel, off)
+    before = _wf_path(proj).read_bytes()
+    assert _verdict(_cli_in(proj, sub, ["auto-approve"])) == "human"
+    assert _wf_path(proj).read_bytes() == before
+
+
+def test_regression_f008_control_subdir_cwd_uses_real_config(tmp_path):
+    """Gegenprobe F008: cwd im Unterordner (ohne eigene Config, ohne
+    CLAUDE_PROJECT_DIR) liest die echte Config — auto wirkt dort weiter."""
+    proj = _project(tmp_path)
+    sub = proj / "sub"
+    sub.mkdir()
+    assert _verdict(_cli_in(proj, sub, ["auto-approve"])) == "done"
+    assert _state(proj)["current_phase"] == "phase4_approved"
+
+
+def test_trusted_config_uses_bash_gate_root(inproc, monkeypatch):
+    """trusted_config: dieselbe Wurzel wie bash_gate (hook_utils.find_project_root),
+    nur YAML dieser Datei, Fehler → None (Aufrufer fail-closed)."""
+    import config_loader  # noqa: PLC0415
+    import hook_utils  # noqa: PLC0415
+    wf, root = inproc.workflow, inproc.root
+    (root / "openspec.yaml").write_text("autonomy:\n  mode: auto\n")
+    (root / ".claude" / "settings.local.json").write_text(
+        json.dumps({"autonomy": {"mode": "manual"}}))
+    inproc.reset()
+    seen = []
+    real = hook_utils.find_project_root
+    monkeypatch.setattr(wf, "find_project_root", lambda: seen.append(1) or real())
+    monkeypatch.setattr(config_loader, "find_project_root",
+                        lambda: (_ for _ in ()).throw(AssertionError("falsche Wurzel")))
+    assert wf.trusted_config() == {"autonomy": {"mode": "auto"}}
+    assert seen, "trusted_config muss workflow.find_project_root (hook_utils) nutzen"
+    assert wf.find_project_root is not config_loader.find_project_root
+    (root / "openspec.yaml").write_text("autonomy: [kaputt\n")
+    assert wf.trusted_config() is None
+    assert wf.autonomy_mode() == "manual"
+    (root / "openspec.yaml").write_text("- liste\n")
+    assert wf.trusted_config() is None
+    (root / "openspec.yaml").unlink()
+    assert wf.trusted_config() == {}
+
+
+@pytest.fixture
+def auto_inproc(tmp_path, monkeypatch):
+    """Vollstaendiges Projekt (per CLI registriert) fuer In-Process-Entscheidungen."""
+    if str(HOOKS_DIR) not in sys.path:
+        sys.path.insert(0, str(HOOKS_DIR))
+    import config_loader  # noqa: PLC0415
+    import hook_utils  # noqa: PLC0415
+    import workflow  # noqa: PLC0415
+
+    def enter(proj: Path):
+        for k in [k for k in os.environ if k.startswith(("HERDR_", "OPENSPEC_"))]:
+            monkeypatch.delenv(k, raising=False)
+        monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(proj))
+        monkeypatch.setenv("HOME", str(proj / "_home"))
+        monkeypatch.setenv("OPENSPEC_ACTIVE_WORKFLOW", WF)
+        monkeypatch.chdir(proj)
+        for mod in (config_loader, hook_utils):
+            for obj in vars(mod).values():
+                clear = getattr(obj, "cache_clear", None)
+                if callable(clear):
+                    clear()
+        return workflow
+
+    return enter
+
+
+def _forbid_load_config(monkeypatch):
+    """load_config (in config_loader und als hook_utils-Re-Import) zaehlt jeden
+    Aufruf und schlaegt fehl."""
+    import config_loader  # noqa: PLC0415
+    import hook_utils  # noqa: PLC0415
+    calls = []
+
+    def boom(*a, **k):
+        calls.append(1)
+        raise RuntimeError("load_config im Auto-Pfad verboten")
+
+    monkeypatch.setattr(config_loader, "load_config", boom)
+    if hasattr(hook_utils, "load_config"):
+        monkeypatch.setattr(hook_utils, "load_config", boom)
+    return calls
+
+
+def test_architecture_auto_decision_never_calls_load_config(tmp_path, monkeypatch, auto_inproc):
+    """Architektur: die Entscheidung im Auto-Pfad ruft `config_loader.load_config`
+    nie auf — weder im done- noch im human-Fall.
+
+    Ausgenommen ist nur, was NACH der Entscheidung laeuft (`_apply_spec_approval`:
+    Budget-Buchhaltung `get_effort_budget`, herdr-Meldung beim Speichern). Deshalb
+    zaehlt der done-Fall die Aufrufe bis zum Eintritt in `_apply_spec_approval`;
+    dass ein Fehler dort das Verdict nicht aendert, belegt der Folgetest."""
+    # done-Fall
+    proj = _project(tmp_path / "done")
+    wf = auto_inproc(proj)
+    calls = _forbid_load_config(monkeypatch)
+    at_apply = []
+    real_apply = wf._apply_spec_approval
+    monkeypatch.setattr(wf, "_apply_spec_approval",
+                        lambda d, t: at_apply.append(len(calls)) or real_apply(d, t))
+    verdict, reason, _ex = wf._auto_approve_decision()
+    assert verdict == "done", reason
+    assert at_apply == [0], f"load_config vor der Entscheidung aufgerufen: {at_apply}"
+
+    # human-Faelle: rote Ampel (volle Pruefkette) und manual
+    for name, kw in (("red", {"ampel": "rot"}), ("manual", {"mode": "manual"}),
+                     ("adr", {"spec": SPEC_ADR_MISSING})):
+        proj = _project(tmp_path / name, **kw)
+        wf = auto_inproc(proj)
+        calls = _forbid_load_config(monkeypatch)
+        verdict, reason, _ex = wf._auto_approve_decision()
+        assert verdict == "human", (name, reason)
+        assert calls == [], f"{name}: load_config aufgerufen"
+        assert _state(proj)["current_phase"] == "phase3_spec"
+
+
+def test_architecture_budget_failure_does_not_change_verdict(tmp_path, monkeypatch, auto_inproc):
+    """Die Ausnahme (Budget nach der Entscheidung) aendert das Verdict nicht:
+    get_effort_budget/load_config werfen → trotzdem done, State gespeichert."""
+    import config_loader  # noqa: PLC0415
+    proj = _project(tmp_path)
+    wf = auto_inproc(proj)
+    _forbid_load_config(monkeypatch)
+    monkeypatch.setattr(config_loader, "get_effort_budget",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("budget kaputt")))
+    verdict, reason, exceeded = wf._auto_approve_decision()
+    assert verdict == "done", reason
+    assert exceeded == []
+    assert _state(proj)["current_phase"] == "phase4_approved"
+
+
+def test_regression_f010_fifo_briefing_never_hangs(tmp_path):
+    """F010: Briefing nach der Registrierung gegen ein FIFO getauscht — weder
+    auto-approve noch status haengen; Ergebnis human bzw. normaler Freigabe-Schritt."""
+    if not hasattr(os, "mkfifo"):
+        pytest.skip("kein mkfifo")
+    proj = _project(tmp_path)
+    b = proj / REL_BRIEFING
+    b.unlink()
+    os.mkfifo(b)
+    before = _wf_path(proj).read_bytes()
+    res = _cli(["auto-approve"], proj)  # timeout=60 im Helper
+    assert _verdict(res) == "human", res.stdout
+    assert _wf_path(proj).read_bytes() == before
+    res = _cli(["status"], proj)
+    assert res.returncode == 0, res.stderr
+    assert AUTO_STEP not in res.stdout
+
+
+def test_regression_f010_oversized_or_special_briefing_rejected(tmp_path, monkeypatch, auto_inproc):
+    """F010: Briefing > 256 KiB oder keine regulaere Datei → nicht gelesen;
+    next_step zeigt den normalen Freigabe-Schritt, auto-approve sagt human."""
+    proj = _project(tmp_path)
+    wf = auto_inproc(proj)
+    b = proj / REL_BRIEFING
+    assert wf._read_briefing_file(b) == b.read_text()
+    big = proj / "docs" / "briefings" / "big.md"
+    big.write_text("x" * (256 * 1024 + 1))
+    assert wf._read_briefing_file(big) is None
+    ok = proj / "docs" / "briefings" / "ok.md"
+    ok.write_text("x" * (256 * 1024))
+    assert wf._read_briefing_file(ok) is not None
+    assert wf._read_briefing_file(proj / "docs") is None
+    if os.path.exists("/dev/zero"):
+        assert wf._read_briefing_file(Path("/dev/zero")) is None
+
+    # Registriertes Briefing durch eine riesige Datei mit gruener Ampel ersetzt.
+    b.write_text(b.read_text() + "\n<!-- " + "y" * (300 * 1024) + " -->\n")
+    data = _state(proj)
+    data["po_briefing"]["briefing_sha256"] = hashlib.sha256(
+        b.read_text().encode("utf-8")).hexdigest()
+    _wf_path(proj).write_text(json.dumps(data))
+    assert wf.next_step(_state(proj)) == HUMAN_STEP
+    verdict, _r, _e = wf._auto_approve_decision()
+    assert verdict == "human"
+    assert _state(proj)["current_phase"] == "phase3_spec"
