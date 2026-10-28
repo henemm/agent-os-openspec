@@ -35,6 +35,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 # --- Defaults (overridable via config.yaml) ---
@@ -314,6 +315,35 @@ class _SpecSimError(Exception):
     """Neue Fassung der Spec nicht sicher berechenbar (#439, fail-closed)."""
 
 
+# Obergrenze der simulierten Fassungen (#473 F001): ohne Deckel waechst die
+# Variantenmenge bei MultiEdit mit leerem new_string exponentiell und der Hook
+# laeuft in den (nicht blockierenden) Timeout. Darueber: fail-closed.
+_SPEC_VARIANT_CAP = 64
+
+
+class _SpecVariantOverflow(_SpecSimError):
+    """Mehr als `_SPEC_VARIANT_CAP` moegliche Fassungen — nicht sicher pruefbar."""
+
+
+# Gesamt-Zeitbudget der Simulation (#473 F001, Runde 2): jede Pruefung, die
+# laenger als das (nicht blockierende) Hook-Timeout von 10 s rechnen kann, ist
+# ein Durchlass. Ueberschreitung → `_SpecSimTimeout` (fail-closed beim Aufrufer).
+_SIM_BUDGET_S = 3.0
+
+
+class _SpecSimTimeout(_SpecSimError):
+    """Zeitbudget `_SIM_BUDGET_S` ueberschritten — nicht sicher pruefbar."""
+
+
+def _sim_deadline() -> float:
+    return time.monotonic() + _SIM_BUDGET_S
+
+
+def _check_deadline(deadline: "float | None") -> None:
+    if deadline is not None and time.monotonic() > deadline:
+        raise _SpecSimTimeout(f"Zeitbudget von {_SIM_BUDGET_S:g} s überschritten")
+
+
 def _spec_tool_name(tool_input: dict) -> str:
     """Tool aus dem stdin-Payload; fehlt es, eindeutig aus den Feldern ableiten."""
     name = str(hook_utils._STDIN_PAYLOAD.get("tool_name") or "")
@@ -341,30 +371,50 @@ def _apply_spec_edit(text: str, edit) -> str:
     return text.replace(old, new, 1)
 
 
-def _spec_edit_variants(texts: "list[str]", edit) -> "list[str]":
+def _spec_edit_variants(texts: "list[str]", edit,
+                        deadline: "float | None" = None) -> "list[str]":
     """Alle plausiblen Ergebnisse eines Edits auf allen bisherigen Varianten.
 
     Die erste Variante ist der exakte str.replace auf der Hauptfassung (wirft
     bei Zweifel). Bei leerem new_string entfernt Claude Code ggf. auch das
     folgende \\n — diese Fassung wird zusaetzlich simuliert (F002); sie und
     Folgevarianten sind best effort (nicht anwendbar = kommt nicht vor).
+    Gleiche Fassungen zaehlen einmal; mehr als `_SPEC_VARIANT_CAP` werfen
+    `_SpecVariantOverflow` (#473 F001, fail-closed beim Aufrufer); ist die
+    `deadline` (time.monotonic) ueberschritten, wirft `_SpecSimTimeout`.
     """
+    _check_deadline(deadline)
     out = [_apply_spec_edit(texts[0], edit)]
+    seen = {out[0]}
     for i, text in enumerate(texts):
+        _check_deadline(deadline)
         tries = [edit] if i else []
         old = edit.get("old_string")
         if edit.get("new_string") == "" and not old.endswith("\n"):
             tries.append(dict(edit, old_string=old + "\n"))
         for variant in tries:
             try:
-                out.append(_apply_spec_edit(text, variant))
+                result = _apply_spec_edit(text, variant)
             except _SpecSimError:
-                pass
+                continue
+            if result in seen:
+                continue
+            seen.add(result)
+            out.append(result)
+            if len(out) > _SPEC_VARIANT_CAP:
+                raise _SpecVariantOverflow(
+                    f"mehr als {_SPEC_VARIANT_CAP} mögliche Fassungen")
     return out
 
 
-def _simulate_spec_write(file_path: str, tool_input: dict) -> "tuple[str, list[str]]":
-    """(aktueller Inhalt, simulierte neue Fassungen) — jeder Zweifel wirft."""
+def _simulate_spec_write(file_path: str, tool_input: dict,
+                         deadline: "float | None" = None) -> "tuple[str, list[str]]":
+    """(aktueller Inhalt, simulierte neue Fassungen) — jeder Zweifel wirft.
+
+    `deadline` (time.monotonic): ohne Angabe gilt `_SIM_BUDGET_S` ab jetzt.
+    """
+    if deadline is None:
+        deadline = _sim_deadline()
     try:
         current = Path(file_path).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
@@ -376,14 +426,14 @@ def _simulate_spec_write(file_path: str, tool_input: dict) -> "tuple[str, list[s
             raise _SpecSimError("Write ohne Inhalt")
         return current, [content]
     if tool == "Edit":
-        return current, _spec_edit_variants([current], tool_input)
+        return current, _spec_edit_variants([current], tool_input, deadline)
     if tool == "MultiEdit":
         edits = tool_input.get("edits")
         if not isinstance(edits, list) or not edits:
             raise _SpecSimError("MultiEdit ohne Edit-Liste")
         variants = [current]
         for edit in edits:
-            variants = _spec_edit_variants(variants, edit)
+            variants = _spec_edit_variants(variants, edit, deadline)
         return current, variants
     raise _SpecSimError(f"Werkzeug nicht erkennbar ({tool or 'unbekannt'})")
 
@@ -407,16 +457,83 @@ def _check_spec_freeze(workflow: dict, file_path: str, tool_input: dict) -> None
               "→ Erst `workflow.py set-briefing <pfad>` ausführen (migriert den Stempel), "
               "danach sind Änderungen an beweglichen Teilen erlaubt.\n" + backstep)
     try:
-        current, variants = _simulate_spec_write(file_path, tool_input)
+        deadline = _sim_deadline()
+        current, variants = _simulate_spec_write(file_path, tool_input, deadline)
+        before = hook_utils.frozen_spec_sha256(current)
+        changed = False
+        for v in variants:
+            _check_deadline(deadline)
+            if hook_utils.frozen_spec_sha256(v) != before:
+                changed = True
+                break
     except _SpecSimError as exc:
         block(f"BLOCKED: Spec-Freeze ({where}): neue Fassung nicht sicher berechenbar "
               f"— {exc}. {_SPEC_SIM_HINT}.")
-    before = hook_utils.frozen_spec_sha256(current)
-    if any(hook_utils.frozen_spec_sha256(v) != before for v in variants):
+    if changed:
         block(f"BLOCKED: Das ändert, was freigegeben wurde ({where}).\n" + backstep + "\n"
               "→ Ohne Token änderbar sind nur: Frontmatter, `- Test:`-Zeilen im "
               "AC-Abschnitt, Known Limitations, Implementation Details, Test Plan, "
               "Changelog, Approval.")
+
+
+# Grenzen fuer den Config-Schritt (#473 F001, Runde 2): darueber wird nicht
+# simuliert, sondern fail-closed als Treffer gewertet. 256 KiB = Probe-Grenze von
+# `config_loader.is_plugin_config_text` (dahinter nur Regex auf den Anfang).
+_CONFIG_MAX_BYTES = 256 * 1024
+_CONFIG_MAX_EDITS = 20
+
+
+def _config_edit_hit(file_path: str, tool_input: dict) -> "bool | str":
+    """Schritt 0a (#473): trifft das Ziel die geschuetzte Config-Pfadmenge?
+
+    Ziel in der Menge ohne neuen Inhalt → True. Sonst zaehlt der Inhalt nur
+    fuer die Root-`config.yaml` ohne Plugin-Block (#372): Write → `content`,
+    Edit/MultiEdit → simulierte Fassungen, jede Variante zaehlt. Simulation
+    scheitert → Edit scheitert ohnehin → kein Treffer. Nicht sicher pruefbar
+    (Datei, Write-Inhalt oder Fassung > `_CONFIG_MAX_BYTES`, MultiEdit mit mehr
+    als `_CONFIG_MAX_EDITS` Edits, Varianten-Deckel, Zeitbudget `_SIM_BUDGET_S`)
+    → Grund als str, zaehlt als Treffer (fail-closed). Jeder andere Fehler in
+    der Pfadermittlung: kein Treffer (fail-open, wie bash_gate #410).
+    """
+    try:
+        from config_loader import protected_config_paths, config_path_hit, is_plugin_config_text
+        deadline = _sim_deadline()
+        if config_path_hit(file_path, protected_config_paths(_root)):
+            return True
+        app_config = _root / "config.yaml"
+        if not config_path_hit(file_path, [app_config]):
+            return False
+        limit = f"{_CONFIG_MAX_BYTES // 1024} KiB"
+        if _spec_tool_name(tool_input) == "Write":
+            content = tool_input.get("content")
+            if isinstance(content, str) \
+                    and len(content.encode("utf-8", "surrogatepass")) > _CONFIG_MAX_BYTES:
+                return f"Write-Inhalt größer als {limit}"
+            contents = [content]
+        else:
+            if not app_config.is_file():
+                return False
+            if app_config.stat().st_size > _CONFIG_MAX_BYTES:
+                return f"App-config.yaml größer als {limit}"
+            edits = tool_input.get("edits")
+            if isinstance(edits, list) and len(edits) > _CONFIG_MAX_EDITS:
+                return f"MultiEdit mit mehr als {_CONFIG_MAX_EDITS} Edits"
+            try:
+                contents = _simulate_spec_write(str(app_config), tool_input, deadline)[1]
+            except (_SpecVariantOverflow, _SpecSimTimeout) as exc:
+                return str(exc)
+            except _SpecSimError:
+                return False
+        for content in contents:
+            if isinstance(content, str) and len(content) > _CONFIG_MAX_BYTES:
+                return f"neue Fassung größer als {limit}"
+            if time.monotonic() > deadline:
+                return f"Zeitbudget von {_SIM_BUDGET_S:g} s überschritten"
+            if is_plugin_config_text(content):
+                return True
+        return False
+    except Exception:
+        return False
 
 
 def _has_override_token(workflow_name: str = None) -> bool:
@@ -637,16 +754,35 @@ def _check_loc_delta(config: dict, workflow: dict) -> str | None:
 # --- Main ---
 
 def main():
-    # 0. Dieses Projekt arbeitet ohne den Workflow (#132). Vor allem anderen,
-    #    denn dieses Gate IST der Workflow-Zwang — auch seine Schritte 1/1b
-    #    schuetzen nur Zustand, den es ohne Workflow nicht gibt.
-    if framework_disabled():
-        allow()
-
     tool_input = get_tool_input()
     file_path = tool_input.get("file_path", "")
     # #440: Muell-Payload (Zahl, Liste, null) → kein Pfad, kein Schreibziel
     if not isinstance(file_path, str) or not file_path:
+        allow()
+
+    # 0a. Wirksame Gate-Config (#473): Schutz, kein Workflow-Zwang — gilt wie
+    #     bash_gate 1b auch bei framework_disabled() und ohne Workflow; Ausweg nur
+    #     der Override-Token. Steht vor 1c/2/3, sonst winkt "kein Code" YAML durch.
+    config_hit = _config_edit_hit(file_path, tool_input)
+    if config_hit and not (_has_override_token("__infra__") or _has_override_token()):
+        overflow = (
+            f"→ Grund: {config_hit} — ob die Änderung an der App-config.yaml einen "
+            "Plugin-Block einfügt, ist nicht sicher prüfbar (fail-closed). In "
+            f"kleinere Edits aufteilen (höchstens {_CONFIG_MAX_EDITS} je MultiEdit, "
+            f"Datei und Inhalt höchstens {_CONFIG_MAX_BYTES // 1024} KiB).\n"
+        ) if isinstance(config_hit, str) else ""
+        block(
+            "BLOCKED: Schreibzugriff auf die wirksame Gate-Config (Kill-Switches) "
+            "oder Anlegen einer vorrangigen Config.\n" + overflow +
+            "→ Aenderungen gehoeren in die Worktree-Kopie und wirken nach dem Merge.\n"
+            "→ Bewusst gewollt? User tippt 'override' (gilt 1 h, protokolliert in "
+            ".claude/user_override_token.json)."
+        )
+
+    # 0. Dieses Projekt arbeitet ohne den Workflow (#132). Vor allem anderen
+    #    ausser dem Config-Schutz (0a), denn dieses Gate IST der Workflow-Zwang —
+    #    auch seine Schritte 1/1b schuetzen nur Zustand, den es ohne Workflow nicht gibt.
+    if framework_disabled():
         allow()
 
     config = _load_config_values()

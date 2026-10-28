@@ -592,28 +592,89 @@ def _segment_write_targets(segments: list, cwd: Path):
             continue
         targets = _config_write_targets(seg)
         if targets:
-            yield bases, targets
+            yield bases, targets, seg
+
+
+def _dir_removal_targets(cmd: str, args: list) -> list:
+    """Pfade, die `rm`/`mv`/`git rm|mv|checkout|restore` samt Inhalt entfernt,
+    wegbewegt oder ueberschreibt (#473 F002).
+
+    Beim Verschieben nur die Quellen: `mv x .claude` legt etwas IN den Ordner,
+    das ist kein Entfernen.
+    """
+    if cmd == "rm":
+        return _positional(args)
+    if cmd == "mv":
+        pos = _positional(args, ("-t", "-S"))
+        if "-t" in args or any(a.startswith("--target-directory") for a in args):
+            return pos
+        return pos[:-1]
+    if cmd == "git":
+        paths = _git_write_targets(args)
+        sub = _positional(args, ("-C", "-c"))[:1]
+        return paths[:-1] if sub == ["mv"] else paths
+    return []
+
+
+def _lexical_path(base: Path, token: str) -> str:
+    """Absoluter Pfad, nur der Elternordner aufgeloest (#473 F002).
+
+    Der letzte Bestandteil bleibt ungeloest: `rm link` entfernt nur den Link,
+    nicht dessen Ziel-Ordner.
+    """
+    norm = os.path.normpath(os.path.abspath(base / os.path.expanduser(token)))
+    return os.path.join(os.path.realpath(os.path.dirname(norm)), os.path.basename(norm))
+
+
+def _removes_config_dir(seg: list, bases: list, protected: list, root: Path) -> bool:
+    """`mv|rm|git … <ordner>`: liegt eine vorhandene geschuetzte Config IN dem Ordner? (#473 F002)
+
+    Nur echte Vorfahren innerhalb der Projektwurzel, nie die Wurzel selbst:
+    `rm -rf <projekt>` ist kein gezielter Kill-Switch-Umweg, sondern loescht
+    Hooks und Repo gleich mit — und ein Block auf `.`/die Wurzel traefe
+    alltaegliche Aufraeumbefehle (`git checkout .`, `git restore .`).
+    """
+    targets = _dir_removal_targets(*_command_args(_split_redirects(seg)[1]))
+    if not targets:
+        return False
+    root_real = os.path.realpath(str(root))
+    existing = [os.path.realpath(str(p)) for p in protected if Path(p).exists()]
+    for b in bases:
+        for t in targets:
+            if any(ch in t for ch in "$`*?["):
+                continue
+            hit = _lexical_path(b, t)
+            if hit == root_real or not hit.startswith(root_real + os.sep):
+                continue
+            if any(p.startswith(hit + os.sep) for p in existing):
+                return True
+    return False
 
 
 def _writes_effective_config(segments: list, cwd: Path) -> bool:
-    """Schreibt ein Segment auf die WIRKSAME Gate-Config (#410, #418)?
+    """Schreibt ein Segment auf die WIRKSAME Gate-Config (#410, #418) oder legt
+    eine vorrangige an (#473)?
 
-    Wirksam = `find_config_file(find_project_root())` (im Worktree die Datei im
-    Hauptordner). Verglichen werden nur echte Schreibziele, aufgeloest gegen die
-    ueber `cd`/`pushd` nachgefuehrte Basis. Die Worktree-Kopie loest auf eine
-    andere Datei auf und bleibt frei. Fehler: fail-open.
+    Geschuetzt = `protected_config_paths(find_project_root())` (im Worktree der
+    Hauptordner; ohne Inhalt, Shell-Inhalt ist nicht zuverlaessig lesbar).
+    Verglichen werden nur echte Schreibziele, aufgeloest gegen die ueber
+    `cd`/`pushd` nachgefuehrte Basis. Die Worktree-Kopie loest auf eine andere
+    Datei auf und bleibt frei. `mv|rm|git` auf einen Ordner, der die wirksame
+    Config enthaelt (`rm -rf .claude`), zaehlt ebenfalls (#473 F002). Fehler: fail-open.
     """
-    effective = None
+    protected = None
     try:
-        for bases, targets in _segment_write_targets(segments, cwd):
-            if effective is None:
-                from config_loader import find_config_file
-                found = find_config_file(find_project_root())
-                if found is None:
+        for bases, targets, seg in _segment_write_targets(segments, cwd):
+            if protected is None:
+                from config_loader import protected_config_paths, config_path_hit
+                root = find_project_root()
+                protected = protected_config_paths(root)
+                if not protected:
                     return False
-                effective = Path(found).resolve()
-            if any((b / os.path.expanduser(t)).resolve() == effective
+            if any(config_path_hit(b / os.path.expanduser(t), protected)
                    for b in bases for t in targets):
+                return True
+            if _removes_config_dir(seg, bases, protected, root):
                 return True
     except Exception:
         return False
@@ -1158,7 +1219,7 @@ def _writes_main_repo(segments: list, cwd: Path) -> "str | None":
             return None
         main_dir = Path(m.group("main")).resolve()
         own = (Path(m.group("main")) / ".claude" / "worktrees" / m.group("name")).resolve()
-        for bases, targets in _segment_write_targets(segments, cwd):
+        for bases, targets, _seg in _segment_write_targets(segments, cwd):
             for t in targets:
                 if any(ch in t for ch in "$`*?["):
                     continue
@@ -1743,7 +1804,8 @@ def main():
     if _writes_effective_config(_git_segments(scan_cmd) or [], Path.cwd()) \
             and not _any_override_token():
         block(
-            "BLOCKED: Schreibzugriff auf die wirksame Gate-Config (Kill-Switches).\n"
+            "BLOCKED: Schreibzugriff auf die wirksame Gate-Config (Kill-Switches) "
+            "oder Anlegen einer vorrangigen Config.\n"
             "  Aenderungen gehoeren in die Worktree-Kopie und wirken nach dem Merge.\n"
             "  Bewusst gewollt? User tippt 'override'."
         )

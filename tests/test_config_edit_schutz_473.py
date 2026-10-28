@@ -238,6 +238,156 @@ def test_app_config_edit_inserting_plugin_block_blocked(tmp_path):
     _fail("AC-5", wrong)
 
 
+def _blowup_multi(target: Path, n: int) -> "tuple[str, dict]":
+    """n Loesch-Edits (leerer new_string, eindeutig, ohne \\n) + Plugin-Block."""
+    edits = [{"old_string": f"tok{i:03d}x", "new_string": ""} for i in range(n)]
+    edits.append({"old_string": "port: 1", "new_string": "port: 1\nautonomy: 1"})
+    return "MultiEdit", {"file_path": str(target), "edits": edits}
+
+
+def test_app_config_multiedit_variant_blowup_blocked_fast(tmp_path):
+    """AC-5 / F001: MultiEdit mit 24+ Loesch-Edits laesst die Variantenmenge nicht
+    exponentiell wachsen (Hook-Timeout 10 s = Durchlass) — Exit 2 in < 2 s."""
+    import time
+    wrong = []
+    # gleichfoermig (Adversary atk5: Varianten fallen per Dedup zusammen) und
+    # unterscheidbar (jede Kombination eigene Fassung: Deckel greift, Exit 2 fail-closed)
+    for label, line in (("atk5", "tok{i:03d}x\n"), ("distinct", "tok{i:03d}x\nl{i:03d}\n")):
+        app = "port: 1\n" + "".join(line.format(i=i) for i in range(30))
+        proj, home = _proj(tmp_path / label, {".claude/openspec.yaml": PLUGIN_CONFIG,
+                                              "config.yaml": app})
+        for n in (12, 24, 30):  # 12: Varianten-Deckel; 24/30: Mengengrenze (> 20 Edits)
+            start = time.monotonic()
+            wrong += _check(f"Varianten-Explosion {label} n={n}",
+                            _blowup_multi(proj / "config.yaml", n),
+                            proj, home, 2, OVERRIDE_HINT)
+            took = time.monotonic() - start
+            if took >= 2.0:
+                wrong.append(f"  {label} n={n}: {took:.1f} s (soll < 2 s)")
+    # Deckel ohne Plugin-Block (19 Edits, unter der Mengengrenze): fail-closed
+    # mit verstaendlichem Grund
+    tool, tin = _blowup_multi(proj / "config.yaml", 24)
+    proc = _gate(proj, home, tool, dict(tin, edits=tin["edits"][:19]))
+    if proc.returncode != 2 or "mögliche Fassungen" not in proc.stderr \
+            or "override" not in proc.stderr:
+        wrong.append(f"  Deckel ohne Plugin-Block: rc={proc.returncode}, "
+                     f"stderr={proc.stderr.strip()[:200]!r}")
+    # Mit Override-Token frei (gleicher Ausweg wie jeder Config-Treffer)
+    _token(proj)
+    wrong += _check("Varianten-Explosion + Token", _blowup_multi(proj / "config.yaml", 24),
+                    proj, home, 0)
+    _fail("F001", wrong)
+
+
+def _big_app_multi(target: Path, n_del: int = 60, k: int = 100) -> "tuple[str, dict]":
+    """Adversary-Runde 2 (f3/f4): Loesch-Edits + viele replace_all-Durchlaeufe
+    auf einer grossen App-config.yaml + Plugin-Block am Ende."""
+    edits = [{"old_string": f"tk{i:03d}q", "new_string": ""} for i in range(n_del)]
+    edits += [{"old_string": "a", "new_string": "a", "replace_all": True}] * k
+    edits.append({"old_string": "port: 1", "new_string": "port: 1\nautonomy: 1"})
+    return "MultiEdit", {"file_path": str(target), "edits": edits}
+
+
+def test_app_config_size_and_edit_count_limits_fail_closed(tmp_path):
+    """F001 Runde 2: grosse App-config (1-2 MB) / > 20 Edits / Write > 256 KiB
+    werden nicht simuliert, sondern fail-closed geblockt (Exit 2 in < 2 s);
+    20 harmlose Edits bleiben frei; Override-Token gibt frei."""
+    import time
+    wrong = []
+    for size in (1_000_000, 2_000_000):
+        app = "port: 1\n" + "".join(f"tk{i:03d}q\n" for i in range(60)) + "a" * size + "\n"
+        proj, home = _proj(tmp_path / f"big{size}", {".claude/openspec.yaml": PLUGIN_CONFIG,
+                                                     "config.yaml": app})
+        start = time.monotonic()
+        wrong += _check(f"f3/f4 {size} B, 161 Edits", _big_app_multi(proj / "config.yaml"),
+                        proj, home, 2, "256 KiB")
+        took = time.monotonic() - start
+        if took >= 2.0:
+            wrong.append(f"  f3/f4 {size} B: {took:.1f} s (soll < 2 s)")
+        # auch ein einzelner harmloser Edit: Datei zu gross → nicht pruefbar
+        wrong += _check(f"Edit auf {size} B", _edit(proj / "config.yaml", "port: 1", "port: 2"),
+                        proj, home, 2, OVERRIDE_HINT)
+
+    lines = "port: 1\n" + "".join(f"key{i:02d}: v\n" for i in range(25))
+    proj, home = _proj(tmp_path / "count", {".claude/openspec.yaml": PLUGIN_CONFIG,
+                                            "config.yaml": lines})
+    target = proj / "config.yaml"
+    pairs21 = [(f"key{i:02d}: v", f"key{i:02d}: w") for i in range(21)]
+    wrong += _check("21 harmlose Edits (Mengengrenze)", _multi(target, *pairs21),
+                    proj, home, 2, "mehr als 20 Edits")
+    wrong += _check("20 harmlose Edits", _multi(target, *pairs21[:20]),
+                    proj, home, 0, forbid=CONFIG_MSG)
+
+    big_write = "port: 1\n" + "# x\n" * (70 * 1024)  # ~280 KiB, ohne Plugin-Block
+    wrong += _check("Write > 256 KiB", _write(target, big_write), proj, home, 2, "256 KiB")
+    wrong += _check("Write klein", _write(target, "port: 2\n"), proj, home, 0,
+                    forbid=CONFIG_MSG)
+    # Grenzen gelten nur fuer die App-config.yaml, nicht fuer beliebige Dateien
+    wrong += _check("Write > 256 KiB andere Datei", _write(proj / "docs" / "big.md", big_write),
+                    proj, home, 0, forbid=CONFIG_MSG)
+
+    _token(proj)
+    wrong += _check("21 Edits + Token", _multi(target, *pairs21), proj, home, 0)
+    wrong += _check("Write > 256 KiB + Token", _write(target, big_write), proj, home, 0)
+    _fail("F001 Runde 2", wrong)
+
+
+def test_sim_deadline_fail_closed(tmp_path):
+    """F001 Runde 2: abgelaufene Deadline → `_SpecSimTimeout` (Unterklasse von
+    `_SpecSimError`, im Spec-Freeze Block) und im Config-Schritt ein Treffer."""
+    proj, home = _proj(tmp_path, {".claude/openspec.yaml": PLUGIN_CONFIG,
+                                  "config.yaml": APP_CONFIG})
+    code = (
+        "import sys, time; sys.path.insert(0, %r)\n"
+        "import edit_gate as g\n"
+        "assert issubclass(g._SpecSimTimeout, g._SpecSimError)\n"
+        "try:\n"
+        "    g._spec_edit_variants(['a b'], {'old_string': 'b', 'new_string': 'c'},\n"
+        "                          time.monotonic() - 1)\n"
+        "    print('NO-TIMEOUT')\n"
+        "except g._SpecSimTimeout:\n"
+        "    print('TIMEOUT')\n"
+        "g._SIM_BUDGET_S = -1.0\n"
+        "hit = g._config_edit_hit(%r, {'file_path': %r, 'old_string': 'port: 8080',\n"
+        "                               'new_string': 'port: 9090'})\n"
+        "print('HIT', hit)\n"
+    ) % (str(HOOKS_DIR), str(proj / "config.yaml"), str(proj / "config.yaml"))
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                          env=_env(proj, home), cwd=str(proj), timeout=60)
+    assert proc.returncode == 0, proc.stderr[-1500:]
+    out = proc.stdout.splitlines()
+    assert out[0] == "TIMEOUT", proc.stdout
+    assert out[1].startswith("HIT Zeitbudget"), proc.stdout
+
+
+def test_spec_edit_variants_capped_and_deduplicated(tmp_path):
+    """F001 (#439-Pfad): `_spec_edit_variants` dedupliziert und wirft ueber dem
+    Deckel `_SpecVariantOverflow` (Unterklasse von `_SpecSimError` → Spec-Freeze
+    blockt fail-closed statt in den Timeout zu laufen)."""
+    proj, home = _proj(tmp_path)
+    code = (
+        "import sys; sys.path.insert(0, %r)\n"
+        "import edit_gate as g\n"
+        "assert issubclass(g._SpecVariantOverflow, g._SpecSimError)\n"
+        "text = ''.join(f'tok{i:03d}x\\nline{i:03d}\\n' for i in range(40))\n"
+        "v = [text]\n"
+        "try:\n"
+        "    for i in range(40):\n"
+        "        v = g._spec_edit_variants(v, {'old_string': f'tok{i:03d}x', 'new_string': ''})\n"
+        "        assert len(v) <= g._SPEC_VARIANT_CAP, len(v)\n"
+        "        assert len(v) == len(set(v))\n"
+        "    print('NO-OVERFLOW')\n"
+        "except g._SpecVariantOverflow:\n"
+        "    print('OVERFLOW', i)\n"
+        "w = g._spec_edit_variants(['a b a'], {'old_string': 'b', 'new_string': 'c'})\n"
+        "assert w == ['a c a'], w\n"
+    ) % str(HOOKS_DIR)
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                          env=_env(proj, home), cwd=str(proj), timeout=60)
+    assert proc.returncode == 0, proc.stderr[-1500:]
+    assert proc.stdout.startswith("OVERFLOW"), proc.stdout
+
+
 # --------------------------------------------------------------------- #
 # AC-6
 # --------------------------------------------------------------------- #
@@ -387,6 +537,32 @@ def test_bash_creating_higher_priority_config_blocked(tmp_path):
     (c / "openspec.yaml").write_text(PLUGIN_CONFIG)
     wrong += _expect(["echo x > .openspec.yaml"], c, 0)
     _fail("AC-11", wrong)
+
+
+def test_bash_moving_or_removing_config_dir_blocked(tmp_path):
+    """F002: `mv`/`rm -rf`/`git rm` auf einen Ordner, der die wirksame Config
+    enthaelt, macht sie unwirksam -> Exit 2. Ordner ohne geschuetzte Datei,
+    Verschieben IN den Ordner und die Projektwurzel selbst bleiben frei."""
+    wrong = []
+    a = _sandbox_ohne_workflow(tmp_path / "a")
+    (a / ".claude" / "openspec.yaml").write_text(PLUGIN_CONFIG)
+    (a / "sub").mkdir()
+    (a / "other").mkdir()
+    (a / ".claude" / "cache").mkdir()
+    wrong += _expect([
+        "mv .claude .claude_off", "rm -rf .claude", "rm -rf .claude/",
+        "rm -r ./.claude", "mv -t /tmp .claude", "cd sub && rm -rf ../.claude",
+        f"rm -rf {a}/.claude", "git rm -r .claude", "git mv .claude x",
+    ], a, 2, OVERRIDE_HINT)
+    wrong += _expect([
+        "rm -rf other", "mv other other2", "rm -rf .claude/cache",
+        "mv sub .claude", "touch .claude", "rm -rf /tmp/nonexistent-473/.claude",
+    ], a, 0)
+    # Wirksame Config im Root: `.claude` enthaelt keine geschuetzte Datei -> frei
+    b = _sandbox_ohne_workflow(tmp_path / "b")
+    (b / "openspec.yaml").write_text(PLUGIN_CONFIG)
+    wrong += _expect(["rm -rf .claude", "mv .claude .claude_off"], b, 0)
+    _fail("F002", wrong)
 
 
 # --------------------------------------------------------------------- #
