@@ -317,6 +317,16 @@ ci_spec_gate:
 session_banner:
   behind_check: true
 
+# Herdr-Sidebar (#466): Laeuft Claude in einem Herdr-Pane (HERDR_ENV=1), meldet
+# core/hooks/herdr_bridge.py den Workflow-Stand display-only per
+# `herdr pane report-metadata` (Tokens workflow, issue, phase, step, next).
+# Ausserhalb von Herdr ein No-op. Nur ein ausdrueckliches `false` schaltet ab.
+# Sidebar-Beispiel fuer die Herdr-Config:
+#   [ui.sidebar.agents.rows_by_agent]
+#   claude = ["$phase $step", "next: $next"]
+herdr:
+  enabled: true
+
 # Abdeckungspruefung des Adversary-Nachweises (Issue #259)
 # Commit-Gate und Phase 8 verlangen, dass das Dialog-Protokoll jede Code-Datei
 # der Aenderungsmenge zitiert und hasht (`adversary_dialog.py required-files`).

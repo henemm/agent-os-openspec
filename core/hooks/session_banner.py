@@ -526,6 +526,11 @@ def main() -> None:
                           _payload_str(payload, "source"))
     if output:
         print(json.dumps(output, ensure_ascii=False))
+    try:  # #466: Herdr-Sidebar nach startup/resume/clear/compact wiederherstellen
+        import herdr_bridge
+        herdr_bridge.report_active()
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

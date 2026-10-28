@@ -38,12 +38,11 @@ PANE = "pane-466"
 STUB_SCRIPT = r"""#!/bin/bash
 { for a in "$@"; do printf '%s\0' "$a"; done; printf '\n'; } >> "$STUB_LOG"
 if [ -n "$STUB_META" ]; then
-  {
-    echo "SID=$(awk '{print $6}' /proc/$$/stat)"
-    echo "FD0=$(readlink /proc/$$/fd/0)"
-    echo "FD1=$(readlink /proc/$$/fd/1)"
-    echo "FD2=$(readlink /proc/$$/fd/2)"
-  } > "$STUB_META"
+  sid=$(awk '{print $6}' /proc/$$/stat)
+  fd0=$(readlink /proc/$$/fd/0)
+  fd1=$(readlink /proc/$$/fd/1)
+  fd2=$(readlink /proc/$$/fd/2)
+  printf 'SID=%s\nFD0=%s\nFD1=%s\nFD2=%s\n' "$sid" "$fd0" "$fd1" "$fd2" > "$STUB_META"
 fi
 if [ -n "$STUB_STDOUT" ]; then
   echo "stub-stdout-noise"

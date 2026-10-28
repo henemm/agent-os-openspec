@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **#466 (Herdr-Sidebar-Fortschritt):** Neues Utility `core/hooks/herdr_bridge.py` (kein Hook, nicht in `hooks.json`). Läuft Claude in einem Herdr-Pane (`HERDR_ENV=1`, `HERDR_PANE_ID`, `HERDR_BIN_PATH` als absolute ausführbare Datei), meldet es den Workflow-Stand per `herdr pane report-metadata --source user:openspec`: Titel `#<issue> <phase> <step>` und Tokens `workflow`, `issue`, `phase`, `step`, `next`. Aufgerufen aus `workflow.py` (`_save_active`, `start`, `switch`; Clear bei `complete`/`abandon`), `phase_listener.py` (Freigabe) und `session_banner.py` (Republish bei jedem SessionStart). Detached, ohne Shell, fail-open, ohne Einfluss auf stdout/Exit-Code; Kill-Switch `herdr.enabled: false`. `run_herdr()` ist generisch (Basis für #467). `tests/conftest.py` entfernt `HERDR_*` aus der Testumgebung. Tests: `tests/test_herdr_sidebar_466.py`.
+
 ## [3.43.1] - 2026-10-26
 
 ### Fixed

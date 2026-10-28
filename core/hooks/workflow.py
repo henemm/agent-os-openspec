@@ -538,10 +538,23 @@ def _clear_shared_env(project_root: Path) -> None:
         pass
 
 
+def _herdr(action: str, data: "dict | None" = None) -> None:
+    """Herdr-Sidebar aktualisieren (#466) — display-only, fail-open, nie stdout."""
+    try:
+        import herdr_bridge
+        if action == "clear":
+            herdr_bridge.clear()
+        else:
+            herdr_bridge.report_workflow(data)
+    except Exception:
+        pass
+
+
 def _save_active(data: dict) -> None:
     name = data["name"]
     data["last_updated"] = datetime.now().isoformat()
     _atomic_write(_workflow_file(name), data)
+    _herdr("report", data)
 
 
 def _new_workflow(name: str) -> dict:
@@ -1255,6 +1268,7 @@ def cmd_start(args: list[str]) -> None:
         _log_phase_transition(data, "phase1_context")
     _atomic_write(wf_file, data)
     _set_active(name)
+    _herdr("report", data)
     if workflow_type == "feature-fast":
         type_note = " [FEATURE fast-track → phase3_spec]"
     else:
@@ -1298,6 +1312,10 @@ def cmd_switch(args: list[str]) -> None:
         pass  # no current active workflow — that's fine
 
     _set_active(name)
+    try:  # #466: Sidebar zeigt den neuen aktiven Workflow
+        _herdr("report", _read_workflow(wf_file))
+    except Exception:
+        pass
 
     env_name = _active_name_from_env()
     if env_name and env_name != name:
@@ -1810,6 +1828,7 @@ def cmd_complete(args: list[str]) -> None:
     if link.is_symlink():
         link.unlink()
     _persist_env(None)
+    _herdr("clear")
     print(f"Workflow {name} completed and archived.")
 
 
@@ -1855,6 +1874,7 @@ def cmd_abandon(args: list[str]) -> None:
     if link.is_symlink():
         link.unlink()
     _persist_env(None)
+    _herdr("clear")
     print(f"Workflow {name} abgebrochen (abandoned) und archiviert — NICHT abgeschlossen.")
     print(f"  Grund: {reason}")
 
