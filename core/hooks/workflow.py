@@ -17,6 +17,7 @@ Usage:
     python3 workflow.py set-field <key> <value>
     python3 workflow.py set-briefing <pfad-zum-po-briefing>
     python3 workflow.py auto-approve
+    python3 workflow.py auto-green
     python3 workflow.py set-affected-files [--replace] <f1> <f2> ...
     python3 workflow.py add-artifact <type> <path> <desc> <phase>
     python3 workflow.py remove-artifact <path> [<phase>]
@@ -2347,6 +2348,29 @@ def cmd_find(args: list[str]) -> None:
             print(f"  affected_files: {', '.join(aff)}")
     print("\nNAME=" + hits[0][0])
 
+
+def cmd_approvals(args: list[str]) -> None:
+    """Freigabe-Protokoll des aktiven Workflows anzeigen (#472). Nur Anzeige.
+
+    stdout: `APPROVALS=<n>`, danach je Eintrag `- <gate> | <by> | <at> | <reason>`.
+    `--auto` zeigt nur automatische Freigaben (`by == "auto"`). Exit immer 0 —
+    ohne aktiven Workflow oder bei unlesbarem State `APPROVALS=0`.
+    """
+    try:
+        data, _name = _read_active()
+        entries = data.get("approvals") or []
+    except (SystemExit, Exception):
+        entries = []
+    if not isinstance(entries, list):
+        entries = []
+    rows = [e for e in entries if isinstance(e, dict)
+            and ("--auto" not in args or e.get("by") == "auto")]
+    print(f"APPROVALS={len(rows)}")
+    for e in rows:
+        print("- " + " | ".join(_one_line(e.get(k) or "-")
+                                for k in ("gate", "by", "at", "reason")))
+
+
 def _retro_load_log(name: str) -> dict:
     """Load execution log YAML for a workflow by name. Returns {} if not found."""
     log_dir = find_project_root() / ".claude" / "workflows" / "_log"
@@ -2775,6 +2799,108 @@ def cmd_auto_approve(args: list[str]) -> None:
             pass
 
 
+def _green_artifact_file(rel: str) -> "Path | None":
+    """Pfad des GREEN-Artefakts, nur wenn regulaere Datei innerhalb des Projekts (#471).
+
+    Relative Pfade gegen den Projekt-Root; Symlink, Verzeichnis, Geraet oder
+    ausserhalb (nach `resolve()`) → None, ohne die Datei zu lesen.
+    """
+    import stat as _stat
+    root = find_project_root()
+    candidate = Path(rel)
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    try:
+        if not _stat.S_ISREG(os.lstat(candidate).st_mode):
+            return None
+        resolved = candidate.resolve(strict=True)
+        resolved.relative_to(root.resolve())
+    except (OSError, ValueError, RuntimeError):
+        return None
+    return resolved
+
+
+# Zusaetzliche Rot-Evidenz nur fuer auto-green (#471): eine Zeile, die mit
+# FAILED/ERROR beginnt (pytest short summary), oder eine Testzeile mit
+# pytest-Ergebnis FAILED/ERROR (`test_a.py::t FAILED`) — auch bei "0 failed".
+_AUTO_GREEN_RED_LINE_RE = _re.compile(r"^[ \t]*(?:FAILED|ERROR)\b", _re.M)
+_AUTO_GREEN_RED_RESULT_RE = _re.compile(
+    r"^[ \t]*(?:\[[^\]\n]*\][ \t]*)*\S+[ \t]+(?:FAILED|ERROR)\b", _re.M)
+
+
+def _auto_green_decision() -> "tuple[str, str]":
+    """Pruefkette fuer `auto-green` (#471): (verdict, reason).
+
+    Erste Verfehlung ergibt "human" OHNE State-Aenderung; nur bei "done"
+    wird gespeichert. Kein Phasenwechsel, kein Marker, kein Lock.
+    """
+    if autonomy_mode() != "auto":
+        return "human", "Modus manual"
+    try:
+        data, _name = _read_active()
+    except SystemExit:
+        return "human", "kein aktiver Workflow"
+    if data.get("current_phase") != "phase6_implement":
+        return "human", f"Phase {data.get('current_phase')} statt phase6_implement"
+    if not data.get("red_test_done"):
+        return "human", "RED nicht belegt (red_test_done fehlt)"
+    artifacts = [a for a in (data.get("test_artifacts") or [])
+                 if isinstance(a, dict) and a.get("type") == "test_output"
+                 and a.get("phase") == "phase6_implement"]
+    if not artifacts:
+        return "human", "kein test_output-Artefakt der Phase phase6_implement"
+    art_path = artifacts[-1].get("path")
+    if not isinstance(art_path, str) or not art_path:
+        return "human", "GREEN-Artefakt ohne Pfad"
+    path = _green_artifact_file(art_path)
+    if path is None:
+        return "human", ("GREEN-Artefakt fehlt, ist keine regulaere Datei "
+                         "oder liegt ausserhalb des Projekts")
+    try:
+        if path.stat().st_size == 0:
+            return "human", "GREEN-Artefakt ist leer"
+    except OSError:
+        return "human", "GREEN-Artefakt nicht lesbar"
+    import qa_gate
+    # trusted=False: Altersgrenze (30 min) und Mindestgroesse (100 Byte) bleiben
+    # aktiv — die Datei hat nicht das Gate selbst erzeugt.
+    valid, message = qa_gate.validate_test_output(str(path), trusted=False)
+    if not valid:
+        return "human", f"GREEN-Artefakt nicht gruen: {message}"
+    try:
+        content = qa_gate.strip_ansi(path.read_text(errors="replace"))
+    except OSError:
+        return "human", "GREEN-Artefakt nicht lesbar"
+    if _AUTO_GREEN_RED_LINE_RE.search(content) or _AUTO_GREEN_RED_RESULT_RE.search(content):
+        return "human", "GREEN-Artefakt enthaelt FAILED/ERROR-Zeile"
+    from hook_utils import is_stop_locked
+    if is_stop_locked(find_project_root()):
+        return "human", "Stop-Lock aktiv"
+    if data.get("green_approved"):
+        return "human", "GREEN bereits freigegeben"
+    data["green_approved"] = True
+    record_approval(data, "green", "auto", "GREEN-Artefakt vorhanden",
+                    evidence={"artifact": art_path})
+    _save_active(data)
+    return "done", f"GREEN automatisch freigegeben ({art_path})"
+
+
+def cmd_auto_green(args: list[str]) -> None:
+    """Automatische GREEN-Freigabe im Auto-Modus (#471).
+
+    stdout: `AUTO_GREEN=done|human` und `REASON=<kurz>`. Exit immer 0,
+    fail-closed: jede Ausnahme (auch SystemExit) ergibt `human`.
+    """
+    try:
+        verdict, reason = _auto_green_decision()
+    except BaseException as exc:  # noqa: BLE001 — fail-closed, auch SystemExit
+        verdict, reason = "human", f"Fehler ({type(exc).__name__})"
+    try:
+        print(f"AUTO_GREEN={verdict}\nREASON={_one_line(reason) or '-'}")
+    except Exception:
+        pass
+
+
 def cmd_sessions(args: list[str]) -> None:
     """List registered Claude sessions of this project (session-locks)."""
     entries = _read_session_entries()
@@ -2848,12 +2974,14 @@ COMMANDS = {
     "no-build": cmd_no_build,
     "list": cmd_list,
     "find": cmd_find,
+    "approvals": cmd_approvals,
     "deploy-config": cmd_deploy_config,
     "retro-list": cmd_retro_list,
     "sessions": cmd_sessions,
     "observable-surface": cmd_observable_surface,
     "autonomy": cmd_autonomy,
     "auto-approve": cmd_auto_approve,
+    "auto-green": cmd_auto_green,
     "retro": cmd_retro,
     "cleanup-stale-locks": cmd_cleanup_stale_locks,
 }

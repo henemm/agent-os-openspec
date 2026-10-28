@@ -12,8 +12,10 @@ Festgelegte Vertraege (die Spec nennt sie nur sinngemaess):
 - `post_implementation_gate.py` ruft im Auto-Modus `workflow.autonomy_mode()` (lazy Import);
   bei Ausnahme gilt `manual`.
 - Bewertet wird das juengste `test_output`-Artefakt der Phase `phase6_implement` mit
-  `qa_gate.validate_test_output(filepath, trusted=True)`; bei Symlink/ausserhalb des
-  Projekts/keiner regulaeren Datei wird `validate_test_output` gar nicht aufgerufen.
+  `qa_gate.validate_test_output(filepath, trusted=False)` (Alters- und Groessenpruefung aktiv);
+  bei Symlink/ausserhalb des Projekts/keiner regulaeren Datei wird `validate_test_output` gar
+  nicht aufgerufen. Zusaetzlich gilt eine FAILED/ERROR-Zeile (Zeilenanfang oder pytest-Ergebnis
+  einer Testzeile) als rot, auch bei einer "0 failed"-Summary.
 
 Fehlende Funktionen erscheinen pro Test als FAIL (Imports erst im Testkoerper bzw. Subprozess).
 """
@@ -539,3 +541,36 @@ def test_artifact_outside_project_or_symlink_gives_human(tmp_path):
     def mk_out_link(proj):
         (proj / "logs" / "link2.log").symlink_to(outside_file)
     case("symlink_out", "logs/link2.log", setup=mk_out_link)
+
+
+# --- Review-Haertung: Alter, Groesse, FAILED/ERROR-Zeilen -----------------------
+
+def test_short_artifact_gives_human(tmp_path):
+    """Kurzdatei (<100 Byte) mit gruener Summary -> human (Groessenpruefung aktiv)."""
+    short = "0 failed, 12 passed\n"
+    assert len(short.encode()) < 100
+    proj = _project(tmp_path, green_content=short)
+    _assert_human_unchanged(proj)
+
+
+def test_stale_artifact_gives_human(tmp_path):
+    """Gruenes Protokoll mit mtime > 30 min -> human (Altersgrenze aktiv)."""
+    proj = _project(tmp_path)
+    old = time.time() - 45 * 60
+    os.utime(proj / REL_GREEN, (old, old))
+    _assert_human_unchanged(proj)
+
+
+_PAD = "platform linux -- Python 3.11.9, pytest-8.2.0, pluggy-1.5.0\nrootdir: /work/demo\n"
+
+
+@pytest.mark.parametrize("content", [
+    _PAD + "collected 3 items\n\nFAILED test_a.py::t - assert\n=== 0 failed, 3 passed ===\n",
+    _PAD + "collected 1 item\n\ntest_a FAILED\n=== 1 passed ===\n",
+    _PAD + "collected 1 item\n\ntests/test_a.py::t ERROR    [100%]\n=== 1 passed ===\n",
+], ids=["failed-line-start", "failed-result", "error-result"])
+def test_failed_or_error_line_gives_human(tmp_path, content):
+    """FAILED/ERROR-Zeile trotz gruener Summary -> human."""
+    assert len(content.encode()) >= 100
+    proj = _project(tmp_path, green_content=content)
+    _assert_human_unchanged(proj)

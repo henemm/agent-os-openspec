@@ -198,6 +198,16 @@ Erst sichern, dann ist `/clear` gefahrlos.
 
 Wenn noch offene Fragen bestehen: Zuerst den User fragen, bevor es weitergeht.
 
+### Auto-Modus: Kette selbst fortsetzen (#472)
+
+```bash
+$WF autonomy
+```
+
+Bei `AUTONOMY=auto`, ohne offene Frage an den User und ohne `/clear` in derselben Session: Rufe den Skill `30-write-spec` jetzt sofort selbst auf — warte nicht auf eine User-Eingabe. Eine offene Frage an den User stoppt die Kette auch im Auto-Modus. Der Checkpoint-Block oben bleibt trotzdem in der Ausgabe (Wiedereinstieg über `/30-write-spec #<N>`, Herdr-Auto-Clear #467). Bei `AUTONOMY=manual` (oder jeder anderen Ausgabe): wie bisher auf den User warten.
+
+Immer menschlich bleiben — auch bei `AUTONOMY=auto`: AMBIGUOUS-Verdict, zweites BROKEN bzw. Circuit Breaker, Override, Deploy, Stop-Lock.
+
 **IMPORTANT:** Do NOT start implementation. Analysis -> Spec -> Approve -> TDD RED -> Implement.
 
 ## Versions-Marker (Pflicht)

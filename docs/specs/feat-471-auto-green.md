@@ -88,6 +88,7 @@ Teil C von #468: Im Auto-Modus (`autonomy.mode: auto`) entfaellt die manuelle GR
 - Der Befehl wertet den Inhalt des juengsten `test_output`-Artefakts der Phase mit `qa_gate.py::validate_test_output` aus (PO-Entscheidung). Das belegt, dass die registrierte Datei bestandene Tests zeigt, nicht dass sie echt aus einem Lauf stammt; die Echtheit und die fachliche Pruefung leistet der Adversary.
 - Bei einem Moduswechsel mitten in phase6 wird ein bereits vorhandener Lock im Auto-Modus ignoriert und bleibt liegen, bis der Workflow endet oder zurueck nach `manual` gewechselt wird.
 - Gelesen wird die wirksame Config des Projekts (`trusted_config()`); eine Worktree-lokale oder `settings.local.json`-Abweichung wirkt nicht.
+- Ein Agent kann ein frisches, plausibles Testprotokoll fabrizieren; Alters-, Groessen- und FAILED/ERROR-Pruefung erschweren das nur. Die Echtheit prueft der Adversary.
 
 ## Definition of Done
 

@@ -258,6 +258,43 @@ genau einer Zeile:
 | `no` | nein | Ankündigung: schreibe jetzt fest, keine Rückfrage |
 | `no` | ja | Ankündigung: schreibe fest und deploye, Kette im selben Turn |
 
+### Auto-Modus prüfen (PFLICHT, vor der Ausgabe, #472)
+
+```bash
+python3 .claude/hooks/workflow.py autonomy
+```
+
+Nur die ausdrücklich gelesene Zeile `AUTONOMY=auto` schaltet um; jede andere Ausgabe (auch ein
+Fehler) gilt als `manual` — dann gilt die Tabelle oben unverändert.
+
+Bei `AUTONOMY=auto` (nach Step 4, also mit `phase8_complete`):
+
+1. **Committen ohne Rückfrage** — unabhängig von `OBSERVABLE_SURFACE`; die Frage „Soll ich den
+   Code committen?" entfällt. Die Commit-Gates (`bash_gate.py`) gelten wie immer.
+2. **Den Feature-Branch pushen** — Branch prüfen mit `git rev-parse --abbrev-ref HEAD` und den
+   Default-Branch des Remotes mit `git symbolic-ref --short refs/remotes/origin/HEAD`
+   (z. B. `origin/main` → `main`). Gepusht wird nur, wenn der aktuelle Branch weder `main` noch
+   `master` noch der Default-Branch des Remotes ist: dann `git push -u origin <feature-branch>`.
+   Schlägt `git symbolic-ref` fehl, wird nicht gepusht und das in der Abschlussmeldung gemeldet.
+   Nie `main`, `master` oder den Default-Branch pushen (auch kein detached `HEAD`), nie
+   `--force`: steht der Checkout darauf, wird nur committet und der PO in der Abschlussmeldung
+   darauf hingewiesen. Schlägt der Push fehl, melden statt umgehen.
+3. **Merge, PR und Deploy bleiben beim PO.** Der Auto-Modus löst nie ein Deploy aus —
+   `deploy.autonomous` (siehe „Autonomen Weiterlauf prüfen" oben) ist eine eigene, getrennte
+   Entscheidung des Projekts und wird von `AUTONOMY=auto` weder gesetzt noch ersetzt. Kein
+   `/70-deploy`, kein Merge, kein PR aus dem Auto-Modus heraus.
+4. **Automatische Freigaben auflisten** — für die Abschlussmeldung:
+
+   ```bash
+   python3 .claude/hooks/workflow.py approvals --auto
+   ```
+
+   Erste Zeile `APPROVALS=<n>`, danach je Eintrag `- <gate> | <by> | <at> | <reason>`. Übernimm
+   jede Zeile als Gate, Zeit und Grund in die Abschlussmeldung; bei `APPROVALS=0` schreibe
+   „keine automatischen Freigaben".
+
+Immer menschlich bleiben — auch bei `AUTONOMY=auto`: AMBIGUOUS-Verdict, zweites BROKEN bzw. Circuit Breaker, Override, Deploy, Stop-Lock.
+
 ### Zusammenfassung an den User
 
 Nach erfolgreicher Validierung, gib dem User folgende Zusammenfassung:
@@ -287,6 +324,18 @@ aus und melde danach das Endergebnis.
 `OBSERVABLE_SURFACE=no` vor und ist keine Autonomie dokumentiert, ersetze die letzte Zeile
 durch die kurze Ankündigung, dass du den Code jetzt festschreibst. Es gibt in diesem Fall
 nichts, was der User beurteilen könnte — eine Rückfrage wäre inhaltsleer.
+
+**Ausnahme im Auto-Modus (`AUTONOMY=auto`, siehe Prüfung oben):** Committe und pushe den
+Feature-Branch im selben Turn und ersetze die letzte Zeile durch das Ergebnis (Commit-Hash,
+gepushter Branch) plus den Block:
+
+```
+**Automatisch freigegeben:**
+- <Gate> · <Zeit> · <Grund>     (je Zeile aus `workflow.py approvals --auto`)
+**Offen beim PO:** Merge / PR[, Deploy]
+```
+
+Die ❗Du-Zeile nennt den nächsten PO-Schritt (Merge/PR prüfen) — keine Commit-Frage.
 
 ## On Failure
 

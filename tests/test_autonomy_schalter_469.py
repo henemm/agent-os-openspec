@@ -331,10 +331,14 @@ def test_config_yaml_default_is_manual():
 # --- AC-15 ------------------------------------------------------------------
 
 def test_no_gate_imports_autonomy_mode(inproc):
-    """AC-15: kein Gate nutzt den Schalter; er existiert nur in workflow.py (+CLI)."""
+    """AC-15: kein Gate nutzt den Schalter; er existiert nur in workflow.py (+CLI).
+
+    Ausnahme seit #471: `post_implementation_gate.py` liest `autonomy_mode()`
+    bewusst (Auto-Modus: kein Lock, kein Block) — abgedeckt durch
+    tests/test_auto_green_471.py (AC-11..AC-14).
+    """
     assert hasattr(inproc.workflow, "autonomy_mode")  # sonst triviales Gruen
-    gates = ["edit_gate.py", "bash_gate.py", "phase_listener.py",
-             "post_implementation_gate.py", "post_bash.py"]
+    gates = ["edit_gate.py", "bash_gate.py", "phase_listener.py", "post_bash.py"]
     offenders = []
     for g in gates:
         text = (HOOKS_DIR / g).read_text()

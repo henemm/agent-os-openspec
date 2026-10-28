@@ -176,6 +176,9 @@ bereits die Voraussetzung, keine zusätzliche Entscheidung steht mehr aus.
 Mit `/clear` dazwischen: Der Checkpoint-Block oben zeigt den regulären Wiedereinstieg
 über den expliziten Befehl `/50-implement #<N>`.
 
+Diese Kette gilt unabhängig vom Autonomie-Modus — auch bei `AUTONOMY=auto` ist hier nichts zusätzlich zu tun (#472).
+Immer menschlich bleiben — auch bei `AUTONOMY=auto`: AMBIGUOUS-Verdict, zweites BROKEN bzw. Circuit Breaker, Override, Deploy, Stop-Lock.
+
 ## Common Mistakes
 
 ❌ **Tests that pass** → Test is worthless, proves nothing

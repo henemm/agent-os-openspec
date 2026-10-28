@@ -89,7 +89,25 @@ Was das bedeutet:
 
 **Workflow-Name:** Leite ihn selbst aus dem Aufgaben-Titel ab (Issue-Nummer + Stichwort, z.B. `fix-862-col-labels`). Nie beim User erfragen.
 
-### 3. Workflow starten (nach User-Bestätigung des Tracks)
+### 2b. Autonomie prüfen (#472)
+
+```bash
+python3 .claude/hooks/workflow.py autonomy
+```
+
+- **`AUTONOMY=auto`** — übernimm den Track-Vorschlag ohne Rückfrage: Bewertung
+  ausgeben (als Info, ohne Frage nach dem Track) und den Workflow aus Step 3
+  sofort mit `workflow.py start` starten, dann direkt mit dem nächsten Befehl
+  weiter. Fast Track nur bei Summe 0 — im Zweifel höher bewerten, nie
+  herunterrunden. Die Rückfrage-STOPs aus Step 1c bleiben: Ursache unklar, nicht
+  reproduzierbar, mehrere mögliche Ursachen oder Fix > 5 Dateien → STOP und
+  nachfragen, auch bei `AUTONOMY=auto`.
+- **`AUTONOMY=manual`** (oder jede andere Ausgabe) — wie bisher: Track vorschlagen
+  und auf die Bestätigung des Users warten.
+
+Immer menschlich bleiben — auch bei `AUTONOMY=auto`: AMBIGUOUS-Verdict, zweites BROKEN bzw. Circuit Breaker, Override, Deploy, Stop-Lock.
+
+### 3. Workflow starten (nach User-Bestätigung des Tracks, bei `AUTONOMY=auto` sofort)
 
 **Fast Track:**
 ```bash

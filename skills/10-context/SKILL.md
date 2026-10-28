@@ -158,6 +158,16 @@ Erst sichern, dann ist `/clear` gefahrlos.
 
 ---
 
+### Auto-Modus: Kette selbst fortsetzen (#472)
+
+```bash
+$WF autonomy
+```
+
+Bei `AUTONOMY=auto` und ohne `/clear` in derselben Session: Rufe den Skill `20-analyse` jetzt sofort selbst auf — warte nicht auf eine User-Eingabe. Der Checkpoint-Block oben bleibt trotzdem in der Ausgabe (Wiedereinstieg über `/20-analyse #<N>`, Herdr-Auto-Clear #467). Bei `AUTONOMY=manual` (oder jeder anderen Ausgabe): wie bisher auf den User warten.
+
+Immer menschlich bleiben — auch bei `AUTONOMY=auto`: AMBIGUOUS-Verdict, zweites BROKEN bzw. Circuit Breaker, Override, Deploy, Stop-Lock.
+
 **IMPORTANT:** Do NOT skip to implementation. Context → Analyse → Spec → Implement.
 
 ## Versions-Marker (Pflicht)
