@@ -16,3 +16,18 @@ conftest.py an dieser Stelle aendert daran nichts.
 """
 
 collect_ignore = ["fixtures"]
+
+
+# --- Herdr-Isolation (Issue #466, AC-15) ------------------------------------
+# Laeuft ein Entwickler in einem Herdr-Pane, sind HERDR_* im Environment gesetzt
+# und wuerden an jeden Subprozess der Tests vererbt. Die Herdr-Bridge
+# (core/hooks/herdr_bridge.py) wuerde dann die echte Sidebar des Entwicklers mit
+# Test-Workflows bespielen. Deshalb entfernt diese autouse-Fixture die Variablen
+# fuer jeden Test; Tests, die die Bridge pruefen, setzen sie per monkeypatch neu.
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _strip_herdr_env(monkeypatch):
+    for var in ("HERDR_ENV", "HERDR_PANE_ID", "HERDR_BIN_PATH", "HERDR_SOCKET_PATH"):
+        monkeypatch.delenv(var, raising=False)
