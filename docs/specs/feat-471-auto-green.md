@@ -64,7 +64,7 @@ Teil C von #468: Im Auto-Modus (`autonomy.mode: auto`) entfaellt die manuelle GR
 2. Aktiver Workflow lesbar (`_read_active()`), sonst `human`.
 3. `current_phase == "phase6_implement"`.
 4. `red_test_done` ist gesetzt (RED wurde belegt).
-5. Mindestens ein Eintrag in `test_artifacts` mit `type == "test_output"` und `phase == "phase6_implement"` (das GREEN-Artefakt aus Step 4).
+5. Mindestens ein Eintrag in `test_artifacts` mit `type == "test_output"` und `phase == "phase6_implement"` (das GREEN-Artefakt aus Step 4). Massgeblich ist das **juengste** solche Artefakt (letzter passender Eintrag in `test_artifacts`); aeltere werden nicht beruecksichtigt. PO-Entscheidung: `auto-green` gibt nur frei, wenn dieses Artefakt **inhaltlich bestandene Tests** zeigt (keine failed/errors, mindestens ein passed). Die Auswertung ist `core/hooks/qa_gate.py::validate_test_output(filepath, trusted=True)` (Rueckgabe `(valid, message)`; sie nutzt intern `_find_pytest_summary_line` / `_evaluate_pytest_summary` und die Runner-Auswertungen fuer unittest, node, go, cargo, Swift) und wird wiederverwendet, nicht nachgebaut. `trusted=True`, weil die Altersgrenze (30 min) und der Groessen-Vorfilter fuer ein beim Registrieren gepruefte Artefakt nicht passen; die inhaltliche Auswertung bleibt voll aktiv. `valid == False` ergibt `human` mit dem `message` als `REASON`. Die Datei wird nur gelesen, wenn sie eine **regulaere Datei** ist (kein Symlink, kein Verzeichnis, kein Geraet) und ihr aufgeloester Pfad **innerhalb des Projekts** liegt (Projekt-Root per `find_project_root`, Pfadaufloesung per `resolve()`); relative Artefaktpfade werden gegen den Projekt-Root aufgeloest. Fehlt die Datei, ist sie leer, nicht lesbar, ausserhalb des Projekts oder ein Symlink, ergibt das `human`, ohne dass `validate_test_output` ueberhaupt aufgerufen wird.
 6. Kein aktiver Stop-Lock (`is_stop_locked()`).
 7. `green_approved` ist noch nicht gesetzt.
 
@@ -85,7 +85,7 @@ Teil C von #468: Im Auto-Modus (`autonomy.mode: auto`) entfaellt die manuelle GR
 ## Known Limitations
 
 - GREEN wird im Auto-Modus immer automatisch erteilt, auch bei gemeldeten Auffaelligkeiten (PO-Entscheidung). Diese Auffaelligkeiten werden nicht menschlich geprueft; der Ausgleich sind der Adversary-Lauf (Step 8) und die Abschlussmeldung.
-- Der Befehl prueft das Vorhandensein eines `test_output`-Artefakts der Phase, nicht dessen Inhalt; die inhaltliche Pruefung der Testergebnisse leistet der Adversary bzw. `qa_gate.py`.
+- Der Befehl wertet den Inhalt des juengsten `test_output`-Artefakts der Phase mit `qa_gate.py::validate_test_output` aus (PO-Entscheidung). Das belegt, dass die registrierte Datei bestandene Tests zeigt, nicht dass sie echt aus einem Lauf stammt; die Echtheit und die fachliche Pruefung leistet der Adversary.
 - Bei einem Moduswechsel mitten in phase6 wird ein bereits vorhandener Lock im Auto-Modus ignoriert und bleibt liegen, bis der Workflow endet oder zurueck nach `manual` gewechselt wird.
 - Gelesen wird die wirksame Config des Projekts (`trusted_config()`); eine Worktree-lokale oder `settings.local.json`-Abweichung wirkt nicht.
 
@@ -151,6 +151,18 @@ Fertig ist diese Aenderung, wenn:
 - **AC-17:** Given ein `auto-green`-Lauf mit `done` / When anschliessend das Projektverzeichnis geprueft wird / Then existiert keine Datei `.claude/user_approved_validation_<wf>` und kein neuer Lock; `post_implementation_gate.py` und `workflow.py` schreiben diesen Marker im Auto-Pfad nie (kein gefaelschter Marker)
   - Test: tests/test_auto_green_471.py::test_no_marker_file_written
 
+- **AC-18:** Given Happy-Path-Zustand, aber das juengste `test_output`-Artefakt der Phase `phase6_implement` ist eine regulaere Datei im Projekt mit realistischer pytest-Ausgabe und Summary `3 passed` / When `auto-green` laeuft / Then `AUTO_GREEN=done`, Exit 0 und `green_approved` ist `true`
+  - Test: tests/test_auto_green_471.py::test_artifact_with_3_passed_gives_done
+
+- **AC-19:** Given Happy-Path-Zustand, aber das juengste `test_output`-Artefakt der Phase zeigt `1 failed, 2 passed` (auch wenn ein aelteres Artefakt gruen war) / When `auto-green` laeuft / Then `AUTO_GREEN=human`, Exit 0 und State byte-identisch
+  - Test: tests/test_auto_green_471.py::test_artifact_with_failures_gives_human
+
+- **AC-20:** Given Happy-Path-Zustand, aber das juengste `test_output`-Artefakt enthaelt kein Testergebnis (leere Datei, beliebiger Text ohne Testausgabe) oder die Datei fehlt auf der Platte / When `auto-green` laeuft / Then `AUTO_GREEN=human`, Exit 0 und State byte-identisch
+  - Test: tests/test_auto_green_471.py::test_artifact_without_result_empty_or_missing_gives_human
+
+- **AC-21:** Given Happy-Path-Zustand, aber der Pfad des juengsten `test_output`-Artefakts liegt ausserhalb des Projekts (absoluter Pfad oder `..`) oder ist ein Symlink (auch auf eine gruene Datei im Projekt) / When `auto-green` laeuft / Then `AUTO_GREEN=human`, Exit 0, State byte-identisch und die Datei wird nicht gelesen
+  - Test: tests/test_auto_green_471.py::test_artifact_outside_project_or_symlink_gives_human
+
 ## Test Plan
 
 Automatische Tests (jeweils an eine AC oben gebunden); Config-Varianten per temporaerer `config.yaml` im Testprojekt, CLI-Tests als Subprozess mit `OPENSPEC_ACTIVE_WORKFLOW`, Gate-Tests als Subprozess mit Hook-Input auf stdin, State-Vergleich per Bytes vor/nach dem Aufruf:
@@ -168,3 +180,5 @@ Automatische Tests (jeweils an eine AC oben gebunden); Config-Varianten per temp
 ## Changelog
 
 - 2026-10-28: Initial spec created
+- 2026-10-28: PO-Entscheidung ergaenzt: `auto-green` gibt nur frei, wenn das juengste `test_output`-Artefakt der Phase `phase6_implement` inhaltlich bestandene Tests zeigt (Auswertung per `qa_gate.py::validate_test_output`, Datei nur regulaer und innerhalb des Projekts); neue AC-18 bis AC-21
+- Kritische Anmerkung: Die Inhaltspruefung belegt nur, dass die registrierte Datei gruene Testausgabe enthaelt, nicht dass sie aus einem echten Lauf stammt (ein Agent kann Text in eine Datei schreiben und registrieren). Dagegen helfen die Pfadregeln (regulaer, im Projekt) nur teilweise; die Echtheit bleibt Aufgabe des Adversary-Laufs. Zudem erkennt `validate_test_output` mit `trusted=True` keine zu kleinen oder alten Dateien mehr; Test-Fixtures muessen deshalb realistische Runner-Ausgabe sein (mindestens zwei erkannte Testmuster), sonst meldet die Auswertung "Doesn't look like test output".
