@@ -577,7 +577,44 @@ def _new_workflow(name: str) -> dict:
         "phase_transitions": [],
         "fix_loop_iterations": 0,
         "phase_log": [],
+        "approvals": [],
     }
+
+
+def autonomy_mode() -> str:
+    """Aktueller Autonomie-Modus: "auto" nur bei exakt `autonomy.mode: auto` (#469).
+
+    Fail-closed: jeder andere Wert, falscher Typ und jede Ausnahme ergibt
+    "manual". Kein Trimmen, kein Lowercase. Wirft nie. `load_config` wird zur
+    Laufzeit ueber das Modul aufgeloest.
+    """
+    try:
+        import config_loader
+        section = config_loader.load_config().get("autonomy")
+        if isinstance(section, dict) and section.get("mode") == "auto":
+            return "auto"
+    except Exception:
+        pass
+    return "manual"
+
+
+def record_approval(data: dict, gate: str, by: str, reason: str,
+                    evidence=None) -> dict:
+    """Freigabe an `data["approvals"]` anhaengen und den Eintrag zurueckgeben (#469).
+
+    Speichert nicht selbst — der Aufrufer ruft wie bisher `_save_active`.
+    Aeltere States ohne `approvals` bekommen die Liste per setdefault.
+    """
+    entry = {
+        "gate": gate,
+        "by": by,
+        "mode": autonomy_mode(),
+        "at": datetime.now().isoformat(),
+        "reason": reason,
+        "evidence": evidence,
+    }
+    data.setdefault("approvals", []).append(entry)
+    return entry
 
 
 def _log_phase_transition(data: dict, new_phase: str) -> None:
@@ -1362,6 +1399,14 @@ def cmd_status(args: list[str]) -> None:
     else:
         print(f"LoC Delta: {loc_delta}")
     print(f"Execution Log: {'Written' if log_written else 'Pending — run write-log before complete'}")
+    approvals = data.get("approvals") or []
+    if isinstance(approvals, list) and approvals:
+        # Freigabe-Protokoll (#469); ohne Eintraege bleibt die Ausgabe wie bisher.
+        print(f"Freigaben: {len(approvals)}")
+        for e in approvals:
+            if not isinstance(e, dict):
+                continue
+            print(f"  - {e.get('gate')} | by {e.get('by')} | {e.get('mode')} | {e.get('at')}")
 
 
 def _reset_approvals_on_backstep(data: dict, current: str, target: str) -> None:
@@ -1445,6 +1490,7 @@ _SET_FIELD_PROTECTED = {
     "base_commit": "wird von workflow.py start gesetzt (Basis der Phase-8-Abdeckung)",
     "qa_run_stamp": "wird von qa_gate.py gesetzt",
     "no_build_reason": "workflow.py no-build --reason \"<Begruendung>\"",
+    "approvals": "wird nur von workflow.record_approval(...) gefuehrt (#469)",
 }
 
 # Nach der Freigabe nur noch mit Override-Token des Users per set-field (#379).
@@ -2330,6 +2376,24 @@ def cmd_observable_surface(args: list[str]) -> None:
           f"ROOT={root}\nCONFIG={note}")
 
 
+def cmd_autonomy(args: list[str]) -> None:
+    """Auskunft, kein Gate: genau eine Zeile `AUTONOMY=<mode>`, Exit immer 0 (#469).
+
+    Bewusst ohne aktiven Workflow (kein `_read_active()`), Vorbild
+    `cmd_observable_surface`.
+    """
+    try:
+        mode = autonomy_mode()
+    except Exception:
+        mode = "manual"
+    if mode not in ("auto", "manual"):
+        mode = "manual"
+    try:
+        print(f"AUTONOMY={mode}")
+    except Exception:
+        pass
+
+
 def cmd_sessions(args: list[str]) -> None:
     """List registered Claude sessions of this project (session-locks)."""
     entries = _read_session_entries()
@@ -2407,6 +2471,7 @@ COMMANDS = {
     "retro-list": cmd_retro_list,
     "sessions": cmd_sessions,
     "observable-surface": cmd_observable_surface,
+    "autonomy": cmd_autonomy,
     "retro": cmd_retro,
     "cleanup-stale-locks": cmd_cleanup_stale_locks,
 }

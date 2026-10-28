@@ -337,6 +337,12 @@ herdr:
     idle_timeout_s: 120 # Hoechstwartezeit je `agent wait` (Sekunden)
     announce: true      # Vorankuendigung per `notification show`
 
+# Autonomie-Schalter (#469, Teil A von #468): `manual` | `auto`. Nur der exakte
+# Literal `auto` schaltet an; alles andere (auch Tippfehler) gilt als `manual`.
+# Auskunft: `workflow.py autonomy`. In diesem Schritt ohne Wirkung auf Gates.
+autonomy:
+  mode: manual
+
 # Abdeckungspruefung des Adversary-Nachweises (Issue #259)
 # Commit-Gate und Phase 8 verlangen, dass das Dialog-Protokoll jede Code-Datei
 # der Aenderungsmenge zitiert und hasht (`adversary_dialog.py required-files`).
