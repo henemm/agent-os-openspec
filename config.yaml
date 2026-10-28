@@ -326,6 +326,16 @@ session_banner:
 #   claude = ["$phase $step", "next: $next"]
 herdr:
   enabled: true
+  # Auto-/clear an Phasengrenzen (#467, Opt-in, nur Literal `true` schaltet an):
+  # meldet die Antwort "`/clear` ist jetzt gefahrlos" und nennt die ❗Du-Zeile den
+  # erwarteten Slash-Befehl, tippt ein detachter Runner `/clear` und danach
+  # `/<cmd> #N` in den Pane. Freigaben bleiben manuell. `herdr.enabled: false`
+  # schaltet auch dies ab. Abbrueche: .claude/herdr_auto_clear.log
+  auto_clear:
+    enabled: false
+    grace_s: 3          # Wartezeit nach der Vorankuendigung (Sekunden)
+    idle_timeout_s: 120 # Hoechstwartezeit je `agent wait` (Sekunden)
+    announce: true      # Vorankuendigung per `notification show`
 
 # Abdeckungspruefung des Adversary-Nachweises (Issue #259)
 # Commit-Gate und Phase 8 verlangen, dass das Dialog-Protokoll jede Code-Datei
