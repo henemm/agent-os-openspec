@@ -349,8 +349,10 @@ herdr:
 # Autonomie-Schalter (#469, Teil A von #468): `manual` | `auto`. Nur der exakte
 # Literal `auto` schaltet an; alles andere (auch Tippfehler) gilt als `manual`.
 # Auskunft: `workflow.py autonomy`. In diesem Schritt ohne Wirkung auf Gates.
+# Fuer alle Projekte (#481): "env": {"OPENSPEC_AUTONOMY": "auto"} in
+# ~/.claude/settings.json; ein Projekteintrag `mode: manual|auto` hat Vorrang.
 autonomy:
-  mode: manual
+  # mode: manual   # manual|auto; weglassen = Benutzer-Schalter entscheidet
 
 # Abdeckungspruefung des Adversary-Nachweises (Issue #259)
 # Commit-Gate und Phase 8 verlangen, dass das Dialog-Protokoll jede Code-Datei

@@ -483,6 +483,15 @@ _CONFIG_MAX_BYTES = 256 * 1024
 _CONFIG_MAX_EDITS = 20
 
 
+def _user_settings_hit(file_path: str) -> bool:
+    """Schritt 0a (#481): Ziel ist `~/.claude/settings.json` bzw. `settings.local.json`? Fehler: kein Treffer."""
+    try:
+        from config_loader import user_settings_paths, config_path_hit
+        return config_path_hit(file_path, user_settings_paths())
+    except Exception:
+        return False
+
+
 def _config_edit_hit(file_path: str, tool_input: dict) -> "bool | str":
     """Schritt 0a (#473): trifft das Ziel die geschuetzte Config-Pfadmenge?
 
@@ -763,6 +772,16 @@ def main():
     # 0a. Wirksame Gate-Config (#473): Schutz, kein Workflow-Zwang — gilt wie
     #     bash_gate 1b auch bei framework_disabled() und ohne Workflow; Ausweg nur
     #     der Override-Token. Steht vor 1c/2/3, sonst winkt "kein Code" YAML durch.
+    #     #481: dazu die persoenlichen Claude-Einstellungen (Autonomie-Schalter).
+    if _user_settings_hit(file_path) \
+            and not (_has_override_token("__infra__") or _has_override_token()):
+        block(
+            "BLOCKED: Schreibzugriff auf die persoenlichen Claude-Einstellungen "
+            "(~/.claude/settings.json / settings.local.json) — dort steht der "
+            "Autonomie-Schalter OPENSPEC_AUTONOMY (#481).\n"
+            "→ Bewusst gewollt? User tippt 'override' (gilt 1 h, protokolliert in "
+            ".claude/user_override_token.json)."
+        )
     config_hit = _config_edit_hit(file_path, tool_input)
     if config_hit and not (_has_override_token("__infra__") or _has_override_token()):
         overflow = (

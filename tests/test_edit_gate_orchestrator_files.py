@@ -71,7 +71,11 @@ def test_global_home_claude_settings_not_blocked(tmp_path):
         "OPENSPEC_ACTIVE_WORKFLOW": "",
     }
     result = _run_edit_gate(env, str(global_settings), cwd=str(proj))
-    assert result.returncode == 0, result.stderr
+    # #481: die globale settings.json traegt den Autonomie-Schalter und ist nun
+    # bewusst geschuetzt — aber nie durch die Orchestrator-Sperre (#48).
+    assert "Orchestrator" not in result.stderr, result.stderr
+    assert result.returncode == 2, result.stderr
+    assert "persoenlichen Claude-Einstellungen" in result.stderr, result.stderr
 
 
 # --- (b) Projekt-.claude/settings.json ohne Token → Block (Bestand) ---

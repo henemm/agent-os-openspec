@@ -666,9 +666,11 @@ def _writes_effective_config(segments: list, cwd: Path) -> bool:
     try:
         for bases, targets, seg in _segment_write_targets(segments, cwd):
             if protected is None:
-                from config_loader import protected_config_paths, config_path_hit
+                from config_loader import (protected_config_paths, config_path_hit,
+                                           user_settings_paths)
                 root = find_project_root()
-                protected = protected_config_paths(root)
+                # #481: persoenliche Claude-Einstellungen (Autonomie-Schalter) dazu
+                protected = protected_config_paths(root) + user_settings_paths()
                 if not protected:
                     return False
             if any(config_path_hit(b / os.path.expanduser(t), protected)
@@ -676,6 +678,41 @@ def _writes_effective_config(segments: list, cwd: Path) -> bool:
                 return True
             if _removes_config_dir(seg, bases, protected, root):
                 return True
+    except Exception:
+        return False
+    return False
+
+
+# #481: Zuweisung an den Autonomie-Schalter. Kommandos, hinter denen Zuweisungen
+# stehen duerfen; deren Optionen (`-x`) werden uebersprungen.
+_AUTONOMY_ASSIGN_RE = re.compile(r"^OPENSPEC_AUTONOMY\+?=")
+_ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\+?=")
+_ASSIGN_CMDS = ("export", "env", "declare", "set", "typeset", "readonly", "local")
+_NESTED_SHELLS = ("bash", "sh", "zsh", "dash")
+
+
+def _assigns_autonomy_env(segments: list, depth: int = 0) -> bool:
+    """Setzt ein Segment `OPENSPEC_AUTONOMY` (#481)? Am Segmentanfang (auch hinter
+    weiteren Zuweisungen) oder nach export/env/declare/set; `bash -c "…"` eine
+    Ebene tief. Lesen (`echo $OPENSPEC_AUTONOMY`) zaehlt nicht. Fehler: fail-open.
+    """
+    try:
+        for seg in segments:
+            in_cmd = False
+            for tok in seg:
+                if _AUTONOMY_ASSIGN_RE.match(tok):
+                    return True
+                if _ASSIGN_RE.match(tok) or (in_cmd and tok.startswith("-")):
+                    continue
+                if tok in _ASSIGN_CMDS:
+                    in_cmd = True
+                    continue
+                break
+            if depth < 1 and seg and os.path.basename(seg[0]) in _NESTED_SHELLS \
+                    and "-c" in seg[:-1]:
+                inner = _git_segments(seg[seg.index("-c") + 1]) or []
+                if _assigns_autonomy_env(inner, depth + 1):
+                    return True
     except Exception:
         return False
     return False
@@ -1805,8 +1842,16 @@ def main():
             and not _any_override_token():
         block(
             "BLOCKED: Schreibzugriff auf die wirksame Gate-Config (Kill-Switches) "
-            "oder Anlegen einer vorrangigen Config.\n"
+            "oder Anlegen einer vorrangigen Config, oder auf die persoenlichen "
+            "Claude-Einstellungen (~/.claude/settings*.json, #481).\n"
             "  Aenderungen gehoeren in die Worktree-Kopie und wirken nach dem Merge.\n"
+            "  Bewusst gewollt? User tippt 'override'."
+        )
+    # 1b'. Autonomie-Schalter (#481): Claude gibt sich die Autonomie nicht selbst.
+    if _assigns_autonomy_env(_git_segments(scan_cmd) or []) and not _any_override_token():
+        block(
+            "BLOCKED: Zuweisung an OPENSPEC_AUTONOMY (Autonomie-Schalter, #481).\n"
+            "  Den Schalter setzt der User in ~/.claude/settings.json unter env.\n"
             "  Bewusst gewollt? User tippt 'override'."
         )
 

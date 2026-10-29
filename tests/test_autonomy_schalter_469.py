@@ -321,11 +321,16 @@ def test_autonomy_in_both_plugin_key_sets(inproc):
 # --- AC-14 ------------------------------------------------------------------
 
 def test_config_yaml_default_is_manual():
-    """AC-14: mitgelieferte config.yaml hat autonomy.mode == manual."""
+    """AC-14: mitgelieferte config.yaml ergibt ohne Benutzer-Schalter manual.
+
+    # #481: Das Template hat keinen aktiven `autonomy.mode` mehr (sonst
+    # ueberstimmte jedes kopierte Projekt `OPENSPEC_AUTONOMY`); der Default
+    # `manual` kommt aus `autonomy_mode()` selbst.
+    """
     import yaml  # noqa: PLC0415
     cfg = yaml.safe_load((REPO_ROOT / "config.yaml").read_text())
-    assert isinstance(cfg.get("autonomy"), dict), cfg.get("autonomy")
-    assert cfg["autonomy"].get("mode") == "manual"
+    section = cfg.get("autonomy")
+    assert not (isinstance(section, dict) and "mode" in section), section
 
 
 # --- AC-15 ------------------------------------------------------------------
