@@ -119,6 +119,8 @@ Nächster: Freigabe ...
 
 **Konfiguration.** `config.yaml` → `herdr.plan_pane: {enabled: true, ratio: 0.75}` mit Kommentar (Opt-out, Wirkung, Ratio-Bedeutung).
 
+**Umsetzungsnachtrag (Validierung).** Zusaetzlich `plan_pane_settings() -> {"enabled", "ratio"}` (vom Test verlangt), `_ac_log` um den Parameter `log_file` erweitert (Default unveraendert, #467-Verhalten gleich). `tests/test_herdr_sidebar_466.py::test_start_reports_workflow_state` setzt `herdr.plan_pane.enabled: false`, weil `start` mit Default jetzt zwei Herdr-Aufrufe macht und der Test nur den Sidebar-Report zaehlt. Umfang: +342 LoC Produktion statt geschaetzt +230.
+
 ## Expected Behavior
 
 - **Input:** `workflow.py start <name>` in einem Herdr-Pane (gueltiges Herdr-Env, `herdr.enabled` und `herdr.plan_pane.enabled` nicht `false`)
