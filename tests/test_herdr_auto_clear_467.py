@@ -12,7 +12,7 @@ STUB_LOG und verzweigt nach Unterbefehl:
 - STUB_SLEEP: Schlaf vor jeder Verzweigung (Haengen des Binarys).
 
 Vertraege, die diese Tests festlegen (die Spec nennt sie nicht exakt):
-- `agent wait` liefert auf stdout `{"result": {"agent": {"status": "<s>", ...}}}`.
+- `agent wait` liefert auf stdout `{"result": {"agent": {"agent_status": "<s>", ...}}}`.
 - Runner-CLI: `herdr_bridge.py auto-clear --pane P --workflow W --phase PH
   --command C --grace 0 --settle 0 --idle-timeout 5 --announce 0`; `--idle-timeout`
   in Sekunden (-> `--timeout 5000`), `--announce 0` = keine Vorankuendigung.
@@ -52,7 +52,7 @@ STUB_SCRIPT = r"""#!/bin/bash
 { for a in "$@"; do printf '%s\0' "$a"; done; printf '\n'; } >> "$STUB_LOG"
 if [ -n "$STUB_SLEEP" ]; then sleep "$STUB_SLEEP"; fi
 if [ "$1 $2" = "agent wait" ]; then
-  code=0; out='{"result":{"agent":{"status":"idle"}}}'; err=""; hook=""
+  code=0; out='{"result":{"agent":{"agent_status":"idle"}}}'; err=""; hook=""
   if [ -n "$STUB_SEQ" ] && [ -s "$STUB_SEQ" ]; then
     IFS='|' read -r code out err hook < "$STUB_SEQ"
     tail -n +2 "$STUB_SEQ" > "$STUB_SEQ.tmp"; mv "$STUB_SEQ.tmp" "$STUB_SEQ"
@@ -152,7 +152,7 @@ def _waits(calls: list) -> list:
 
 
 def _wait_line(status: str = "idle", code: int = 0, err: str = "", hook: str = "") -> str:
-    out = json.dumps({"result": {"agent": {"status": status}}}) if code == 0 else ""
+    out = json.dumps({"result": {"agent": {"agent_status": status}}}) if code == 0 else ""
     return f"{code}|{out}|{err}|{hook}"
 
 
