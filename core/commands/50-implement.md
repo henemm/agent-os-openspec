@@ -137,6 +137,23 @@ python3 .claude/hooks/workflow.py add-artifact test_output \
 
 ### Step 6: User-Freigabe der GREEN-Ergebnisse (PFLICHT)
 
+Zuerst den Autonomie-Modus pruefen (`workflow.py autonomy`):
+
+```bash
+python3 .claude/hooks/workflow.py autonomy
+```
+
+**Bei `AUTONOMY=auto`** (#471) die GREEN-Freigabe automatisch pruefen lassen (`workflow.py auto-green`):
+
+```bash
+python3 .claude/hooks/workflow.py auto-green
+```
+
+- `AUTO_GREEN=done` → GREEN ist automatisch freigegeben (`green_approved`, protokolliert in `approvals`). Gib die Zusammenfassung unten als reine Information aus — ohne die Zeile mit `go` und ohne Rueckfrage — und gehe direkt zu Step 7. Auffaelligkeiten nicht zurueckhalten: sie stehen in der Zusammenfassung und gehen an den Adversary.
+- `AUTO_GREEN=human` → nenne die `REASON=`-Zeile und verfahre wie im Modus `manual` unten.
+
+**Bei `AUTONOMY=manual` oder `AUTO_GREEN=human`:**
+
 **STOP! Du darfst NICHT weitermachen ohne User-Freigabe!**
 
 Praesentiere dem User folgende Zusammenfassung:

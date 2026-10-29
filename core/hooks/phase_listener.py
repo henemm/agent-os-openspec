@@ -358,6 +358,11 @@ def _save_workflow(data: dict, path: Path) -> None:
     data["last_updated"] = datetime.now().isoformat()
     # Atomar (#416): neuer Inode, nie durch einen Verweis hindurch schreiben.
     atomic_write_json(path, data)
+    try:  # #466: Herdr-Sidebar (display-only, fail-open, nie stdout)
+        import herdr_bridge
+        herdr_bridge.report_workflow(data)
+    except Exception:
+        pass
 
 
 def _finish_unsafe(exc: Exception, message: str, stop: list, cont: list) -> None:

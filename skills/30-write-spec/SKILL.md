@@ -171,9 +171,29 @@ $WF set-field spec_file "docs/specs/[category]/[entity].md"
 $WF phase phase3_spec
 ```
 
+### Step 4b: Auto-Freigabe versuchen (#470)
+
+```bash
+$WF auto-approve
+```
+
+Der Befehl endet immer mit Exit 0 und gibt zwei Zeilen aus: `AUTO_APPROVE=done|human`
+und `REASON=…`. Er gibt die Spec nur frei, wenn der Auto-Modus (`autonomy.mode: auto`
+in der wirksamen Config) an ist, das registrierte Briefing seit `set-briefing`
+unverändert ist, zur aktuellen Spec passt und `Ampel: gruen` trägt.
+
+- **`AUTO_APPROVE=done`** — die Spec ist automatisch freigegeben (`phase4_approved`,
+  protokolliert in `approvals`). Gib das Briefing wörtlich als Info aus (ab
+  `## Was gebaut wird`), mit dem Hinweis „automatisch freigegeben (Ampel grün)",
+  **ohne** ❗Du-Zeile — der PO muss nichts tippen. Danach rufst du den Skill
+  `40-tdd-red` sofort selbst auf.
+- **`AUTO_APPROVE=human`** — der PO entscheidet wie bisher: unten folgt die
+  normale Freigabe-Ausgabe samt ❗Du-Zeile `approved`. Den `REASON` nennst du dem
+  PO nur, wenn der Auto-Modus an ist (sonst ist `human` der Normalfall).
+
 ## Next Step
 
-### Freigabe-Ausgabe an den User
+### Freigabe-Ausgabe an den User (bei `AUTO_APPROVE=human`)
 
 Du schreibst **keine eigene Zusammenfassung** der Spec. Was gebaut wird, wo vom
 Ticket abgewichen wurde und was fragwürdig ist, steht im unabhängigen Briefing —

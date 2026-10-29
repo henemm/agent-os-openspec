@@ -129,6 +129,16 @@ def _green_text() -> str:
         return "'go'"
 
 
+def _autonomy_mode() -> str:
+    """`workflow.autonomy_mode()` lazy; jede Ausnahme → "manual" (#471)."""
+    try:
+        import workflow as _wf
+        mode = _wf.autonomy_mode()
+    except (Exception, SystemExit):
+        return "manual"
+    return "auto" if mode == "auto" else "manual"
+
+
 def _clear_lock(lock_path: Path, approval_path: Path) -> None:
     for p in (lock_path, approval_path):
         try:
@@ -178,6 +188,12 @@ def main() -> None:
 
     # Nicht in einer Gated-Phase → erlauben
     if current_phase not in _GATED_PHASES:
+        allow()
+
+    # Auto-Modus (#471): kein Lock, kein Batch-Fenster, kein Block. Ein schon
+    # vorhandener Lock wird ignoriert (nicht geloescht), kein Marker gefaelscht.
+    # Jede Ausnahme → manual, also das bisherige Verhalten (fail-closed).
+    if _autonomy_mode() == "auto":
         allow()
 
     project_root = find_project_root()

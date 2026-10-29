@@ -86,7 +86,24 @@ Nach `docs/briefings/<workflow-name>.md`, exakt mit diesen vier Abschnitten
 ## Freigabe-Frage
 
 <1 Satz, max. 25 Wörter: eine Entscheidungsfrage, beantwortbar ohne die Spec zu lesen>
+
+## Ampel
+
+Ampel: gruen   ODER   Ampel: rot
 ```
+
+**Pflichtabschnitt `## Ampel` (#470)** — genau eine Zeile, entweder `Ampel: gruen`
+oder `Ampel: rot`, sonst nichts in diesem Abschnitt. Im Auto-Modus gibt eine grüne
+Ampel die Spec automatisch frei; rot heisst: der PO entscheidet per `approved`.
+Alles, was nicht exakt eine grüne Zeile ist, liest das Werkzeug als rot.
+
+- **rot** bei: Abweichung vom Ticket (anders gelöst, weggelassen, zusätzlich
+  eingebaut), Scope-Frage, offener Entscheidung des PO, Acceptance Criterion (AC)
+  ohne Test, vagem AC („korrekt", „sinnvoll", „schnell") oder sonstigem Zweifel.
+- **gruen** nur, wenn *Kritische Anmerkungen* keine offene Entscheidung des PO
+  verlangt und keiner der Rot-Gründe vorliegt.
+- **Im Zweifel rot.** Eine falsche grüne Ampel gibt eine Spec ohne PO frei; eine
+  falsche rote kostet den PO nur ein Wort.
 
 **Längengrenzen (hart — das Gate zählt mit):**
 
@@ -97,6 +114,7 @@ Nach `docs/briefings/<workflow-name>.md`, exakt mit diesen vier Abschnitten
 | Wie geprüft wird | 1 Satz, ≤ 25 Wörter |
 | Kritische Anmerkungen | max. 3 Punkte à ≤ 20 Wörter, schwerstes zuerst |
 | Freigabe-Frage | 1 Satz, ≤ 25 Wörter |
+| Ampel | genau 1 Zeile `Ampel: gruen` / `Ampel: rot` (zählt nicht mit) |
 | **Gesamt** (ohne Titel/Meta-Zeilen) | **≤ 120 Wörter** |
 
 Mehr Funde als drei? Nimm die drei schwersten. Ein knappes Briefing wird gelesen,

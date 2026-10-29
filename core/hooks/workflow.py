@@ -16,6 +16,8 @@ Usage:
     python3 workflow.py phase-log
     python3 workflow.py set-field <key> <value>
     python3 workflow.py set-briefing <pfad-zum-po-briefing>
+    python3 workflow.py auto-approve
+    python3 workflow.py auto-green
     python3 workflow.py set-affected-files [--replace] <f1> <f2> ...
     python3 workflow.py add-artifact <type> <path> <desc> <phase>
     python3 workflow.py remove-artifact <path> [<phase>]
@@ -167,6 +169,109 @@ STATUS_NOTE_PREFIX = "[agent-os-openspec]"
 _NO_BUILD_PHASES = ("phase1_context", "phase2_analyse")
 
 
+# Freitext-Schritt (kein "/"), den Claude selbst ausfuehrt (#470). Beginnt mit
+# "Auto-": daran erkennt herdr_bridge den Schritt (next=auto).
+AUTO_APPROVAL_STEP = "Auto-Freigabe der Spec (workflow.py auto-approve)"
+
+
+def _auto_approval_pending(data: dict) -> bool:
+    """Auto-Modus + registrierte gruene Ampel (#470). Wirft nie, im Zweifel False.
+
+    Prueft zusaetzlich die Datei-Aktualitaet (F005): Hash der Briefing-Datei auf
+    Platte gleich dem registrierten `briefing_sha256`, Ampel der Datei gruen und
+    Pfad im Projekt. Sonst bleibt der normale `approved`-Schritt mit ❗ stehen —
+    sonst stuende "Auto-Freigabe" da, waehrend `auto-approve` human liefert.
+    """
+    try:
+        entry = data.get("po_briefing")
+        if not (isinstance(entry, dict) and entry.get("ampel") == "green"):
+            return False
+        if autonomy_mode() != "auto":
+            return False
+        return _read_current_briefing(entry) is not None
+    except Exception:
+        return False
+
+
+def _briefing_path_inside_project(rel: str) -> "Path | None":
+    """Aufgeloester Briefing-Pfad, wenn er (nach Symlink-Aufloesung) im Projekt
+    liegt, sonst None (#470 F003). Wirft nie."""
+    try:
+        root = _worktree_first_root(rel)
+        path = (root / rel).resolve()
+        if not path.is_relative_to(root.resolve()):
+            return None
+        return path
+    except Exception:
+        return None
+
+
+# Obergrenze fuer ein Briefing, das gelesen wird (#470 F010). Ein echtes Briefing
+# hat ≤ 150 Woerter; alles darueber ist kein Briefing und wird nicht eingelesen.
+_BRIEFING_MAX_BYTES = 256 * 1024
+
+
+def _read_briefing_file(path: Path) -> "str | None":
+    """Briefing-Text nur aus einer regulaeren Datei ≤ 256 KiB, sonst None (F010).
+
+    Oeffnet mit O_NONBLOCK (ein FIFO blockiert so nicht beim open) und prueft
+    Typ und Groesse per fstat auf DEMSELBEN Deskriptor — kein Tausch zwischen
+    Pruefung und Lesen. FIFO, Device, Ordner, zu gross, kein UTF-8 → None.
+    Wirft nie.
+    """
+    try:
+        import stat as _stat
+        fd = os.open(str(path), os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
+    except Exception:
+        return None
+    try:
+        st = os.fstat(fd)
+        if not _stat.S_ISREG(st.st_mode) or st.st_size > _BRIEFING_MAX_BYTES:
+            return None
+        chunks, total = [], 0
+        while True:
+            chunk = os.read(fd, 65536)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > _BRIEFING_MAX_BYTES:
+                return None
+            chunks.append(chunk)
+        text = b"".join(chunks).decode("utf-8")
+        # Wie Path.read_text() (universal newlines): Hash muss zu set-briefing passen.
+        return text.replace("\r\n", "\n").replace("\r", "\n")
+    except Exception:
+        return None
+    finally:
+        try:
+            os.close(fd)
+        except Exception:
+            pass
+
+
+def _read_current_briefing(entry: dict) -> "str | None":
+    """Text des registrierten Briefings, wenn es im Projekt liegt, unveraendert ist
+    (Hash wie bei `set-briefing`) und eine gruene Ampel traegt; sonst None.
+    Ohne Seiteneffekt, wirft nie (#470 F005)."""
+    try:
+        if not (isinstance(entry, dict) and entry.get("file")
+                and entry.get("briefing_sha256")):
+            return None
+        path = _briefing_path_inside_project(entry["file"])
+        if path is None:
+            return None
+        briefing = _read_briefing_file(path)
+        if briefing is None:
+            return None
+        if _hashlib.sha256(briefing.encode("utf-8")).hexdigest() != entry["briefing_sha256"]:
+            return None
+        if parse_ampel(briefing) != "green":
+            return None
+        return briefing
+    except Exception:
+        return None
+
+
 def next_step(data: dict) -> "str | None":
     """Naechster Pflicht-Schritt fuer den Zustand, oder None (Phase 8 / unklar).
 
@@ -184,6 +289,8 @@ def next_step(data: dict) -> "str | None":
     if phase in _NO_BUILD_PHASES and data.get("no_build_reason"):
         return "/99-reset"  # PO-Entscheidung "nichts bauen" (#424)
     if phase == "phase3_spec" and data.get("spec_file"):
+        if _auto_approval_pending(data):
+            return AUTO_APPROVAL_STEP  # Ampel gruen im Auto-Modus (#470)
         return "Freigabe der Spec (Stichwort: approved)"
     if phase == "phase5_tdd_red" and (
         data.get("red_test_done") or data.get("ui_test_red_done")
@@ -238,6 +345,19 @@ def status_note(data: dict) -> "str | None":
         issue = issue_number(name)
         if issue:
             step = f"{step} #{issue}"
+    if step == AUTO_APPROVAL_STEP:
+        # Auto-Fall (#470): der PO muss nichts tippen — keine Du-Pflicht.
+        return (
+            f"{STATUS_NOTE_PREFIX} AKTIVER WORKFLOW {name} · "
+            f"Phase {PHASE_NUMBERS[phase]} von {TOTAL_PHASES} ({phase}) · "
+            f"Nächster Pflicht-Schritt: {step}\n"
+            "Diesen Schritt führst du selbst aus (Auto-Modus, Ampel im PO-Briefing "
+            "grün) — der PO muss dafür nichts tippen, es gibt dafür KEINE Du-Zeile. "
+            "Meldet `workflow.py auto-approve` AUTO_APPROVE=human, entscheidet der PO "
+            "wie bisher per Freigabe-Stichwort.\n"
+            "„fertig“/„abgeschlossen“/„erledigt“ gilt für den Workflow erst ab "
+            "phase8_complete."
+        )
     return (
         f"{STATUS_NOTE_PREFIX} AKTIVER WORKFLOW {name} · "
         f"Phase {PHASE_NUMBERS[phase]} von {TOTAL_PHASES} ({phase}) · "
@@ -538,10 +658,23 @@ def _clear_shared_env(project_root: Path) -> None:
         pass
 
 
+def _herdr(action: str, data: "dict | None" = None) -> None:
+    """Herdr-Sidebar aktualisieren (#466) — display-only, fail-open, nie stdout."""
+    try:
+        import herdr_bridge
+        if action == "clear":
+            herdr_bridge.clear()
+        else:
+            herdr_bridge.report_workflow(data)
+    except Exception:
+        pass
+
+
 def _save_active(data: dict) -> None:
     name = data["name"]
     data["last_updated"] = datetime.now().isoformat()
     _atomic_write(_workflow_file(name), data)
+    _herdr("report", data)
 
 
 def _new_workflow(name: str) -> dict:
@@ -564,7 +697,74 @@ def _new_workflow(name: str) -> dict:
         "phase_transitions": [],
         "fix_loop_iterations": 0,
         "phase_log": [],
+        "approvals": [],
     }
+
+
+def trusted_config() -> "dict | None":
+    """Die EINE Config-Quelle fuer Autonomie-Entscheidungen (#470, Ursachen-Fix F008).
+
+    Wurzel = `hook_utils.find_project_root()` — dieselbe Funktion, mit der
+    `bash_gate.py::_writes_effective_config` die wirksame Config schreibschuetzt
+    und unter der der Workflow-State liegt. Datei =
+    `config_loader.find_config_file(<diese Wurzel>)`. Gelesen wird NUR das YAML
+    dieser Datei: keine Defaults, keine Local-Overrides (`settings.local.json`),
+    kein `config_loader.find_project_root()` (das haelt bei einer Unterordner-
+    Config an, F008). Fehlende Datei → {}. Jeder Fehler → None; Aufrufer sind
+    fail-closed (manual bzw. human). Wirft nie.
+    """
+    try:
+        import config_loader
+        path = config_loader.find_config_file(find_project_root())
+        if path is None:
+            return {}
+        if config_loader.yaml is None:
+            return None
+        loaded = config_loader.yaml.safe_load(Path(path).read_text())
+        if loaded is None:
+            return {}
+        return loaded if isinstance(loaded, dict) else None
+    except Exception:
+        return None
+
+
+def autonomy_mode() -> str:
+    """Aktueller Autonomie-Modus: "auto" nur bei exakt `autonomy.mode: auto` (#469).
+
+    Fail-closed: jeder andere Wert, falscher Typ und jede Ausnahme ergibt
+    "manual". Kein Trimmen, kein Lowercase. Wirft nie. Gelesen wird seit #470
+    nur ueber `trusted_config()` (zur Laufzeit aufgeloest), nie
+    `settings.local.json` und nie eine Unterordner-Config.
+    """
+    try:
+        cfg = trusted_config()
+        if not isinstance(cfg, dict):
+            return "manual"
+        section = cfg.get("autonomy")
+        if isinstance(section, dict) and section.get("mode") == "auto":
+            return "auto"
+    except Exception:
+        pass
+    return "manual"
+
+
+def record_approval(data: dict, gate: str, by: str, reason: str,
+                    evidence=None) -> dict:
+    """Freigabe an `data["approvals"]` anhaengen und den Eintrag zurueckgeben (#469).
+
+    Speichert nicht selbst — der Aufrufer ruft wie bisher `_save_active`.
+    Aeltere States ohne `approvals` bekommen die Liste per setdefault.
+    """
+    entry = {
+        "gate": gate,
+        "by": by,
+        "mode": autonomy_mode(),
+        "at": datetime.now().isoformat(),
+        "reason": reason,
+        "evidence": evidence,
+    }
+    data.setdefault("approvals", []).append(entry)
+    return entry
 
 
 def _log_phase_transition(data: dict, new_phase: str) -> None:
@@ -670,7 +870,7 @@ def record_transition(data: dict, target: str, trigger: str = "command") -> list
 
 # --- ADR Reflection Gate ---
 
-def _check_adr(data: dict) -> "str | None":
+def _check_adr(data: dict, config: "dict | None" = None) -> "str | None":
     """Enforce a filled '## Architektur-Entscheidung (ADR)' section at spec approval.
 
     Returns an error message if the spec has an ADR section that is not filled
@@ -679,9 +879,12 @@ def _check_adr(data: dict) -> "str | None":
     or a missing ADR section all return None (grandfathering).
     """
     # 1. Kill-switch — only an explicit enabled: False disables the gate.
+    #    `config` von aussen (auto-approve, #470 F001): nur die wirksame Config,
+    #    nie settings.local.json. Ohne Angabe wie bisher load_config().
     try:
-        from config_loader import load_config
-        config = load_config()
+        if config is None:
+            from config_loader import load_config
+            config = load_config()
         adr_cfg = config.get("adr_gate", {}) if isinstance(config, dict) else {}
         if isinstance(adr_cfg, dict) and adr_cfg.get("enabled") is False:
             return None
@@ -872,6 +1075,100 @@ def check_briefing_content(content: str, max_words: "int | None" = None) -> "str
     return None
 
 
+_AMPEL_GREEN = ("gruen", "grün", "green")
+
+_FENCE_OPEN_RE = _re.compile(r"^[ \t>]*(`{3,}|~{3,})")
+# Markdown-Markup am Zeilenanfang: Einrueckung, Zitat, Listenpraefix, Ueberschrift,
+# Hervorhebung. Danach beginnt eine Ampel-Zeile mit "Ampel" (+ Markup) ":".
+_AMPEL_MARKUP_PREFIX_RE = _re.compile(r"^(?:[ \t>#_*+-]|\d+[.)][ \t])*")
+_AMPEL_LINE_RE = _re.compile(r"^Ampel[ \t*_]*:", _re.IGNORECASE)
+
+
+def _strip_hidden_markdown(text: str) -> str:
+    """Code-Fences (``` / ~~~) und HTML-Kommentare samt Inhalt entfernen (#470 F004).
+
+    Auch ungeschlossen bis Dateiende: ein offener Fence/Kommentar verbirgt alles
+    dahinter. Zeilenweise; Kommentare duerfen inline und mehrzeilig sein.
+    """
+    out = []
+    fence = None          # (zeichen, laenge) des offenen Fence
+    in_comment = False
+    for line in text.splitlines():
+        if fence is not None:
+            m = _FENCE_OPEN_RE.match(line)
+            if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= fence[1] \
+                    and not line[m.end():].strip():
+                fence = None
+            continue
+        kept = ""
+        rest = line
+        while rest:
+            if in_comment:
+                end = rest.find("-->")
+                if end < 0:
+                    rest = ""
+                    break
+                rest = rest[end + 3:]
+                in_comment = False
+                continue
+            start = rest.find("<!--")
+            if start < 0:
+                kept += rest
+                break
+            kept += rest[:start]
+            rest = rest[start + 4:]
+            in_comment = True
+        if not in_comment or kept.strip():
+            m = _FENCE_OPEN_RE.match(kept)
+            if m:
+                fence = (m.group(1)[0], len(m.group(1)))
+                continue
+        out.append(kept)
+    return "\n".join(out)
+
+
+def _is_ampel_line(line: str) -> bool:
+    """Zeile, die nach Entfernen von Markdown-Markup mit `Ampel:` beginnt (F004)."""
+    stripped = _AMPEL_MARKUP_PREFIX_RE.sub("", line, count=1)
+    return bool(_AMPEL_LINE_RE.match(stripped))
+
+
+def parse_ampel(text) -> str:
+    """Ampel des PO-Briefings: "green" oder "red" (#470). Wirft nie.
+
+    Vorab werden Code-Fences und HTML-Kommentare entfernt (auch ungeschlossen):
+    was gerendert nicht sichtbar ist, zaehlt nicht (F004).
+    Gruen NUR, wenn es genau einen Abschnitt `## Ampel` gibt, dieser genau eine
+    nicht-leere Zeile `Ampel: <wert>` enthaelt, im ganzen Text genau eine
+    Ampel-Zeile steht (auch `**Ampel: x**`, `- Ampel: x`, `> Ampel: x` zaehlen)
+    und `<wert>` (getrimmt, case-insensitiv) gruen/grün/green ist. Alles andere —
+    rot, fehlend, doppelt, mehrzeilig, unklar — ist "red".
+    """
+    try:
+        if not isinstance(text, str):
+            return "red"
+        import unicodedata
+        text = _strip_hidden_markdown(unicodedata.normalize("NFC", text))
+        heads = _re.findall(r"^#{2,3}[ \t]*Ampel\b[^\n]*$", text,
+                            _re.IGNORECASE | _re.MULTILINE)
+        if len(heads) != 1:
+            return "red"
+        if sum(1 for line in text.splitlines() if _is_ampel_line(line)) != 1:
+            return "red"
+        body = _briefing_section_body(text, r"Ampel\b")
+        if body is None:
+            return "red"
+        lines = [line.strip() for line in body.splitlines() if line.strip()]
+        if len(lines) != 1:
+            return "red"
+        match = _re.fullmatch(r"Ampel[ \t]*:(.*)", lines[0], _re.IGNORECASE)
+        if not match:
+            return "red"
+        return "green" if match.group(1).strip().lower() in _AMPEL_GREEN else "red"
+    except Exception:
+        return "red"
+
+
 def po_briefing_max_words(cfg: "dict | None" = None) -> int:
     """Konfigurierte Wortgrenze (po_briefing_gate.max_words) oder Default.
 
@@ -941,7 +1238,7 @@ def stamp_briefing_frontmatter(content: str, spec_rel: str, sha: str,
     return f"---\n{front}\n---\n\n{content.lstrip()}"
 
 
-def _check_po_briefing(data: dict) -> "str | None":
+def _check_po_briefing(data: dict, config: "dict | None" = None) -> "str | None":
     """Enforce an independent PO briefing at spec approval (Phase 3→4).
 
     Returns an error message if no current, complete briefing is registered,
@@ -949,10 +1246,13 @@ def _check_po_briefing(data: dict) -> "str | None":
     missing/unreadable spec or a disabled gate all return None.
     """
     # 1. Kill-switch — only an explicit enabled: False disables the gate.
+    #    `config` von aussen (auto-approve, #470 F002): nur die wirksame Config,
+    #    nie settings.local.json. Ohne Angabe wie bisher load_config().
     cfg = {}
     try:
-        from config_loader import load_config
-        config = load_config()
+        if config is None:
+            from config_loader import load_config
+            config = load_config()
         if isinstance(config, dict):
             cfg = config.get("po_briefing_gate", {}) or {}
         if isinstance(cfg, dict) and cfg.get("enabled") is False:
@@ -962,8 +1262,12 @@ def _check_po_briefing(data: dict) -> "str | None":
 
     # 2. Fast-Track: per Default kein Briefing (dort gibt es weder spec-writer
     #    noch Validator-Agenten). Abschaltbar via skip_fast_track: false.
+    #    Im Auto-Modus gilt die Ausnahme nicht: das Briefing traegt die Ampel,
+    #    ohne Briefing keine Freigabe-Grundlage (#470).
     skip_fast = True
     if isinstance(cfg, dict) and cfg.get("skip_fast_track") is False:
+        skip_fast = False
+    if skip_fast and autonomy_mode() == "auto":
         skip_fast = False
     if skip_fast and data.get("workflow_type") == "feature-fast":
         return None
@@ -982,9 +1286,12 @@ def _check_po_briefing(data: dict) -> "str | None":
     entry = data.get("po_briefing")
     if not isinstance(entry, dict) or not entry.get("file"):
         return "Kein unabhängiges PO-Briefing registriert" + hint
+    # F010: nur regulaere Datei ≤ 256 KiB (kein FIFO/Device — sonst haengt die Freigabe).
     try:
-        briefing = _worktree_first_path(entry["file"]).read_text()
+        briefing = _read_briefing_file(_worktree_first_path(entry["file"]))
     except Exception:
+        briefing = None
+    if briefing is None:
         return f"PO-Briefing '{entry['file']}' nicht lesbar oder nicht vorhanden" + hint
 
     # 5. Inhalt + Länge
@@ -1255,6 +1562,7 @@ def cmd_start(args: list[str]) -> None:
         _log_phase_transition(data, "phase1_context")
     _atomic_write(wf_file, data)
     _set_active(name)
+    _herdr("report", data)
     if workflow_type == "feature-fast":
         type_note = " [FEATURE fast-track → phase3_spec]"
     else:
@@ -1298,6 +1606,10 @@ def cmd_switch(args: list[str]) -> None:
         pass  # no current active workflow — that's fine
 
     _set_active(name)
+    try:  # #466: Sidebar zeigt den neuen aktiven Workflow
+        _herdr("report", _read_workflow(wf_file))
+    except Exception:
+        pass
 
     env_name = _active_name_from_env()
     if env_name and env_name != name:
@@ -1344,6 +1656,14 @@ def cmd_status(args: list[str]) -> None:
     else:
         print(f"LoC Delta: {loc_delta}")
     print(f"Execution Log: {'Written' if log_written else 'Pending — run write-log before complete'}")
+    approvals = data.get("approvals") or []
+    if isinstance(approvals, list) and approvals:
+        # Freigabe-Protokoll (#469); ohne Eintraege bleibt die Ausgabe wie bisher.
+        print(f"Freigaben: {len(approvals)}")
+        for e in approvals:
+            if not isinstance(e, dict):
+                continue
+            print(f"  - {e.get('gate')} | by {e.get('by')} | {e.get('mode')} | {e.get('at')}")
 
 
 def _reset_approvals_on_backstep(data: dict, current: str, target: str) -> None:
@@ -1427,6 +1747,7 @@ _SET_FIELD_PROTECTED = {
     "base_commit": "wird von workflow.py start gesetzt (Basis der Phase-8-Abdeckung)",
     "qa_run_stamp": "wird von qa_gate.py gesetzt",
     "no_build_reason": "workflow.py no-build --reason \"<Begruendung>\"",
+    "approvals": "wird nur von workflow.record_approval(...) gefuehrt (#469)",
 }
 
 # Nach der Freigabe nur noch mit Override-Token des Users per set-field (#379).
@@ -1578,6 +1899,15 @@ def cmd_set_briefing(args: list[str]) -> None:
             print(f"BLOCKED: Briefing liegt ausserhalb des Projekts: {rel}", file=sys.stderr)
             sys.exit(1)
     briefing_path = root / rel
+    # #470 F003: auch relative `..`-Pfade und Symlinks auf Dateien ausserhalb
+    # blocken — ein Briefing ausserhalb des Repos sehen weder CI noch Review.
+    try:
+        inside = briefing_path.resolve().is_relative_to(root.resolve())
+    except Exception:
+        inside = False
+    if not inside:
+        print(f"BLOCKED: Briefing liegt ausserhalb des Projekts: {rel}", file=sys.stderr)
+        sys.exit(1)
 
     try:
         briefing = briefing_path.read_text()
@@ -1607,29 +1937,35 @@ def cmd_set_briefing(args: list[str]) -> None:
 
     sha = spec_sha256(spec_content)
     frozen_sha = frozen_spec_sha256(spec_content)
-    data["po_briefing"] = {
+    entry = {
         "file": rel,
         "spec_sha256": sha,
         "spec_frozen_sha256": frozen_sha,
         "created": datetime.now().isoformat(timespec="seconds"),
+        # #470: Ampel + Hash der Briefing-Datei. Der Hash wird nach dem Stempeln
+        # auf den gestempelten Text nachgezogen, damit auto-approve gegen die
+        # Datei auf Platte vergleichen kann.
+        "ampel": parse_ampel(briefing),
+        "briefing_sha256": _hashlib.sha256(briefing.encode("utf-8")).hexdigest(),
     }
-    _save_active(data)
+    data["po_briefing"] = entry
 
     # Bindung zusätzlich IN die Briefing-Datei stempeln. Der Workflow-State
     # liegt unter .claude/workflows/ und ist gitignored — er erreicht die CI
     # nie. Nur ein Stempel in der committeten Datei macht ein veraltetes
     # Briefing serverseitig erkennbar (scripts/ci_spec_gate.py).
     try:
-        briefing_path.write_text(
-            stamp_briefing_frontmatter(briefing, str(data.get("spec_file", "")), sha,
-                                       frozen_sha)
-        )
+        stamped = stamp_briefing_frontmatter(briefing, str(data.get("spec_file", "")),
+                                             sha, frozen_sha)
+        briefing_path.write_text(stamped)
+        entry["briefing_sha256"] = _hashlib.sha256(stamped.encode("utf-8")).hexdigest()
     except Exception as exc:
         print(
             f"WARNUNG: Briefing registriert, aber Frontmatter-Stempel fehlgeschlagen ({exc}). "
             "Das CI-Gate kann die Aktualität dann nicht prüfen.",
             file=sys.stderr,
         )
+    _save_active(data)
 
     print(f"PO-Briefing registriert für Workflow {name}: {rel}")
 
@@ -1810,6 +2146,7 @@ def cmd_complete(args: list[str]) -> None:
     if link.is_symlink():
         link.unlink()
     _persist_env(None)
+    _herdr("clear")
     print(f"Workflow {name} completed and archived.")
 
 
@@ -1855,6 +2192,7 @@ def cmd_abandon(args: list[str]) -> None:
     if link.is_symlink():
         link.unlink()
     _persist_env(None)
+    _herdr("clear")
     print(f"Workflow {name} abgebrochen (abandoned) und archiviert — NICHT abgeschlossen.")
     print(f"  Grund: {reason}")
 
@@ -2009,6 +2347,29 @@ def cmd_find(args: list[str]) -> None:
         if aff:
             print(f"  affected_files: {', '.join(aff)}")
     print("\nNAME=" + hits[0][0])
+
+
+def cmd_approvals(args: list[str]) -> None:
+    """Freigabe-Protokoll des aktiven Workflows anzeigen (#472). Nur Anzeige.
+
+    stdout: `APPROVALS=<n>`, danach je Eintrag `- <gate> | <by> | <at> | <reason>`.
+    `--auto` zeigt nur automatische Freigaben (`by == "auto"`). Exit immer 0 —
+    ohne aktiven Workflow oder bei unlesbarem State `APPROVALS=0`.
+    """
+    try:
+        data, _name = _read_active()
+        entries = data.get("approvals") or []
+    except (SystemExit, Exception):
+        entries = []
+    if not isinstance(entries, list):
+        entries = []
+    rows = [e for e in entries if isinstance(e, dict)
+            and ("--auto" not in args or e.get("by") == "auto")]
+    print(f"APPROVALS={len(rows)}")
+    for e in rows:
+        print("- " + " | ".join(_one_line(e.get(k) or "-")
+                                for k in ("gate", "by", "at", "reason")))
+
 
 def _retro_load_log(name: str) -> dict:
     """Load execution log YAML for a workflow by name. Returns {} if not found."""
@@ -2310,6 +2671,236 @@ def cmd_observable_surface(args: list[str]) -> None:
           f"ROOT={root}\nCONFIG={note}")
 
 
+def cmd_autonomy(args: list[str]) -> None:
+    """Auskunft, kein Gate: genau eine Zeile `AUTONOMY=<mode>`, Exit immer 0 (#469).
+
+    Bewusst ohne aktiven Workflow (kein `_read_active()`), Vorbild
+    `cmd_observable_surface`.
+    """
+    try:
+        mode = autonomy_mode()
+    except Exception:
+        mode = "manual"
+    if mode not in ("auto", "manual"):
+        mode = "manual"
+    try:
+        print(f"AUTONOMY={mode}")
+    except Exception:
+        pass
+
+
+def _apply_spec_approval(data: dict, trigger: str) -> list:
+    """Spec-Freigabe auf den State anwenden: Phase 3 → 4 (#470).
+
+    Dieselben Felder wie der Listener-Pfad (`phase_listener.py`, Trigger
+    "approval"): `spec_approved`, `phase_transitions`/`phase_log` ueber
+    `record_transition`, `current_phase`. Speichert nicht selbst. Gibt neue
+    Budget-Ueberschreitungen zurueck (wie `record_transition`).
+    """
+    data["spec_approved"] = True
+    exceeded = record_transition(data, "phase4_approved", trigger)
+    data["current_phase"] = "phase4_approved"
+    return exceeded
+
+
+def _auto_approve_decision() -> "tuple[str, str, list]":
+    """Pruefkette fuer `auto-approve` (#470): (verdict, reason, budget_exceeded).
+
+    Erste Verfehlung ergibt "human" OHNE State-Aenderung. Nur bei "done" wird
+    gespeichert. Gate-Einstellungen (ADR-/Briefing-Kill-Switch, max_words)
+    kommen NUR aus `trusted_config()`, nie aus `settings.local.json` (F001/F002)
+    oder einer Unterordner-Config (F008) — `config_loader.load_config` wird in
+    der Entscheidung nicht aufgerufen (Architekturtest). Ausgenommen ist nur
+    die Budget-Buchhaltung NACH der Entscheidung (`_apply_spec_approval` →
+    `record_transition`), die das Verdict nicht beeinflusst.
+    """
+    config = trusted_config()
+    if not isinstance(config, dict):
+        return "human", "wirksame Config nicht lesbar", []
+    section = config.get("autonomy")
+    if not (isinstance(section, dict) and section.get("mode") == "auto"):
+        return "human", "Modus manual", []
+    try:
+        data, _name = _read_active()
+    except SystemExit:
+        return "human", "kein aktiver Workflow", []
+    if data.get("current_phase") != "phase3_spec":
+        return "human", f"Phase {data.get('current_phase')} statt phase3_spec", []
+    if not data.get("spec_file"):
+        return "human", "keine Spec im Workflow", []
+    if data.get("spec_approved"):
+        return "human", "Spec bereits freigegeben", []
+    spec_content = _read_spec_content(data)
+    if spec_content is None:
+        return "human", "Spec nicht lesbar", []
+    adr_err = _check_adr(data, config)
+    if adr_err:
+        return "human", "ADR: " + adr_err, []
+    briefing_err = _check_po_briefing(data, config)
+    if briefing_err:
+        return "human", "Briefing: " + briefing_err, []
+    entry = data.get("po_briefing")
+    if not (isinstance(entry, dict) and entry.get("file") and entry.get("briefing_sha256")):
+        return "human", "kein Briefing mit Hash registriert", []
+    # F002: Aktualitaet der Spec unabhaengig vom Briefing-Kill-Switch — der
+    # gespeicherte Teil-Hash muss zum aktuellen gefrorenen Spec-Teil passen.
+    frozen = entry.get("spec_frozen_sha256")
+    if not frozen or frozen != frozen_spec_sha256(spec_content):
+        return "human", "Spec nach set-briefing geaendert", []
+    # F003: Briefing muss (nach Symlink-Aufloesung) im Projekt liegen.
+    path = _briefing_path_inside_project(entry["file"])
+    if path is None:
+        return "human", "Briefing liegt ausserhalb des Projekts", []
+    briefing = _read_briefing_file(path)  # F010: nur regulaere Datei ≤ 256 KiB
+    if briefing is None:
+        return "human", "Briefing nicht lesbar (keine regulaere Datei oder zu gross)", []
+    briefing_sha = _hashlib.sha256(briefing.encode("utf-8")).hexdigest()
+    if briefing_sha != entry["briefing_sha256"]:
+        return "human", "Briefing nach set-briefing geaendert", []
+    ampel = parse_ampel(briefing)
+    if ampel != "green":
+        return "human", "Ampel rot", []
+    exceeded = _apply_spec_approval(data, "auto")
+    record_approval(
+        data, "spec", "auto", "Ampel gruen im PO-Briefing",
+        evidence={
+            "briefing": entry["file"],
+            "briefing_sha256": briefing_sha,
+            "spec_sha256": spec_sha256(spec_content),
+            "ampel": ampel,
+        },
+    )
+    _save_active(data)
+    return ("done", f"Ampel gruen, Spec automatisch freigegeben ({entry['file']})",
+            exceeded or [])
+
+
+def cmd_auto_approve(args: list[str]) -> None:
+    """Automatische Spec-Freigabe im Auto-Modus (#470).
+
+    stdout: `AUTO_APPROVE=done|human` und `REASON=<kurz>`. Exit immer 0,
+    fail-closed: jede Ausnahme ergibt `human`. Bei "done" folgt ggf. die
+    Budget-Rueckfrage (#341) wie bei `cmd_phase` (F006) — nach den beiden
+    Zeilen, ohne eine weitere `AUTO_APPROVE=`/`REASON=`-Zeile.
+    """
+    exceeded: list = []
+    try:
+        verdict, reason, exceeded = _auto_approve_decision()
+    except BaseException as exc:  # noqa: BLE001 — fail-closed, auch SystemExit
+        verdict, reason = "human", f"Fehler ({type(exc).__name__})"
+    try:
+        print(f"AUTO_APPROVE={verdict}\nREASON={_one_line(reason) or '-'}")
+    except Exception:
+        pass
+    if verdict == "done":
+        try:
+            _print_budget_question(exceeded)
+        except Exception:
+            pass
+
+
+def _green_artifact_file(rel: str) -> "Path | None":
+    """Pfad des GREEN-Artefakts, nur wenn regulaere Datei innerhalb des Projekts (#471).
+
+    Relative Pfade gegen den Projekt-Root; Symlink, Verzeichnis, Geraet oder
+    ausserhalb (nach `resolve()`) → None, ohne die Datei zu lesen.
+    """
+    import stat as _stat
+    root = find_project_root()
+    candidate = Path(rel)
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    try:
+        if not _stat.S_ISREG(os.lstat(candidate).st_mode):
+            return None
+        resolved = candidate.resolve(strict=True)
+        resolved.relative_to(root.resolve())
+    except (OSError, ValueError, RuntimeError):
+        return None
+    return resolved
+
+
+# Zusaetzliche Rot-Evidenz nur fuer auto-green (#471): eine Zeile, die mit
+# FAILED/ERROR beginnt (pytest short summary), oder eine Testzeile mit
+# pytest-Ergebnis FAILED/ERROR (`test_a.py::t FAILED`) — auch bei "0 failed".
+_AUTO_GREEN_RED_LINE_RE = _re.compile(r"^[ \t]*(?:FAILED|ERROR)\b", _re.M)
+_AUTO_GREEN_RED_RESULT_RE = _re.compile(
+    r"^[ \t]*(?:\[[^\]\n]*\][ \t]*)*\S+[ \t]+(?:FAILED|ERROR)\b", _re.M)
+
+
+def _auto_green_decision() -> "tuple[str, str]":
+    """Pruefkette fuer `auto-green` (#471): (verdict, reason).
+
+    Erste Verfehlung ergibt "human" OHNE State-Aenderung; nur bei "done"
+    wird gespeichert. Kein Phasenwechsel, kein Marker, kein Lock.
+    """
+    if autonomy_mode() != "auto":
+        return "human", "Modus manual"
+    try:
+        data, _name = _read_active()
+    except SystemExit:
+        return "human", "kein aktiver Workflow"
+    if data.get("current_phase") != "phase6_implement":
+        return "human", f"Phase {data.get('current_phase')} statt phase6_implement"
+    if not data.get("red_test_done"):
+        return "human", "RED nicht belegt (red_test_done fehlt)"
+    artifacts = [a for a in (data.get("test_artifacts") or [])
+                 if isinstance(a, dict) and a.get("type") == "test_output"
+                 and a.get("phase") == "phase6_implement"]
+    if not artifacts:
+        return "human", "kein test_output-Artefakt der Phase phase6_implement"
+    art_path = artifacts[-1].get("path")
+    if not isinstance(art_path, str) or not art_path:
+        return "human", "GREEN-Artefakt ohne Pfad"
+    path = _green_artifact_file(art_path)
+    if path is None:
+        return "human", ("GREEN-Artefakt fehlt, ist keine regulaere Datei "
+                         "oder liegt ausserhalb des Projekts")
+    try:
+        if path.stat().st_size == 0:
+            return "human", "GREEN-Artefakt ist leer"
+    except OSError:
+        return "human", "GREEN-Artefakt nicht lesbar"
+    import qa_gate
+    # trusted=False: Altersgrenze (30 min) und Mindestgroesse (100 Byte) bleiben
+    # aktiv — die Datei hat nicht das Gate selbst erzeugt.
+    valid, message = qa_gate.validate_test_output(str(path), trusted=False)
+    if not valid:
+        return "human", f"GREEN-Artefakt nicht gruen: {message}"
+    try:
+        content = qa_gate.strip_ansi(path.read_text(errors="replace"))
+    except OSError:
+        return "human", "GREEN-Artefakt nicht lesbar"
+    if _AUTO_GREEN_RED_LINE_RE.search(content) or _AUTO_GREEN_RED_RESULT_RE.search(content):
+        return "human", "GREEN-Artefakt enthaelt FAILED/ERROR-Zeile"
+    from hook_utils import is_stop_locked
+    if is_stop_locked(find_project_root()):
+        return "human", "Stop-Lock aktiv"
+    if data.get("green_approved"):
+        return "human", "GREEN bereits freigegeben"
+    data["green_approved"] = True
+    record_approval(data, "green", "auto", "GREEN-Artefakt vorhanden",
+                    evidence={"artifact": art_path})
+    _save_active(data)
+    return "done", f"GREEN automatisch freigegeben ({art_path})"
+
+
+def cmd_auto_green(args: list[str]) -> None:
+    """Automatische GREEN-Freigabe im Auto-Modus (#471).
+
+    stdout: `AUTO_GREEN=done|human` und `REASON=<kurz>`. Exit immer 0,
+    fail-closed: jede Ausnahme (auch SystemExit) ergibt `human`.
+    """
+    try:
+        verdict, reason = _auto_green_decision()
+    except BaseException as exc:  # noqa: BLE001 — fail-closed, auch SystemExit
+        verdict, reason = "human", f"Fehler ({type(exc).__name__})"
+    try:
+        print(f"AUTO_GREEN={verdict}\nREASON={_one_line(reason) or '-'}")
+    except Exception:
+        pass
+
+
 def cmd_sessions(args: list[str]) -> None:
     """List registered Claude sessions of this project (session-locks)."""
     entries = _read_session_entries()
@@ -2383,10 +2974,14 @@ COMMANDS = {
     "no-build": cmd_no_build,
     "list": cmd_list,
     "find": cmd_find,
+    "approvals": cmd_approvals,
     "deploy-config": cmd_deploy_config,
     "retro-list": cmd_retro_list,
     "sessions": cmd_sessions,
     "observable-surface": cmd_observable_surface,
+    "autonomy": cmd_autonomy,
+    "auto-approve": cmd_auto_approve,
+    "auto-green": cmd_auto_green,
     "retro": cmd_retro,
     "cleanup-stale-locks": cmd_cleanup_stale_locks,
 }

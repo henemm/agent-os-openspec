@@ -46,7 +46,7 @@ PLUGIN_CONFIG_KEYS = frozenset({
     "precondition_section_gate", "precondition_origins", "observable_surface",
     "scope_guard", "spec_validation", "bash_gate", "e2e_scope", "claude_md",
     "protected_paths", "always_allowed", "home_assistant", "ios_swiftui",
-    "bug_fix", "e2e_tests", "output_specs", "qa_gate",
+    "bug_fix", "e2e_tests", "output_specs", "qa_gate", "herdr", "autonomy",
 })
 
 # Namen, die auch eine App-Config plausibel verwendet — allein qualifizieren
@@ -74,6 +74,17 @@ def is_plugin_config(path: Path) -> bool:
         with open(p, "r", errors="ignore") as fh:
             text = fh.read(_MAX_PROBE_BYTES + 1)
     except Exception:
+        return False
+    return is_plugin_config_text(text)
+
+
+def is_plugin_config_text(text) -> bool:
+    """Wie `is_plugin_config`, aber fuer einen Inhalt statt einer Datei (#473).
+
+    Gemeinsame Erkennung fuer Datei und geplanten Schreibinhalt (Write/Edit),
+    kein zweiter Parser. Wirft nie — kein String heisst False.
+    """
+    if not isinstance(text, str):
         return False
     keys: "set[str] | None" = None
     if len(text) > _MAX_PROBE_BYTES:
@@ -158,6 +169,61 @@ def _find_config_file(root: Path) -> "Path | None":
 
 # Oeffentlicher Name fuer Werkzeuge ausserhalb der Hooks (scripts/ci_spec_gate.py).
 find_config_file = _find_config_file
+
+
+def protected_config_paths(root, new_content=None) -> "list[Path]":
+    """Schreibgeschuetzte Config-Pfade unter `root` in Suchreihenfolge (#473).
+
+    Enthalten: die wirksame Datei und jeder Kandidat davor (Anlegen machte ihn
+    wirksam), ohne wirksame Datei alle Kandidaten; nachrangige bleiben frei.
+    Die Root-`config.yaml` gehoert der App (#372) und zaehlt nur, wenn sie
+    schon einen Plugin-Block hat oder `new_content` einen bringt — dann auch
+    hinter der wirksamen Datei. `new_content=None`: Inhalt unbekannt.
+    Wirft nie (Fehler: leere Liste, die Gates bleiben fail-open).
+    """
+    try:
+        root = Path(root)
+        app_config = root / "config.yaml"
+        candidates = []
+        for name in CONFIG_NAMES:
+            candidates += [root / name, root / ".claude" / name]
+        effective = find_config_file(root)
+        limit = candidates.index(effective) if effective in candidates else len(candidates) - 1
+        out = []
+        for i, cand in enumerate(candidates):
+            if cand == app_config:
+                if is_plugin_config(cand) or is_plugin_config_text(new_content):
+                    out.append(cand)
+            elif i <= limit:
+                out.append(cand)
+        return out
+    except Exception:
+        return []
+
+
+def config_path_hit(target, candidates) -> bool:
+    """Trifft `target` einen der `candidates`? (#473, gemeinsam fuer edit_gate/bash_gate)
+
+    Treffer ueber normierten absoluten Pfad, aufgeloesten Pfad (Symlink, `..`,
+    Symlink-Ordner) oder `samefile` (Hardlink). Wirft nie.
+    """
+    try:
+        target = os.path.expanduser(str(target))
+        norm = os.path.normpath(os.path.abspath(target))
+        real = Path(target).resolve()
+    except Exception:
+        return False
+    for cand in candidates:
+        try:
+            if norm == os.path.normpath(os.path.abspath(str(cand))) \
+                    or real == Path(cand).resolve():
+                return True
+            if os.path.exists(target) and os.path.exists(cand) \
+                    and os.path.samefile(target, cand):
+                return True
+        except Exception:
+            continue
+    return False
 
 
 def _skipped_app_config(root: Path) -> "Path | None":

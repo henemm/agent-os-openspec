@@ -173,6 +173,22 @@ def _expected_command(name: str) -> "str | None":
     return expected.split()[0]
 
 
+def _maybe_auto_clear(payload: dict, message: str, name: str) -> None:
+    """Herdr Auto-/clear (#467): nur auf dem Pfad "Fusszeile korrekt", fail-open.
+
+    Aendert weder Exit-Code noch stdout; alle Bedingungen prueft herdr_bridge.
+    """
+    try:
+        root = find_project_root()
+        data = read_state_json(root / ".claude" / "workflows" / f"{name}.json", root)
+        if isinstance(data, dict):
+            data.setdefault("name", name)
+            import herdr_bridge
+            herdr_bridge.maybe_auto_clear(payload, message, data)
+    except Exception:
+        pass
+
+
 def main() -> None:
     if framework_disabled():
         sys.exit(0)
@@ -202,6 +218,7 @@ def main() -> None:
 
     expected = _expected_command(name)
     if not expected or expected in actuals:
+        _maybe_auto_clear(payload, message, name)
         sys.exit(0)
 
     # Schleifenschutz: Exit 2 setzt den Turn fort — ohne ihn entstuende eine
