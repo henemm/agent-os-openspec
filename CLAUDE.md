@@ -2,7 +2,7 @@
 
 > **Meta-Projekt**: Dies ist das zentrale Framework-Repository, das abstraktes Projekt- und Workflow-Wissen konsolidiert. Alle Projekte können Improvements hierher zurückführen und von Verbesserungen aus anderen Projekten profitieren.
 
-**Version**: 4.0.0
+**Version**: 4.1.0
 
 ## Projektzweck
 
@@ -54,7 +54,7 @@ agent-os-openspec/
 │   │   ├── override_token.py            # Shared Override-Token Management (TTL, Multi-WF)
 │   │   ├── migrate_state.py             # v2 → v3 State-Migration
 │   │   ├── precondition_origins.py      # Eigenstaendiges CLI-Werkzeug (KEIN Hook/Gate, nicht in hooks.json): Herkunft von Testvorbedingungen einsammeln
-│   │   ├── herdr_bridge.py              # Utility (KEIN Hook): Workflow-Stand an Herdr-Sidebar melden (#466)
+│   │   ├── herdr_bridge.py              # Utility (KEIN Hook): Herdr-Sidebar (#466), Auto-/clear (#467), Plan-Pane rechts (#476)
 │   │   ├── hook_utils.py                # Shared Bootstrap (Imports, Parsing, Exit)
 │   │   └── config_loader.py             # Config-Loader (YAML + Local Overrides)
 │   ├── agents/              # Agent-Definitionen (Markdown)
@@ -442,7 +442,7 @@ python3 /path/to/agent-os-openspec/setup.py --version
 | `core/hooks/adversary_dialog.py` | Adversary Dialog System (Spec-Checkliste, Tri-State Verdict) |
 | `core/hooks/evidence_gate.py` | Opt-in Evidence-Gate (`evidence_checks` in `config.yaml`): `phase8_complete` nur mit maschinell erzeugtem, zum Code passendem Simulator-Beleg; Beleg-Dateien per `edit_gate.py`/`bash_gate.py` schreibgesperrt (#447) |
 | `core/hooks/precondition_origins.py` | Eigenstaendiges CLI-Werkzeug, KEIN Hook/Gate: sammelt per Regex Herkunft von Testvorbedingungen ein (Sprachprofile in `config.yaml`) |
-| `core/hooks/herdr_bridge.py` | Utility, KEIN Hook: meldet Workflow-Stand display-only an die Herdr-Sidebar, fail-open, Kill-Switch `herdr.enabled` (#466) |
+| `core/hooks/herdr_bridge.py` | Utility, KEIN Hook: meldet Workflow-Stand display-only an die Herdr-Sidebar (#466), Auto-/clear (#467), öffnet den Plan-Pane rechts (`workflow.py plan`, #476), fail-open, Kill-Switch `herdr.enabled` |
 | `core/agents/fresh-eyes-inspector.md` | Unabhaengiger UI-Beobachter ohne Bug-Kontext |
 | `core/agents/po-briefer.md` | Unabhaengiges PO-Freigabe-Briefing (Spec vs. Ursprungsanfrage) |
 | `scripts/ci_spec_gate.py` | CI-Gate: prueft Spec + Briefing serverseitig im Pull Request |

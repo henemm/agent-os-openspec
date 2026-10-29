@@ -206,6 +206,8 @@ def setup(tmp_path):
 
 def test_start_reports_workflow_state(setup):
     proj, log, stub = setup
+    # #476: Plan-Pane aus, dieser Test zaehlt nur den Sidebar-Report
+    (proj / "config.yaml").write_text("herdr:\n  plan_pane:\n    enabled: false\n")
     res = _workflow(["start", "feat-466-demo"], _env(proj, log, stub), proj)
     assert res.returncode == 0, res.stderr
     calls = _settled_calls(log, 1)

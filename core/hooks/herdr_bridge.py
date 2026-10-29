@@ -25,6 +25,13 @@ erfuellt, startet `spawn_auto_clear` diesen Script detached als Runner
 `/clear` und dann den naechsten Workflow-Befehl in den Pane tippt. Der Runner
 bricht bei jedem Zweifel ab, protokolliert den Grund in
 `.claude/herdr_auto_clear.log` und endet immer mit Exit 0.
+
+Plan-Pane (#476, Opt-out `herdr.plan_pane.enabled: false`): `workflow.py start`
+ruft `open_plan_pane`, das den Runner `herdr_bridge.py plan-pane ...` detached
+startet. Der Runner splittet den Claude-Pane nach rechts (`pane split`), benennt
+den neuen Pane `Workflow` und tippt `workflow.py plan --watch` hinein. Lock
+`.claude/herdr_plan_pane.lock`, gemerkte ID `.claude/herdr_plan_pane.json`,
+Log `.claude/herdr_plan_pane.log`; immer Exit 0.
 """
 
 import argparse
@@ -445,11 +452,11 @@ class _Abort(Exception):
     """Runner-Abbruch mit Grund; nach Abbruch wird nichts mehr gesendet."""
 
 
-def _ac_log(line: str) -> None:
-    """Zeile mit Zeitstempel an `.claude/herdr_auto_clear.log` haengen; fail-open."""
+def _ac_log(line: str, log_file: str = AC_LOG_FILE) -> None:
+    """Zeile mit Zeitstempel an `.claude/<log_file>` haengen (rotierend); fail-open."""
     try:
         from hook_utils import atomic_write_text, read_state_text
-        path = _ac_base() / ".claude" / AC_LOG_FILE
+        path = _ac_base() / ".claude" / log_file
         root = path.parent.parent
         try:
             old = read_state_text(path, root).splitlines()
@@ -587,10 +594,193 @@ def run_auto_clear(argv) -> int:
     return 0
 
 
+# --- Plan-Pane rechts neben Claude (#476) -----------------------------------
+
+PP_LOG_FILE = "herdr_plan_pane.log"
+PP_LOCK_FILE = "herdr_plan_pane.lock"
+PP_ID_FILE = "herdr_plan_pane.json"
+PP_LOCK_STALE_S = 30
+PP_DEFAULTS = {"enabled": True, "ratio": 0.75}
+PP_LABEL = "Workflow"
+
+
+def _valid_ratio(value) -> bool:
+    return (isinstance(value, (int, float)) and not isinstance(value, bool)
+            and 0.1 <= value <= 0.9)
+
+
+def plan_pane_settings() -> dict:
+    """`herdr.plan_pane` mit Defaults: Opt-out (nur Literal `false` schaltet ab),
+    Ratio nur als Zahl 0.1–0.9, sonst 0.75. Wirft nie."""
+    cfg = dict(PP_DEFAULTS)
+    try:
+        _hooks_on_path()
+        from config_loader import load_config
+        section = (load_config() or {}).get("herdr")
+        pp = section.get("plan_pane") if isinstance(section, dict) else None
+        if isinstance(pp, dict):
+            if pp.get("enabled") is False:
+                cfg["enabled"] = False
+            if _valid_ratio(pp.get("ratio")):
+                cfg["ratio"] = float(pp["ratio"])
+    except Exception:
+        pass
+    return cfg
+
+
+def plan_pane_enabled() -> bool:
+    """True, solange `herdr.plan_pane.enabled` nicht `false` ist."""
+    return plan_pane_settings()["enabled"]
+
+
+def open_plan_pane(force: bool = False) -> bool:
+    """Runner detached starten; True = gespawnt. force ignoriert plan_pane.enabled,
+    nie aber `herdr.enabled`/Herdr-Env (ueber `_pane()`)."""
+    try:
+        pane = _pane()
+        if pane is None:
+            return False
+        settings = plan_pane_settings()
+        if not force and not settings["enabled"]:
+            return False
+        base = str(_ac_base())
+        argv = [sys.executable, str(Path(__file__).resolve()), "plan-pane",
+                "--pane", pane, "--cwd", base, "--ratio", str(settings["ratio"])]
+        subprocess.Popen(
+            argv,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            close_fds=True,
+            cwd=base,
+        )
+        return True
+    except Exception:
+        return False
+
+
+def _pp_log(line: str) -> None:
+    _ac_log(line, PP_LOG_FILE)
+
+
+def _pp_call(binary: str, argv, timeout: float):
+    """Herdr-Aufruf mit Timeout; None bei Fehler/Zeitlimit."""
+    try:
+        return subprocess.run([binary, *argv], stdin=subprocess.DEVNULL,
+                              capture_output=True, text=True, timeout=timeout,
+                              close_fds=True)
+    except Exception:
+        return None
+
+
+def _pp_take_lock(path: Path) -> bool:
+    """Lock per O_EXCL; ein Lock aelter als PP_LOCK_STALE_S wird ersetzt."""
+    for _ in range(2):
+        try:
+            fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+            os.write(fd, str(os.getpid()).encode())
+            os.close(fd)
+            return True
+        except FileExistsError:
+            try:
+                if time.time() - path.stat().st_mtime < PP_LOCK_STALE_S:
+                    return False
+                path.unlink()
+            except FileNotFoundError:
+                pass
+    return False
+
+
+def _pp_known_pane(path: Path) -> "str | None":
+    from hook_utils import read_state_json
+    try:
+        data = read_state_json(path, path.parent.parent)
+        pane = data.get("pane_id") if isinstance(data, dict) else None
+        return pane if isinstance(pane, str) and pane else None
+    except Exception:
+        return None
+
+
+def _pp_open(args) -> None:
+    """Schritte 2–6 des Runners (Spec #476); Ergebnis jeweils ins Log."""
+    from hook_utils import atomic_write_json
+    import shlex
+    binary = _binary()
+    if binary is None:
+        _pp_log("plan-pane: ABBRUCH: HERDR_BIN_PATH ungueltig")
+        return
+    claude_dir = _ac_base() / ".claude"
+    id_file = claude_dir / PP_ID_FILE
+    known = _pp_known_pane(id_file)
+    if known:
+        res = _pp_call(binary, ["pane", "get", known], 3)
+        if res is not None and res.returncode == 0:
+            _pp_log(f"plan-pane: {known} vorhanden")
+            return
+    ratio = args.ratio if _valid_ratio(args.ratio) else PP_DEFAULTS["ratio"]
+    res = _pp_call(binary, ["pane", "split", args.pane, "--direction", "right",
+                            "--ratio", str(ratio), "--cwd", args.cwd, "--no-focus"], 5)
+    if res is None or res.returncode != 0:
+        code = "Zeitlimit/Fehler" if res is None else f"Exit {res.returncode}"
+        _pp_log(f"plan-pane: ABBRUCH: pane split {code}")
+        return
+    try:
+        new = json.loads(res.stdout)["result"]["pane"]["pane_id"]
+    except Exception:
+        new = None
+    if not isinstance(new, str) or not new:
+        _pp_log("plan-pane: ABBRUCH: pane split ohne pane_id")
+        return
+    _pp_call(binary, ["pane", "rename", new, PP_LABEL], 3)  # Fehler egal
+    if args.delay > 0:
+        time.sleep(args.delay)
+    workflow_py = Path(__file__).resolve().parent / "workflow.py"
+    command = (f"exec {shlex.quote(sys.executable)} "
+               f"{shlex.quote(str(workflow_py))} plan --watch")
+    run = _pp_call(binary, ["pane", "run", new, command], 5)
+    atomic_write_json(id_file, {"pane_id": new}, root=claude_dir.parent)
+    ok = run is not None and run.returncode == 0
+    _pp_log(f"plan-pane: {new} geoeffnet, pane run {'OK' if ok else 'fehlgeschlagen'}")
+
+
+def run_plan_pane(argv) -> int:
+    """CLI `plan-pane`: Lock, Pane oeffnen bzw. wiederverwenden; immer 0."""
+    lock = None
+    try:
+        parser = argparse.ArgumentParser(prog="herdr_bridge.py plan-pane")
+        parser.add_argument("--pane", required=True)
+        parser.add_argument("--cwd", required=True)
+        parser.add_argument("--ratio", type=float, default=PP_DEFAULTS["ratio"])
+        parser.add_argument("--delay", type=float, default=0.5)
+        try:
+            args = parser.parse_args(argv)
+        except SystemExit:
+            _pp_log("plan-pane: ABBRUCH: ungueltige Argumente")
+            return 0
+        path = _ac_base() / ".claude" / PP_LOCK_FILE
+        if not _pp_take_lock(path):
+            _pp_log("plan-pane: läuft bereits")
+            return 0
+        lock = path
+        _pp_open(args)
+    except Exception as exc:
+        _pp_log(f"plan-pane: ABBRUCH: Fehler {type(exc).__name__}")
+    finally:
+        if lock is not None:
+            try:
+                lock.unlink()
+            except Exception:
+                pass
+    return 0
+
+
 if __name__ == "__main__":
     try:
         if len(sys.argv) > 1 and sys.argv[1] == "auto-clear":
             run_auto_clear(sys.argv[2:])
+        elif len(sys.argv) > 1 and sys.argv[1] == "plan-pane":
+            run_plan_pane(sys.argv[2:])
     except BaseException:
         pass
     sys.exit(0)
