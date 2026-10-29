@@ -539,8 +539,10 @@ def test_po_briefer_defines_ampel_section():
     low = text.lower()
     assert re.search(r"^#{2,3} Ampel\s*$", text, re.M), "Abschnitt `## Ampel` fehlt"
     assert "Ampel: gruen" in text and "Ampel: rot" in text
-    for needle in ("abweichung", "scope", "offene entscheidung", "vag", "im zweifel rot"):
+    # #485: Rot nur noch bei den drei abschliessenden Gruenden
+    for needle in ("abweichung", "offene entscheidung", "vag"):
         assert needle in low, needle
+    assert "im zweifel rot" not in low
     assert re.search(r"acceptance criterion|\bAC\b", text), "Regel 'AC ohne Test' fehlt"
     assert "ohne test" in low or "kein test" in low or "ohne einen test" in low
 

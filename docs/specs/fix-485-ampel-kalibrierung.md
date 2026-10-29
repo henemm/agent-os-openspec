@@ -76,6 +76,7 @@ Im Auto-Modus soll die Spec-Freigabe nur noch dann beim PO landen, wenn wirklich
 
 - Die Ampel bleibt eine Einschaetzung eines Modells; die Tests pruefen nur den Anweisungstext, nicht das Urteil im Einzelfall.
 - Eine im Auswahldialog gegebene Freigabe zaehlt weiterhin nicht; die Regel verhindert nur, dass Claude danach fragt.
+- Adversary-Randfall: Eine weggelassene Ticket-Anforderung, die die Spec nur als Known Limitation fuehrt, faellt formal unter Rot-Grund 1 und die Nicht-Rot-Liste; der Text legt den Vorrang von Rot-Grund 1 nicht ausdruecklich fest.
 
 ## Definition of Done
 

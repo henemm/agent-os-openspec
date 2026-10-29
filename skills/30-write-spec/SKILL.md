@@ -279,7 +279,7 @@ Erst sichern, dann ist `/clear` gefahrlos.
 
 **IMPORTANT:**
 - Do NOT implement until approved
-- Freigaben nie über den Auswahldialog (`AskUserQuestion`) einholen, nur als Textzeile: der `phase_listener` sieht ausschließlich getippte Nachrichten, eine im Dialog geklickte Freigabe wirkt nicht und der PO muss sie erneut tippen (#183)
+- Die Spec-Freigabe nie per Auswahldialog (`AskUserQuestion`) erfragen, sondern immer mit der ❗Du-Zeile `approved`: der `phase_listener` sieht ausschließlich getippte Nachrichten, eine im Dialog geklickte Freigabe wirkt nicht. Hat der PO im Dialog bereits freigegeben, bitte in genau einer Zeile um das Stichwort (#183, #485)
 - Do NOT skip TDD RED phase after approval
 - Die Freigabe-Ausgabe ist das Briefing wörtlich plus Marker-Zeile — keine eigene
   Zusammenfassung davor oder danach. Abweichungen vom Ticket benennt der po-briefer
