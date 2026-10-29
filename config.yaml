@@ -331,8 +331,10 @@ herdr:
   # erwarteten Slash-Befehl, tippt ein detachter Runner `/clear` und danach
   # `/<cmd> #N` in den Pane. Freigaben bleiben manuell. `herdr.enabled: false`
   # schaltet auch dies ab. Abbrueche: .claude/herdr_auto_clear.log
+  # Fuer alle Projekte (#480): "env": {"OPENSPEC_HERDR_AUTO_CLEAR": "1"} in
+  # ~/.claude/settings.json; ein Projektwert true/false hat Vorrang.
   auto_clear:
-    enabled: false
+    # enabled: false   # true = an, false = aus (auch gegen den benutzerweiten Schalter); weglassen = Benutzer-Schalter entscheidet
     grace_s: 3          # Wartezeit nach der Vorankuendigung (Sekunden)
     idle_timeout_s: 120 # Hoechstwartezeit je `agent wait` (Sekunden)
     announce: true      # Vorankuendigung per `notification show`

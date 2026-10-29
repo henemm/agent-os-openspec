@@ -267,19 +267,27 @@ def _hooks_on_path() -> None:
 
 
 def _auto_clear_config() -> "dict | None":
-    """Strikter Opt-in: nur `herdr.auto_clear.enabled is True`; sonst None.
+    """Opt-in mit Vorrang: Projekt `false` > Projekt `true` > Umgebung > aus (#480).
 
-    Bewusst NICHT `_enabled()` (Opt-out) — ein fehlender Abschnitt oder ein
-    anderer Wert als das Literal True bedeutet aus. Liefert die Werte mit
-    Defaults fuer fehlende/unbrauchbare Eintraege.
+    Bewusst NICHT `_enabled()` (Opt-out). Nur das Literal `enabled: false`/`true`
+    im Projekt entscheidet; fehlt es (oder ist es kein bool), schaltet die
+    Umgebungsvariable `OPENSPEC_HERDR_AUTO_CLEAR` (1/true/yes/on) benutzerweit
+    ein. Werte aus dem Projektabschnitt gelten mit Defaults fuer fehlende/
+    unbrauchbare Eintraege. Jede Ausnahme -> None (aus).
     """
     try:
         _hooks_on_path()
         from config_loader import load_config
         section = (load_config() or {}).get("herdr")
         auto = section.get("auto_clear") if isinstance(section, dict) else None
-        if not isinstance(auto, dict) or auto.get("enabled") is not True:
+        auto = auto if isinstance(auto, dict) else {}
+        enabled = auto.get("enabled")
+        if enabled is False:
             return None
+        if enabled is not True:
+            switch = os.environ.get("OPENSPEC_HERDR_AUTO_CLEAR", "").strip().lower()
+            if switch not in ("1", "true", "yes", "on"):
+                return None
         cfg = dict(AC_DEFAULTS)
         for key in ("grace_s", "idle_timeout_s"):
             val = auto.get(key)
@@ -293,7 +301,7 @@ def _auto_clear_config() -> "dict | None":
 
 
 def auto_clear_enabled() -> bool:
-    """True nur bei `herdr.auto_clear.enabled: true` (Literal)."""
+    """True bei Projekt `enabled: true` oder (ohne Projektwert) Env-Schalter (#480)."""
     return _auto_clear_config() is not None
 
 
