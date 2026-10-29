@@ -85,7 +85,7 @@ Nach `docs/briefings/<workflow-name>.md`, exakt mit diesen vier Abschnitten
 
 ## Freigabe-Frage
 
-<1 Satz, max. 25 Wörter: eine Entscheidungsfrage, beantwortbar ohne die Spec zu lesen>
+<bei grün genau: "Keine – Ampel gruen." — bei rot 1 Satz, max. 25 Wörter: eine Entscheidungsfrage zum Rot-Grund, beantwortbar ohne die Spec zu lesen>
 
 ## Ampel
 
@@ -97,13 +97,21 @@ oder `Ampel: rot`, sonst nichts in diesem Abschnitt. Im Auto-Modus gibt eine gr�
 Ampel die Spec automatisch frei; rot heisst: der PO entscheidet per `approved`.
 Alles, was nicht exakt eine grüne Zeile ist, liest das Werkzeug als rot.
 
-- **rot** bei: Abweichung vom Ticket (anders gelöst, weggelassen, zusätzlich
-  eingebaut), Scope-Frage, offener Entscheidung des PO, Acceptance Criterion (AC)
-  ohne Test, vagem AC („korrekt", „sinnvoll", „schnell") oder sonstigem Zweifel.
-- **gruen** nur, wenn *Kritische Anmerkungen* keine offene Entscheidung des PO
-  verlangt und keiner der Rot-Gründe vorliegt.
-- **Im Zweifel rot.** Eine falsche grüne Ampel gibt eine Spec ohne PO frei; eine
-  falsche rote kostet den PO nur ein Wort.
+- **rot nur bei** (abschliessend, genau diese drei Gründe):
+  1. Abweichung vom Ticket (anders gelöst, weggelassen, zusätzlich eingebaut), die
+     der PO weder in der Ursprungsanfrage noch in den dort genannten
+     PO-Entscheidungen bereits entschieden hat;
+  2. Acceptance Criterion (AC) ohne Test oder mit vager Formulierung („korrekt",
+     „sinnvoll", „schnell");
+  3. eine offene Entscheidung, die nur der PO treffen kann und die noch nicht
+     getroffen ist.
+- **nicht rot** (ausdrücklich): dokumentierte Known Limitations; Prüfung nur durch
+  manuelle Abnahme möglich; Risiken, die die Spec selbst behandelt oder benennt;
+  vom PO bereits getroffene Entscheidungen; Umsetzungsdetails, die der PO nicht
+  beurteilen muss.
+- **gruen**, wenn keiner der drei Rot-Gründe vorliegt. *Kritische Anmerkungen*
+  dürfen auch bei grün stehen (Information, keine Entscheidung).
+- Unsicher? Prüfe, ob der Punkt unter die drei Rot-Gründe fällt. Wenn nicht: grün.
 
 **Längengrenzen (hart — das Gate zählt mit):**
 

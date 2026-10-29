@@ -208,7 +208,7 @@ Die Ausgabe besteht aus genau diesen Teilen, in dieser Reihenfolge:
    insgesamt. Stimmst du allen Anmerkungen zu: nichts schreiben.
 3. **❗Du-Zeile + Marker-Zeile** — wörtlich, als letzte beiden Zeilen, `⚙` ganz zuletzt:
    `❗ Du: \`approved\` — Freigabe der Spec, danach beginnt die Umsetzung`
-   `⚙ PO-Briefing unabhängig erstellt · agent-os-openspec 4.4.0`
+   `⚙ PO-Briefing unabhängig erstellt · agent-os-openspec 4.4.1`
    Diese Freigabe verlangt *immer* eine PO-Entscheidung — anders als bei den generischen
    Pflicht-Markern in anderen Befehlen gibt es hier keine `ℹ️ Nichts-zu-tun`-Variante.
 
@@ -220,7 +220,7 @@ Vorlage:
 Meine Einschätzung: [nur bei Widerspruch zu einer Anmerkung — sonst weglassen]
 
 ❗ Du: `approved` — Freigabe der Spec, danach beginnt die Umsetzung
-⚙ PO-Briefing unabhängig erstellt · agent-os-openspec 4.4.0
+⚙ PO-Briefing unabhängig erstellt · agent-os-openspec 4.4.1
 
 ---
 
@@ -279,7 +279,7 @@ Erst sichern, dann ist `/clear` gefahrlos.
 
 **IMPORTANT:**
 - Do NOT implement until approved
-- Freigaben nie über den Auswahldialog (`AskUserQuestion`) einholen, nur als Textzeile: der `phase_listener` sieht ausschließlich getippte Nachrichten, eine im Dialog geklickte Freigabe wirkt nicht und der PO muss sie erneut tippen (#183)
+- Die Spec-Freigabe nie per Auswahldialog (`AskUserQuestion`) erfragen, sondern immer mit der ❗Du-Zeile `approved`: der `phase_listener` sieht ausschließlich getippte Nachrichten, eine im Dialog geklickte Freigabe wirkt nicht. Hat der PO im Dialog bereits freigegeben, bitte in genau einer Zeile um das Stichwort (#183, #485)
 - Do NOT skip TDD RED phase after approval
 - Die Freigabe-Ausgabe ist das Briefing wörtlich plus Marker-Zeile — keine eigene
   Zusammenfassung davor oder danach. Abweichungen vom Ticket benennt der po-briefer
