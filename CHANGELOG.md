@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.4.1] - 2026-10-29
+
+PO-Briefing: Ampel nur noch rot bei echten offenen PO-Entscheidungen (Auto-Modus gibt damit die meisten Specs selbst frei).
+
 ### Fixed
 
 - **#485 (Ampel-Kalibrierung):** `po-briefer` stuft nur noch bei drei abschliessenden Gründen rot ein (Ticket-Abweichung ohne PO-Entscheidung, AC ohne Test/vage, offene PO-Entscheidung); Known Limitations, manuelle Abnahme und getroffene PO-Entscheidungen sind ausdrücklich nicht rot, „Im Zweifel rot“ entfällt, Freigabe-Frage bei grün „Keine – Ampel gruen.“. `30-write-spec` verbietet die Spec-Freigabe per Auswahldialog. Tests: `tests/test_ampel_kalibrierung_485.py`.
