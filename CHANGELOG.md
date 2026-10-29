@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-10-29
+
+Herdr-Integration (Sidebar-Fortschritt, optionales Auto-`/clear`) und Autonomie-Modus (`autonomy.mode: auto`, Default `manual`). Die neuen Funktionen sind standardmäßig ausgeschaltet.
+
+### Breaking
+
+- **Gate-Config gegen Edit/Write gesperrt (#473):** Die wirksame Config (`openspec.yaml`/`config.yaml`, auch unter `.claude/`) und jede vorrangige Kandidat-Datei lassen sich per Edit/Write/MultiEdit nicht mehr ändern oder neu anlegen — auch bei `framework_disabled()`. Ausweg: der User tippt `override`; in Worktrees bleibt die eigene Kopie frei. `mv`/`rm` eines Ordners mit geschützter Config wird per Bash geblockt.
+- **Grenzen für Edits auf Config und freigegebene Specs (#473, #439):** MultiEdits mit mehr als 64 möglichen Fassungen oder über dem Zeitbudget von 3 s werden fail-closed geblockt; auf eine App-`config.yaml` zusätzlich über 256 KiB oder mehr als 20 Edits. Große MultiEdits in Teilschritte zerlegen oder als Write ausführen.
+- **`autonomy.mode` nur aus der wirksamen Config (#470):** Ein Eintrag in `settings.local.json` wirkt für den Auto-Modus nicht.
+
 ### Added
 
 - **#466 (Herdr-Sidebar-Fortschritt):** Neues Utility `core/hooks/herdr_bridge.py` (kein Hook, nicht in `hooks.json`). Läuft Claude in einem Herdr-Pane (`HERDR_ENV=1`, `HERDR_PANE_ID`, `HERDR_BIN_PATH` als absolute ausführbare Datei), meldet es den Workflow-Stand per `herdr pane report-metadata --source user:openspec`: Titel `#<issue> <phase> <step>` und Tokens `workflow`, `issue`, `phase`, `step`, `next`. Aufgerufen aus `workflow.py` (`_save_active`, `start`, `switch`; Clear bei `complete`/`abandon`), `phase_listener.py` (Freigabe) und `session_banner.py` (Republish bei jedem SessionStart). Detached, ohne Shell, fail-open, ohne Einfluss auf stdout/Exit-Code; Kill-Switch `herdr.enabled: false`. `run_herdr()` ist generisch (Basis für #467). `tests/conftest.py` entfernt `HERDR_*` aus der Testumgebung. Tests: `tests/test_herdr_sidebar_466.py`.
