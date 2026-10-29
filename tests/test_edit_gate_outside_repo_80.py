@@ -221,4 +221,9 @@ def test_home_claude_settings_still_exempted(tmp_path):
 
     result = _run_edit_gate(str(global_settings), cwd=proj, project_dir=proj,
                              extra_env={"HOME": str(fake_home)})
-    assert result.returncode == 0, result.stdout + result.stderr
+    # #481: die globale settings.json ist jetzt bewusst geschuetzt (Autonomie-
+    # Schalter, Schritt 0a); die Orchestrator-Sperre (#48) greift weiterhin nicht.
+    out = result.stdout + result.stderr
+    assert "Orchestrator" not in out, out
+    assert result.returncode == 2, out
+    assert "persoenlichen Claude-Einstellungen" in out, out

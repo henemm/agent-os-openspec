@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **#481 (Autonomie-Modus für alle Projekte):** `OPENSPEC_AUTONOMY=auto` (getrimmt, Groß/Klein egal) unter `env` in `~/.claude/settings.json` schaltet den Autonomie-Modus benutzerweit ein. Ein Projekteintrag `autonomy.mode: manual|auto` hat Vorrang. Tests: `tests/test_autonomy_global_481.py`.
+
+### Security
+
+- **#481 (Schutz des Schalters):** `edit_gate.py` (Schritt 0a) und `bash_gate.py` (Schritt 1b) behandeln `~/.claude/settings.json` und `settings.local.json` wie die wirksame Gate-Config (`config_loader.user_settings_paths()`); `bash_gate.py` blockt zusätzlich Zuweisungen an `OPENSPEC_AUTONOMY` (`export`/`env`/`declare`/`set`, am Segmentanfang, eine Ebene `bash -c`). Ausweg jeweils `override`.
+
 ## [4.3.0] - 2026-10-29
 
 Auto-`/clear` für alle Projekte einschaltbar (`OPENSPEC_HERDR_AUTO_CLEAR=1` in `~/.claude/settings.json`); `process_watchdog.py` wieder ausführbar.

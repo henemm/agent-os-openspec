@@ -201,6 +201,20 @@ def protected_config_paths(root, new_content=None) -> "list[Path]":
         return []
 
 
+def user_settings_paths() -> "list[Path]":
+    """Persoenliche Claude-Einstellungen, die den Autonomie-Schalter tragen (#481).
+
+    `~/.claude/settings.json` und `settings.local.json` — auch wenn sie nicht
+    existieren (Anlegen zaehlt). Ihr `env`-Block setzt `OPENSPEC_AUTONOMY`.
+    Wirft nie (Fehler: leere Liste).
+    """
+    try:
+        base = Path(os.path.expanduser("~/.claude"))
+        return [base / "settings.json", base / "settings.local.json"]
+    except Exception:
+        return []
+
+
 def config_path_hit(target, candidates) -> bool:
     """Trifft `target` einen der `candidates`? (#473, gemeinsam fuer edit_gate/bash_gate)
 

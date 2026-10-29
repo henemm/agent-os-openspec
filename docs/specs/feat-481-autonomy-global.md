@@ -83,6 +83,7 @@ Alle bisherigen Aufrufer (`auto-approve`, `auto-green`, `post_implementation_gat
 - Den Schalter traegt der PO selbst ein oder Claude nach `override`.
 - Auch harmlose Aenderungen an den persoenlichen Claude-Einstellungen (z. B. neue Erlaubnisse) brauchen kuenftig `override`.
 - Ein Schreibweg ausserhalb von Edit/Write/Bash (z. B. ein anderes Werkzeug) ist nicht abgedeckt.
+- Adversary-Befunde (MEDIUM, Folge-Issue): Bash-Zuweisungen an `OPENSPEC_AUTONOMY` hinter Wrappern (`env -u X`, `sudo`, `nohup`, `eval`, `sh -lc`, mehrere Ebenen `bash -c`, Variablen-Indirektion) werden nicht erkannt; die Projektdatei `.claude/settings.local.json` ist per Bash beschreibbar und koennte per `env` die Variable nach einem Neustart setzen.
 
 ## Definition of Done
 

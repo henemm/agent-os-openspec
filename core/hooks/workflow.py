@@ -808,13 +808,19 @@ def autonomy_mode() -> str:
     "manual". Kein Trimmen, kein Lowercase. Wirft nie. Gelesen wird seit #470
     nur ueber `trusted_config()` (zur Laufzeit aufgeloest), nie
     `settings.local.json` und nie eine Unterordner-Config.
+
+    #481: Hat die Projekt-Config keinen `autonomy.mode`, entscheidet die
+    benutzerweite Variable `OPENSPEC_AUTONOMY` (getrimmt, ohne Gross/Klein:
+    nur "auto" schaltet an). Ein Projekteintrag hat immer Vorrang.
     """
     try:
         cfg = trusted_config()
         if not isinstance(cfg, dict):
             return "manual"
         section = cfg.get("autonomy")
-        if isinstance(section, dict) and section.get("mode") == "auto":
+        if isinstance(section, dict) and "mode" in section:
+            return "auto" if section.get("mode") == "auto" else "manual"
+        if os.environ.get("OPENSPEC_AUTONOMY", "").strip().lower() == "auto":
             return "auto"
     except Exception:
         pass
