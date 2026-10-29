@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-10-29
+
+Herdr: Workflow-Plan als Live-Bereich rechts neben Claude (Default an, abschaltbar per `herdr.plan_pane.enabled: false`).
+
 ### Added
 
 - **#476 (Herdr: Workflow-Plan als Live-Pane rechts neben Claude):** `workflow.py start` öffnet in einem Herdr-Pane fail-open per `herdr_bridge.open_plan_pane()` einen detachten Runner (`herdr_bridge.py plan-pane`), der den Claude-Pane nach rechts splittet (`pane split --direction right --ratio 0.75 --cwd <projekt> --no-focus`), den neuen Pane `Workflow` nennt und `workflow.py plan --watch` hineintippt. Der Plan zeigt alle Schritte (✔ erledigt, ▶ läuft, ○ offen; Fast Track ohne Kontext/Analyse/TDD-RED/Adversary) und den nächsten Befehl, zieht jede Sekunde nach und folgt `switch`, neuem `start` und dem Archiv. Neu: `render_plan`, `PLAN_STEPS`/`PLAN_STEPS_FAST`, `workflow.py plan [--watch | --open]` (`--open` ignoriert `plan_pane.enabled`), `herdr_bridge.plan_pane_settings()`/`plan_pane_enabled()`. Lock `.claude/herdr_plan_pane.lock` (O_EXCL, 30 s), gemerkte ID `.claude/herdr_plan_pane.json` (per `pane get` wiederverwendet), Log `.claude/herdr_plan_pane.log`. Config `herdr.plan_pane` (`enabled: true` Opt-out, `ratio` 0.1–0.9, Default 0.75); `herdr.enabled: false` schaltet mit ab. stdout und Exit-Code von `start` bleiben unverändert. Tests: `tests/test_herdr_plan_pane_476.py`.
