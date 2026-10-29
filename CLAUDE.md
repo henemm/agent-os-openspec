@@ -2,7 +2,7 @@
 
 > **Meta-Projekt**: Dies ist das zentrale Framework-Repository, das abstraktes Projekt- und Workflow-Wissen konsolidiert. Alle Projekte können Improvements hierher zurückführen und von Verbesserungen aus anderen Projekten profitieren.
 
-**Version**: 3.44.0
+**Version**: 4.0.0
 
 ## Projektzweck
 

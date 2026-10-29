@@ -1,14 +1,14 @@
-# Context: release-3-44-0
+# Context: release-4-0-0
 
 ## Request Summary
-Release 3.44.0: Versions-Bump für die mit PR #474 gemergten Features (#466, #467, #469–#473). Ziel: neue Funktionen als Plugin-Version ausliefern (`release.yml` taggt `agent-os-openspec--v3.44.0` nach Merge).
+Release 4.0.0: Versions-Bump für die mit PR #474 gemergten Features (#466, #467, #469–#473). Ziel: neue Funktionen als Plugin-Version ausliefern (`release.yml` taggt `agent-os-openspec--v4.0.0` nach Merge).
 
 ## Related Files
 | File | Relevance |
 |------|-----------|
-| `.claude-plugin/plugin.json` | Version 3.43.1 → 3.44.0 (Auslöser für `release.yml`) |
+| `.claude-plugin/plugin.json` | Version 3.43.1 → 4.0.0 (Auslöser für `release.yml`) |
 | `README.md`, `CLAUDE.md` | Versionszeile (`release_check.py` prüft Gleichstand) |
-| `CHANGELOG.md` | `[Unreleased]` → `[3.44.0] - 2026-10-29` + Zusammenfassung |
+| `CHANGELOG.md` | `[Unreleased]` → `[4.0.0] - 2026-10-29` + Zusammenfassung |
 | `skills/*/SKILL.md` | generierte Versionszeile (`scripts/sync_skills.py`) |
 | `scripts/release_check.py` | Release-Vorbedingungen |
 

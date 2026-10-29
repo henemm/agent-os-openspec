@@ -7,9 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [3.44.0] - 2026-10-29
+## [4.0.0] - 2026-10-29
 
-Herdr-Integration (Sidebar-Fortschritt, optionales Auto-`/clear`) und Autonomie-Modus (`autonomy.mode: auto`, Default `manual`). Alle neuen Funktionen sind standardmäßig ausgeschaltet; ohne Konfigurationsänderung verhält sich das Framework wie 3.43.1.
+Herdr-Integration (Sidebar-Fortschritt, optionales Auto-`/clear`) und Autonomie-Modus (`autonomy.mode: auto`, Default `manual`). Die neuen Funktionen sind standardmäßig ausgeschaltet.
+
+### Breaking
+
+- **Gate-Config gegen Edit/Write gesperrt (#473):** Die wirksame Config (`openspec.yaml`/`config.yaml`, auch unter `.claude/`) und jede vorrangige Kandidat-Datei lassen sich per Edit/Write/MultiEdit nicht mehr ändern oder neu anlegen — auch bei `framework_disabled()`. Ausweg: der User tippt `override`; in Worktrees bleibt die eigene Kopie frei. `mv`/`rm` eines Ordners mit geschützter Config wird per Bash geblockt.
+- **Grenzen für Edits auf Config und freigegebene Specs (#473, #439):** MultiEdits mit mehr als 64 möglichen Fassungen oder über dem Zeitbudget von 3 s werden fail-closed geblockt; auf eine App-`config.yaml` zusätzlich über 256 KiB oder mehr als 20 Edits. Große MultiEdits in Teilschritte zerlegen oder als Write ausführen.
+- **`autonomy.mode` nur aus der wirksamen Config (#470):** Ein Eintrag in `settings.local.json` wirkt für den Auto-Modus nicht.
 
 ### Added
 
