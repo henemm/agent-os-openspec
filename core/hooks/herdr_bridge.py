@@ -32,6 +32,11 @@ startet. Der Runner splittet den Claude-Pane nach rechts (`pane split`), benennt
 den neuen Pane `Workflow` und tippt `workflow.py plan --watch` hinein. Lock
 `.claude/herdr_plan_pane.lock`, gemerkte ID `.claude/herdr_plan_pane.json`,
 Log `.claude/herdr_plan_pane.log`; immer Exit 0.
+
+#478: session_banner ruft `open_plan_pane_for_active` (Pane nur bei aktivem
+Workflow). `maybe_auto_clear` loggt bei aktivem Opt-in jeden Skip-Grund
+(`skip: <grund>`, gleiche Zeile in Folge nur einmal); `_wait_ready` liest
+`agent_status` (Herdr 0.9.5), Fallback `status`.
 """
 
 import argparse
@@ -414,36 +419,57 @@ def maybe_auto_clear(payload, message, data) -> bool:
         cfg = _auto_clear_config()
         if cfg is None:
             return False
+        # Ab hier Opt-in aktiv: jeder Abbruch landet als `skip:` im Log (#478)
         if isinstance(payload, dict) and payload.get("stop_hook_active") is True:
-            return False
+            return _ac_skip("stop_hook_active")
         if not isinstance(data, dict) or not isinstance(message, str):
-            return False
+            return _ac_skip("Workflow ohne Name/Phase")
         _hooks_on_path()
         import workflow
         command = workflow.expected_footer_command(data)
         if not isinstance(command, str) or not command.startswith("/"):
-            return False  # Freitext-Schritt (Freigabe) loest nie aus
+            # Freitext-Schritt (Freigabe) loest nie aus
+            return _ac_skip(f"kein Slash-Befehl als naechster Schritt ({command})")
         first = command.split()[0]
         if first == "/clear":
-            return False
+            return _ac_skip("/clear als Befehl")
         _, footer_commands = _footer_parts()
         if first not in footer_commands(message):
-            return False
+            return _ac_skip(f"Fusszeile nennt {command} nicht")
         if not has_clear_marker(message):
-            return False
+            return _ac_skip("Marker fehlt oder Negativmarker")
         name = str(data.get("name") or "")
         phase = str(data.get("current_phase") or "")
         if not name or not phase:
-            return False
+            return _ac_skip("Workflow ohne Name/Phase")
         key = f"{name}|{phase}|{command}"
         if not _acquire_lock(key):
-            return False
+            return _ac_skip("Once-Lock aktiv")
         if not spawn_auto_clear(pane, name, phase, command, cfg):
             _release_lock(key)
-            return False
+            return _ac_skip("Spawn fehlgeschlagen")
         return True
     except Exception:
         return False
+
+
+def _ac_skip(reason: str) -> bool:
+    """Skip-Grund loggen (#478), gleiche Zeile in Folge nur einmal; immer False."""
+    try:
+        line = f"skip: {_CONTROL_RE.sub(' ', reason)}"
+        _hooks_on_path()
+        from hook_utils import read_state_text
+        path = _ac_base() / ".claude" / AC_LOG_FILE
+        try:
+            old = read_state_text(path, path.parent.parent).splitlines()
+        except Exception:
+            old = []
+        last = old[-1].split(" ", 1)[1] if old and " " in old[-1] else None
+        if last != line:
+            _ac_log(line)
+    except Exception:
+        pass
+    return False
 
 
 # --- Runner (eigener Prozess) ---
@@ -519,9 +545,15 @@ class _Runner:
         if res.returncode != 0:
             raise _Abort(f"{label}: agent wait Exit {res.returncode} "
                          f"{(res.stderr or '').strip()[:200]}")
+        # Herdr 0.9.5 liefert `agent_status`; `status` nur als Fallback (#478)
         try:
-            status = json.loads(res.stdout)["result"]["agent"]["status"]
+            agent = json.loads(res.stdout)["result"]["agent"]
+            status = agent.get("agent_status")
+            if not isinstance(status, str):
+                status = agent.get("status")
         except Exception:
+            status = None
+        if not isinstance(status, str):
             raise _Abort(f"{label}: agent wait Ausgabe nicht parsbar")
         if status not in READY_STATES:
             raise _Abort(f"{label}: Agent-Status {status!r}")
@@ -657,6 +689,20 @@ def open_plan_pane(force: bool = False) -> bool:
         )
         return True
     except Exception:
+        return False
+
+
+def open_plan_pane_for_active() -> bool:
+    """SessionStart (#478): Plan-Pane nur bei aktivem Workflow oeffnen; fail-open."""
+    try:
+        if _pane() is None:
+            return False
+        _hooks_on_path()
+        import workflow
+        if not workflow.read_active_workflow_fast():
+            return False
+        return open_plan_pane()
+    except (Exception, SystemExit):
         return False
 
 

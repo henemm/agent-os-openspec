@@ -338,8 +338,13 @@ _FAST_PLAN_PHASES = ("phase3_spec", "phase4_approved", "phase6_implement",
 PLAN_STEPS_FAST = tuple(s for s in PLAN_STEPS if s[2] in _FAST_PLAN_PHASES)
 
 
-def render_plan(data, archived: bool = False, width: "int | None" = None) -> str:
-    """Workflow-Plan als Text (#476): ✔ erledigt, ▶ laeuft, ○ offen. Pure."""
+def render_plan(data, archived: bool = False, width: "int | None" = None,
+                deploy: bool = False) -> str:
+    """Workflow-Plan als Text (#476): ✔ erledigt, ▶ laeuft, ○ offen. Pure.
+
+    `deploy` (#478): nach "8 Fertig" ein Schritt Deploy; in Phase 8 offen bis
+    zur Archivierung, naechster Befehl dann `/70-deploy #N`.
+    """
     if not isinstance(data, dict):
         lines = ["Kein aktiver Workflow"]
     else:
@@ -364,7 +369,17 @@ def render_plan(data, archived: bool = False, width: "int | None" = None) -> str
                 lines.append(f"▶ {nr} {label}  (läuft)")
             else:
                 lines.append(f"○ {nr} {label}")
-        if done_all:
+        deploy_open = bool(deploy) and not archived and phase == "phase8_complete"
+        if deploy:
+            if archived:
+                lines.append("✔ Deploy")
+            elif deploy_open:
+                lines.append("▶ Deploy  (offen)")
+            else:
+                lines.append("○ Deploy")
+        if deploy_open:
+            lines += ["", f"Nächster: /70-deploy #{issue}" if issue else "Nächster: /70-deploy"]
+        elif done_all:
             lines += ["", "abgeschlossen"]
         else:
             try:
@@ -1671,14 +1686,15 @@ def _plan_watch() -> None:
         while True:
             try:
                 width = shutil.get_terminal_size().columns
+                deploy = deploy_configured()  # je Runde neu (#478)
                 found = _plan_active()
                 if found:
                     last_name, data = found
-                    out = render_plan(data, width=width)
+                    out = render_plan(data, width=width, deploy=deploy)
                 elif last_name and _archive_file(last_name).exists():
                     data = dict(_read_workflow(_archive_file(last_name)))
                     data.setdefault("name", last_name)
-                    out = render_plan(data, archived=True, width=width)
+                    out = render_plan(data, archived=True, width=width, deploy=deploy)
                 else:
                     out = render_plan(None, width=width)
                 if out != last_out:
@@ -1716,7 +1732,7 @@ def cmd_plan(args: list[str]) -> None:
         found = _plan_active()
     except (Exception, SystemExit):
         found = None
-    print(render_plan(found[1] if found else None))
+    print(render_plan(found[1] if found else None, deploy=deploy_configured()))
 
 
 def cmd_switch(args: list[str]) -> None:
@@ -2425,6 +2441,34 @@ def _deploy_steps(value) -> "list[str]":
     return []
 
 
+def _deploy_block() -> dict:
+    """`deploy:`-Block der Projekt-Config, sonst {} (#81)."""
+    try:
+        from config_loader import load_config
+        block = load_config().get("deploy") or {}
+    except Exception:
+        block = {}
+    return block if isinstance(block, dict) else {}
+
+
+def _deploy_config_steps(block: dict) -> "dict[str, list[str]]":
+    """`deploy:`-Block als {command, verify, rollback} -> Befehlsliste (#81, #478)."""
+    return {k: _deploy_steps(block.get(k)) for k in ("command", "verify", "rollback")}
+
+
+def _deploy_is_configured(steps: dict) -> bool:
+    """Deploy gilt als beschrieben, wenn `command` UND `verify` gesetzt sind."""
+    return bool(steps.get("command") and steps.get("verify"))
+
+
+def deploy_configured() -> bool:
+    """Gleiche Regel wie `DEPLOY_CONFIGURED=yes` (#478); jede Ausnahme -> False."""
+    try:
+        return _deploy_is_configured(_deploy_config_steps(_deploy_block()))
+    except Exception:
+        return False
+
+
 def cmd_deploy_config(args: list[str]) -> None:
     """Deploy-Ablauf des Projekts aus `deploy:` in der Projekt-Config (#81). Rein lesend.
 
@@ -2432,15 +2476,9 @@ def cmd_deploy_config(args: list[str]) -> None:
     `command` UND `verify` gesetzt sind — ohne Nachpruefung gilt ein Deploy
     nicht als beschrieben. `/70-deploy` verzweigt auf dieser Zeile.
     """
-    try:
-        from config_loader import load_config
-        block = load_config().get("deploy") or {}
-    except Exception:
-        block = {}
-    if not isinstance(block, dict):
-        block = {}
-    steps = {k: _deploy_steps(block.get(k)) for k in ("command", "verify", "rollback")}
-    configured = bool(steps["command"] and steps["verify"])
+    block = _deploy_block()
+    steps = _deploy_config_steps(block)
+    configured = _deploy_is_configured(steps)
     print(f"DEPLOY_CONFIGURED={'yes' if configured else 'no'}")
     for key in ("command", "verify", "rollback"):
         if steps[key]:

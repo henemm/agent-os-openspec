@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.2.0] - 2026-10-29
+
+Herdr: Auto-`/clear` funktioniert mit echtem Herdr (Statusfeld `agent_status`), Abbruchgründe im Log; Workflow-Plan zeigt offenes Deploy und öffnet sich beim Sitzungsstart.
+
+### Added
+
+- **#478 (Herdr-Plan: Deploy-Schritt und Öffnen beim Sitzungsstart):** Mit `deploy:`-Config (`command` UND `verify`, dieselbe Regel wie `DEPLOY_CONFIGURED=yes`) zeigt `workflow.py plan [--watch]` nach „8 Fertig“ einen Schritt Deploy: in Phase 8 `▶ Deploy  (offen)` mit `Nächster: /70-deploy #N`, nach Archivierung `✔ Deploy`, sonst `○ Deploy`. Neu: `workflow.deploy_configured()`, `render_plan(..., deploy=False)`; ohne Deploy-Config ist die Ausgabe unverändert, `next_step`/`expected_footer_command` bleiben gleich. `session_banner.py` öffnet bei jedem SessionStart fail-open per `herdr_bridge.open_plan_pane_for_active()` den Plan-Pane, wenn ein Workflow aktiv ist (ein offener Pane wird per `pane get` wiederverwendet). Auto-`/clear` (#467) schreibt bei aktivem Opt-in jeden Skip-Grund als `skip: <grund>` in `.claude/herdr_auto_clear.log` (gleiche Zeile in Folge nur einmal). Tests: `tests/test_herdr_plan_deploy_sessionstart_478.py`.
+
+### Fixed
+
+- **#478 (Auto-`/clear` in echtem Herdr):** Der Runner las den Agent-Status aus `.result.agent.status`; Herdr 0.9.5 liefert `.result.agent.agent_status` — jeder Lauf brach mit „agent wait Ausgabe nicht parsbar“ ab. Jetzt `agent_status`, ersatzweise `status`. Der #467-Test-Stub liefert das echte Format.
+
 ## [4.1.0] - 2026-10-29
 
 Herdr: Workflow-Plan als Live-Bereich rechts neben Claude (Default an, abschaltbar per `herdr.plan_pane.enabled: false`).

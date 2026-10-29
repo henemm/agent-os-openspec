@@ -531,6 +531,11 @@ def main() -> None:
         herdr_bridge.report_active()
     except Exception:
         pass
+    try:  # #478: Plan-Pane bei aktivem Workflow oeffnen (Runner prueft per `pane get`)
+        import herdr_bridge
+        herdr_bridge.open_plan_pane_for_active()
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":
