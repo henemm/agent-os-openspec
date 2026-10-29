@@ -1,7 +1,7 @@
 ---
 spec_file: docs/specs/feat-478-plan-deploy-sessionstart.md
-spec_sha256: e64ab1903d1e3bbfd00220d2d74dcd8b851bafdf6f9e5b8a4039f0377f237841
-spec_frozen_sha256: d9e997c1ebf4bd86a649dbe02469fcbd32037002cfa09c584d21c3154095da98
+spec_sha256: 7fdf7a58e2c0ecc21014f66ca62272700b796eb72502bd9073b8ccf49fea4746
+spec_frozen_sha256: f0081f1733751f1480ceaa6f7613bccbabe7306b06b2ddefcc47c0d71e6d3248
 ---
 
 # PO-Briefing: feat-478-plan-deploy-sessionstart
@@ -12,25 +12,25 @@ spec_frozen_sha256: d9e997c1ebf4bd86a649dbe02469fcbd32037002cfa09c584d21c3154095
 
 ## Was gebaut wird
 
-Plan zeigt Deploy als offenen Schritt, öffnet sich beim Claude-Start, und das Log erklärt, warum Auto-/clear nicht auslöst.
+Plan zeigt Deploy als offenen Schritt, öffnet sich beim Start, und Auto-/clear funktioniert wieder mit Fehlerprotokoll.
 
 ## Definition of Done
 
-Mit Deploy-Konfiguration steht nach Phase 8 „Deploy (offen)“ samt Befehl im Plan; nach Neustart öffnet sich der Plan-Bereich wieder.
+Bei konfiguriertem Deploy zeigt der Plan nach Phase 8 „Deploy offen“, öffnet beim Start, und Auto-/clear greift in Herdr.
 
 ## Wie geprüft wird
 
-Automatische Tests belegen jede Anforderung; ob es im echten Herdr gut aussieht und funktioniert, prüft nur deine manuelle Abnahme.
+Tests mit Herdr-Attrappe prüfen Anzeige, Start und Auto-/clear; ob echtes Herdr so antwortet, zeigt nur Ihre Abnahme.
 
 ## Kritische Anmerkungen
 
-- Auto-/clear löst in Phase 8 weiterhin nicht aus; nur das Log nennt den Grund.
-- Ohne Deploy-Konfiguration kein Deploy-Schritt; erledigt gilt Deploy erst mit Archivierung.
-- Zusatz ohne Anfrage: doppelte Log-Zeilen werden unterdrückt; Tests decken nur zwei der acht Abbruchgründe ab.
+- Auto-/clear-Fix beruht auf Herdr-Quellcode, nicht auf echtem Lauf; erst Ihre Abnahme beweist, dass er greift.
+- Deploy wird erst bei Archivierung abgehakt; Projekte ohne vollständige Deploy-Einstellung sehen den Schritt nie.
+- Fehlerprotokoll: nur zwei von acht Abbruchgründen getestet.
 
 ## Freigabe-Frage
 
-Passt dir, dass Auto-/clear in Phase 8 nicht auslöst und Deploy nur mit Deploy-Konfiguration erscheint?
+Freigeben, obwohl der Auto-/clear-Fix erst in Ihrer Abnahme im echten Herdr bewiesen wird?
 
 ## Ampel
 

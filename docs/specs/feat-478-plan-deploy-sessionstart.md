@@ -17,7 +17,7 @@ tags: [herdr, workflow, plan, deploy, session-start]
 
 ## Purpose
 
-Folge zu #476/#467. Drittens schreibt Auto-`/clear` (#467) bei aktivem Opt-in jeden Grund, aus dem es an einem Turn-Ende NICHT ausloest, als Zeile in `.claude/herdr_auto_clear.log`, damit der PO sieht, warum nichts passiert. Erstens zeigt der Workflow-Plan bei Projekten mit beschriebenem Deploy nach Phase 8 einen eigenen Schritt „Deploy“ als offen und nennt `/70-deploy #N` als naechsten Befehl, statt „abgeschlossen“ zu melden, waehrend die Sitzung noch das Deploy verlangt. Zweitens oeffnet sich der Plan-Bereich auch beim Start von Claude Code (SessionStart, auch nach `/clear`), wenn ein Workflow aktiv ist.
+Folge zu #476/#467. Viertens behebt es den Fehler, an dem Auto-`/clear` in echtem Herdr immer scheiterte: `agent wait` liefert den Status im Feld `.result.agent.agent_status` (Herdr 0.9.5, `AgentInfo` in `src/api/schema/agents.rs`), der Runner las `.result.agent.status` und brach mit „agent wait Ausgabe nicht parsbar“ ab (PO-Log 2026-10-29T11:24:09). Drittens schreibt Auto-`/clear` (#467) bei aktivem Opt-in jeden Grund, aus dem es an einem Turn-Ende NICHT ausloest, als Zeile in `.claude/herdr_auto_clear.log`, damit der PO sieht, warum nichts passiert. Erstens zeigt der Workflow-Plan bei Projekten mit beschriebenem Deploy nach Phase 8 einen eigenen Schritt „Deploy“ als offen und nennt `/70-deploy #N` als naechsten Befehl, statt „abgeschlossen“ zu melden, waehrend die Sitzung noch das Deploy verlangt. Zweitens oeffnet sich der Plan-Bereich auch beim Start von Claude Code (SessionStart, auch nach `/clear`), wenn ein Workflow aktiv ist.
 
 ## Source
 
@@ -43,7 +43,8 @@ Folge zu #476/#467. Drittens schreibt Auto-`/clear` (#467) bei aktivem Opt-in je
 | core/hooks/workflow.py | MODIFY | `deploy_configured()`, `render_plan(data, archived=False, width=None, deploy=False)`, `plan`/`plan --watch` reichen `deploy_configured()` durch |
 | core/hooks/herdr_bridge.py | MODIFY | `open_plan_pane_for_active() -> bool` |
 | core/hooks/session_banner.py | MODIFY | Aufruf von `open_plan_pane_for_active()` nach `report_active()`, fail-open |
-| core/hooks/herdr_bridge.py (#467-Teil) | MODIFY | `maybe_auto_clear` loggt Skip-Gruende, wenn Opt-in aktiv |
+| core/hooks/herdr_bridge.py (#467-Teil) | MODIFY | `maybe_auto_clear` loggt Skip-Gruende, wenn Opt-in aktiv; `_wait_ready` liest `agent_status` |
+| tests/test_herdr_auto_clear_467.py | MODIFY | Stub liefert das echte Herdr-Format (`agent_status`) statt des erfundenen `status` |
 | tests/test_herdr_plan_deploy_sessionstart_478.py | CREATE | Renderer, CLI mit Deploy-Config, SessionStart mit Stub-Binary |
 | CHANGELOG.md | MODIFY | Eintrag unter [Unreleased] |
 
@@ -68,6 +69,8 @@ Ohne `deploy` ist die Ausgabe byte-identisch zu #476. `next_step`/`expected_foot
 **CLI.** `plan` und `plan --watch` rufen `render_plan(..., deploy=deploy_configured())`; in `--watch` je Runde neu ermittelt.
 
 **Skip-Gruende Auto-`/clear`.** In `maybe_auto_clear` gilt: Ist Herdr-Env gueltig und `herdr.auto_clear.enabled is True`, schreibt jede danach greifende Abbruchbedingung eine Zeile `<zeitstempel> skip: <grund>` per `_ac_log` in `.claude/herdr_auto_clear.log` (Gruende: `stop_hook_active`, `kein Slash-Befehl als naechster Schritt (<wert>)`, `/clear als Befehl`, `Fusszeile nennt <erwartet> nicht`, `Marker fehlt oder Negativmarker`, `Workflow ohne Name/Phase`, `Once-Lock aktiv`, `Spawn fehlgeschlagen`). Ohne Opt-in oder ausserhalb Herdr wird nichts geschrieben. Gleiche Gruende in Folge werden nicht doppelt geloggt, wenn der letzte Logeintrag identisch ist (sonst laeuft das Log bei jedem Turn voll; Rotation wie bisher).
+
+**Bugfix `agent wait`.** `_wait_ready` liest den Status aus `.result.agent.agent_status`; fehlt das Feld, wird ersatzweise `.result.agent.status` gelesen (aeltere/abweichende Ausgabe). Ist keines ein String, gilt wie bisher „Ausgabe nicht parsbar“. Der #467-Test-Stub wird auf das echte Format umgestellt (`{"result":{"agent":{"agent_status":"idle", ...}}}`), damit die Tests das reale Verhalten pruefen.
 
 **Sitzungsstart.** `herdr_bridge.open_plan_pane_for_active() -> bool` (fail-open, nie stdout/stderr): ermittelt per `workflow.read_active_workflow_fast()` den aktiven Workflow; nur wenn einer existiert, `open_plan_pane()` (ohne `force`, also mit Kill-Switch `herdr.plan_pane.enabled` und Gate `_pane()`). `session_banner.main()` ruft sie nach `report_active()` in `try/except Exception` fuer jede SessionStart-Quelle. Ein schon offener Pane bleibt dank `pane get` im Runner der einzige.
 
@@ -114,6 +117,9 @@ Fertig ist diese Aenderung, wenn:
 
 - **AC-8:** Given gueltiges Herdr-Env, `herdr.auto_clear.enabled: true` und ein Workflow in `phase8_complete` (kein Slash-Befehl als naechster Schritt) bzw. eine Antwort ohne Positivmarker / When `footer_gate.py` den Stop-Payload verarbeitet / Then steht in `.claude/herdr_auto_clear.log` eine `skip:`-Zeile mit dem jeweiligen Grund, es wird kein Runner gestartet, Exit-Code und stdout von footer_gate bleiben unveraendert; ohne Opt-in entsteht keine Log-Datei
   - Test: tests/test_herdr_plan_deploy_sessionstart_478.py::test_auto_clear_logs_skip_reason_only_when_enabled
+
+- **AC-9:** Given ein Stub, dessen `agent wait` wie Herdr 0.9.5 `{"id":"cli:agent:wait","result":{"agent":{"terminal_id":"t1","agent_status":"idle","pane_id":"P","workspace_id":"w1","tab_id":"t","focused":true}}}` liefert / When der Auto-`/clear`-Runner laeuft / Then sendet er `agent prompt P /clear` und danach den Folgebefehl; liefert der Stub `agent_status: "blocked"`, bricht er ohne Prompt ab
+  - Test: tests/test_herdr_plan_deploy_sessionstart_478.py::test_runner_reads_real_agent_status_field
 
 - **AC-7:** Given gueltiges Herdr-Env, aber kein aktiver Workflow bzw. `herdr.plan_pane.enabled: false` / When `session_banner.py` laeuft / Then wird kein `pane split` protokolliert
   - Test: tests/test_herdr_plan_deploy_sessionstart_478.py::test_session_start_no_pane_without_workflow_or_disabled
