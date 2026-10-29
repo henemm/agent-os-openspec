@@ -320,6 +320,64 @@ def expected_footer_command(data: dict) -> "str | None":
     return f"{step} #{issue}" if issue else step
 
 
+# Schrittliste fuer die Plan-Anzeige (#476). Eigene Tabelle statt PHASES.index():
+# Anzeige-Nummern ("6b") und Labels gehoeren nicht in die Phasenlogik.
+PLAN_STEPS = (
+    ("1", "Kontext", "phase1_context"),
+    ("2", "Analyse", "phase2_analyse"),
+    ("3", "Spec", "phase3_spec"),
+    ("4", "Freigabe", "phase4_approved"),
+    ("5", "TDD-RED", "phase5_tdd_red"),
+    ("6", "Implement", "phase6_implement"),
+    ("6b", "Adversary", "phase6b_adversary"),
+    ("7", "Validierung", "phase7_validate"),
+    ("8", "Fertig", "phase8_complete"),
+)
+_FAST_PLAN_PHASES = ("phase3_spec", "phase4_approved", "phase6_implement",
+                     "phase7_validate", "phase8_complete")
+PLAN_STEPS_FAST = tuple(s for s in PLAN_STEPS if s[2] in _FAST_PLAN_PHASES)
+
+
+def render_plan(data, archived: bool = False, width: "int | None" = None) -> str:
+    """Workflow-Plan als Text (#476): ✔ erledigt, ▶ laeuft, ○ offen. Pure."""
+    if not isinstance(data, dict):
+        lines = ["Kein aktiver Workflow"]
+    else:
+        fast = data.get("workflow_type") == "feature-fast"
+        steps = PLAN_STEPS_FAST if fast else PLAN_STEPS
+        phase = data.get("current_phase")
+        done_all = archived or phase == "phase8_complete"
+        running = None
+        if not done_all and phase in PHASES and phase != "phase0_idle":
+            # Phase nicht in der Liste (Fast Track): letzter Schritt davor laeuft
+            pos = PHASES.index(phase)
+            for i, (_, _, step_phase) in enumerate(steps):
+                if PHASES.index(step_phase) <= pos:
+                    running = i
+        name = str(data.get("name") or "")
+        issue = issue_number(name)
+        lines = [f"Workflow #{issue}" if issue else "Workflow", name, ""]
+        for i, (nr, label, _) in enumerate(steps):
+            if done_all or (running is not None and i < running):
+                lines.append(f"✔ {nr} {label}")
+            elif i == running:
+                lines.append(f"▶ {nr} {label}  (läuft)")
+            else:
+                lines.append(f"○ {nr} {label}")
+        if done_all:
+            lines += ["", "abgeschlossen"]
+        else:
+            try:
+                nxt = expected_footer_command(data)
+            except Exception:
+                nxt = None
+            if nxt:
+                lines += ["", f"Nächster: {nxt}"]
+    if isinstance(width, int) and width > 0:
+        lines = [line[:width] for line in lines]
+    return "\n".join(lines)
+
+
 def status_note(data: dict) -> "str | None":
     """Statusvermerk fuer den UserPromptSubmit-Hook, oder None.
 
@@ -1576,6 +1634,89 @@ def cmd_start(args: list[str]) -> None:
         f"Agent spawns:\n"
         f'  Agent(prompt="... ## Required\\nexport OPENSPEC_ACTIVE_WORKFLOW={name}\\n...")',
     )
+    # #476: Plan-Pane rechts neben Claude — nur Spawn, fail-open, kein stdout
+    try:
+        import herdr_bridge
+        herdr_bridge.open_plan_pane()
+    except Exception:
+        pass
+
+
+def _plan_active() -> "tuple[str, dict] | None":
+    """Aktiven Workflow fuer die Plan-Anzeige (#476) frisch aufloesen."""
+    found = read_active_workflow_fast()
+    if not found:
+        return None
+    name, data = found
+    data = dict(data)
+    data.setdefault("name", name)
+    return name, data
+
+
+def _plan_watch() -> None:
+    """`plan --watch` (#476): je Runde neu aufloesen, nur bei Aenderung neu zeichnen."""
+    import shutil
+    try:
+        rounds = int(os.environ.get("OPENSPEC_PLAN_WATCH_ROUNDS") or 0)
+    except ValueError:
+        rounds = 0
+    try:
+        interval = max(0.0, float(os.environ.get("OPENSPEC_PLAN_WATCH_INTERVAL") or 1.0))
+    except ValueError:
+        interval = 1.0
+    last_name = None
+    last_out = None
+    done = 0
+    try:
+        while True:
+            try:
+                width = shutil.get_terminal_size().columns
+                found = _plan_active()
+                if found:
+                    last_name, data = found
+                    out = render_plan(data, width=width)
+                elif last_name and _archive_file(last_name).exists():
+                    data = dict(_read_workflow(_archive_file(last_name)))
+                    data.setdefault("name", last_name)
+                    out = render_plan(data, archived=True, width=width)
+                else:
+                    out = render_plan(None, width=width)
+                if out != last_out:
+                    sys.stdout.write("\x1b[H\x1b[2J" + out + "\n")
+                    sys.stdout.flush()
+                    last_out = out
+            except (Exception, SystemExit):
+                pass  # letzte Ausgabe bleibt stehen
+            done += 1
+            if rounds and done >= rounds:
+                break
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        pass
+
+
+def cmd_plan(args: list[str]) -> None:
+    """Workflow-Plan anzeigen (#476): einmal, `--watch` live, `--open` Herdr-Pane."""
+    if "--open" in args:
+        try:
+            import herdr_bridge
+            if herdr_bridge._pane() is None:
+                print("Plan-Pane: kein Herdr-Pane (HERDR-Env fehlt oder herdr.enabled: false)")
+            elif herdr_bridge.open_plan_pane(force=True):
+                print("Plan-Pane: Oeffnen angestossen")
+            else:
+                print("Plan-Pane: Start des Runners fehlgeschlagen")
+        except Exception as exc:
+            print(f"Plan-Pane: nicht moeglich ({type(exc).__name__})")
+        return
+    if "--watch" in args:
+        _plan_watch()
+        return
+    try:
+        found = _plan_active()
+    except (Exception, SystemExit):
+        found = None
+    print(render_plan(found[1] if found else None))
 
 
 def cmd_switch(args: list[str]) -> None:
@@ -2955,6 +3096,7 @@ COMMANDS = {
     "start": cmd_start,
     "switch": cmd_switch,
     "status": cmd_status,
+    "plan": cmd_plan,
     "phase": cmd_phase,
     "phase-log": cmd_phase_log,
     "set-field": cmd_set_field,

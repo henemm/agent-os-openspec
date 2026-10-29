@@ -336,6 +336,13 @@ herdr:
     grace_s: 3          # Wartezeit nach der Vorankuendigung (Sekunden)
     idle_timeout_s: 120 # Hoechstwartezeit je `agent wait` (Sekunden)
     announce: true      # Vorankuendigung per `notification show`
+  # Workflow-Plan rechts neben Claude (#476, Opt-out, nur Literal `false` schaltet
+  # ab): `workflow.py start` oeffnet per `pane split --direction right` einen Pane
+  # "Workflow", der den Plan live zeigt (✔ erledigt, ▶ laeuft, ○ offen). Manuell:
+  # `workflow.py plan --open`. Log: .claude/herdr_plan_pane.log
+  plan_pane:
+    enabled: true
+    ratio: 0.75         # Breitenanteil, der Claude bleibt (0.1–0.9)
 
 # Autonomie-Schalter (#469, Teil A von #468): `manual` | `auto`. Nur der exakte
 # Literal `auto` schaltet an; alles andere (auch Tippfehler) gilt als `manual`.
