@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.3.0] - 2026-10-29
+
+Auto-`/clear` für alle Projekte einschaltbar (`OPENSPEC_HERDR_AUTO_CLEAR=1` in `~/.claude/settings.json`); `process_watchdog.py` wieder ausführbar.
+
+### Added
+
+- **#480 (Auto-`/clear` für alle Projekte):** `OPENSPEC_HERDR_AUTO_CLEAR=1` (auch `true`/`yes`/`on`) unter `env` in `~/.claude/settings.json` schaltet Auto-`/clear` benutzerweit ein. Ein Projektwert `herdr.auto_clear.enabled: true|false` hat Vorrang. Tests: `tests/test_auto_clear_global_480.py`.
+
+### Fixed
+
+- **#480 (Ausführungsrecht):** `core/hooks/process_watchdog.py` war nicht ausführbar (100644), der Aufruf in `hooks/hooks.json` scheiterte mit „Permission denied“ — der Dauerlast-Schutz (#462) lief seit 3.43.0 nie. Jetzt 100755; ein Test prüft alle in `hooks/hooks.json` registrierten Hook-Dateien.
+
 ## [4.2.0] - 2026-10-29
 
 Herdr: Auto-`/clear` funktioniert mit echtem Herdr (Statusfeld `agent_status`), Abbruchgründe im Log; Workflow-Plan zeigt offenes Deploy und öffnet sich beim Sitzungsstart.

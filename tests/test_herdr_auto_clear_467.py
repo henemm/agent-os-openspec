@@ -490,10 +490,21 @@ def test_config_default_auto_clear_disabled():
     import yaml  # noqa: PLC0415
     cfg = yaml.safe_load((REPO_ROOT / "config.yaml").read_text())
     section = cfg["herdr"]["auto_clear"]
-    assert section["enabled"] is False
+    # #480: Template schaltet nicht mehr ausdruecklich ab
+    assert section.get("enabled") is not True
     assert section["grace_s"] == 3
     assert section["idle_timeout_s"] == 120
     assert section["announce"] is True
+    # Ohne Umgebungsvariable bleibt Auto-/clear mit der Repo-Config aus
+    env = {k: v for k, v in os.environ.items()
+           if not k.startswith(("HERDR_", "OPENSPEC_"))}
+    env["CLAUDE_PROJECT_DIR"] = str(REPO_ROOT)
+    code = (f"import sys; sys.path.insert(0, {str(HOOKS_DIR)!r}); import herdr_bridge; "
+            "print(herdr_bridge.auto_clear_enabled())")
+    res = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                         env=env, cwd=str(REPO_ROOT), timeout=30)
+    assert res.returncode == 0, res.stderr
+    assert res.stdout.strip() == "False"
 
 
 # --- Zusatz (ohne eigene AC): reine Marker-Funktion --------------------------
