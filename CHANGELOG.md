@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.3.0] - 2026-10-29
+
+Auto-`/clear` für alle Projekte einschaltbar (`OPENSPEC_HERDR_AUTO_CLEAR=1` in `~/.claude/settings.json`); `process_watchdog.py` wieder ausführbar.
+
 ### Added
 
 - **#480 (Auto-`/clear` für alle Projekte):** `OPENSPEC_HERDR_AUTO_CLEAR=1` (auch `true`/`yes`/`on`) unter `env` in `~/.claude/settings.json` schaltet Auto-`/clear` benutzerweit ein. Ein Projektwert `herdr.auto_clear.enabled: true|false` hat Vorrang. Tests: `tests/test_auto_clear_global_480.py`.
