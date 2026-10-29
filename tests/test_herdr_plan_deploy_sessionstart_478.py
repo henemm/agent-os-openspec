@@ -319,10 +319,10 @@ def _skip_log(proj: Path) -> str:
 def test_auto_clear_logs_skip_reason_only_when_enabled(tmp_path):
     scenarios = (
         # (label, phase, message, erwarteter Grund)
-        ("phase8", "phase8_complete", _hook_message(POSITIVE), "kein Slash-Befehl"),
+        ("phase8", "phase8_complete", _hook_message(POSITIVE, du="❗ Du: `/70-deploy #478`"), "kein Slash-Befehl"),
         ("nomarker", "phase6_implement",
          _hook_message("Alles erledigt, weiter geht es gleich.",
-                       du="❗ Du: `/60-validate #478` — der naechste Pflicht-Schritt"),
+                       du="❗ Du: `/50-implement #478` — der naechste Pflicht-Schritt"),
          "Marker"),
     )
     for label, phase, message, reason in scenarios:
@@ -352,7 +352,7 @@ def test_auto_clear_logs_skip_reason_only_when_enabled(tmp_path):
 
 # --- AC-9 -------------------------------------------------------------------
 
-def _run_runner(proj: Path, env: dict, command: str = "/60-validate #478",
+def _run_runner(proj: Path, env: dict, command: str = "/50-implement #478",
                 phase: str = "phase6_implement"):
     argv = [sys.executable, str(BRIDGE), "auto-clear", "--pane", PANE, "--workflow", WF,
             "--phase", phase, "--command", command, "--grace", "0", "--settle", "0",
@@ -361,7 +361,7 @@ def _run_runner(proj: Path, env: dict, command: str = "/60-validate #478",
 
 
 def test_runner_reads_real_agent_status_field(tmp_path):
-    cmd = "/60-validate #478"
+    cmd = "/50-implement #478"
     data = _wf_data(phase="phase6_implement")
 
     proj, log, env = _case(tmp_path, "idle", AUTO_ON, data)

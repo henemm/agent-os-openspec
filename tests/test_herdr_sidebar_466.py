@@ -451,6 +451,8 @@ def test_session_start_republishes_for_all_sources(tmp_path):
         root = tmp_path / source
         root.mkdir()
         proj = _project(root)
+        # #478: Plan-Pane aus, dieser Test zaehlt nur den Sidebar-Report
+        (proj / "config.yaml").write_text("herdr:\n  plan_pane:\n    enabled: false\n")
         log, stub = root / "stub.log", _make_stub(root)
         _write_wf(proj, "feat-466-demo", "phase5_tdd_red")
         env = _env(proj, log, stub, active="feat-466-demo")
