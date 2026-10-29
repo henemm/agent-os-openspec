@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.4.0] - 2026-10-29
+
+Autonomie-Modus für alle Projekte einschaltbar (`OPENSPEC_AUTONOMY=auto` in `~/.claude/settings.json`); persönliche Claude-Einstellungen gegen Änderungen durch Claude geschützt (Ausweg `override`).
+
 ### Added
 
 - **#481 (Autonomie-Modus für alle Projekte):** `OPENSPEC_AUTONOMY=auto` (getrimmt, Groß/Klein egal) unter `env` in `~/.claude/settings.json` schaltet den Autonomie-Modus benutzerweit ein. Ein Projekteintrag `autonomy.mode: manual|auto` hat Vorrang. Tests: `tests/test_autonomy_global_481.py`.

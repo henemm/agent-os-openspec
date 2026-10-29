@@ -208,7 +208,7 @@ Die Ausgabe besteht aus genau diesen Teilen, in dieser Reihenfolge:
    insgesamt. Stimmst du allen Anmerkungen zu: nichts schreiben.
 3. **❗Du-Zeile + Marker-Zeile** — wörtlich, als letzte beiden Zeilen, `⚙` ganz zuletzt:
    `❗ Du: \`approved\` — Freigabe der Spec, danach beginnt die Umsetzung`
-   `⚙ PO-Briefing unabhängig erstellt · agent-os-openspec 4.3.0`
+   `⚙ PO-Briefing unabhängig erstellt · agent-os-openspec 4.4.0`
    Diese Freigabe verlangt *immer* eine PO-Entscheidung — anders als bei den generischen
    Pflicht-Markern in anderen Befehlen gibt es hier keine `ℹ️ Nichts-zu-tun`-Variante.
 
@@ -220,7 +220,7 @@ Vorlage:
 Meine Einschätzung: [nur bei Widerspruch zu einer Anmerkung — sonst weglassen]
 
 ❗ Du: `approved` — Freigabe der Spec, danach beginnt die Umsetzung
-⚙ PO-Briefing unabhängig erstellt · agent-os-openspec 4.3.0
+⚙ PO-Briefing unabhängig erstellt · agent-os-openspec 4.4.0
 
 ---
 
