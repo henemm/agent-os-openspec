@@ -50,7 +50,9 @@ CLEAR = "\x1b[H\x1b[2J"
 
 STUB_SCRIPT = r"""#!/bin/bash
 { for a in "$@"; do printf '%s\0' "$a"; done; printf '\n'; } >> "$STUB_LOG"
+if [ "$1 $2" = "pane process-info" ]; then printf '{"result":{"process_info":{"foreground_processes":[{"pid":%s}]}}}\n' "${STUB_FG_PID:-${CLAUDE_PID:-0}}"; exit 0; fi  # #496 R2: eigene Session = Vordergrund
 if [ "$1 $2" = "pane get" ]; then exit "${STUB_GET_EXIT:-0}"; fi
+if [ "$1 $2" = "pane list" ] && [ -n "$STUB_LIST_OUT" ]; then printf '%s\n' "$STUB_LIST_OUT"; exit 0; fi
 if [ "$1 $2" = "pane split" ]; then
   if [ -n "$STUB_SPLIT_OUT" ]; then
     printf '%s\n' "$STUB_SPLIT_OUT"
@@ -105,7 +107,8 @@ def _env(proj: Path, log: Path, stub, *, herdr: bool = True, **extra) -> dict:
     env["HOME"] = str(proj / "_home")
     if herdr:
         env.update({"HERDR_ENV": "1", "HERDR_PANE_ID": PANE,
-                    "HERDR_BIN_PATH": str(stub), "STUB_LOG": str(log)})
+                    "HERDR_BIN_PATH": str(stub), "STUB_LOG": str(log),
+                    "CLAUDE_PID": "4242"})  # #496 R2: Stub meldet sie als Vordergrund
     env.update(extra)
     return env
 
@@ -164,6 +167,9 @@ def _case(tmp_path: Path, label: str, config: "str | None" = "herdr:\n  enabled:
 
 
 def _run_runner(proj: Path, env: dict, *, ratio: str = "0.75", timeout: float = 30):
+    # #496: der Runner oeffnet nur bei aktivem Workflow
+    if not (proj / ".claude" / "active_workflow").exists():
+        _write_wf(proj, _wf_data())
     return _run([sys.executable, str(BRIDGE), "plan-pane", "--pane", PANE,
                  "--cwd", str(proj), "--ratio", ratio, "--delay", "0"],
                 env, proj, timeout=timeout)
@@ -348,16 +354,20 @@ def test_start_opens_pane_with_split_rename_run(tmp_path):
 # --- AC-9 -------------------------------------------------------------------
 
 def test_runner_reuses_existing_pane_or_reopens(tmp_path):
-    proj, log, env = _case(tmp_path, "alive", STUB_GET_EXIT="0")
-    _pane_file(proj).write_text(json.dumps({"panes": {PANE: {"pane_id": "pane-old"}}}))
+    # #496: Wiederverwendung ueber Owner-Token aus `pane list --workspace`, nicht ueber die ID-Datei
+    version = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text())["version"]
+    listed = json.dumps({"result": {"panes": [
+        {"pane_id": PANE, "workspace_id": "ws-1", "label": "claude", "agent": "claude"},
+        {"pane_id": "pane-old", "workspace_id": "ws-1", "label": "Workflow", "cwd": "/x",
+         "tokens": {"owner": PANE, "workflow": WF, "version": version}}]}})
+    proj, log, env = _case(tmp_path, "alive", HERDR_WORKSPACE_ID="ws-1", STUB_LIST_OUT=listed)
     res = _run_runner(proj, env)
     assert res.returncode == 0, res.stderr
     calls = _calls(log)
-    gets = _of(calls, "pane get")
-    assert gets and gets[0][2] == "pane-old", calls
+    assert _of(calls, "pane list"), calls
     assert _of(calls, "pane split") == [], calls
 
-    proj2, log2, env2 = _case(tmp_path, "dead", STUB_GET_EXIT="1")
+    proj2, log2, env2 = _case(tmp_path, "dead", HERDR_WORKSPACE_ID="ws-1")
     _pane_file(proj2).write_text(json.dumps({"panes": {PANE: {"pane_id": "pane-old"}}}))
     res = _run_runner(proj2, env2)
     assert res.returncode == 0, res.stderr

@@ -21,6 +21,15 @@ Stub-Herdr (`HERDR_BIN_PATH`), der eine JSON-Welt aus einer Fixture-Datei
 - `pane rename P L`, `pane report-metadata P --token k=v ...` (Tokens werden
   gemischt), `pane run P CMD`;
 - STUB_SLEEP=<s>: jeder Aufruf haengt so lange (nach dem Protokollieren).
+- `pane process-info --pane P` -> `foreground_processes` mit den PIDs aus
+  `fg_pids` des Panes, sonst STUB_FG_PID (#496 R2 F001); STUB_PROCINFO_MODE=fail
+  -> Exit 1, =garbage -> kaputtes JSON;
+- STUB_RENAME_EXIT / STUB_META_EXIT != 0: `pane rename` bzw.
+  `pane report-metadata` scheitern; STUB_SPLIT_ID: `pane split` antwortet mit
+  genau dieser pane_id und legt kein Pane an (#496 R2 F002/F003).
+
+Die Runner-/SessionEnd-Aufrufe laufen mit CLAUDE_PID=STUB_FG_PID (eigene Session
+ist Vordergrundprozess ihres Panes); ein verschachteltes Kind hat eine andere PID.
 """
 
 import json
@@ -50,6 +59,8 @@ WS2 = "ws-2"                    # fremder Workspace
 WF = "fix-496-demo"
 LABEL = "Workflow"
 OLD_VERSION = "0.0.0-alt"
+PARENT_PID = "4242"             # Claude-Prozess, der Vordergrund von ME ist
+CHILD_PID = "5151"              # verschachteltes `claude -p` mit geerbter HERDR-Env
 
 
 def _version() -> str:
@@ -153,6 +164,29 @@ if kind == "pane close":
     print(json.dumps({"result": {}}))
     sys.exit(0)
 
+if kind == "pane process-info":
+    mode = os.environ.get("STUB_PROCINFO_MODE", "")
+    if mode == "fail":
+        sys.stderr.write("stub: process-info failed\n")
+        sys.exit(1)
+    if mode == "garbage":
+        print("{kaputt")
+        sys.exit(0)
+    target = opt("--pane") or ""
+    p = find(target)
+    if p is None:
+        not_found(target)
+    fg = p.get("fg_pids")
+    if fg is None:
+        fg = [int(os.environ.get("STUB_FG_PID") or 0)]
+    print(json.dumps({"result": {"process_info": {
+        "pane_id": target, "foreground_processes": [{"pid": x, "name": "claude"} for x in fg]}}}))
+    sys.exit(0)
+
+if kind == "pane split" and os.environ.get("STUB_SPLIT_ID"):
+    print(json.dumps({"result": {"pane": {"pane_id": os.environ["STUB_SPLIT_ID"]}}}))
+    sys.exit(0)
+
 if kind == "pane split":
     src = find(args[2]) if len(args) > 2 else None
     cpath = os.environ["STUB_COUNT"]
@@ -170,6 +204,14 @@ if kind == "pane split":
     save(world)
     print(json.dumps({"result": {"pane": {"pane_id": new["pane_id"]}}}))
     sys.exit(0)
+
+if kind == "pane rename" and int(os.environ.get("STUB_RENAME_EXIT") or 0):
+    sys.stderr.write("stub: rename failed\n")
+    sys.exit(int(os.environ["STUB_RENAME_EXIT"]))
+
+if kind == "pane report-metadata" and int(os.environ.get("STUB_META_EXIT") or 0):
+    sys.stderr.write("stub: report-metadata failed\n")
+    sys.exit(int(os.environ["STUB_META_EXIT"]))
 
 if kind == "pane rename":
     p = find(args[2]) if len(args) > 2 else None
@@ -271,6 +313,8 @@ class Case:
             "STUB_WORLD": str(self.world),
             "STUB_COUNT": str(self.count),
             "STUB_GET_COUNT": str(self.get_count),
+            "CLAUDE_PID": PARENT_PID,       # eigene Session = Vordergrund ihres Panes
+            "STUB_FG_PID": PARENT_PID,
         })
         for k, v in extra.items():
             if v is None:
@@ -682,3 +726,242 @@ def test_hooks_json_registers_session_end_close_first():
         f"erster SessionEnd-Eintrag ist nicht plan-pane-close: {first}")
     timeout = first.get("timeout")
     assert isinstance(timeout, (int, float)) and 0 < timeout <= 2, first
+
+
+# --- Adversary-Runde 1 (F001-F004) ------------------------------------------
+
+def test_sweep_never_touches_agent_panes(tmp_path):
+    """F001: Ein Pane mit gesetztem `agent` ist nie ein Plan-Pane — egal welches Label."""
+    c = Case(tmp_path, "agent-label")
+    other = claude_pane(OTHER, cwd=c.cwd)
+    other["label"] = LABEL                                  # Nutzer nannte es "Workflow"
+    other["tokens"] = {"workflow": "anderer-wf", "phase": "phase6_implement"}
+    codex = {"pane_id": "pane-codex", "workspace_id": WS, "label": LABEL,
+             "cwd": f"{c.cwd} (deleted)", "agent": "codex", "agent_status": "working"}
+    c.write_world([claude_pane(cwd=c.cwd), other, codex,
+                   plan_pane("pp-stale", c.cwd)])           # Kontrolle: echte Altlast
+    res = c.runner()
+    assert res.returncode == 0, res.stderr
+    assert "pp-stale" in c.closed(), f"Kontrolle: Sweep lief nicht: {c.calls()}"
+    assert c.touching(OTHER) == [], f"Claude-Pane mit Label Workflow angefasst: {c.calls()}"
+    assert c.touching("pane-codex") == [], f"Agent-Pane angefasst: {c.calls()}"
+    assert {OTHER, "pane-codex"} <= set(c.panes()), c.panes()
+
+    # SessionEnd fasst ebenfalls kein Agent-Pane an, selbst mit owner == ich
+    c = Case(tmp_path, "agent-label-end")
+    odd = claude_pane(OTHER, cwd=c.cwd)
+    odd["label"] = LABEL
+    odd["tokens"] = {"owner": ME}
+    c.write_world([claude_pane(cwd=c.cwd), odd])
+    res = c.session_end("other")
+    assert res.returncode == 0, res.stderr
+    assert c.of("pane close") == [], f"SessionEnd schloss ein Agent-Pane: {c.calls()}"
+
+
+LOCKED_STUB = r'''
+import fcntl, os, sys, time
+delay = float(os.environ.get("STUB_CALL_DELAY") or 0)
+if delay:
+    time.sleep(delay)          # ausserhalb der Sperre: Aufrufe zweier Runner verzahnen sich
+fd = os.open(os.environ["STUB_WORLD"] + ".lock", os.O_CREAT | os.O_RDWR, 0o644)
+fcntl.flock(fd, fcntl.LOCK_EX)  # jeder Aufruf atomar auf der Welt
+exec(compile(open(os.environ["STUB_INNER"]).read(), "stub", "exec"))
+'''
+
+
+def test_concurrent_spawn_sets_owner_before_label(tmp_path):
+    """F002: owner-Token VOR dem Label; gleichzeitige Runner behalten je ein Pane."""
+    c = Case(tmp_path, "order")
+    c.write_world([claude_pane(cwd=c.cwd)])
+    res = c.runner()
+    assert res.returncode == 0, res.stderr
+    seq = [" ".join(x[:2]) for x in c.calls()
+           if " ".join(x[:2]) in ("pane rename", "pane report-metadata")
+           and x[2:3] == ["pane-new-1"]]
+    assert "pane rename" in seq and "pane report-metadata" in seq, c.calls()
+    assert seq.index("pane report-metadata") < seq.index("pane rename"), (
+        f"Label vor owner-Token gesetzt: {seq}")
+
+    # Zwei Sessions im selben Workspace starten (fast) gleichzeitig
+    offsets = [round(0.05 * i, 2) for i in range(20)]
+    cases = []
+    for off in offsets:
+        cc = Case(tmp_path, f"race-{off}")
+        inner = cc.root / "stub-inner.py"
+        inner.write_text(STUB_SOURCE)
+        cc.stub.write_text(f"#!{sys.executable}\n" + LOCKED_STUB)
+        cc.write_world([claude_pane(cwd=cc.cwd), claude_pane(OTHER, cwd=cc.cwd)])
+        cases.append((off, cc, inner))
+
+    def start(cc, inner, pane):
+        env = cc.env(HERDR_PANE_ID=pane, STUB_INNER=str(inner), STUB_CALL_DELAY="0.15")
+        return subprocess.Popen(
+            [sys.executable, str(BRIDGE), "plan-pane", "--pane", pane, "--cwd", cc.cwd,
+             "--ratio", "0.75", "--delay", "0"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env, cwd=cc.cwd)
+
+    procs = []
+    t0 = time.monotonic()
+    for off, cc, inner in cases:
+        procs.append(start(cc, inner, ME))
+    for off, cc, inner in sorted(cases, key=lambda x: x[0]):
+        wait = off - (time.monotonic() - t0)
+        if wait > 0:
+            time.sleep(wait)
+        procs.append(start(cc, inner, OTHER))
+    for p in procs:
+        p.wait(timeout=60)
+    bad = []
+    for off, cc, inner in cases:
+        owners = sorted(str(_tokens_of(p).get("owner")) for p in cc.panes().values()
+                        if p.get("label") == LABEL)
+        if owners != sorted([ME, OTHER]) or cc.closed():
+            bad.append((off, owners, cc.closed()))
+    assert not bad, f"gleichzeitiger Start: Session ohne eigenes Plan-Pane: {bad}"
+
+
+def _tokens_of(pane: dict) -> dict:
+    t = pane.get("tokens")
+    return t if isinstance(t, dict) else {}
+
+
+def test_sweep_skips_when_self_not_listed(tmp_path):
+    """F003: steht das eigene Pane nicht in `pane list --workspace W`, wird nichts geschlossen."""
+    c = Case(tmp_path, "self-missing")
+    c.write_world([claude_pane(OTHER, cwd=c.cwd),
+                   plan_pane("pp-stale", c.cwd),
+                   plan_pane("pp-dead", f"{c.cwd} (deleted)", owner=GONE)])
+    res = c.runner()
+    assert res.returncode == 0, res.stderr
+    assert c.of("pane list"), f"kein pane list: {c.calls()}"
+    assert c.of("pane close") == [], f"Sweep ohne eigenes Pane in der Liste: {c.calls()}"
+    assert c.of("pane split") == [], f"Pane geoeffnet ohne eigenes Pane: {c.calls()}"
+
+
+def test_legacy_pane_of_living_owner_kept(tmp_path):
+    """F004: ownerloses Plan-Pane aus der #493-ID-Datei eines LEBENDEN Claude-Panes bleibt."""
+    c = Case(tmp_path, "legacy")
+    (c.proj / ".claude" / "herdr_plan_pane.json").write_text(json.dumps({"panes": {
+        OTHER: {"pane_id": "pp-legacy", "cwd": c.cwd},
+        GONE: {"pane_id": "pp-legacy-dead", "cwd": c.cwd}}}))
+    legacy = plan_pane("pp-legacy", c.cwd)
+    c.write_world([claude_pane(cwd=c.cwd), claude_pane(OTHER, cwd=c.cwd), legacy,
+                   plan_pane("pp-legacy-dead", c.cwd)])
+    res = c.runner()
+    assert res.returncode == 0, res.stderr
+    assert "pp-legacy-dead" in c.closed(), f"Kontrolle: toter Altbestand blieb: {c.calls()}"
+    assert c.touching("pp-legacy") == [], f"Altbestand einer lebenden Session angefasst: {c.calls()}"
+    assert c.panes().get("pp-legacy") == legacy, c.panes().get("pp-legacy")
+
+
+# --- Adversary-Runde 2 (F001-F003) ------------------------------------------
+
+def _ids_file(c: Case) -> Path:
+    return c.proj / ".claude" / "herdr_plan_pane.json"
+
+
+def test_nested_child_session_leaves_panes_alone(tmp_path):
+    """F001: ein Kind-Claude (CLAUDE_PID nicht Vordergrund von $HERDR_PANE_ID) fasst nichts an."""
+    v = _version()
+    kinds = ("pane close", "pane report-metadata", "pane rename", "pane run", "pane split")
+
+    def world(c: Case) -> dict:
+        parent = plan_pane("pp-parent", c.cwd, owner=ME, workflow=WF, version=v)
+        c.write_world([claude_pane(cwd=c.cwd), parent, plan_pane("pp-stale", c.cwd)])
+        _ids_file(c).write_text(json.dumps({"panes": {ME: {"pane_id": "pp-parent",
+                                                             "cwd": "/eltern"}}}))
+        return parent
+
+    # SessionStart des Kindes: ohne aktiven Workflow, mit anderem Workflow, mit demselben
+    for label, wf in (("start-ohne-wf", None), ("start-anderer-wf", "kind-wf"),
+                      ("start-gleicher-wf", WF)):
+        c = Case(tmp_path, label, workflow=False)
+        if wf:
+            c.set_workflow(wf)
+        parent = world(c)
+        ids = _ids_file(c).read_text()
+        res = c.runner(CLAUDE_PID=CHILD_PID)
+        assert res.returncode == 0, (label, res.stderr)
+        changed = [x for x in c.calls() if " ".join(x[:2]) in kinds]
+        assert changed == [], f"{label}: Kind-Session veraenderte Panes: {changed}"
+        assert c.panes().get("pp-parent") == parent, (label, c.panes().get("pp-parent"))
+        assert _ids_file(c).read_text() == ids, f"{label}: cwd-Cache der Eltern umgeschrieben"
+
+    # SessionEnd des Kindes (reason other / prompt_input_exit)
+    for reason in ("other", "prompt_input_exit"):
+        c = Case(tmp_path, f"end-{reason}")
+        parent = world(c)
+        res = c.session_end(reason, CLAUDE_PID=CHILD_PID)
+        assert res.returncode == 0, (reason, res.stderr)
+        assert c.of("pane close") == [], f"SessionEnd des Kindes schloss: {c.calls()}"
+        assert c.panes().get("pp-parent") == parent
+
+    # Ohne CLAUDE_PID oder ohne verwertbares process-info: im Zweifel nichts tun
+    for label, extra in (("ohne-claude-pid", {"CLAUDE_PID": None}),
+                         ("procinfo-fehler", {"STUB_PROCINFO_MODE": "fail"}),
+                         ("procinfo-kaputt", {"STUB_PROCINFO_MODE": "garbage"})):
+        for mode in ("start", "end"):
+            c = Case(tmp_path, f"{label}-{mode}", workflow=False)
+            world(c)
+            res = c.runner(**extra) if mode == "start" else c.session_end("other", **extra)
+            assert res.returncode == 0 and res.stdout == "" and res.stderr == "", (label, res)
+            changed = [x for x in c.calls() if " ".join(x[:2]) in kinds]
+            assert changed == [], f"{label}/{mode}: im Zweifel trotzdem gehandelt: {changed}"
+
+    # Kontrolle: dieselbe Welt mit der Eltern-PID -> Sweep bzw. SessionEnd greifen
+    c = Case(tmp_path, "kontrolle-start", workflow=False)
+    world(c)
+    c.runner()
+    assert "pp-parent" in c.closed(), f"Kontrolle Start: {c.calls()}"
+    c = Case(tmp_path, "kontrolle-end")
+    world(c)
+    c.session_end("other")
+    assert c.closed() == ["pp-parent"], f"Kontrolle Ende: {c.calls()}"
+
+
+def test_rename_failure_closes_fresh_pane(tmp_path):
+    """F002: scheitert `rename` nach `report-metadata`, wird das neue Pane geschlossen."""
+    c = Case(tmp_path, "rename-fail")
+    c.write_world([claude_pane(cwd=c.cwd)])
+    res = c.runner(STUB_RENAME_EXIT="1")
+    assert res.returncode == 0, res.stderr
+    assert c.of("pane split"), f"Kontrolle: kein split: {c.calls()}"
+    assert c.closed() == ["pane-new-1"], f"neues Pane ohne Label blieb: {c.calls()}"
+    assert c.of("pane run") == [], f"Watcher trotz Rename-Fehler gestartet: {c.calls()}"
+    assert set(c.panes()) == {ME}, c.panes()
+
+    # Eigene Panes OHNE Label, aber mit allen drei Tokens: Sweep erkennt sie als eigene
+    v = _version()
+    c = Case(tmp_path, "unlabelled")
+    own = lambda pid: dict(plan_pane(pid, c.cwd, owner=ME, workflow=WF, version=v),  # noqa: E731
+                           label="")
+    partial = dict(plan_pane("pp-partial", c.cwd, owner=ME, workflow=WF), label="")
+    foreign = dict(plan_pane("pp-foreign", c.cwd, owner=OTHER, workflow=WF, version=v),
+                   label="")
+    c.write_world([claude_pane(cwd=c.cwd), claude_pane(OTHER, cwd=c.cwd),
+                   own("pp-u1"), own("pp-u2"), own("pp-u3"), partial, foreign])
+    res = c.runner()
+    assert res.returncode == 0, res.stderr
+    left = {"pp-u1", "pp-u2", "pp-u3"} & set(c.panes())
+    assert len(left) == 1, f"eigene Duplikate ohne Label nicht erkannt: {c.calls()}"
+    assert c.of("pane split") == [], f"trotz eigenem Pane neu geoeffnet: {c.calls()}"
+    assert c.touching("pp-partial") == [] and c.touching("pp-foreign") == [], c.calls()
+    res = c.session_end("other")
+    assert res.returncode == 0, res.stderr
+    assert not ({"pp-u1", "pp-u2", "pp-u3"} & set(c.panes())), (
+        f"SessionEnd liess eigenes Pane ohne Label stehen: {c.panes()}")
+    assert {"pp-partial", "pp-foreign", ME, OTHER} <= set(c.panes()), c.panes()
+
+
+def test_abort_never_closes_owner_pane(tmp_path):
+    """F003: liefert `pane split` die eigene Pane-ID, wird sie nie angefasst."""
+    for label, extra in (("meta-fail", {"STUB_META_EXIT": "1"}),
+                         ("rename-fail", {"STUB_RENAME_EXIT": "1"}),
+                         ("ok", {})):
+        c = Case(tmp_path, f"self-{label}")
+        c.write_world([claude_pane(cwd=c.cwd)])
+        res = c.runner(STUB_SPLIT_ID=ME, **extra)
+        assert res.returncode == 0, (label, res.stderr)
+        assert c.of("pane split"), f"{label}: Kontrolle: kein split: {c.calls()}"
+        assert c.touching(ME) == [], f"{label}: eigenes Claude-Pane angefasst: {c.touching(ME)}"
+        assert ME in c.panes(), label

@@ -37,6 +37,13 @@ Log `.claude/herdr_plan_pane.log`; immer Exit 0.
 Workflow). `maybe_auto_clear` loggt bei aktivem Opt-in jeden Skip-Grund
 (`skip: <grund>`, gleiche Zeile in Folge nur einmal); `_wait_ready` liest
 `agent_status` (Herdr 0.9.5), Fallback `status`.
+
+#496 Lebenszyklus: Besitz steht als Token am Pane (`owner`, `workflow`,
+`version`), nicht mehr in der ID-Datei (die nur noch das cwd fuer
+`plan --watch --target` cached). Der Runner raeumt vor dem Oeffnen im EIGENEN
+Workspace auf (`pane list --workspace $HERDR_WORKSPACE_ID`, `_pp_sweep`) und
+fasst nie ein Pane an, dessen Owner ein anderes lebendes Claude-Pane ist. Der
+SessionEnd-Hook `herdr_bridge.py plan-pane-close` schliesst das eigene Pane.
 """
 
 import argparse
@@ -704,6 +711,7 @@ PP_ID_FILE = "herdr_plan_pane.json"
 PP_LOCK_STALE_S = 30
 PP_DEFAULTS = {"enabled": True, "ratio": 0.75}
 PP_LABEL = "Workflow"
+PP_VERSION_UNKNOWN = "unbekannt-0"  # passt nie zu einer echten Version (#496)
 
 
 def _valid_ratio(value) -> bool:
@@ -763,14 +771,9 @@ def open_plan_pane(force: bool = False) -> bool:
 
 
 def open_plan_pane_for_active() -> bool:
-    """SessionStart (#478): Plan-Pane nur bei aktivem Workflow oeffnen; fail-open."""
+    """SessionStart (#478/#496): Runner immer anstossen — er raeumt im eigenen
+    Workspace auf (Sweep) und oeffnet nur bei aktivem Workflow; fail-open."""
     try:
-        if _pane() is None:
-            return False
-        _hooks_on_path()
-        import workflow
-        if not workflow.read_active_workflow_fast():
-            return False
         return open_plan_pane()
     except (Exception, SystemExit):
         return False
@@ -891,28 +894,224 @@ def _pp_set_entry(path: Path, claude_pane: str, entry: dict) -> None:
             os.close(fd)  # gibt die Sperre frei
 
 
-def _pp_known_pane(path: Path, claude_pane: str) -> "str | None":
-    entry = _pp_entries(path).get(claude_pane)
-    pane = entry.get("pane_id") if isinstance(entry, dict) else None
-    return pane if isinstance(pane, str) and pane else None
+def plugin_version() -> str:
+    """Version aus `.claude-plugin/plugin.json` des Plugins (#496); Ersatzwert sonst."""
+    try:
+        path = _HOOK_DIR.parent.parent / ".claude-plugin" / "plugin.json"
+        version = json.loads(path.read_text(encoding="utf-8")).get("version")
+        if isinstance(version, str) and version.strip():
+            return _clean(version.strip())
+    except Exception:
+        pass
+    return PP_VERSION_UNKNOWN
 
 
-def _pp_open(args) -> None:
-    """Schritte 2–6 des Runners (Spec #476); Ergebnis jeweils ins Log."""
+def _pp_quick(binary: str, argv, timeout: float):
+    """Herdr-Aufruf mit hartem Zeitlimit (eigene Prozessgruppe, Kill der Gruppe).
+
+    Rueckgabe (returncode, stdout) oder None bei Fehler/Zeitlimit; wirft nie.
+    """
+    try:
+        proc = subprocess.Popen([binary, *argv], stdin=subprocess.DEVNULL,
+                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                text=True, close_fds=True, start_new_session=True)
+    except Exception:
+        return None
+    try:
+        out, _ = proc.communicate(timeout=max(0.05, timeout))
+        return proc.returncode, out or ""
+    except Exception:
+        try:
+            os.killpg(proc.pid, 9)
+        except Exception:
+            pass
+        try:
+            proc.kill()
+            proc.wait(timeout=0.2)
+        except Exception:
+            pass
+        return None
+
+
+def _pp_list(binary: str, workspace: str, timeout: float = 3.0) -> "list | None":
+    """`pane list --workspace W` — IMMER mit Workspace (#496); None bei jedem Fehler."""
+    if not workspace:
+        return None
+    res = _pp_quick(binary, ["pane", "list", "--workspace", workspace], timeout)
+    if res is None or res[0] != 0:
+        return None
+    try:
+        panes = json.loads(res[1])["result"]["panes"]
+    except Exception:
+        return None
+    if not isinstance(panes, list):
+        return None
+    return [p for p in panes if isinstance(p, dict) and p.get("workspace_id") == workspace]
+
+
+def _pp_tokens(pane: dict) -> dict:
+    tokens = pane.get("tokens")
+    return tokens if isinstance(tokens, dict) else {}
+
+
+PP_WHY_ORPHAN = "ohne owner-Token (Altlast)"
+PP_ORPHAN_GRACE_S = 2.0  # zweiter Blick auf ownerlose Panes (#496 R1 F002, Guertel)
+
+
+def _pp_own_unlabelled(pane: dict, me: str) -> bool:
+    """Eigenes Plan-Pane ohne Label (#496 R2 F002): owner == ich plus workflow- und
+    version-Token, wie sie nur `_pp_spawn_watcher` setzt (Rename danach gescheitert)."""
+    tokens = _pp_tokens(pane)
+    return (tokens.get("owner") == me and bool(tokens.get("workflow"))
+            and bool(tokens.get("version")))
+
+
+def _pp_candidate(pane: dict, me: str) -> bool:
+    """Plan-Pane-Kandidat: Label „Workflow“ (oder eigenes ohne Label, R2 F002), nicht ich,
+    KEIN Agent-Pane (#496 R1 F001)."""
+    return ((pane.get("label") == PP_LABEL or _pp_own_unlabelled(pane, me))
+            and pane.get("pane_id") != me and not pane.get("agent"))
+
+
+def _pp_owns_pane(binary: str, me: str, timeout: float) -> bool:
+    """#496 R2 F001: True nur, wenn DIESE Claude-Session Vordergrundprozess von `me` ist.
+
+    Ein verschachteltes Kind (`claude -p` aus dem Bash-Werkzeug oder einem Skript der
+    Eltern-Session) erbt `HERDR_PANE_ID`, aber nicht den Vordergrund: Herdr meldet per
+    `pane process-info` nur den Eltern-Prozess, waehrend `CLAUDE_PID` (setzt Claude Code
+    fuer Hooks und Werkzeuge auf den eigenen Prozess) die PID des Kindes ist. Beleg:
+    docs/artifacts/fix-496-plan-pane-lebenszyklus/nested-detection.txt.
+    Im Zweifel (kein CLAUDE_PID, Fehler, kaputtes JSON) False: lieber nichts tun.
+    """
+    try:
+        own = int(str(os.environ.get("CLAUDE_PID", "")).strip())
+    except Exception:
+        return False
+    if own <= 0:
+        return False
+    res = _pp_quick(binary, ["pane", "process-info", "--pane", me], timeout)
+    if res is None or res[0] != 0:
+        return False
+    try:
+        info = json.loads(res[1])["result"]["process_info"]
+        fg = info["foreground_processes"]
+        if info.get("pane_id", me) != me or not isinstance(fg, list):
+            return False
+        return any(isinstance(p, dict) and type(p.get("pid")) is int and p["pid"] == own
+                   for p in fg)
+    except Exception:
+        return False
+
+
+def _pp_legacy_protected(by_id: dict, me: str) -> set:
+    """Pane-IDs, die die #493-ID-Datei einem ANDEREN lebenden Claude-Pane zuordnet (F004).
+
+    Altbestand laufender Sessions aelterer Plugin-Fassungen (ohne Tokens) bleibt stehen.
+    Fehler beim Lesen -> leere Menge.
+    """
+    try:
+        entries = _pp_entries(_pp_store() / PP_ID_FILE)
+    except Exception:
+        return set()
+    out = set()
+    for claude, entry in entries.items():
+        if claude == me or not isinstance(entry, dict):
+            continue
+        pid = entry.get("pane_id")
+        if isinstance(pid, str) and (by_id.get(claude) or {}).get("agent") == AGENT:
+            out.add(pid)
+    return out
+
+
+def _pp_verdict(pane: dict, by_id: dict, me: str, active, version: str,
+                kept) -> "str | None":
+    """Grund zum Schliessen eines Plan-Panes oder None (behalten / nicht anfassen)."""
+    tokens = _pp_tokens(pane)
+    owner = tokens.get("owner")
+    deleted = str(pane.get("cwd") or "").endswith(" (deleted)")
+    if owner == me:
+        if deleted:
+            return "eigenes, cwd geloescht"
+        if not active:
+            return "eigenes, kein aktiver Workflow"
+        if tokens.get("version") != version:
+            return f"eigenes, Version {tokens.get('version')} != {version}"
+        return "eigenes, Duplikat" if kept else None
+    if owner and (by_id.get(owner) or {}).get("agent") == AGENT:
+        return None  # fremder lebender Owner: NIE anfassen (Vorrang vor allem anderen)
+    if deleted:
+        return "cwd geloescht"
+    if not owner:
+        return PP_WHY_ORPHAN
+    if owner not in by_id:
+        return f"Owner {owner} fehlt"
+    return f"Owner {owner} ohne {AGENT}"
+
+
+def _pp_close(binary: str, pid: str, why: str) -> None:
+    res = _pp_quick(binary, ["pane", "close", pid], 3)
+    ok = res is not None and res[0] == 0
+    _pp_log(f"plan-pane: close {pid} ({why}) {'OK' if ok else 'fehlgeschlagen'}")
+
+
+def _pp_sweep(binary: str, me: str, active, version: str) -> "tuple":
+    """Plan-Panes im eigenen Workspace abgleichen.
+
+    Rueckgabe (weiter, behaltenes eigenes Pane | None); weiter=False: nichts oeffnen.
+    Grundsatz: lieber ein ueberzaehliges Pane stehen lassen als je ein Pane einer
+    lebenden Session schliessen.
+    """
+    workspace = os.environ.get("HERDR_WORKSPACE_ID", "").strip()
+    panes = _pp_list(binary, workspace)
+    if not _pp_owns_pane(binary, me, 3):  # R2 F001: gilt auch fuers Oeffnen
+        _pp_log(f"plan-pane: nichts angefasst (CLAUDE_PID={os.environ.get('CLAUDE_PID', '')!r} "
+                f"nicht Vordergrund von {me}: verschachtelte Session oder unklar)")
+        return False, None
+    if panes is None:
+        _pp_log("plan-pane: Sweep uebersprungen (kein Workspace oder pane list fehlgeschlagen)")
+        return True, None
+    by_id = {p.get("pane_id"): p for p in panes if isinstance(p.get("pane_id"), str)}
+    if me not in by_id:  # F003: Env veraltet (z. B. nach `pane move`) -> nicht unser Workspace
+        _pp_log(f"plan-pane: Sweep uebersprungen ({me} nicht in pane list {workspace})")
+        return False, None
+    legacy = _pp_legacy_protected(by_id, me)
+    kept = None
+    orphans = []
+    for pid, pane in by_id.items():
+        if not _pp_candidate(pane, me):
+            continue
+        if not _pp_tokens(pane).get("owner") and pid in legacy:
+            _pp_log(f"plan-pane: {pid} behalten (Altbestand einer lebenden Session)")
+            continue
+        why = _pp_verdict(pane, by_id, me, active, version, kept)
+        if why == PP_WHY_ORPHAN:
+            orphans.append(pid)
+        elif why:
+            _pp_close(binary, pid, why)
+        elif _pp_tokens(pane).get("owner") == me:
+            kept = pane
+    if orphans:
+        # Guertel (F002): ownerlos kann auch ein gerade entstehendes Pane sein -> nach
+        # PP_ORPHAN_GRACE_S neu lesen und nur schliessen, was dann immer noch ownerlos ist.
+        time.sleep(PP_ORPHAN_GRACE_S)
+        again = _pp_list(binary, workspace)
+        if again is None:
+            _pp_log("plan-pane: zweiter Blick fehlgeschlagen, ownerlose Panes bleiben")
+            return True, kept
+        again_by = {p.get("pane_id"): p for p in again if isinstance(p.get("pane_id"), str)}
+        legacy = _pp_legacy_protected(again_by, me)
+        for pid in orphans:
+            pane = again_by.get(pid)
+            if (pane is None or not _pp_candidate(pane, me) or pid in legacy
+                    or _pp_tokens(pane).get("owner")):
+                continue
+            _pp_close(binary, pid, PP_WHY_ORPHAN)
+    return True, kept
+
+
+def _pp_spawn_watcher(binary: str, args, active: str, version: str) -> None:
+    """split/rename/report-metadata (owner, workflow, version)/run (#476/#496)."""
     import shlex
-    binary = _binary()
-    if binary is None:
-        _pp_log("plan-pane: ABBRUCH: HERDR_BIN_PATH ungueltig")
-        return
-    id_file = _pp_store() / PP_ID_FILE
-    known = _pp_known_pane(id_file, args.pane)
-    if known:
-        res = _pp_call(binary, ["pane", "get", known], 3)
-        if res is not None and res.returncode == 0:
-            # #493: Watcher folgt per --target der Basis der neuen Session
-            _pp_set_entry(id_file, args.pane, {"pane_id": known, "cwd": args.cwd})
-            _pp_log(f"plan-pane: {known} vorhanden")
-            return
     ratio = args.ratio if _valid_ratio(args.ratio) else PP_DEFAULTS["ratio"]
     res = _pp_call(binary, ["pane", "split", args.pane, "--direction", "right",
                             "--ratio", str(ratio), "--cwd", args.cwd, "--no-focus"], 5)
@@ -927,7 +1126,24 @@ def _pp_open(args) -> None:
     if not isinstance(new, str) or not new:
         _pp_log("plan-pane: ABBRUCH: pane split ohne pane_id")
         return
-    _pp_call(binary, ["pane", "rename", new, PP_LABEL], 3)  # Fehler egal
+    if new == args.pane:  # R2 F003: nie das eigene Claude-Pane anfassen
+        _pp_log(f"plan-pane: ABBRUCH: pane split lieferte das eigene Pane {new}")
+        return
+    # #496 R1 F002: ERST owner-Token, DANN Label. Ein Pane mit Label „Workflow“ hat so
+    # immer schon seinen Owner; ohne Label betrachtet kein Sweep es.
+    meta = _pp_call(binary, ["pane", "report-metadata", new, "--source", SOURCE,
+                             "--token", f"owner={args.pane}",
+                             "--token", f"workflow={_clean(active)}",
+                             "--token", f"version={version}"], 3)
+    if meta is None or meta.returncode != 0:
+        _pp_quick(binary, ["pane", "close", new], 3)  # eigenes, gerade gesplittetes Pane
+        _pp_log(f"plan-pane: ABBRUCH: report-metadata auf {new} fehlgeschlagen, Pane geschlossen")
+        return
+    ren = _pp_call(binary, ["pane", "rename", new, PP_LABEL], 3)
+    if ren is None or ren.returncode != 0:  # R2 F002: ohne Label kein Watcher, kein Pane
+        _pp_quick(binary, ["pane", "close", new], 3)
+        _pp_log(f"plan-pane: ABBRUCH: rename auf {new} fehlgeschlagen, Pane geschlossen")
+        return
     if args.delay > 0:
         time.sleep(args.delay)
     workflow_py = Path(__file__).resolve().parent / "workflow.py"
@@ -935,9 +1151,88 @@ def _pp_open(args) -> None:
                f"{shlex.quote(str(workflow_py))} plan --watch "
                f"--target {shlex.quote(args.pane)}")
     run = _pp_call(binary, ["pane", "run", new, command], 5)
-    _pp_set_entry(id_file, args.pane, {"pane_id": new, "cwd": args.cwd})
+    _pp_set_entry(_pp_store() / PP_ID_FILE, args.pane, {"pane_id": new, "cwd": args.cwd})
     ok = run is not None and run.returncode == 0
     _pp_log(f"plan-pane: {new} geoeffnet, pane run {'OK' if ok else 'fehlgeschlagen'}")
+
+
+def _pp_active_name() -> "str | None":
+    """Name des aktiven Workflows oder None; wirft nie."""
+    try:
+        _hooks_on_path()
+        import workflow
+        found = workflow.read_active_workflow_fast()
+        return str(found[0]) if found else None
+    except (Exception, SystemExit):
+        return None
+
+
+def _pp_open(args) -> None:
+    """Runner (#476/#496): Sweep im eigenen Workspace, dann behalten oder oeffnen."""
+    binary = _binary()
+    if binary is None:
+        _pp_log("plan-pane: ABBRUCH: HERDR_BIN_PATH ungueltig")
+        return
+    active = _pp_active_name()
+    version = plugin_version()
+    proceed, kept = _pp_sweep(binary, args.pane, active, version)
+    if not proceed:
+        return
+    if not active:
+        _pp_log("plan-pane: kein aktiver Workflow, nichts zu oeffnen")
+        return
+    if kept is None:
+        _pp_spawn_watcher(binary, args, active, version)
+        return
+    pid = kept["pane_id"]
+    if kept.get("label") != PP_LABEL:  # R2 F002: eigenes Pane ohne Label -> Label nachziehen
+        _pp_call(binary, ["pane", "rename", pid, PP_LABEL], 3)
+    if _pp_tokens(kept).get("workflow") != _clean(active):
+        _pp_call(binary, ["pane", "report-metadata", pid, "--source", SOURCE,
+                          "--token", f"workflow={_clean(active)}"], 3)
+    # #493: Watcher folgt per --target der Basis der neuen Session (cwd-Cache)
+    _pp_set_entry(_pp_store() / PP_ID_FILE, args.pane, {"pane_id": pid, "cwd": args.cwd})
+    _pp_log(f"plan-pane: {pid} behalten")
+
+
+PP_CLOSE_BUDGET_S = 1.0  # SessionEnd-Hooks werden nach ~1,25 s abgebrochen
+
+
+def run_plan_pane_close() -> int:
+    """SessionEnd (#496): eigenes Plan-Pane synchron schliessen; schlank, immer 0.
+
+    Kein `config_loader`/`workflow`-Import, Pruefung nur ueber Env und Binary.
+    `reason == "clear"` -> nichts tun (der SessionStart `source=clear` uebernimmt).
+    """
+    try:
+        start = time.monotonic()
+        raw = "" if sys.stdin is None or sys.stdin.isatty() else sys.stdin.read()
+        payload = json.loads(raw) if raw.strip() else {}
+        if isinstance(payload, dict) and payload.get("reason") == "clear":
+            return 0
+        me = os.environ.get("HERDR_PANE_ID", "").strip()
+        binary = _binary()
+        if os.environ.get("HERDR_ENV") != "1" or not me or binary is None:
+            return 0
+        workspace = os.environ.get("HERDR_WORKSPACE_ID", "").strip()
+        panes = _pp_list(binary, workspace, timeout=0.4) or []
+        # Agent-Panes nie (#496 R1 F001); eigene ohne Label mit (R2 F002)
+        own = [p for p in panes if _pp_candidate(p, me) and _pp_tokens(p).get("owner") == me
+               and isinstance(p.get("pane_id"), str)]
+        if not own:
+            return 0
+        # R2 F001: nur die Session, die Vordergrund des Panes ist; nie ein Kind-Claude
+        left = PP_CLOSE_BUDGET_S - (time.monotonic() - start)
+        if left <= 0.1 or not _pp_owns_pane(binary, me, min(0.3, left - 0.05)):
+            return 0
+        for pane in own:
+            left = PP_CLOSE_BUDGET_S - (time.monotonic() - start)
+            if left <= 0.05:
+                break
+            _pp_quick(binary, ["pane", "close", pane["pane_id"]], left)
+    except BaseException:
+        pass
+    return 0
 
 
 def run_plan_pane(argv) -> int:
@@ -974,6 +1269,8 @@ if __name__ == "__main__":
             run_auto_clear(sys.argv[2:])
         elif len(sys.argv) > 1 and sys.argv[1] == "plan-pane":
             run_plan_pane(sys.argv[2:])
+        elif len(sys.argv) > 1 and sys.argv[1] == "plan-pane-close":
+            run_plan_pane_close()
     except BaseException:
         pass
     sys.exit(0)

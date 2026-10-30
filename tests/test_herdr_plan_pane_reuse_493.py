@@ -52,7 +52,9 @@ if [ -n "$STUB_LOCK_LOG" ]; then
   [ -n "$STUB_LOCK_WT" ] && [ -e "$STUB_LOCK_WT" ] && w=1
   printf 'main=%s wt=%s\n' "$m" "$w" >> "$STUB_LOCK_LOG"
 fi
+if [ "$1 $2" = "pane process-info" ]; then printf '{"result":{"process_info":{"foreground_processes":[{"pid":%s}]}}}\n' "${STUB_FG_PID:-${CLAUDE_PID:-0}}"; exit 0; fi  # #496 R2: eigene Session = Vordergrund
 if [ "$1 $2" = "pane get" ]; then exit "${STUB_GET_EXIT:-0}"; fi
+if [ "$1 $2" = "pane list" ] && [ -n "$STUB_LIST_OUT" ]; then printf '%s\n' "$STUB_LIST_OUT"; exit 0; fi
 if [ "$1 $2" = "pane split" ]; then
   n=0; [ -f "$STUB_COUNT" ] && n=$(< "$STUB_COUNT"); n=$(( n + 1 ))
   printf '%s' "$n" > "$STUB_COUNT"
@@ -101,6 +103,9 @@ class Case:
         self.bindir = self.root / "bin"
         self.bindir.mkdir()
         (self.bindir / "python3").symlink_to(sys.executable)
+        # #496: der Runner oeffnet nur bei aktivem Workflow
+        self.write_wf(self.wt_a, "wf-a")
+        self.write_wf(self.wt_b, "wf-b")
 
     # -- Umgebung ----------------------------------------------------------
     def env(self, session_dir: Path, **extra) -> dict:
@@ -115,6 +120,7 @@ class Case:
             "HERDR_BIN_PATH": str(self.stub),
             "STUB_LOG": str(self.log),
             "STUB_COUNT": str(self.count),
+            "CLAUDE_PID": "4242",  # #496 R2: Stub meldet sie als Vordergrund
         })
         env.update(extra)
         return env
@@ -177,6 +183,17 @@ class Case:
         return [c for c in self.calls() if " ".join(c[:2]) == kind]
 
 
+def _listed(*plans, claude=(CLAUDE,)) -> str:
+    """#496: `pane list`-Antwort mit Claude-Panes und Plan-Panes (pane_id, owner)."""
+    version = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text())["version"]
+    panes = [{"pane_id": p, "workspace_id": "ws-1", "label": "claude", "agent": "claude"}
+             for p in claude]
+    panes += [{"pane_id": pid, "workspace_id": "ws-1", "label": "Workflow", "cwd": "/x",
+               "tokens": {"owner": owner, "workflow": "wf-b", "version": version}}
+              for pid, owner in plans]
+    return json.dumps({"result": {"panes": panes}})
+
+
 def _same(a, b) -> bool:
     return Path(a).resolve() == Path(b).resolve()
 
@@ -192,7 +209,8 @@ def _last_frame(stdout: str) -> str:
 def test_second_run_reuses_pane_and_updates_cwd(tmp_path):
     c = Case(tmp_path, "reuse")
     c.runner(c.wt_a)
-    c.runner(c.wt_b, STUB_GET_EXIT="0")
+    c.runner(c.wt_b, HERDR_WORKSPACE_ID="ws-1",
+             STUB_LIST_OUT=_listed(("pane-new-1", CLAUDE)))
     splits = c.of("pane split")
     assert len(splits) == 1, f"Erwartet genau ein pane split, gesehen: {splits}"
     entry = c.entries()[CLAUDE]
@@ -231,7 +249,9 @@ def test_distinct_claude_panes_keep_own_entries(tmp_path):
     assert panes["pane-A"]["pane_id"] != panes["pane-B"]["pane_id"], panes
     b_before = dict(panes["pane-B"])
 
-    c.runner(c.wt_b, pane="pane-A", HERDR_PANE_ID="pane-A", STUB_GET_EXIT="0")
+    c.runner(c.wt_b, pane="pane-A", HERDR_PANE_ID="pane-A", HERDR_WORKSPACE_ID="ws-1",
+             STUB_LIST_OUT=_listed(("pane-new-1", "pane-A"), ("pane-new-2", "pane-B"),
+                                   claude=("pane-A", "pane-B")))
     assert len(c.of("pane split")) == 2, f"Erneuter Lauf fuer A splittete: {c.calls()}"
     panes = c.entries()
     assert panes["pane-B"] == b_before, panes
@@ -244,9 +264,9 @@ def test_dead_pane_is_replaced(tmp_path):
     c = Case(tmp_path, "dead")
     c.write_entries({CLAUDE: {"pane_id": "pane-old", "cwd": str(c.wt_a)},
                      "pane-other": {"pane_id": "pane-o", "cwd": str(c.wt_a)}})
-    c.runner(c.wt_b, STUB_GET_EXIT="1")
-    gets = c.of("pane get")
-    assert gets and gets[0][2] == "pane-old", f"pane get fuer pane-old fehlt: {c.calls()}"
+    c.runner(c.wt_b, HERDR_WORKSPACE_ID="ws-1", STUB_LIST_OUT=_listed())
+    # #496: pane_id der ID-Datei wird nicht mehr gelesen; Quelle ist `pane list`
+    assert c.of("pane get") == [], c.calls()
     assert len(c.of("pane split")) == 1, c.calls()
     panes = c.entries()
     assert panes[CLAUDE]["pane_id"] == "pane-new-1", panes

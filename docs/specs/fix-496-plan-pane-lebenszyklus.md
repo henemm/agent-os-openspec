@@ -80,6 +80,20 @@ Der Workflow-Plan-Pane (#476/#493) hat heute nur ein „Oeffnen“, aber keinen 
 
 **Watcher (`plan --watch --target`).** Pro Runde `pane get <target>`; liefert er dreimal in Folge einen Fehler (z. B. `pane_not_found`) oder `agent != "claude"`, beendet sich der Watcher (Herdr schliesst das Pane, weil der `exec`-Prozess endet). Der Zaehler setzt sich bei einer gesunden Runde zurueck. Ein Herdr-Aufruf, der gar nicht antwortet (Binary fehlt, Zeitlimit), zaehlt nicht als „Owner tot“ — im Zweifel weiterlaufen. Fehlt die eigene `workflow.py` (Plugin geloescht oder aktualisiert), beendet sich der Watcher ebenfalls.
 
+**Klarstellung (Orchestrator-Entscheidung, Phase 6):** Die Regel „nie fremd lebend“ hat Vorrang vor allen Schliess-Regeln. Ein Pane, dessen `tokens.owner` ein ANDERES Pane mit `agent == "claude"` im eigenen Workspace ist, wird NIE geschlossen — auch dann nicht, wenn sein cwd auf „ (deleted)“ endet. Fuer Panes des eigenen Owners gilt die cwd-Regel weiter (schliessen und, bei aktivem Workflow, neu oeffnen). Schlaegt `pane list` fehl, wird nichts geschlossen; bei aktivem Workflow wird dann wie ohne behaltenes Pane geoeffnet (ein dabei entstehendes Duplikat raeumt der naechste Sweep ab).
+
+**Nachtrag Adversary-Runde 1 (PO-Grundsatz: lieber ein ueberzaehliges Pane stehen lassen als je ein Pane einer lebenden Session schliessen).**
+- *Agent-Panes nie (F001):* Ein Pane mit gesetztem `agent` (jeder Agent, nicht nur `claude`) ist nie Kandidat — weder im Sweep noch im SessionEnd —, egal welches Label es traegt.
+- *Erst Owner, dann Label (F002):* `_pp_spawn_watcher` setzt nach `split` ZUERST `report-metadata` (owner/workflow/version) und erst DANN `rename Workflow`, danach `run`. Ein Pane mit Label „Workflow“ hat damit immer schon seinen Owner; ohne Label betrachtet es kein Sweep. Scheitert `report-metadata`, schliesst der Runner sein eben gesplittetes Pane wieder und bricht ab (kein ownerloses Pane mit Label).
+- *Guertel fuer ownerlose Panes (F002):* Herdr 0.9.5 liefert in `pane list`/`pane get` weder Alter noch Startzeit (geprueft: Felder `agent_status, cwd, focused, foreground_cwd, pane_id, revision, scroll, tab_id, terminal_id, workspace_id`). Deshalb ohne Zustandsdatei: ein Pane, das nur nach der Regel „kein `tokens.owner`“ zu schliessen waere, wird nicht sofort geschlossen; der Runner liest nach 2 s (`PP_ORPHAN_GRACE_S`) `pane list --workspace` erneut und schliesst nur, was dann immer noch Label „Workflow“, kein Agent und kein `owner`-Token hat. Ein gerade entstehendes Pane einer anderen Session bekommt in dieser Zeit seinen Owner (oder ist wieder weg). Scheitert der zweite Blick, bleibt das Pane stehen. Kosten: 2 s im detached Runner, nur wenn ownerlose Panes existieren.
+- *Eigenes Pane muss gelistet sein (F003):* Steht `$HERDR_PANE_ID` nicht in `pane list --workspace $HERDR_WORKSPACE_ID` (Env veraltet, z. B. nach `pane move`), wird nichts geschlossen und nichts geoeffnet.
+- *Altbestand laufender Sessions (F004):* Ein ownerloses Plan-Pane, das in der #493-ID-Datei (`<haupt-repo>/.claude/herdr_plan_pane.json`, `{"panes": {"<claude>": {"pane_id": …}}}`) einem ANDEREN Claude-Pane zugeordnet ist, das lebt (`agent == "claude"` in der Liste), bleibt stehen. Ist dieser Owner tot, gilt die Altlast-Regel.
+
+**Nachtrag Adversary-Runde 2 (gleicher PO-Grundsatz).**
+- *Verschachtelte Claude-Session (F001):* Ein Kind-Claude (`claude -p` aus dem Bash-Werkzeug oder einem Skript einer lebenden Session) erbt `HERDR_PANE_ID` und sah deshalb das Plan-Pane der Eltern als eigenes. Erkennung, belegt am echten Herdr 0.9.5 mit echter TUI und echtem `claude -p` (`docs/artifacts/fix-496-plan-pane-lebenszyklus/nested-detection.txt`): `CLAUDE_PID` (setzt Claude Code fuer Hooks und Werkzeuge auf den eigenen Prozess) muss unter den `foreground_processes` von `pane process-info --pane $HERDR_PANE_ID` stehen; das ist nur bei der Session der Fall, die das Pane im Vordergrund haelt. Gilt im Runner (vor Sweep, Oeffnen, Token- und cwd-Cache-Nachziehen) und in `plan-pane-close` (nur wenn es ueberhaupt ein eigenes Pane zu schliessen gibt, Zeitlimit 0,3 s). Fehlt `CLAUDE_PID`, scheitert `process-info` oder ist die Antwort unlesbar: nichts tun. Verworfen, weil am Beleg unzuverlaessig: `CLAUDE_CODE_ENTRYPOINT` (geerbter Wert bleibt teils stehen), TTY von stdin (bei beiden kein TTY), Hook-Felder, `session_id` (in einer Umgebung erbte das Kind die der Eltern), claude-Vorfahr im Prozessbaum (Herdr selbst kann unter einem claude-Prozess laufen).
+- *Rename scheitert (F002):* Scheitert `rename Workflow` nach erfolgreichem `report-metadata`, schliesst der Runner das eben gesplittete Pane und bricht ab (kein Watcher). Zusaetzlich zaehlt ein Nicht-Agent-Pane ohne Label als Kandidat, wenn es die Tokens `owner == $HERDR_PANE_ID`, `workflow` und `version` traegt (nur `_pp_spawn_watcher` setzt diese Kombination; Herdr fuehrt die Token-Quelle in `pane list` nicht mit): Sweep und `plan-pane-close` behandeln es wie ein eigenes Plan-Pane; ein behaltenes bekommt das Label nachgezogen.
+- *Split liefert das eigene Pane (F003):* Ist die `pane_id` aus der `split`-Antwort gleich `$HERDR_PANE_ID`, bricht der Runner ab, ohne dieses Pane anzufassen.
+
 **Fail-open ueberall.** Herdr fehlt, `HERDR_*` nicht gesetzt, `pane list`/`close` schlaegt fehl, JSON unlesbar, Zeitlimit: es wird nichts geschlossen, Exit 0, keine Ausgabe auf stdout/stderr, der Sitzungsstart ist nicht verzoegert (der Sweep laeuft im detached Runner, nicht im Hook-Prozess).
 
 ## Expected Behavior
@@ -92,7 +106,11 @@ Der Workflow-Plan-Pane (#476/#493) hat heute nur ein „Oeffnen“, aber keinen 
 
 - Nach `kill -9` der Claude-Session feuert kein SessionEnd; das Plan-Pane lebt, bis der Watcher den toten Owner nach drei Runden bemerkt (ca. 3 s bei 1-s-Intervall, im E2E bis 6 s toleriert).
 - Der SessionEnd-Hook wird nach ca. 1,25 s abgebrochen. Gelingt `pane close` in dieser Zeit nicht (Herdr haengt), bleibt das Aufraeumen dem Watcher bzw. dem naechsten Sweep ueberlassen.
-- Mehrere Claude-Panes mit demselben Owner-Token gibt es nicht; ein Pane ohne `owner`-Token wird immer als Altlast geschlossen, auch wenn es von Hand mit dem Label „Workflow“ benannt wurde.
+- Mehrere Claude-Panes mit demselben Owner-Token gibt es nicht; ein Nicht-Agent-Pane ohne `owner`-Token wird nach dem zweiten Blick (2 s) als Altlast geschlossen, auch wenn es von Hand mit dem Label „Workflow“ benannt wurde — ausser die #493-ID-Datei ordnet es einem lebenden anderen Claude-Pane zu. Agent-Panes (auch ein Claude-Pane namens „Workflow“) werden nie geschlossen.
+- Ein Plan-Pane einer aelteren Plugin-Fassung ohne Tokens, das in KEINER ID-Datei steht, wird geschlossen; die betroffene Session oeffnet erst beim naechsten eigenen SessionStart neu.
+- Wer eine laufende Session per `pane move` in einen anderen Workspace verschiebt, bekommt bis zum Neustart der Session weder Sweep noch neues Plan-Pane (die Env zeigt noch auf das alte Pane).
+- Ohne `CLAUDE_PID` in der Hook-Umgebung (aeltere Claude-Code-Fassungen) oder ohne `pane process-info` (aeltere Herdr-Fassungen) oeffnet und schliesst der Plan-Pane-Lebenszyklus nichts mehr; der Watcher endet weiter mit seinem Owner.
+- Eine verschachtelte Kind-Session bekommt kein eigenes Plan-Pane und raeumt nichts auf; ein Claude, das nicht Vordergrundprozess seines Panes ist (z. B. hinter einem eigenen Terminal-Multiplexer im Pane), ebenso.
 - Der Sweep sieht nur den eigenen Workspace. Zombies in anderen Workspaces raeumt erst eine Session dieses Workspace auf; das ist gewollt (kein Eingriff in fremde Workspaces).
 - Das `version`-Token wird nicht automatisch aktualisiert; nach einem Plugin-Update wird deshalb bewusst geschlossen und neu geoeffnet.
 - Echtes TUI- und Hook-Verhalten ist nur im realen Herdr pruefbar; die Unit-Tests nutzen ein Stub-Binary.
@@ -162,6 +180,9 @@ Muster `tests/test_herdr_plan_pane_reuse_493.py`: isoliertes Projekt, Stub-Herdr
 - [ ] Test 8: GIVEN Herdr fehlt, kaputtes JSON, `pane list` bzw. `pane close` mit Exit 1 WHEN Sweep und `plan-pane-close` laufen THEN Exit 0, keine Ausgabe, kein Close
 - [ ] Test 9: GIVEN haengendes Stub-Herdr (Sleep) WHEN `session_banner.py` bzw. `plan-pane-close` laufen THEN kehrt der Banner sofort zurueck, und `plan-pane-close` endet innerhalb des Zeitlimits ohne `config_loader`/`workflow` zu importieren
 - [ ] Test 10: GIVEN `hooks/hooks.json` WHEN gelesen THEN ist `plan-pane-close` erster SessionEnd-Eintrag mit `timeout <= 2`
+- [ ] Test 11 (R2 F001, `test_nested_child_session_leaves_panes_alone`): GIVEN ein Plan-Pane der Eltern und `CLAUDE_PID` ungleich dem Vordergrund von `$HERDR_PANE_ID` WHEN Runner (ohne, mit anderem, mit gleichem Workflow) bzw. `plan-pane-close` laufen THEN kein `close`/`split`/`rename`/`report-metadata`/`run`, cwd-Cache unveraendert; ohne `CLAUDE_PID` bzw. bei Fehler/kaputtem `process-info` ebenso; Kontrolle mit Eltern-PID schliesst
+- [ ] Test 12 (R2 F002, `test_rename_failure_closes_fresh_pane`): GIVEN `rename` scheitert WHEN der Runner oeffnet THEN wird das neue Pane geschlossen, kein `run`; GIVEN drei eigene Panes ohne Label mit owner/workflow/version THEN bleibt genau eines, kein `split`, SessionEnd schliesst es; ohne `version`-Token oder mit fremdem Owner unberuehrt
+- [ ] Test 13 (R2 F003, `test_abort_never_closes_owner_pane`): GIVEN `split` liefert `$HERDR_PANE_ID` WHEN der Runner laeuft (mit/ohne Fehler bei `report-metadata`/`rename`) THEN kein Aufruf veraendert das eigene Claude-Pane
 
 Weitere Laeufe:
 
@@ -178,3 +199,4 @@ Weitere Laeufe:
 ## Changelog
 
 - 2026-10-30: Initial spec created
+- 2026-10-30: Nachtrag Adversary-Runde 2 (F001 verschachtelte Session, F002 Rename-Fehler, F003 split == eigenes Pane) in Implementation Details, Known Limitations, Test Plan; E2E-Szenario l
