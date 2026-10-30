@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.4.8] - 2026-10-30
+
+Auto-/clear tippt den Folgebefehl in der existierenden Form, /10-context registriert das Context-Doc, Issue-Titel per REST und ohne Steuerzeichen.
+
 ### Fixed
 
 - Auto-`/clear` tippte nach `/clear` den Kurzbefehl (`/20-analyse #N`), der ohne installierte Aliase im TUI „Unknown command“ ergab (#499). Der Runner waehlt jetzt erst beim Senden die Form, die existiert: Kurzform, wenn `<projekt>/.claude/commands/<name>.md`, `<projekt>/.claude/skills/<name>/SKILL.md` oder dieselben Orte unter `~/.claude` den Befehl kennen, sonst `/agent-os-openspec:<name> <Argumente>` (`herdr_bridge.resolve_command_form`, fail-open zur Plugin-Form; qualifizierte Befehle bleiben unveraendert). Vermerk, Fusszeile, Log-Tag und Once-Lock bleiben in Kurzform. `/99-reset` wird nie automatisch getippt (`skip: Workflow-Abschluss bleibt manuell`, zusaetzlich Abbruch im Runner).
