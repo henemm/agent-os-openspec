@@ -1019,7 +1019,46 @@ def record_transition(data: dict, target: str, trigger: str = "command") -> list
         "trigger": trigger,
     })
     _log_phase_transition(data, target)
-    return _record_budget_events(data)
+    events = _record_budget_events(data)
+    _note_transition_boundary(data, target)
+    return events
+
+
+# Phasengrenzen fuer Auto-/clear (#497): Ende eines Phasenbefehls, danach startet
+# der Folgebefehl im neuen Kontext. Alle anderen Wechsel setzen keinen Vermerk.
+AUTO_CLEAR_BOUNDARIES = frozenset({
+    ("phase1_context", "phase2_analyse"),
+    ("phase2_analyse", "phase3_spec"),
+    ("phase3_spec", "phase4_approved"),
+    ("phase5_tdd_red", "phase6_implement"),
+    ("phase6b_adversary", "phase7_validate"),
+})
+
+
+def _boundary_timestamp() -> str:
+    """Zeitstempel fuer `auto_clear_boundary.at`, mit Zeitzone (#497b)."""
+    return datetime.now().astimezone().isoformat()
+
+
+def _note_transition_boundary(data: dict, target: str) -> None:
+    """Grenz-Vermerk beim Phasenwechsel in `data` setzen (#497); fail-open, still.
+
+    Nur fuer Grenzen aus AUTO_CLEAR_BOUNDARIES bei aktivem Auto-/clear. Speichern
+    uebernimmt der Aufrufer; `current_phase` ist hier noch die alte Phase.
+    """
+    try:
+        if (data.get("current_phase"), target) not in AUTO_CLEAR_BOUNDARIES:
+            return
+        import herdr_bridge
+        if not (herdr_bridge._pane() and herdr_bridge.auto_clear_enabled()):
+            return
+        command = expected_footer_command(dict(data, current_phase=target))
+        if isinstance(command, str) and command.startswith("/"):
+            data["auto_clear_boundary"] = {
+                "phase": target, "command": command, "at": _boundary_timestamp(),
+            }
+    except Exception:
+        pass
 
 
 # --- ADR Reflection Gate ---
@@ -3070,7 +3109,7 @@ def _record_auto_clear_boundary() -> None:
         data["auto_clear_boundary"] = {
             "phase": data.get("current_phase"),
             "command": command,
-            "at": datetime.now().isoformat(),
+            "at": _boundary_timestamp(),
         }
         # Bewusst ohne _save_active: kein Herdr-Report, Stand unveraendert
         _atomic_write(_workflow_file(name), data)

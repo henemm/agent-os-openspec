@@ -189,6 +189,20 @@ def _maybe_auto_clear(payload: dict, message: str, name: str) -> None:
         pass
 
 
+def _discard_boundary(name: str) -> None:
+    """Vermerk nach zweimal falscher Fusszeile verwerfen (#497a); fail-open, still."""
+    try:
+        root = find_project_root()
+        data = read_state_json(root / ".claude" / "workflows" / f"{name}.json", root)
+        boundary = data.get("auto_clear_boundary") if isinstance(data, dict) else None
+        if isinstance(boundary, dict):
+            data.setdefault("name", name)
+            import herdr_bridge
+            herdr_bridge._consume_boundary(data, boundary)
+    except Exception:
+        pass
+
+
 def main() -> None:
     if framework_disabled():
         sys.exit(0)
@@ -225,6 +239,7 @@ def main() -> None:
     # Endlosschleife. Der eigene Zaehler traegt die Garantie allein;
     # `stop_hook_active` ist ein undokumentierter, rein defensiver Zusatz.
     if payload.get("stop_hook_active") is True:
+        _discard_boundary(name)
         sys.exit(0)
     state = _read_state()
     turn_id = _turn_id(payload, message)
