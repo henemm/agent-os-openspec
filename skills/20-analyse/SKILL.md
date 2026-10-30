@@ -206,6 +206,14 @@ $WF autonomy
 
 Bei `AUTONOMY=auto`, ohne offene Frage an den User und ohne `/clear` in derselben Session: Rufe den Skill `30-write-spec` jetzt sofort selbst auf — warte nicht auf eine User-Eingabe. Eine offene Frage an den User stoppt die Kette auch im Auto-Modus. Der Checkpoint-Block oben bleibt trotzdem in der Ausgabe (Wiedereinstieg über `/30-write-spec #<N>`, Herdr-Auto-Clear #467). Bei `AUTONOMY=manual` (oder jeder anderen Ausgabe): wie bisher auf den User warten.
 
+### Herdr-Auto-/clear: Turn an der Grenze beenden (#489)
+
+```bash
+$WF autoclear
+```
+
+Bei `AUTO_CLEAR=on` hat das Vorrang vor dem Selbstaufruf: den Skill `30-write-spec` NICHT selbst aufrufen, sondern die Antwort mit dem Checkpoint (Positiv-Block, bei Bedarf Negativ-Block) und der ❗Du-Zeile `/30-write-spec #<N>` beenden — Herdr tippt `/clear` und den Folgebefehl. Bei `AUTO_CLEAR=off`: unverändert.
+
 Immer menschlich bleiben — auch bei `AUTONOMY=auto`: AMBIGUOUS-Verdict, zweites BROKEN bzw. Circuit Breaker, Override, Deploy, Stop-Lock.
 
 **IMPORTANT:** Do NOT start implementation. Analysis -> Spec -> Approve -> TDD RED -> Implement.
@@ -216,7 +224,7 @@ Beende deine letzte Nachricht in diesem Befehl mit diesen Zeilen, in dieser Reih
 
 ❗ Du: `/<befehl> #<N>` — <ein Halbsatz, warum>
 ℹ️ Status: Workflow `<name>` · Phase `<x>` von 8
-⚙ /20-analyse · agent-os-openspec 4.4.2
+⚙ /20-analyse · agent-os-openspec 4.4.3
 
 Die erste Zeile sagt, wer am Zug ist — GENAU EINMAL, nur hier in der Fußzeile, nie zusätzlich als Vokabular mitten im Fließtext davor — und steht in genau einer von zwei Formen: `❗ Du: …`, wenn der PO den Schritt tippen oder eine Entscheidung treffen muss (bei Dringendem `‼️` statt `❗`). Das gilt AUCH, wenn du selbst gerade nichts mehr zu tun hast und nur auf den nächsten Befehl des PO wartest — das ist niemals „nichts zu tun“. Oder `ℹ️ Nichts zu tun: <du arbeitest gerade selbst / wartest auf ein Ergebnis, z. B. einen Hintergrund-Agenten> — danach: /<befehl> #<N>`, ausschließlich wenn du auf etwas ANDERES als den PO wartest. So muss der PO nie raten, ob etwas von ihm erwartet wird.
 

@@ -184,6 +184,11 @@ Erst sichern, dann ist `/clear` gefahrlos.
 
 ---
 
+Zuerst `$WF autoclear` ausführen (#489): Bei `AUTO_CLEAR=on` den Skill
+`50-implement` NICHT selbst aufrufen, sondern die Antwort mit dem Checkpoint (Positiv-Block, bei
+Bedarf Negativ-Block) und der ❗Du-Zeile `/50-implement #<N>` beenden — Herdr tippt `/clear` und
+den Folgebefehl. Bei `AUTO_CLEAR=off`:
+
 Ohne `/clear` in derselben Session: Rufe den Skill `50-implement` jetzt sofort selbst
 auf — warte nicht auf eine weitere User-Eingabe, die registrierten RED-Artefakte sind
 bereits die Voraussetzung, keine zusätzliche Entscheidung steht mehr aus.
@@ -207,7 +212,7 @@ Beende deine letzte Nachricht in diesem Befehl mit diesen Zeilen, in dieser Reih
 
 ❗ Du: `/<befehl> #<N>` — <ein Halbsatz, warum>
 ℹ️ Status: Workflow `<name>` · Phase `<x>` von 8
-⚙ /40-tdd-red · agent-os-openspec 4.4.2
+⚙ /40-tdd-red · agent-os-openspec 4.4.3
 
 Die erste Zeile sagt, wer am Zug ist — GENAU EINMAL, nur hier in der Fußzeile, nie zusätzlich als Vokabular mitten im Fließtext davor — und steht in genau einer von zwei Formen: `❗ Du: …`, wenn der PO den Schritt tippen oder eine Entscheidung treffen muss (bei Dringendem `‼️` statt `❗`). Das gilt AUCH, wenn du selbst gerade nichts mehr zu tun hast und nur auf den nächsten Befehl des PO wartest — das ist niemals „nichts zu tun“. Oder `ℹ️ Nichts zu tun: <du arbeitest gerade selbst / wartest auf ein Ergebnis, z. B. einen Hintergrund-Agenten> — danach: /<befehl> #<N>`, ausschließlich wenn du auf etwas ANDERES als den PO wartest. So muss der PO nie raten, ob etwas von ihm erwartet wird.
 

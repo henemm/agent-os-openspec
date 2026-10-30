@@ -169,6 +169,11 @@ Erst sichern, dann ist `/clear` gefahrlos.
 
 ---
 
+Zuerst `python3 .claude/hooks/workflow.py autoclear` ausführen (#489): Bei `AUTO_CLEAR=on` den Skill
+`50-implement` NICHT selbst aufrufen, sondern die Antwort mit dem Checkpoint (Positiv-Block, bei
+Bedarf Negativ-Block) und der ❗Du-Zeile `/50-implement #<N>` beenden — Herdr tippt `/clear` und
+den Folgebefehl. Bei `AUTO_CLEAR=off`:
+
 Ohne `/clear` in derselben Session: Rufe den Skill `50-implement` jetzt sofort selbst
 auf — warte nicht auf eine weitere User-Eingabe, die registrierten RED-Artefakte sind
 bereits die Voraussetzung, keine zusätzliche Entscheidung steht mehr aus.
