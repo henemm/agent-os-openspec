@@ -1780,7 +1780,42 @@ def _plan_fetch_missing(data, tried: set) -> None:
         pass
 
 
-def _plan_watch() -> None:
+def _plan_pane_file() -> "Path | None":
+    """ID-Datei im Haupt-Repo, einmal beim Watcher-Start absolut ermittelt (#493 F001)."""
+    try:
+        from hook_utils import find_project_root
+        return (find_project_root() / ".claude" / "herdr_plan_pane.json").resolve()
+    except Exception:
+        return None
+
+
+def _plan_follow_target(target: "str | None", path: "Path | None") -> None:
+    """`--target` (#493): in die eingetragene Basis des Claude-Panes wechseln. Wirft nie.
+
+    `path` ist absolut: auch wenn das aktuelle cwd (alter Worktree) geloescht
+    wurde, bleibt die ID-Datei lesbar; ein nicht ermittelbares cwd gilt als
+    abweichend (F001).
+    """
+    if not target or path is None:
+        return
+    try:
+        from hook_utils import read_state_json
+        cwd = read_state_json(path, path.parent.parent)["panes"][target].get("cwd")
+        if not (isinstance(cwd, str) and cwd and Path(cwd).is_dir()):
+            return
+        try:
+            same = Path(cwd).resolve() == Path(os.getcwd()).resolve()
+        except Exception:
+            same = False
+        if not same:
+            os.chdir(cwd)
+            if os.environ.get("CLAUDE_PROJECT_DIR"):
+                os.environ["CLAUDE_PROJECT_DIR"] = cwd  # sonst zeigt er auf die alte Basis
+    except Exception:
+        pass
+
+
+def _plan_watch(target: "str | None" = None) -> None:
     """`plan --watch` (#476): je Runde neu aufloesen, nur bei Aenderung neu zeichnen."""
     import shutil
     try:
@@ -1795,9 +1830,11 @@ def _plan_watch() -> None:
     last_out = None
     done = 0
     tried: set = set()  # #490: Issue-Nummern, deren Titel schon geholt wurde
+    pane_file = _plan_pane_file() if target else None
     try:
         while True:
             data = None
+            _plan_follow_target(target, pane_file)  # #493: vor dem Aufloesen
             try:
                 width = shutil.get_terminal_size().columns
                 deploy = deploy_configured()  # je Runde neu (#478)
@@ -1842,7 +1879,8 @@ def cmd_plan(args: list[str]) -> None:
             print(f"Plan-Pane: nicht moeglich ({type(exc).__name__})")
         return
     if "--watch" in args:
-        _plan_watch()
+        i = args.index("--target") if "--target" in args else -1
+        _plan_watch(args[i + 1] if 0 <= i < len(args) - 1 else None)
         return
     try:
         found = _plan_active()

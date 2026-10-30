@@ -331,8 +331,8 @@ def test_start_opens_pane_with_split_rename_run(tmp_path):
     run = runs[0]
     assert run[2] == NEW_PANE, run
     assert run[3].startswith("exec "), run
-    assert "workflow.py" in run[3] and run[3].endswith("plan --watch"), run
-    assert json.loads(_pane_file(proj).read_text())["pane_id"] == NEW_PANE
+    assert "workflow.py" in run[3] and run[3].endswith(f"plan --watch --target {PANE}"), run
+    assert json.loads(_pane_file(proj).read_text())["panes"][PANE]["pane_id"] == NEW_PANE
 
     # stdout von `start` identisch zu ohne Herdr-Env
     base_proj, _, base_env = _case(tmp_path, "plain", cfg, herdr=False)
@@ -349,7 +349,7 @@ def test_start_opens_pane_with_split_rename_run(tmp_path):
 
 def test_runner_reuses_existing_pane_or_reopens(tmp_path):
     proj, log, env = _case(tmp_path, "alive", STUB_GET_EXIT="0")
-    _pane_file(proj).write_text(json.dumps({"pane_id": "pane-old"}))
+    _pane_file(proj).write_text(json.dumps({"panes": {PANE: {"pane_id": "pane-old"}}}))
     res = _run_runner(proj, env)
     assert res.returncode == 0, res.stderr
     calls = _calls(log)
@@ -358,12 +358,12 @@ def test_runner_reuses_existing_pane_or_reopens(tmp_path):
     assert _of(calls, "pane split") == [], calls
 
     proj2, log2, env2 = _case(tmp_path, "dead", STUB_GET_EXIT="1")
-    _pane_file(proj2).write_text(json.dumps({"pane_id": "pane-old"}))
+    _pane_file(proj2).write_text(json.dumps({"panes": {PANE: {"pane_id": "pane-old"}}}))
     res = _run_runner(proj2, env2)
     assert res.returncode == 0, res.stderr
     calls = _calls(log2)
     assert len(_of(calls, "pane split")) == 1, calls
-    assert json.loads(_pane_file(proj2).read_text())["pane_id"] == NEW_PANE
+    assert json.loads(_pane_file(proj2).read_text())["panes"][PANE]["pane_id"] == NEW_PANE
 
 
 # --- AC-10 ------------------------------------------------------------------

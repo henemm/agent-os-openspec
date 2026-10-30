@@ -311,3 +311,66 @@ def test_watcher_fail_open(tmp_path):
         frame = _last_frame(res.stdout)
         assert WF_Y in frame, (label, frame)
         assert WF_X not in frame, (label, frame)
+
+
+# --- Adversary F001: alter Worktree geloescht ------------------------------
+
+def test_watcher_follows_after_old_worktree_deleted(tmp_path):
+    """Watcher laeuft in Worktree A; A wird geloescht, danach zeigt der Eintrag auf B."""
+    import shutil
+    import time
+    c = Case(tmp_path, "deleted")
+    c.write_wf(c.wt_a, WF_X)
+    c.write_wf(c.wt_b, WF_Y)
+    c.write_entries({CLAUDE: {"pane_id": "pane-plan", "cwd": str(c.wt_a)}})
+    env = c.env(c.wt_a, OPENSPEC_PLAN_WATCH_ROUNDS="250",
+                OPENSPEC_PLAN_WATCH_INTERVAL="0.02", PYTHONUNBUFFERED="1")
+    out = c.root / "watch.out"
+    with open(out, "w") as fh:
+        proc = subprocess.Popen(
+            [sys.executable, str(WORKFLOW_PY), "plan", "--watch", "--target", CLAUDE],
+            stdout=fh, stderr=subprocess.PIPE, text=True, env=env, cwd=str(c.wt_a))
+        time.sleep(1.0)
+        assert proc.poll() is None, "Watcher endete zu frueh"
+        shutil.rmtree(c.wt_a)
+        c.write_entries({CLAUDE: {"pane_id": "pane-plan", "cwd": str(c.wt_b)}})
+        _, err = proc.communicate(timeout=60)
+    assert proc.returncode == 0, err
+    frame = _last_frame(out.read_text())
+    assert WF_Y in frame, f"Watcher folgt nicht nach B: {frame!r}"
+    assert WF_X not in frame, f"Watcher zeigt noch {WF_X}: {frame!r}"
+
+
+# --- Adversary F002: Lock je Claude-Pane -----------------------------------
+
+def test_parallel_claude_panes_get_own_lock(tmp_path):
+    """Frischer Lock von Pane A blockiert nur A, nicht den Runner fuer Pane B."""
+    c = Case(tmp_path, "parallel")
+    lock_a = c.lock_file() / "pane-A"
+    lock_a.parent.mkdir(parents=True)
+    lock_a.write_text("")
+    c.runner(c.wt_b, pane="pane-B", HERDR_PANE_ID="pane-B")
+    assert len(c.of("pane split")) == 1, f"Pane B splittete nicht: {c.calls()}"
+    assert c.entries()["pane-B"]["pane_id"] == "pane-new-1", c.entries()
+    c.runner(c.wt_a, pane="pane-A", HERDR_PANE_ID="pane-A")
+    assert len(c.of("pane split")) == 1, f"Pane A trotz Lock gesplittet: {c.calls()}"
+    assert lock_a.exists(), "fremder Lock wurde entfernt"
+
+
+# --- Adversary R2: Lost Update der ID-Datei --------------------------------
+
+def test_parallel_runners_keep_all_entries(tmp_path):
+    """16 parallele Runner fuer verschiedene Panes (6 Durchgaenge): nichts geht verloren."""
+    c = Case(tmp_path, "lost")
+    n, rounds = 16, 6
+    for r in range(rounds):
+        procs = [subprocess.Popen(
+            [sys.executable, str(BRIDGE), "plan-pane", "--pane", f"P{r}-{i}",
+             "--cwd", str(c.wt_a), "--delay", "0"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            env=c.env(c.wt_a), cwd=str(c.wt_a)) for i in range(n)]
+        for p in procs:
+            p.wait(timeout=60)
+        panes = c.entries()
+        missing = [f"P{r}-{i}" for i in range(n) if f"P{r}-{i}" not in panes]
+        assert not missing, f"Durchgang {r}: Eintraege verloren: {missing}"
