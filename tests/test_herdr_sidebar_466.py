@@ -475,7 +475,8 @@ def test_session_start_republishes_for_all_sources(tmp_path):
                stdin=json.dumps({"source": "startup", "cwd": str(proj)}))
     assert res.returncode == 0, res.stderr
     calls = _settled_calls(log, 1)
-    assert calls and _is_clear(calls[-1]), f"ohne Workflow kein Clear: {calls}"
+    meta = [c for c in calls if c[:3] == ["pane", "report-metadata", PANE]]
+    assert meta and _is_clear(meta[-1]), f"ohne Workflow kein Clear: {calls}"
 
 
 # --- AC-12 ------------------------------------------------------------------

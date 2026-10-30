@@ -43,6 +43,7 @@ AUTO_ON = ("herdr:\n  auto_clear:\n    enabled: true\n    grace_s: 0\n"
 
 STUB_SCRIPT = r"""#!/bin/bash
 { for a in "$@"; do printf '%s\0' "$a"; done; printf '\n'; } >> "$STUB_LOG"
+if [ "$1 $2" = "pane process-info" ]; then printf '{"result":{"process_info":{"foreground_processes":[{"pid":%s}]}}}\n' "${STUB_FG_PID:-${CLAUDE_PID:-0}}"; exit 0; fi  # #496 R2: eigene Session = Vordergrund
 if [ "$1 $2" = "pane split" ]; then
   printf '%s\n' '{"result":{"pane":{"pane_id":"pane-new"}}}'
   exit 0
@@ -94,7 +95,8 @@ def _env(proj: Path, log: Path, stub, *, herdr: bool = True, **extra) -> dict:
     env["HOME"] = str(proj / "_home")
     if herdr:
         env.update({"HERDR_ENV": "1", "HERDR_PANE_ID": PANE,
-                    "HERDR_BIN_PATH": str(stub), "STUB_LOG": str(log)})
+                    "HERDR_BIN_PATH": str(stub), "STUB_LOG": str(log),
+                    "CLAUDE_PID": "4242"})  # #496 R2: Stub meldet sie als Vordergrund
     env.update(extra)
     return env
 

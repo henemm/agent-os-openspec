@@ -1831,6 +1831,8 @@ def _plan_pane_file() -> "Path | None":
 def _plan_follow_target(target: "str | None", path: "Path | None") -> None:
     """`--target` (#493): in die eingetragene Basis des Claude-Panes wechseln. Wirft nie.
 
+    #496: aus der ID-Datei wird nur noch das `cwd` gelesen (Cache), nie `pane_id`.
+
     `path` ist absolut: auch wenn das aktuelle cwd (alter Worktree) geloescht
     wurde, bleibt die ID-Datei lesbar; ein nicht ermittelbares cwd gilt als
     abweichend (F001).
@@ -1854,9 +1856,49 @@ def _plan_follow_target(target: "str | None", path: "Path | None") -> None:
         pass
 
 
+PLAN_OWNER_DEAD_ROUNDS = 3  # #496: so viele tote Owner-Runden in Folge -> Ende
+
+
+def _plan_owner_state(target: "str | None") -> "bool | None":
+    """#496: True = Owner lebt (agent claude), False = tot (Fehler/kein claude),
+    None = unklar (kein Binary, Zeitlimit, unlesbare Antwort) — zaehlt nicht."""
+    import subprocess
+    if not target:
+        return None
+    binary = os.environ.get("HERDR_BIN_PATH", "")
+    if not (os.path.isabs(binary) and os.path.isfile(binary) and os.access(binary, os.X_OK)):
+        return None
+    try:
+        res = subprocess.run([binary, "pane", "get", target], stdin=subprocess.DEVNULL,
+                             capture_output=True, text=True, timeout=3)
+    except Exception:
+        return None
+    if res.returncode != 0:
+        return False
+    try:
+        pane = json.loads(res.stdout)["result"]["pane"]
+    except Exception:
+        return None
+    return isinstance(pane, dict) and pane.get("agent") == "claude"
+
+
+def _plan_watch_should_end(target, own_file: Path, misses: list) -> bool:
+    """#496: Ende, wenn die eigene workflow.py fehlt oder der Owner 3x tot war."""
+    if not own_file.exists():
+        return True
+    state = _plan_owner_state(target)
+    if state is True:
+        misses[0] = 0
+    elif state is False:
+        misses[0] += 1
+    return misses[0] >= PLAN_OWNER_DEAD_ROUNDS
+
+
 def _plan_watch(target: "str | None" = None) -> None:
     """`plan --watch` (#476): je Runde neu aufloesen, nur bei Aenderung neu zeichnen."""
     import shutil
+    own_file = Path(os.path.abspath(__file__))  # vor jedem chdir (#493) festhalten
+    misses = [0]
     try:
         rounds = int(os.environ.get("OPENSPEC_PLAN_WATCH_ROUNDS") or 0)
     except ValueError:
@@ -1873,6 +1915,8 @@ def _plan_watch(target: "str | None" = None) -> None:
     try:
         while True:
             data = None
+            if _plan_watch_should_end(target, own_file, misses):
+                break  # Herdr schliesst das Pane, wenn der exec-Prozess endet
             _plan_follow_target(target, pane_file)  # #493: vor dem Aufloesen
             try:
                 width = shutil.get_terminal_size().columns

@@ -142,6 +142,11 @@
         "hooks": [
           {
             "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/herdr_bridge.py plan-pane-close",
+            "timeout": 2
+          },
+          {
+            "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/session_singleton_guard.py cleanup",
             "timeout": 5
           },
