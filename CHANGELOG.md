@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.4.6] - 2026-10-30
+
+Auto-/clear haengt nicht mehr an einem Zusatzaufruf: der Grenz-Vermerk entsteht beim Phasenwechsel; echter E2E jetzt auch mit echter Phase und grossem Modell.
+
+### Fixed
+
+- Auto-`/clear` (#495) hing davon ab, dass Claude am Phasenende zusaetzlich `workflow.py autoclear` aufruft; liess das Modell den Aufruf weg, entstand kein Vermerk und kein `/clear`. Jetzt setzt der Phasenwechsel selbst (`record_transition`, also `workflow.py phase`, `auto-approve` und die Freigabe „approved“) den Vermerk `auto_clear_boundary` an den fuenf Phasengrenzen 1→2, 2→3, 3→4, 5→6 und 6b→7, nur bei aktivem Auto-/clear (Herdr-Pane + Opt-in) und fail-open; Ausgabe und Exit-Code des Phasenwechsels bleiben gleich. `workflow.py autoclear` bleibt als zweite Quelle. Zusaetzlich verwirft `footer_gate.py` einen vorhandenen Vermerk, wenn die Fusszeile auch im zweiten Anlauf (`stop_hook_active`) falsch ist, und `at` wird mit Zeitzone geschrieben (alte Werte ohne Zeitzone bleiben lesbar). Der E2E-Test `scripts/e2e_auto_clear.sh` prueft den Weg ohne `autoclear` und optional (`ONLY=E`) mit einem echten Plugin-Befehl (#497).
+
 ## [4.4.5] - 2026-10-30
 
 Auto-/clear loest jetzt mechanisch aus dem Workflow-Stand aus statt aus einem Satz in Claudes Antwort; neuer echter End-to-End-Test mit Herdr.
