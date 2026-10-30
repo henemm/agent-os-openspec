@@ -746,30 +746,109 @@ def _pp_take_lock(path: Path) -> bool:
     return False
 
 
-def _pp_known_pane(path: Path) -> "str | None":
+def _pp_pane_lock(claude_pane: str) -> Path:
+    """Lock je Claude-Pane: `.claude/herdr_plan_pane.lock/<pane>` (#493 F002)."""
+    safe = re.sub(r"[^A-Za-z0-9_-]", "_", claude_pane)[:80] or "_"
+    return _pp_store() / PP_LOCK_FILE / safe
+
+
+def _pp_take_pane_lock(lock: Path) -> bool:
+    """Ordner anlegen (F003) und Pane-Lock nehmen; frischer Alt-Lock (Datei) blockt."""
+    folder = lock.parent
+    for _ in range(3):
+        try:
+            if folder.is_file():  # globaler Lock einer aelteren Fassung
+                if time.time() - folder.stat().st_mtime < PP_LOCK_STALE_S:
+                    return False
+                folder.unlink()
+            folder.mkdir(parents=True, exist_ok=True)
+            return _pp_take_lock(lock)
+        except (FileNotFoundError, FileExistsError, NotADirectoryError):
+            continue  # Wettlauf mit rmdir/unlink eines anderen Runners
+    return False
+
+
+def _pp_release_lock(lock: Path) -> None:
+    for step in (lock.unlink, lock.parent.rmdir):  # rmdir scheitert, wenn andere halten
+        try:
+            step()
+        except Exception:
+            pass
+
+
+def _pp_store() -> Path:
+    """`.claude/` im Haupt-Repo: alle Worktrees teilen ID-Datei und Lock (#493)."""
+    _hooks_on_path()
+    from hook_utils import find_project_root
+    return find_project_root() / ".claude"
+
+
+def _pp_entries(path: Path) -> dict:
+    """Eintraege `{claude_pane: {pane_id, cwd}}`; {} bei Fehler/altem Format."""
     from hook_utils import read_state_json
     try:
         data = read_state_json(path, path.parent.parent)
-        pane = data.get("pane_id") if isinstance(data, dict) else None
-        return pane if isinstance(pane, str) and pane else None
+        panes = data.get("panes") if isinstance(data, dict) else None
+        return dict(panes) if isinstance(panes, dict) else {}
     except Exception:
-        return None
+        return {}
+
+
+def _pp_flock(path: Path):
+    """Exklusive Sperre `<path>.lock` (max ~2 s); None = ohne Sperre weiter (fail-open)."""
+    try:
+        import fcntl
+        fd = os.open(str(path) + ".lock", os.O_CREAT | os.O_RDWR, 0o644)
+    except Exception:
+        return None  # kein fcntl (Windows) oder Datei nicht anlegbar
+    deadline = time.monotonic() + 2.0
+    while True:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return fd
+        except BlockingIOError:
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(0.01)
+        except Exception:
+            break
+    os.close(fd)
+    return None
+
+
+def _pp_set_entry(path: Path, claude_pane: str, entry: dict) -> None:
+    """Eintrag fuer `claude_pane` setzen, andere erhalten (atomar + flock, #493 R2)."""
+    from hook_utils import atomic_write_json
+    fd = _pp_flock(path)
+    try:
+        panes = _pp_entries(path)
+        panes[claude_pane] = entry
+        atomic_write_json(path, {"panes": panes}, root=path.parent.parent)
+    finally:
+        if fd is not None:
+            os.close(fd)  # gibt die Sperre frei
+
+
+def _pp_known_pane(path: Path, claude_pane: str) -> "str | None":
+    entry = _pp_entries(path).get(claude_pane)
+    pane = entry.get("pane_id") if isinstance(entry, dict) else None
+    return pane if isinstance(pane, str) and pane else None
 
 
 def _pp_open(args) -> None:
     """Schritte 2–6 des Runners (Spec #476); Ergebnis jeweils ins Log."""
-    from hook_utils import atomic_write_json
     import shlex
     binary = _binary()
     if binary is None:
         _pp_log("plan-pane: ABBRUCH: HERDR_BIN_PATH ungueltig")
         return
-    claude_dir = _ac_base() / ".claude"
-    id_file = claude_dir / PP_ID_FILE
-    known = _pp_known_pane(id_file)
+    id_file = _pp_store() / PP_ID_FILE
+    known = _pp_known_pane(id_file, args.pane)
     if known:
         res = _pp_call(binary, ["pane", "get", known], 3)
         if res is not None and res.returncode == 0:
+            # #493: Watcher folgt per --target der Basis der neuen Session
+            _pp_set_entry(id_file, args.pane, {"pane_id": known, "cwd": args.cwd})
             _pp_log(f"plan-pane: {known} vorhanden")
             return
     ratio = args.ratio if _valid_ratio(args.ratio) else PP_DEFAULTS["ratio"]
@@ -791,9 +870,10 @@ def _pp_open(args) -> None:
         time.sleep(args.delay)
     workflow_py = Path(__file__).resolve().parent / "workflow.py"
     command = (f"exec {shlex.quote(sys.executable)} "
-               f"{shlex.quote(str(workflow_py))} plan --watch")
+               f"{shlex.quote(str(workflow_py))} plan --watch "
+               f"--target {shlex.quote(args.pane)}")
     run = _pp_call(binary, ["pane", "run", new, command], 5)
-    atomic_write_json(id_file, {"pane_id": new}, root=claude_dir.parent)
+    _pp_set_entry(id_file, args.pane, {"pane_id": new, "cwd": args.cwd})
     ok = run is not None and run.returncode == 0
     _pp_log(f"plan-pane: {new} geoeffnet, pane run {'OK' if ok else 'fehlgeschlagen'}")
 
@@ -812,8 +892,8 @@ def run_plan_pane(argv) -> int:
         except SystemExit:
             _pp_log("plan-pane: ABBRUCH: ungueltige Argumente")
             return 0
-        path = _ac_base() / ".claude" / PP_LOCK_FILE
-        if not _pp_take_lock(path):
+        path = _pp_pane_lock(args.pane)
+        if not _pp_take_pane_lock(path):
             _pp_log("plan-pane: läuft bereits")
             return 0
         lock = path
@@ -822,10 +902,7 @@ def run_plan_pane(argv) -> int:
         _pp_log(f"plan-pane: ABBRUCH: Fehler {type(exc).__name__}")
     finally:
         if lock is not None:
-            try:
-                lock.unlink()
-            except Exception:
-                pass
+            _pp_release_lock(lock)
     return 0
 
 

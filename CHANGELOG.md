@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.4.4] - 2026-10-30
+
+Plan-Pane wird nach einem Claude-Neustart im selben Herdr-Pane wiederverwendet statt doppelt geöffnet.
+
+### Fixed
+
+- Plan-Pane (#476) oeffnete sich nach einem Claude-Neustart im selben Herdr-Pane ein zweites Mal, weil die gemerkte Pane-ID im Worktree der alten Session lag. `herdr_plan_pane.json` und der Lock liegen jetzt im `.claude/` des Haupt-Repos, je Claude-Pane mit `pane_id` und `cwd`; ein noch offener Plan-Pane wird wiederverwendet, und `plan --watch --target <pane>` wechselt je Runde in die Basis der neuen Session, auch wenn der Worktree der alten Session schon geloescht ist. Der Lock gilt je Claude-Pane (`.claude/herdr_plan_pane.lock/<pane>`; ein fehlendes `.claude/` wird angelegt), parallel startende Claude-Panes bekommen also je einen Plan-Pane. Das alte Format `{"pane_id": ...}` gilt nicht mehr als Treffer (einmalig kann ein neuer Pane entstehen) (#493).
+
 ## [4.4.3] - 2026-10-30
 
 Auto-`/clear` greift jetzt an jeder Phasengrenze: die Befehle beenden die Antwort dort, statt den naechsten Schritt selbst zu starten.
