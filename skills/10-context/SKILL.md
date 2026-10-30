@@ -166,6 +166,14 @@ $WF autonomy
 
 Bei `AUTONOMY=auto` und ohne `/clear` in derselben Session: Rufe den Skill `20-analyse` jetzt sofort selbst auf — warte nicht auf eine User-Eingabe. Der Checkpoint-Block oben bleibt trotzdem in der Ausgabe (Wiedereinstieg über `/20-analyse #<N>`, Herdr-Auto-Clear #467). Bei `AUTONOMY=manual` (oder jeder anderen Ausgabe): wie bisher auf den User warten.
 
+### Herdr-Auto-/clear: Turn an der Grenze beenden (#489)
+
+```bash
+$WF autoclear
+```
+
+Bei `AUTO_CLEAR=on` hat das Vorrang vor dem Selbstaufruf: den Skill `20-analyse` NICHT selbst aufrufen, sondern die Antwort mit dem Checkpoint (Positiv-Block, bei Bedarf Negativ-Block) und der ❗Du-Zeile `/20-analyse #<N>` beenden — Herdr tippt `/clear` und den Folgebefehl. Bei `AUTO_CLEAR=off`: unverändert.
+
 Immer menschlich bleiben — auch bei `AUTONOMY=auto`: AMBIGUOUS-Verdict, zweites BROKEN bzw. Circuit Breaker, Override, Deploy, Stop-Lock.
 
 **IMPORTANT:** Do NOT skip to implementation. Context → Analyse → Spec → Implement.

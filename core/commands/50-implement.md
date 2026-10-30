@@ -387,6 +387,11 @@ Erst sichern, dann ist `/clear` gefahrlos.
 
 ---
 
+Zuerst `python3 .claude/hooks/workflow.py autoclear` ausführen (#489): Bei `AUTO_CLEAR=on` den Skill
+`60-validate` NICHT selbst aufrufen, sondern die Antwort mit dem Checkpoint (Positiv-Block, bei
+Bedarf Negativ-Block) und der ❗Du-Zeile `/60-validate #<N>` beenden — Herdr tippt `/clear` und
+den Folgebefehl. Bei `AUTO_CLEAR=off`:
+
 Ohne `/clear` in derselben Session: Rufe den Skill `60-validate` jetzt sofort selbst
 auf — warte nicht auf eine weitere User-Eingabe, das VERIFIED-Verdict des Adversary und
 die GREEN-Freigabe `go` aus Step 6 sind bereits die Voraussetzung, keine zusätzliche

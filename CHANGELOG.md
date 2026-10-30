@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Auto-/clear (#467) griff an Phasengrenzen nie, weil die Befehle den naechsten Skill im selben Turn selbst aufriefen (10→20, 20→30 im Auto-Modus; 30→40, 40→50, 50→60 immer). Neue Auskunfts-CLI `workflow.py autoclear` (`AUTO_CLEAR=on|off`); bei `on` beenden 10-context bis 50-implement die Antwort mit Checkpoint und ❗Du-Zeile `/<naechster> #N`, statt den Folgeskill selbst aufzurufen (#489).
+
 ## [4.4.2] - 2026-10-30
 
 Automatische Spec-Freigabe greift jetzt auch mit dem benutzerweiten Schalter `OPENSPEC_AUTONOMY`.

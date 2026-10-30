@@ -31,3 +31,7 @@ import pytest  # noqa: E402
 def _strip_herdr_env(monkeypatch):
     for var in ("HERDR_ENV", "HERDR_PANE_ID", "HERDR_BIN_PATH", "HERDR_SOCKET_PATH"):
         monkeypatch.delenv(var, raising=False)
+    # #489: benutzerweite Schalter (#480/#481) aus der Entwicklerumgebung
+    # duerfen Tests nicht beeinflussen; Tests setzen sie bei Bedarf selbst.
+    for var in ("OPENSPEC_AUTONOMY", "OPENSPEC_HERDR_AUTO_CLEAR", "OPENSPEC_ACTIVE_WORKFLOW"):
+        monkeypatch.delenv(var, raising=False)

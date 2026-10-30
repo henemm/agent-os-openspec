@@ -2874,6 +2874,25 @@ def cmd_autonomy(args: list[str]) -> None:
         pass
 
 
+def cmd_autoclear(args: list[str]) -> None:
+    """Auskunft, kein Gate: genau eine Zeile `AUTO_CLEAR=on|off`, Exit immer 0 (#489).
+
+    `on` nur in einem Herdr-Pane (`_pane()`) bei aktivem Auto-/clear. Bewusst ohne
+    aktiven Workflow, Vorbild `cmd_autonomy`.
+    """
+    state = "off"
+    try:
+        import herdr_bridge
+        if herdr_bridge._pane() and herdr_bridge.auto_clear_enabled():
+            state = "on"
+    except Exception:
+        state = "off"
+    try:
+        print(f"AUTO_CLEAR={state}")
+    except Exception:
+        pass
+
+
 def _apply_spec_approval(data: dict, trigger: str) -> list:
     """Spec-Freigabe auf den State anwenden: Phase 3 → 4 (#470).
 
@@ -3165,6 +3184,7 @@ COMMANDS = {
     "sessions": cmd_sessions,
     "observable-surface": cmd_observable_surface,
     "autonomy": cmd_autonomy,
+    "autoclear": cmd_autoclear,
     "auto-approve": cmd_auto_approve,
     "auto-green": cmd_auto_green,
     "retro": cmd_retro,

@@ -206,6 +206,14 @@ $WF autonomy
 
 Bei `AUTONOMY=auto`, ohne offene Frage an den User und ohne `/clear` in derselben Session: Rufe den Skill `30-write-spec` jetzt sofort selbst auf — warte nicht auf eine User-Eingabe. Eine offene Frage an den User stoppt die Kette auch im Auto-Modus. Der Checkpoint-Block oben bleibt trotzdem in der Ausgabe (Wiedereinstieg über `/30-write-spec #<N>`, Herdr-Auto-Clear #467). Bei `AUTONOMY=manual` (oder jeder anderen Ausgabe): wie bisher auf den User warten.
 
+### Herdr-Auto-/clear: Turn an der Grenze beenden (#489)
+
+```bash
+$WF autoclear
+```
+
+Bei `AUTO_CLEAR=on` hat das Vorrang vor dem Selbstaufruf: den Skill `30-write-spec` NICHT selbst aufrufen, sondern die Antwort mit dem Checkpoint (Positiv-Block, bei Bedarf Negativ-Block) und der ❗Du-Zeile `/30-write-spec #<N>` beenden — Herdr tippt `/clear` und den Folgebefehl. Bei `AUTO_CLEAR=off`: unverändert.
+
 Immer menschlich bleiben — auch bei `AUTONOMY=auto`: AMBIGUOUS-Verdict, zweites BROKEN bzw. Circuit Breaker, Override, Deploy, Stop-Lock.
 
 **IMPORTANT:** Do NOT start implementation. Analysis -> Spec -> Approve -> TDD RED -> Implement.
