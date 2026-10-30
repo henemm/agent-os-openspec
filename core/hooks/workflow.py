@@ -361,7 +361,11 @@ def render_plan(data, archived: bool = False, width: "int | None" = None,
                     running = i
         name = str(data.get("name") or "")
         issue = issue_number(name)
-        lines = [f"Workflow #{issue}" if issue else "Workflow", name, ""]
+        lines = [f"Workflow #{issue}" if issue else "Workflow", name]
+        title = data.get("issue_title")
+        if isinstance(title, str) and title.strip():
+            lines.append(title)  # #490: Kurztitel des Issues unter dem Namen
+        lines.append("")
         for i, (nr, label, _) in enumerate(steps):
             if done_all or (running is not None and i < running):
                 lines.append(f"✔ {nr} {label}")
@@ -474,6 +478,77 @@ VALID_ARTIFACT_TYPES = [
 
 def _workflows_dir() -> Path:
     return find_project_root() / ".claude" / "workflows"
+
+
+def short_title(title, max_words: int = 6) -> str:
+    """Issue-Titel auf die ersten `max_words` Woerter kuerzen (#490). Pure."""
+    if not isinstance(title, str):
+        return ""
+    words = title.split()
+    if len(words) > max_words:
+        return " ".join(words[:max_words]) + "…"
+    return " ".join(words)
+
+
+def _issue_titles_file() -> Path:
+    """Cache der Issue-Kurztitel (#490): .claude/issue_titles.json."""
+    return _workflows_dir().parent / "issue_titles.json"
+
+
+def _read_issue_titles() -> dict:
+    """Cache lesen; fehlend/kaputt gilt als leer. Wirft nie."""
+    try:
+        data = json.loads(_issue_titles_file().read_text())
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def cached_issue_title(issue) -> "str | None":
+    """Kurztitel aus dem Cache oder None (#490). Wirft nie."""
+    try:
+        value = _read_issue_titles().get(str(issue))
+        return value if isinstance(value, str) and value else None
+    except Exception:
+        return None
+
+
+def fetch_issue_title(issue, timeout: float = 8) -> "str | None":
+    """Titel per `gh` holen, kuerzen, cachen (#490). Fail-open: None, wirft nie."""
+    try:
+        import shutil
+        import subprocess
+        gh = shutil.which("gh")
+        if not gh or not str(issue).isdigit():
+            return None
+        res = subprocess.run(
+            [gh, "issue", "view", str(issue), "--json", "title", "-q", ".title"],
+            capture_output=True, text=True, timeout=timeout,
+            cwd=str(find_project_root()), stdin=subprocess.DEVNULL,
+        )
+        title = short_title(res.stdout) if res.returncode == 0 else ""
+        if not title:
+            return None
+        cache = _read_issue_titles()
+        cache[str(issue)] = title
+        atomic_write_json(_issue_titles_file(), cache)
+        return title
+    except Exception:
+        return None
+
+
+def _spawn_issue_title_fetch(issue: str) -> None:
+    """`workflow.py issue-title N` abgekoppelt anstossen (#490). Wirft nie."""
+    try:
+        import subprocess
+        subprocess.Popen(
+            [sys.executable, str(Path(__file__).resolve()), "issue-title", str(issue)],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, start_new_session=True,
+            cwd=str(find_project_root()),
+        )
+    except Exception:
+        pass
 
 
 def _active_link() -> Path:
@@ -1642,6 +1717,9 @@ def cmd_start(args: list[str]) -> None:
     _atomic_write(wf_file, data)
     _set_active(name)
     _herdr("report", data)
+    issue = issue_number(name)
+    if issue and cached_issue_title(issue) is None:
+        _spawn_issue_title_fetch(issue)  # #490: abgekoppelt, wartet nicht
     if workflow_type == "feature-fast":
         type_note = " [FEATURE fast-track → phase3_spec]"
     else:
@@ -1671,7 +1749,35 @@ def _plan_active() -> "tuple[str, dict] | None":
     name, data = found
     data = dict(data)
     data.setdefault("name", name)
+    _with_issue_title(data)
     return name, data
+
+
+def _with_issue_title(data: dict) -> dict:
+    """`issue_title` aus dem Cache setzen, falls vorhanden (#490). Wirft nie."""
+    try:
+        issue = issue_number(str(data.get("name") or ""))
+        title = cached_issue_title(issue) if issue else None
+        if title:
+            data["issue_title"] = title
+    except Exception:
+        pass
+    return data
+
+
+def _plan_fetch_missing(data, tried: set) -> None:
+    """Fehlenden Titel hoechstens einmal je Issue und Prozess holen (#490)."""
+    try:
+        if not isinstance(data, dict) or data.get("issue_title"):
+            return
+        issue = issue_number(str(data.get("name") or ""))
+        if not issue or issue in tried:
+            return
+        tried.add(issue)
+        if cached_issue_title(issue) is None:
+            fetch_issue_title(issue)
+    except Exception:
+        pass
 
 
 def _plan_watch() -> None:
@@ -1688,8 +1794,10 @@ def _plan_watch() -> None:
     last_name = None
     last_out = None
     done = 0
+    tried: set = set()  # #490: Issue-Nummern, deren Titel schon geholt wurde
     try:
         while True:
+            data = None
             try:
                 width = shutil.get_terminal_size().columns
                 deploy = deploy_configured()  # je Runde neu (#478)
@@ -1700,6 +1808,7 @@ def _plan_watch() -> None:
                 elif last_name and _archive_file(last_name).exists():
                     data = dict(_read_workflow(_archive_file(last_name)))
                     data.setdefault("name", last_name)
+                    _with_issue_title(data)
                     out = render_plan(data, archived=True, width=width, deploy=deploy)
                 else:
                     out = render_plan(None, width=width)
@@ -1709,6 +1818,7 @@ def _plan_watch() -> None:
                     last_out = out
             except (Exception, SystemExit):
                 pass  # letzte Ausgabe bleibt stehen
+            _plan_fetch_missing(data, tried)  # nach dem Zeichnen (#490)
             done += 1
             if rounds and done >= rounds:
                 break
@@ -1739,6 +1849,13 @@ def cmd_plan(args: list[str]) -> None:
     except (Exception, SystemExit):
         found = None
     print(render_plan(found[1] if found else None, deploy=deploy_configured()))
+
+
+def cmd_issue_title(args: list[str]) -> None:
+    """`issue-title <N>` (#490): Kurztitel holen und cachen; Exit immer 0."""
+    title = fetch_issue_title(args[0]) if args else None
+    if title:
+        print(title)
 
 
 def cmd_switch(args: list[str]) -> None:
@@ -3159,6 +3276,7 @@ COMMANDS = {
     "switch": cmd_switch,
     "status": cmd_status,
     "plan": cmd_plan,
+    "issue-title": cmd_issue_title,
     "phase": cmd_phase,
     "phase-log": cmd_phase_log,
     "set-field": cmd_set_field,

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Plan-Pane zeigt unter dem Workflow-Namen den Titel des GitHub-Issues, gekuerzt auf hoechstens 6 Woerter. `workflow.py start` holt ihn abgekoppelt per `gh` (neue CLI `workflow.py issue-title <N>`), `plan --watch` holt einen fehlenden Titel hoechstens einmal nach. Zwischenspeicher `.claude/issue_titles.json`; ohne `gh`, Netz oder Issue entfaellt die Zeile, Start und Anzeige warten nie (#490).
+
 ## [4.4.3] - 2026-10-30
 
 Auto-`/clear` greift jetzt an jeder Phasengrenze: die Befehle beenden die Antwort dort, statt den naechsten Schritt selbst zu starten.
