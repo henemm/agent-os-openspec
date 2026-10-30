@@ -30,6 +30,7 @@ import stat
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -215,6 +216,8 @@ def _state_changer(root: Path, name: str = "change.sh") -> Path:
 
 POSITIVE = "✅ **`/clear` ist jetzt gefahrlos** — alles auf Platte gesichert."
 NEGATIVE = "⚠️ **`/clear` jetzt NICHT** — Hintergrund-Agent laeuft noch."
+# Grenz-Vermerk von `workflow.py autoclear` — seit #495 die Ausloese-Bedingung
+BOUNDARY = {"phase": PHASE, "command": CMD, "at": datetime.now().isoformat()}
 
 
 def _du(command: str = CMD) -> str:
@@ -259,7 +262,7 @@ def _notifications(log: Path) -> list:
 # --- AC-1 -------------------------------------------------------------------
 
 def test_hook_spawns_runner_and_returns_immediately(tmp_path):
-    proj, log, stub, env = _hook_case(tmp_path)
+    proj, log, stub, env = _hook_case(tmp_path, auto_clear_boundary=BOUNDARY)
     env["STUB_SLEEP"] = "6"  # haengendes Binary
     msg = _message(POSITIVE)
     start = time.monotonic()
@@ -305,7 +308,7 @@ def test_runner_exact_sequence_and_flags(tmp_path):
 def test_no_spawn_when_auto_clear_not_enabled(tmp_path, label, config):
     root = tmp_path / label
     root.mkdir()
-    proj, log, stub, env = _hook_case(root, config=config)
+    proj, log, stub, env = _hook_case(root, config=config, auto_clear_boundary=BOUNDARY)
     msg = _message(POSITIVE)
     res = _run_hook(proj, env, msg)
     base = _baseline(tmp_path / label, msg)
@@ -318,7 +321,7 @@ def test_no_spawn_when_auto_clear_not_enabled(tmp_path, label, config):
 
 def test_no_spawn_when_herdr_disabled(tmp_path):
     cfg = "herdr:\n  enabled: false\n  auto_clear:\n    enabled: true\n    grace_s: 0\n"
-    proj, log, stub, env = _hook_case(tmp_path, config=cfg)
+    proj, log, stub, env = _hook_case(tmp_path, config=cfg, auto_clear_boundary=BOUNDARY)
     res = _run_hook(proj, env, _message(POSITIVE))
     assert res.returncode == 0, res.stderr
     _assert_no_calls(log)
@@ -328,7 +331,7 @@ def test_no_spawn_when_herdr_disabled(tmp_path):
 
 @pytest.mark.parametrize("missing", ["HERDR_ENV", "HERDR_PANE_ID"])
 def test_no_spawn_without_herdr_env(tmp_path, missing):
-    proj, log, stub, env = _hook_case(tmp_path)
+    proj, log, stub, env = _hook_case(tmp_path, auto_clear_boundary=BOUNDARY)
     env.pop(missing)
     res = _run_hook(proj, env, _message(POSITIVE))
     assert res.returncode == 0, res.stderr
@@ -338,7 +341,7 @@ def test_no_spawn_without_herdr_env(tmp_path, missing):
 # --- AC-6 -------------------------------------------------------------------
 
 def test_no_spawn_when_stop_hook_active(tmp_path):
-    proj, log, stub, env = _hook_case(tmp_path)
+    proj, log, stub, env = _hook_case(tmp_path, auto_clear_boundary=BOUNDARY)
     res = _run_hook(proj, env, _message(POSITIVE), stop_hook_active=True)
     assert res.returncode == 0, res.stderr
     _assert_no_calls(log)
@@ -347,7 +350,7 @@ def test_no_spawn_when_stop_hook_active(tmp_path):
 # --- AC-7 -------------------------------------------------------------------
 
 def test_no_spawn_on_wrong_footer_exit_2(tmp_path):
-    proj, log, stub, env = _hook_case(tmp_path)
+    proj, log, stub, env = _hook_case(tmp_path, auto_clear_boundary=BOUNDARY)
     res = _run_hook(proj, env, _message(POSITIVE, du=_du("/40-tdd-red #467")))
     assert res.returncode == 2, f"Exit 2 erwartet: {res.returncode} {res.stderr!r}"
     _assert_no_calls(log)
@@ -356,8 +359,9 @@ def test_no_spawn_on_wrong_footer_exit_2(tmp_path):
 # --- AC-8 -------------------------------------------------------------------
 
 def test_no_spawn_without_positive_marker(tmp_path):
+    # Seit #495: ohne Grenz-Vermerk kein Spawn, auch MIT Positiv-Satz
     proj, log, stub, env = _hook_case(tmp_path)
-    res = _run_hook(proj, env, _message("Alles erledigt, weiter geht es gleich."))
+    res = _run_hook(proj, env, _message(POSITIVE))
     assert res.returncode == 0, res.stderr
     _assert_no_calls(log)
 
@@ -365,7 +369,7 @@ def test_no_spawn_without_positive_marker(tmp_path):
 # --- AC-9 -------------------------------------------------------------------
 
 def test_no_spawn_with_negative_marker(tmp_path):
-    proj, log, stub, env = _hook_case(tmp_path)
+    proj, log, stub, env = _hook_case(tmp_path, auto_clear_boundary=BOUNDARY)
     res = _run_hook(proj, env, _message(POSITIVE, NEGATIVE))
     assert res.returncode == 0, res.stderr
     _assert_no_calls(log)
@@ -374,6 +378,7 @@ def test_no_spawn_with_negative_marker(tmp_path):
 # --- AC-10 ------------------------------------------------------------------
 
 def test_no_spawn_when_marker_only_in_code_fence(tmp_path):
+    # Seit #495: Marker ist keine Bedingung mehr; ohne Grenz-Vermerk kein Spawn
     proj, log, stub, env = _hook_case(tmp_path)
     fenced = "Beispiel:\n```\n" + POSITIVE + "\n```"
     res = _run_hook(proj, env, _message(fenced))
@@ -394,7 +399,7 @@ def test_no_spawn_when_expected_step_is_freetext(tmp_path):
 # --- AC-12 ------------------------------------------------------------------
 
 def test_once_lock_blocks_duplicate_and_expires_after_10_min(tmp_path):
-    proj, log, stub, env = _hook_case(tmp_path)
+    proj, log, stub, env = _hook_case(tmp_path, auto_clear_boundary=BOUNDARY)
     msg = _message(POSITIVE)
     res = _run_hook(proj, env, msg)
     assert res.returncode == 0, res.stderr
@@ -412,8 +417,13 @@ def test_once_lock_blocks_duplicate_and_expires_after_10_min(tmp_path):
     assert key in state, state
     state[key] = time.time() - 11 * 60
     lock.write_text(json.dumps(state))
+    # Seit #495 verbraucht der Spawn den Vermerk: neue Grenze wie `workflow.py autoclear`
+    wf = proj / ".claude" / "workflows" / f"{WF}.json"
+    data = json.loads(wf.read_text())
+    data["auto_clear_boundary"] = dict(BOUNDARY, at=datetime.now().isoformat())
+    wf.write_text(json.dumps(data))
 
-    res = _run_hook(proj, env, msg)  # Lock abgelaufen -> erneut
+    res = _run_hook(proj, env, msg)  # Lock abgelaufen + neue Grenze -> erneut
     assert res.returncode == 0, res.stderr
     deadline = time.monotonic() + 3
     while len(_notifications(log)) < 2 and time.monotonic() < deadline:

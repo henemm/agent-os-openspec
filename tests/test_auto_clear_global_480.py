@@ -23,6 +23,7 @@ import stat
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -162,6 +163,10 @@ def test_env_switch_uses_project_values(tmp_path):
 
 def test_footer_gate_spawns_with_env_switch(tmp_path):
     proj = _project(tmp_path, NO_ENTRY)
+    wf = proj / ".claude" / "workflows" / f"{WF}.json"
+    data = json.loads(wf.read_text())
+    data["auto_clear_boundary"] = {"phase": PHASE, "command": CMD, "at": datetime.now().isoformat()}
+    wf.write_text(json.dumps(data))  # Grenz-Vermerk wie `workflow.py autoclear` (#495)
     stub = tmp_path / "herdr-stub"
     stub.write_text(STUB_SCRIPT)
     stub.chmod(stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)

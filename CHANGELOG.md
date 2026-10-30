@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.4.5] - 2026-10-30
+
+Auto-/clear loest jetzt mechanisch aus dem Workflow-Stand aus statt aus einem Satz in Claudes Antwort; neuer echter End-to-End-Test mit Herdr.
+
+### Fixed
+
+- Auto-`/clear` (#467/#489) loeste im Konsumentenprojekt nie aus, weil der Stop-Hook den Satz „`/clear` ist jetzt gefahrlos“ in der Antwort verlangte und das Modell ihn weglaesst oder umformuliert (`skip: Marker fehlt oder Negativmarker`). Jetzt vermerkt `workflow.py autoclear` bei `AUTO_CLEAR=on` und aktivem Workflow die Grenze `auto_clear_boundary` (Phase, erwarteter Befehl, Zeitpunkt) im Workflow-State; `herdr_bridge.maybe_auto_clear` loest aus, wenn dieser Vermerk zu Phase und erwartetem Befehl passt. Der Negativ-Satz bleibt Veto (`skip: Negativmarker`), ohne passenden Vermerk `skip: keine Grenze vermerkt`. Der Vermerk ist ein Einmal-Signal: der erste ausgewertete Stop (Spawn, Veto, Nicht-Passen, `stop_hook_active`) verbraucht ihn, und er gilt hoechstens 15 min (`skip: Grenze veraltet`), damit spaetere Turns derselben Phase kein zweites `/clear` ausloesen. Ausgabe von `autoclear` unveraendert, fail-open (#495).
+
 ## [4.4.4] - 2026-10-30
 
 Plan-Pane wird nach einem Claude-Neustart im selben Herdr-Pane wiederverwendet statt doppelt geöffnet.

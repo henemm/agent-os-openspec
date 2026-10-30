@@ -323,7 +323,7 @@ def test_auto_clear_logs_skip_reason_only_when_enabled(tmp_path):
         ("nomarker", "phase6_implement",
          _hook_message("Alles erledigt, weiter geht es gleich.",
                        du="❗ Du: `/50-implement #478` — der naechste Pflicht-Schritt"),
-         "Marker"),
+         "keine Grenze vermerkt"),
     )
     for label, phase, message, reason in scenarios:
         data = _wf_data(phase=phase)

@@ -251,6 +251,7 @@ def report_active() -> None:
 AC_STATE_FILE = "herdr_auto_clear_state.json"
 AC_LOG_FILE = "herdr_auto_clear.log"
 AC_LOCK_SECONDS = 600  # Once-Lock: identischer Schluessel loest 10 min nicht erneut aus
+AC_BOUNDARY_MAX_AGE_S = 900  # Grenz-Vermerk (#495) gilt hoechstens 15 min
 AC_DEFAULTS = {"grace_s": 3, "idle_timeout_s": 120, "announce": True}
 AC_SETTLE_S = 2.0       # Wartezeit vor State-Recheck bzw. nach /clear
 AC_PROMPT_TIMEOUT = 15  # Sekunden fuer `agent prompt`/`notification show`
@@ -418,6 +419,9 @@ def spawn_auto_clear(pane: str, workflow_name: str, phase: str, command: str,
 def maybe_auto_clear(payload, message, data) -> bool:
     """Trigger-Bedingungen (#467) in Spec-Reihenfolge; True = Runner gespawnt.
 
+    Ausloeser ist der Grenz-Vermerk `auto_clear_boundary` (#495), nicht mehr der
+    Positiv-Satz; der Negativ-Satz bleibt Veto.
+
     Fail-open: jede nicht erfuellte Bedingung oder Ausnahme = kein Spawn.
     """
     try:
@@ -429,6 +433,10 @@ def maybe_auto_clear(payload, message, data) -> bool:
             return False
         # Ab hier Opt-in aktiv: jeder Abbruch landet als `skip:` im Log (#478)
         if isinstance(payload, dict) and payload.get("stop_hook_active") is True:
+            # Folge-Stop nach Fusszeilen-Korrektur: kein Auto-/clear, Vermerk verwerfen,
+            # damit kein spaeterer Turn derselben Phase ausloest (#495)
+            if isinstance(data, dict) and isinstance(data.get("auto_clear_boundary"), dict):
+                _consume_boundary(data, data["auto_clear_boundary"])
             return _ac_skip("stop_hook_active")
         if not isinstance(data, dict) or not isinstance(message, str):
             return _ac_skip("Workflow ohne Name/Phase")
@@ -444,8 +452,17 @@ def maybe_auto_clear(payload, message, data) -> bool:
         _, footer_commands = _footer_parts()
         if first not in footer_commands(message):
             return _ac_skip(f"Fusszeile nennt {command} nicht")
-        if not has_clear_marker(message):
-            return _ac_skip("Marker fehlt oder Negativmarker")
+        # Ab hier wird der Vermerk ausgewertet: Einmal-Signal, also verbrauchen (#495)
+        boundary = data.get("auto_clear_boundary")
+        if not isinstance(boundary, dict):
+            return _ac_skip("keine Grenze vermerkt")
+        _consume_boundary(data, boundary)
+        if NEGATIVE_MARKER in message.replace("**", ""):
+            return _ac_skip("Negativmarker")
+        if not _boundary_matches(data, command):
+            return _ac_skip("keine Grenze vermerkt")
+        if not _boundary_fresh(boundary):
+            return _ac_skip("Grenze veraltet")
         name = str(data.get("name") or "")
         phase = str(data.get("current_phase") or "")
         if not name or not phase:
@@ -459,6 +476,51 @@ def maybe_auto_clear(payload, message, data) -> bool:
         return True
     except Exception:
         return False
+
+
+def _boundary_matches(data: dict, command: str) -> bool:
+    """Grenz-Vermerk von `workflow.py autoclear` passt zu Phase und Befehl (#495)."""
+    boundary = data.get("auto_clear_boundary")
+    if not isinstance(boundary, dict):
+        return False
+    return (boundary.get("phase") == data.get("current_phase")
+            and boundary.get("command") == command)
+
+
+def _boundary_fresh(boundary: dict) -> bool:
+    """Vermerk hoechstens AC_BOUNDARY_MAX_AGE_S alt (Sicherheitsnetz, #495)."""
+    try:
+        from datetime import datetime
+        at = datetime.fromisoformat(str(boundary.get("at")))
+        if at.tzinfo is not None:
+            at = at.astimezone().replace(tzinfo=None)
+        age = (datetime.now() - at).total_seconds()
+    except Exception:
+        return False
+    return -60 <= age <= AC_BOUNDARY_MAX_AGE_S
+
+
+def _consume_boundary(data: dict, boundary: dict) -> None:
+    """Ausgewerteten Vermerk aus dem Workflow-State entfernen (#495); fail-open.
+
+    Read-Modify-Write auf dieselbe Datei, die footer_gate liest; entfernt wird
+    nur der ausgewertete Vermerk, nie ein inzwischen neuerer. Kein Herdr-Report.
+    """
+    try:
+        name = str(data.get("name") or "")
+        if not name or "/" in name or name.startswith("."):
+            return
+        _hooks_on_path()
+        from hook_utils import atomic_write_json, find_project_root, read_state_json
+        root = find_project_root()
+        path = root / ".claude" / "workflows" / f"{name}.json"
+        state = read_state_json(path, root)
+        if not isinstance(state, dict) or state.get("auto_clear_boundary") != boundary:
+            return
+        del state["auto_clear_boundary"]
+        atomic_write_json(path, state, root=root)
+    except Exception:
+        pass
 
 
 def _ac_skip(reason: str) -> bool:
