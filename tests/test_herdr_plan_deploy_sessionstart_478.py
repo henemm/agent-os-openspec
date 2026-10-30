@@ -367,6 +367,10 @@ def test_runner_reads_real_agent_status_field(tmp_path):
     data = _wf_data(phase="phase6_implement")
 
     proj, log, env = _case(tmp_path, "idle", AUTO_ON, data)
+    # Kurz-Alias im Projekt: der Runner tippt die Kurzform (#499, sonst Plugin-Form)
+    alias = proj / ".claude" / "commands" / "50-implement.md"
+    alias.parent.mkdir(parents=True, exist_ok=True)
+    alias.write_text("Alias\n")
     res = _run_runner(proj, env, cmd)
     assert res.returncode == 0, res.stderr
     prompts = _of(_calls(log), "agent prompt")

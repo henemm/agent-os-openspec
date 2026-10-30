@@ -480,11 +480,23 @@ def _workflows_dir() -> Path:
     return find_project_root() / ".claude" / "workflows"
 
 
+# ANSI-Escape-Sequenzen (#492): OSC bis BEL/ST, CSI, sonstige ESC-Zwei-Zeichen-Folgen
+_ANSI_RE = _re.compile(
+    r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b\[[0-?]*[ -/]*[@-~]|\x1b[@-Z\\-_]?")
+
+
 def short_title(title, max_words: int = 6) -> str:
-    """Issue-Titel auf die ersten `max_words` Woerter kuerzen (#490). Pure."""
+    """Issue-Titel auf die ersten `max_words` Woerter kuerzen (#490). Pure.
+
+    Entfernt ANSI-Sequenzen und nicht druckbare Zeichen; Leerraum (Zeilenumbruch,
+    Tab) zaehlt als Wortgrenze (#492).
+    """
     if not isinstance(title, str):
         return ""
-    words = title.split()
+    text = _ANSI_RE.sub("", title)
+    text = "".join(ch if ch.isprintable() else (" " if ch.isspace() else "")
+                   for ch in text)
+    words = text.split()
     if len(words) > max_words:
         return " ".join(words[:max_words]) + "…"
     return " ".join(words)
@@ -513,27 +525,83 @@ def cached_issue_title(issue) -> "str | None":
         return None
 
 
+ISSUE_TITLE_LOG_MAX_LINES = 200
+
+
+def _log_issue_title_failure(issue, reason: str) -> None:
+    """Fehlschlag nach `.claude/issue_titles.log` (rotierend, #492). Wirft nie."""
+    try:
+        from hook_utils import atomic_write_text, read_state_text
+        path = _issue_titles_file().with_name("issue_titles.log")
+        root = path.parent.parent
+        try:
+            old = read_state_text(path, root).splitlines()
+        except Exception:
+            old = []
+        line = short_title(f"#{issue} {reason}", max_words=40)
+        stamp = time.strftime("%Y-%m-%dT%H:%M:%S")
+        lines = old[-(ISSUE_TITLE_LOG_MAX_LINES - 1):] + [f"{stamp} {line}"]
+        atomic_write_text(path, "\n".join(lines) + "\n", root=root)
+    except Exception:
+        pass
+
+
+def _store_issue_title(issue, title: str) -> None:
+    """Eintrag unter `<cache>.lock` per Lesen-Aendern-Schreiben setzen (#492).
+
+    Sperre wie `herdr_bridge._pp_flock` (max ~2 s, danach ohne Sperre weiter).
+    """
+    path = _issue_titles_file()
+    fd = None
+    try:
+        import herdr_bridge
+        fd = herdr_bridge._pp_flock(path)
+    except Exception:
+        fd = None
+    try:
+        cache = _read_issue_titles()
+        cache[str(issue)] = title
+        atomic_write_json(path, cache)
+    finally:
+        if fd is not None:
+            os.close(fd)  # gibt die Sperre frei
+
+
 def fetch_issue_title(issue, timeout: float = 8) -> "str | None":
-    """Titel per `gh` holen, kuerzen, cachen (#490). Fail-open: None, wirft nie."""
+    """Titel per `gh api` (REST) holen, kuerzen, cachen (#490/#492).
+
+    Fail-open: None, wirft nie; Fehlschlaege landen in `.claude/issue_titles.log`.
+    """
     try:
         import shutil
         import subprocess
+        if not str(issue).isdigit():
+            return None
         gh = shutil.which("gh")
-        if not gh or not str(issue).isdigit():
+        if not gh:
+            _log_issue_title_failure(issue, "gh nicht gefunden")
             return None
-        res = subprocess.run(
-            [gh, "issue", "view", str(issue), "--json", "title", "-q", ".title"],
-            capture_output=True, text=True, timeout=timeout,
-            cwd=str(find_project_root()), stdin=subprocess.DEVNULL,
-        )
-        title = short_title(res.stdout) if res.returncode == 0 else ""
+        try:
+            res = subprocess.run(
+                [gh, "api", f"repos/{{owner}}/{{repo}}/issues/{issue}", "--jq", ".title"],
+                capture_output=True, text=True, timeout=timeout,
+                cwd=str(find_project_root()), stdin=subprocess.DEVNULL,
+            )
+        except subprocess.TimeoutExpired:
+            _log_issue_title_failure(issue, f"gh api Zeitlimit {timeout:g}s")
+            return None
+        if res.returncode != 0:
+            _log_issue_title_failure(
+                issue, f"gh api Exit {res.returncode}: {(res.stderr or '').strip()[:200]}")
+            return None
+        title = short_title(res.stdout)
         if not title:
+            _log_issue_title_failure(issue, "gh api lieferte leeren Titel")
             return None
-        cache = _read_issue_titles()
-        cache[str(issue)] = title
-        atomic_write_json(_issue_titles_file(), cache)
+        _store_issue_title(issue, title)
         return title
-    except Exception:
+    except Exception as exc:
+        _log_issue_title_failure(issue, f"Fehler {type(exc).__name__}")
         return None
 
 
@@ -1793,10 +1861,13 @@ def _plan_active() -> "tuple[str, dict] | None":
 
 
 def _with_issue_title(data: dict) -> dict:
-    """`issue_title` aus dem Cache setzen, falls vorhanden (#490). Wirft nie."""
+    """`issue_title` aus dem Cache setzen, falls vorhanden (#490). Wirft nie.
+
+    Der Cache-Wert wird erneut normalisiert (#492); leer = kein Titel.
+    """
     try:
         issue = issue_number(str(data.get("name") or ""))
-        title = cached_issue_title(issue) if issue else None
+        title = short_title(cached_issue_title(issue)) if issue else None
         if title:
             data["issue_title"] = title
     except Exception:

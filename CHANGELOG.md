@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.4.8] - 2026-10-30
+
+Auto-/clear tippt den Folgebefehl in der existierenden Form, /10-context registriert das Context-Doc, Issue-Titel per REST und ohne Steuerzeichen.
+
+### Fixed
+
+- Auto-`/clear` tippte nach `/clear` den Kurzbefehl (`/20-analyse #N`), der ohne installierte Aliase im TUI „Unknown command“ ergab (#499). Der Runner waehlt jetzt erst beim Senden die Form, die existiert: Kurzform, wenn `<projekt>/.claude/commands/<name>.md`, `<projekt>/.claude/skills/<name>/SKILL.md` oder dieselben Orte unter `~/.claude` den Befehl kennen, sonst `/agent-os-openspec:<name> <Argumente>` (`herdr_bridge.resolve_command_form`, fail-open zur Plugin-Form; qualifizierte Befehle bleiben unveraendert). Vermerk, Fusszeile, Log-Tag und Once-Lock bleiben in Kurzform. `/99-reset` wird nie automatisch getippt (`skip: Workflow-Abschluss bleibt manuell`, zusaetzlich Abbruch im Runner).
+- `/10-context` setzte `context_file` nicht, daher scheiterte der Phasenwechsel nach `phase2_analyse` mit „context_file not set“ (#500). Step 4 nennt jetzt `workflow.py set-field context_file docs/context/[workflow-name].md` vor dem Phasenwechsel.
+- Issue-Kurztitel (#492): `short_title` entfernt ANSI-Sequenzen und Steuerzeichen; Cache-Werte werden beim Uebernehmen erneut normalisiert; der Cache wird unter Sperre `issue_titles.json.lock` per Lesen-Aendern-Schreiben aktualisiert (parallele Abrufe verlieren keine Eintraege, fail-open nach ~2 s); der Titel kommt per REST (`gh api repos/{owner}/{repo}/issues/N --jq .title`) statt per GraphQL-`gh issue view`, das in gesperrten Umgebungen mit HTTP 403 scheiterte; Fehlschlaege landen mit Issue-Nummer und Grund in `.claude/issue_titles.log` (rotierend).
+
 ## [4.4.7] - 2026-10-30
 
 Workflow-Plan-Pane: genau eines pro Session, wird beim Beenden geschlossen, nach Updates neu geoeffnet; fremde Sessions bleiben unberuehrt. Echter E2E mit Herdr.

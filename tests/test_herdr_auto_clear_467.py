@@ -281,6 +281,10 @@ def test_hook_spawns_runner_and_returns_immediately(tmp_path):
 
 def test_runner_exact_sequence_and_flags(tmp_path):
     proj, log, env, _ = _runner_case(tmp_path, "seq", _wait_line("idle"), _wait_line("done"))
+    # Kurz-Alias im Projekt: der Runner tippt die Kurzform (#499, sonst Plugin-Form)
+    alias = proj / ".claude" / "commands" / "50-implement.md"
+    alias.parent.mkdir(parents=True, exist_ok=True)
+    alias.write_text("Alias\n")
     res = _run_runner(proj, env)
     assert res.returncode == 0, res.stderr
     calls = _calls(log)

@@ -92,7 +92,10 @@ Create `docs/context/[workflow-name].md`:
 
 ### 4. Update Workflow State
 
+Erst das Kontext-Dokument im State eintragen — der Phasenwechsel nach `phase2_analyse` verlangt das Feld `context_file`:
+
 ```bash
+python3 .claude/hooks/workflow.py set-field context_file docs/context/[workflow-name].md
 python3 .claude/hooks/workflow.py phase phase2_analyse
 ```
 

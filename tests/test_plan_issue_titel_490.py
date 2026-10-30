@@ -156,7 +156,7 @@ def test_issue_title_cli_fetch_and_fail_open(tmp_path):
     assert res.stdout.strip() == SHORT_LONG, res.stdout
     assert json.loads(_cache(proj).read_text()) == {"490": SHORT_LONG}
     calls = _gh_calls(log)
-    assert len(calls) == 1 and calls[0].startswith("issue view 490"), calls
+    assert len(calls) == 1 and calls[0].startswith("api repos/{owner}/{repo}/issues/490"), calls
 
     # Stub mit Exit 1: leer, Exit 0, Cache unveraendert
     proj2, log2, env2 = _case(tmp_path, "fail", GH_TITLE=LONG_TITLE, GH_EXIT="1")

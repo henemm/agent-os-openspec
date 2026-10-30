@@ -423,6 +423,43 @@ def spawn_auto_clear(pane: str, workflow_name: str, phase: str, command: str,
         return False
 
 
+PLUGIN_NAMESPACE = "agent-os-openspec"
+MANUAL_COMMANDS = ("99-reset",)  # Workflow-Abschluss bleibt menschlich (#499)
+
+
+def _command_name(command) -> str:
+    """Befehlsname ohne fuehrenden `/` (erster Token); leer bei Unbrauchbarem."""
+    parts = str(command or "").split()
+    return parts[0].lstrip("/") if parts else ""
+
+
+def resolve_command_form(command: str) -> str:
+    """Tatsaechlich getippte Form des Folgebefehls (#499). Pure bis auf Dateipruefung.
+
+    Kurzform, wenn ein Alias an einem der Orte liegt, die Claude Code aufloest
+    (Worktree/Projekt/Home je `commands/<name>.md` und `skills/<name>/SKILL.md`);
+    sonst Plugin-Form. Qualifizierte Befehle (`:` im Namen) bleiben unveraendert,
+    Argumente werden angehaengt. Jede Ausnahme ergibt die Plugin-Form.
+    """
+    parts = str(command).split(maxsplit=1)
+    name = _command_name(command)
+    if not name or ":" in name:
+        return command
+    rest = f" {parts[1]}" if len(parts) > 1 else ""
+    try:
+        _hooks_on_path()
+        from hook_utils import find_project_root
+        # Worktree (Session-Ordner) und Haupt-Repo; find_project_root loest Worktrees auf
+        for base in (_ac_base(), find_project_root(), Path.home()):
+            claude = Path(base) / ".claude"
+            if ((claude / "commands" / f"{name}.md").is_file()
+                    or (claude / "skills" / name / "SKILL.md").is_file()):
+                return f"/{name}{rest}"
+    except (Exception, SystemExit):
+        pass
+    return f"/{PLUGIN_NAMESPACE}:{name}{rest}"
+
+
 def maybe_auto_clear(payload, message, data) -> bool:
     """Trigger-Bedingungen (#467) in Spec-Reihenfolge; True = Runner gespawnt.
 
@@ -456,6 +493,8 @@ def maybe_auto_clear(payload, message, data) -> bool:
         first = command.split()[0]
         if first == "/clear":
             return _ac_skip("/clear als Befehl")
+        if _command_name(command) in MANUAL_COMMANDS:
+            return _ac_skip("Workflow-Abschluss bleibt manuell")
         _, footer_commands = _footer_parts()
         if first not in footer_commands(message):
             return _ac_skip(f"Fusszeile nennt {command} nicht")
@@ -661,6 +700,8 @@ class _Runner:
             raise _Abort(f"agent prompt {text!r} Exit {res.returncode}")
 
     def run(self) -> None:
+        if _command_name(self.args.command) in MANUAL_COMMANDS:
+            raise _Abort("Workflow-Abschluss bleibt manuell")
         if str(self.args.announce).strip() not in ("0", "false", "False", ""):
             self._announce()
         self._sleep(self.grace)
@@ -671,7 +712,8 @@ class _Runner:
         self._sleep(self.settle)
         self._wait_ready("wait 2")
         self._recheck("vor Folgebefehl")
-        self._prompt(self.args.command)
+        # Vermerk/Log/Lock bleiben in Kurzform; nur der getippte Text folgt der Form (#499)
+        self._prompt(resolve_command_form(self.args.command))
 
 
 def run_auto_clear(argv) -> int:

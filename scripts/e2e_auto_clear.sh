@@ -16,14 +16,19 @@
 #   E  ECHT          (nur explizit per ONLY=E) echter Plugin-Befehl
 #                    `/agent-os-openspec:10-context #999` in einem Wegwerf-Projekt mit
 #                    grossem Modell (E2E_MODEL, Default opus) -> phase2_analyse, Herdr
-#                    tippt /clear + /20-analyse #999, der echte 20-analyse startet.
+#                    tippt /clear + /agent-os-openspec:20-analyse #999 (keine Aliase,
+#                    #499), der echte 20-analyse startet. /10-context setzt context_file
+#                    selbst (#500), keine Hilfsregel dafuer.
 #                    Rechte: eng gefasste permissions.allow, keine abgeschaltete Pruefung.
+#   F  PLUGIN-FORM   (#499) wie A, aber ohne Testdouble und ohne Aliase (nur
+#                    --plugin-dir) -> Herdr tippt /agent-os-openspec:20-analyse #999,
+#                    der Plugin-Befehl startet, kein "Unknown command".
 #
 # Aufruf:
 #   HERDR_E2E_BIN=/pfad/zu/herdr bash scripts/e2e_auto_clear.sh   # vorhandenes Binary
 #   bash scripts/e2e_auto_clear.sh                                # laedt v0.9.5, prueft SHA256
 #   KEEP=1 ...      laesst die Arbeitsordner stehen
-#   ONLY="A C" ...  nur ausgewaehlte Szenarien (Default "A B C D"; E nur explizit)
+#   ONLY="A C" ...  nur ausgewaehlte Szenarien (Default "A B C D F"; E nur explizit)
 #   E2E_MODEL=...   Modell (Default haiku fuer A-D, opus fuer E)
 #
 # Voraussetzungen: claude (eingeloggt bzw. Auth per Umgebung), git, python3, curl.
@@ -38,12 +43,13 @@ HERDR_SHA256="14d9e8bc8b4a9e0118d77c32266f76d461f09b40342eb23752960bd89f59929d"
 WF="feat-999-e2e"
 CMD10="/10-context #999"
 CMD="/20-analyse #999"
+PCMD="/agent-os-openspec:20-analyse #999"   # getippte Form ohne Aliase (#499)
 MODEL_AD="${E2E_MODEL:-haiku}"
 MODEL_E="${E2E_MODEL:-opus}"
 MODEL="$MODEL_AD"
 E_TIMEOUT_S="${E_TIMEOUT_S:-900}"
 KEEP="${KEEP:-0}"
-ONLY="${ONLY:-A B C D}"
+ONLY="${ONLY:-A B C D F}"
 
 log() { printf '[e2e %s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 
@@ -107,7 +113,7 @@ PY
 # --- Szenario-Bausteine ------------------------------------------------------
 H() { "$HB" --session e2e "$@"; }
 
-setup_case() {  # $1 = stub|real; setzt W, P, T; startet Herdr + Claude; setzt PANE
+setup_case() {  # $1 = stub|plugin|real; setzt W, P, T; startet Herdr + Claude; setzt PANE
     local mode="${1:-stub}"
     W="$(mktemp -d /tmp/e2eac.XXXX)"
     P="$W/p"
@@ -140,18 +146,15 @@ YAML
 
     mkdir -p "$T/.claude"
     if [ "$mode" = "real" ]; then
+        # Keine Aliase (#499): Herdr tippt die Plugin-Form, die mit --plugin-dir existiert
         write_real_settings "$T/.claude/settings.json"
-        # Herdr tippt den Folgebefehl in Kurzform (`/20-analyse #999`); nur mit
-        # --plugin-dir kennt das TUI ausschliesslich `/agent-os-openspec:20-analyse`
-        # ("Unknown command"). Empfohlene Konsumenten-Einrichtung: Projekt-Aliase.
-        python3 "$REPO/setup.py" "$T" --command-aliases >"$W/aliases.log" 2>&1 \
-            || { echo "setup: --command-aliases fehlgeschlagen"; cat "$W/aliases.log"; return 1; }
     else
         # Vorbedingung des Grenz-Phasenwechsels 1->2 (sonst blockt workflow.py phase)
         (cd "$T" && python3 "$REPO/core/hooks/workflow.py" set-field context_file \
             "docs/context/$WF.md" >/dev/null) || { echo "setup: set-field fehlgeschlagen"; return 1; }
         mkdir -p "$T/.claude/commands"
-        cat >"$T/.claude/commands/20-analyse.md" <<'MD'
+        # F (plugin): kein Testdouble, kein Alias -> Plugin-Form (#499)
+        [ "$mode" = "plugin" ] || cat >"$T/.claude/commands/20-analyse.md" <<'MD'
 ---
 description: E2E-Testdouble fuer /20-analyse
 ---
@@ -432,24 +435,44 @@ scenario_E() {
     wait_real || return
     [ "$(cur_phase)" = "phase2_analyse" ]; check "State: current_phase=phase2_analyse ($(cur_phase))" $?
     ac_log | grep -Fq "$WF|phase2_analyse|$CMD: OK"; check "Log: $WF|phase2_analyse|$CMD: OK" $?
-    wait_pane "❯ $CMD" 120; check "TUI: ❯ $CMD" $?
+    check_plugin_followup E
+    usage_report
+}
+
+check_plugin_followup() {  # $1 Szenario; Herdr tippte die Plugin-Form, der Befehl startet
+    wait_pane "❯ $PCMD" 120; check "TUI: ❯ $PCMD" $?
     # Aktivitaet des echten 20-analyse: nach der letzten Eingabe-Zeile mindestens eine
     # Antwort-/Werkzeug-Zeile (● bzw. ⏺) des neuen Kontexts
     local i ok=1 txt
     for i in $(seq 1 180); do
         txt="$(pane_text 400)"
-        echo "$txt" | awk -v c="❯ $CMD" 'index($0,c){f=1;next} f&&/●|⏺/{found=1} END{exit found?0:1}' \
+        echo "$txt" | awk -v c="❯ $PCMD" 'index($0,c){f=1;next} f&&/●|⏺/{found=1} END{exit found?0:1}' \
             && { ok=0; break; }
         sleep 1
     done
-    check "TUI: echter 20-analyse antwortet nach ❯ $CMD" $ok
+    check "TUI: echter 20-analyse antwortet nach ❯ $PCMD" $ok
     txt="$(pane_text 400)"
     echo "$txt" | grep -Fq "❯ /clear"; check "TUI: ❯ /clear" $?
-    echo "  Belege E:"; ac_log | sed 's/^/    log  | /'
-    echo "$txt" | grep -nE "SessionStart:clear|❯ /clear|❯ /20-analyse|❯ /agent-os-openspec|❗Du|Set phase to" \
+    ! echo "$txt" | grep -Fqi "Unknown command"; check "TUI: kein \"Unknown command\"" $?
+    ! echo "$txt" | grep -Fq "❯ $CMD"; check "TUI: Kurzform $CMD nicht getippt" $?
+    echo "  Belege $1:"; ac_log | sed 's/^/    log  | /'
+    echo "$txt" | grep -nE "SessionStart:clear|❯ /clear|❯ /20-analyse|❯ /agent-os-openspec|❗Du|Set phase to|Unknown command" \
         | sed 's/^/    pane | /'
-    echo "$txt" | awk -v c="❯ $CMD" 'index($0,c){f=1} f' | head -25 | sed 's/^/    nach | /'
-    usage_report
+    echo "$txt" | awk -v c="❯ $PCMD" 'index($0,c){f=1} f' | head -25 | sed 's/^/    nach | /'
+}
+
+# --- Szenario F --------------------------------------------------------------
+scenario_F() {
+    send_prompt "$INTRO
+Fuehre mit dem Bash-Werkzeug genau diesen Befehl aus, unveraendert, ohne cd und ohne Zusatz:
+$PHASE_CMD
+Gib danach als gesamte Antwort genau diese eine Zeile aus, ohne Codeblock und ohne weiteren Text:
+❗Du: \`$CMD\`" || return
+    wait_log "$WF|phase2_analyse|$CMD: " 120
+    ac_log | grep -Fq "$WF|phase2_analyse|$CMD: OK"; check "Log: $WF|phase2_analyse|$CMD: OK" $?
+    [ ! -e "$T/.claude/commands/20-analyse.md" ] && [ ! -e "$P/.claude/commands/20-analyse.md" ]
+    check "kein Alias/Testdouble 20-analyse im Projekt" $?
+    check_plugin_followup F
 }
 
 usage_report() {  # Token-Summe je Modell aus den Transkripten der isolierten Konfiguration
@@ -481,6 +504,7 @@ run_case() {
     local t0=$SECONDS mode=stub
     MODEL="$MODEL_AD"
     if [ "$name" = "E" ]; then mode=real; MODEL="$MODEL_E"; fi
+    if [ "$name" = "F" ]; then mode=plugin; fi
     log "=== Szenario $name ==="
     trap 'teardown_case; cleanup_global' EXIT
     if setup_case "$mode"; then
