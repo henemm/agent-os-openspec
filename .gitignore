@@ -60,3 +60,9 @@ docs/artifacts/feat-285/*
 # Schleifenschutz des Footer-Gates (Issue #234) — merkt sich die zuletzt
 # korrigierte Turn-Kennung. Reiner Laufzeit-Zustand wie stop_lock.json.
 .claude/footer_gate_state.json
+
+# Herdr-/Titel-Laufzeitdateien (#490, #492, #496)
+.claude/issue_titles.json
+.claude/issue_titles.json.lock
+.claude/issue_titles.log
+.claude/herdr_*

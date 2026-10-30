@@ -107,7 +107,10 @@ Create `docs/context/[workflow-name].md`:
 
 ### 4. Update Workflow State
 
+Erst das Kontext-Dokument im State eintragen — der Phasenwechsel nach `phase2_analyse` verlangt das Feld `context_file`:
+
 ```bash
+$WF set-field context_file docs/context/[workflow-name].md
 $WF phase phase2_analyse
 ```
 
