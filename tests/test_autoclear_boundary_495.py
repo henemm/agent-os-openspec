@@ -15,6 +15,7 @@ import json
 import subprocess
 import sys
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -49,8 +50,10 @@ def _state(proj: Path) -> dict:
     return json.loads(_wf_file(proj).read_text())
 
 
-def _boundary(phase: str = PHASE, command: str = CMD) -> dict:
-    return {"phase": phase, "command": command, "at": "2026-10-30T12:00:00"}
+def _boundary(phase: str = PHASE, command: str = CMD, age_s: float = 0) -> dict:
+    # `at` relativ zu jetzt: der Vermerk gilt nur 15 min (Sicherheitsnetz, F001)
+    at = (datetime.now() - timedelta(seconds=age_s)).isoformat()
+    return {"phase": phase, "command": command, "at": at}
 
 
 def _run_autoclear(proj: Path, env: dict) -> subprocess.CompletedProcess:
@@ -172,3 +175,71 @@ def test_once_lock_single_spawn(tmp_path):
     assert res.returncode == 0, res.stderr
     time.sleep(1.0)
     assert len(_notifications(log)) == 1, _notifications(log)
+
+
+# --- F001/F002: Vermerk ist Einmal-Signal ------------------------------------
+
+def _age_lock(proj: Path, seconds: float = 601) -> None:
+    lock = proj / ".claude" / "herdr_auto_clear_state.json"
+    state = json.loads(lock.read_text())
+    key = f"{WF}|{PHASE}|{CMD}"
+    assert key in state, state
+    state[key] = time.time() - seconds
+    lock.write_text(json.dumps(state))
+
+
+def test_boundary_consumed_after_spawn(tmp_path):
+    proj, log, stub, env = _hook_case(tmp_path, auto_clear_boundary=_boundary())
+    msg = _message(PLAIN, du=_du(CMD))
+    res = _run_hook(proj, env, msg)
+    assert res.returncode == 0, res.stderr
+    assert _wait_calls(log, 1), f"Grenz-Stop spawnte keinen Runner; Log: {_ac_log(proj)!r}"
+    assert "auto_clear_boundary" not in _state(proj), _state(proj)
+    _age_lock(proj)  # Once-Lock abgelaufen: nur der Verbrauch schuetzt noch
+    question = _message("Implementierung halb fertig. Variante A oder B?", du=_du(CMD))
+    res = _run_hook(proj, env, question)
+    assert res.returncode == 0, res.stderr
+    time.sleep(1.0)
+    assert len(_notifications(log)) == 1, f"Zweiter Auto-/clear mitten in der Phase: {_notifications(log)}"
+    assert _ac_log(proj).splitlines()[-1].endswith("skip: keine Grenze vermerkt"), _ac_log(proj)
+
+
+def test_boundary_consumed_by_negative_veto(tmp_path):
+    proj, log, stub, env = _hook_case(tmp_path, auto_clear_boundary=_boundary())
+    res = _run_hook(proj, env, _message(PLAIN, NEGATIVE, du=_du(CMD)))
+    assert res.returncode == 0, res.stderr
+    assert "auto_clear_boundary" not in _state(proj), _state(proj)
+    res = _run_hook(proj, env, _message("Erledigt: Datei X gesichert.", du=_du(CMD)))
+    assert res.returncode == 0, res.stderr
+    _assert_no_calls(log)
+
+
+def test_boundary_kept_when_footer_wrong(tmp_path):
+    proj, log, stub, env = _hook_case(tmp_path, auto_clear_boundary=_boundary())
+    res = _run_hook(proj, env, _message(PLAIN, du=_du("/40-tdd-red #467")))
+    assert res.returncode == 2, f"Exit 2 erwartet: {res.returncode} {res.stderr!r}"
+    _assert_no_calls(log)
+    assert isinstance(_state(proj).get("auto_clear_boundary"), dict), _state(proj)
+    res = _run_hook(proj, env, _message(PLAIN, du=_du(CMD)))
+    assert res.returncode == 0, res.stderr
+    assert _wait_calls(log, 1), f"Korrigierte Fusszeile spawnte nicht; Log: {_ac_log(proj)!r}"
+
+
+def test_stale_boundary_ignored(tmp_path):
+    proj, log, stub, env = _hook_case(tmp_path, auto_clear_boundary=_boundary(age_s=20 * 60))
+    res = _run_hook(proj, env, _message(PLAIN, du=_du(CMD)))
+    assert res.returncode == 0, res.stderr
+    _assert_no_calls(log)
+    assert "skip: Grenze veraltet" in _ac_log(proj), _ac_log(proj)
+    assert "auto_clear_boundary" not in _state(proj), _state(proj)
+
+
+def test_boundary_consumed_on_stop_hook_active(tmp_path):
+    proj, log, stub, env = _hook_case(tmp_path, auto_clear_boundary=_boundary())
+    msg = _message(PLAIN, du=_du(CMD))
+    res = _run_hook(proj, env, msg, stop_hook_active=True)
+    assert res.returncode == 0, res.stderr
+    assert "auto_clear_boundary" not in _state(proj), _state(proj)
+    res = _run_hook(proj, env, msg)
+    assert res.returncode == 0, res.stderr
+    _assert_no_calls(log)

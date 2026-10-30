@@ -3033,7 +3033,8 @@ def cmd_autoclear(args: list[str]) -> None:
     """Auskunft, kein Gate: genau eine Zeile `AUTO_CLEAR=on|off`, Exit immer 0 (#489).
 
     `on` nur in einem Herdr-Pane (`_pane()`) bei aktivem Auto-/clear. Bewusst ohne
-    aktiven Workflow, Vorbild `cmd_autonomy`.
+    aktiven Workflow, Vorbild `cmd_autonomy`. Bei `on` zusaetzlich Grenz-Vermerk
+    im aktiven Workflow (#495), ohne Einfluss auf Ausgabe/Exit.
     """
     state = "off"
     try:
@@ -3042,8 +3043,37 @@ def cmd_autoclear(args: list[str]) -> None:
             state = "on"
     except Exception:
         state = "off"
+    if state == "on":
+        _record_auto_clear_boundary()
     try:
         print(f"AUTO_CLEAR={state}")
+    except Exception:
+        pass
+
+
+def _record_auto_clear_boundary() -> None:
+    """Grenz-Vermerk `auto_clear_boundary` im aktiven Workflow speichern (#495).
+
+    Der Stop-Hook (`herdr_bridge.maybe_auto_clear`) loest nur aus, wenn der
+    Vermerk zu Phase und erwartetem Befehl passt. Fail-open: kein Workflow,
+    kein bestimmbarer Befehl oder jeder Fehler = nichts speichern, still.
+    """
+    try:
+        found = read_active_workflow_fast()
+        if found is None:
+            return
+        name, data = found
+        command = expected_footer_command(data)
+        if not isinstance(command, str):
+            return
+        data.setdefault("name", name)
+        data["auto_clear_boundary"] = {
+            "phase": data.get("current_phase"),
+            "command": command,
+            "at": datetime.now().isoformat(),
+        }
+        # Bewusst ohne _save_active: kein Herdr-Report, Stand unveraendert
+        _atomic_write(_workflow_file(name), data)
     except Exception:
         pass
 

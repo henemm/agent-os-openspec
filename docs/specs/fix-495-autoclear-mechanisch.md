@@ -59,12 +59,15 @@ Der Auto-/clear (#467/#489) loest im Konsumentenprojekt nie aus: `maybe_auto_cle
 
 **Ausloeser (`herdr_bridge.maybe_auto_clear`).** Reihenfolge der Bedingungen bleibt (Pane, Opt-in, `stop_hook_active`, Slash-Befehl, kein `/clear`, Fusszeile nennt Befehl). Der Block `has_clear_marker(message)` wird ersetzt durch:
 
-1. Enthaelt die Nachricht den Negativ-Satz (`NEGATIVE_MARKER`, `**` ignoriert, auch in Fences): `_ac_skip("Negativmarker")`.
-2. `data["auto_clear_boundary"]` ist kein dict, oder `phase` != `data["current_phase"]`, oder `command` != erwarteter Befehl: `_ac_skip("keine Grenze vermerkt")`.
+1. `data["auto_clear_boundary"]` ist kein dict: `_ac_skip("keine Grenze vermerkt")`.
+2. Sonst wird der Vermerk ab hier **verbraucht** (Einmal-Signal, Adversary F001/F002): `_consume_boundary` entfernt ihn per Read-Modify-Write aus `find_project_root()/.claude/workflows/<name>.json` (dieselbe Datei, die `footer_gate` liest), atomar, ohne Herdr-Report, nur wenn dort noch genau dieser Vermerk steht; Fehler werden geschluckt.
+3. Enthaelt die Nachricht den Negativ-Satz (`NEGATIVE_MARKER`, `**` ignoriert, auch in Fences): `_ac_skip("Negativmarker")` (Vermerk verbraucht).
+4. `phase` != `data["current_phase"]` oder `command` != erwarteter Befehl: `_ac_skip("keine Grenze vermerkt")` (Vermerk verbraucht).
+5. `at` aelter als `AC_BOUNDARY_MAX_AGE_S` (900 s) oder nicht lesbar: `_ac_skip("Grenze veraltet")` (Vermerk verbraucht).
 
-Danach unveraendert: Once-Lock (`name|phase|command`), Spawn. `has_clear_marker` bleibt als Funktion bestehen (Rueckwaertskompatibilitaet, vorhandener Test), wird aber nicht mehr als Ausloese-Bedingung genutzt. Befehlstexte in `core/commands` bleiben unveraendert.
+Bei `stop_hook_active` wird ein vorhandener Vermerk ebenfalls verbraucht, dann `_ac_skip("stop_hook_active")`. Bricht der Stop sonst vor Schritt 1 ab (kein Pane, Opt-in aus, Fusszeile nennt Befehl nicht), bleibt der Vermerk stehen. Danach unveraendert: Once-Lock (`name|phase|command`), Spawn. `has_clear_marker` bleibt als Funktion bestehen (Rueckwaertskompatibilitaet, vorhandener Test), wird aber nicht mehr als Ausloese-Bedingung genutzt. Befehlstexte in `core/commands` bleiben unveraendert.
 
-**Warum das sicher ist.** Der Vermerk entsteht erst beim `autoclear`-Aufruf am Ende der Phase (nach Phasenwechsel/Commit laut Befehlstext). Rueckt der Workflow danach weiter, passt `phase` nicht mehr; ein alter State ohne Feld loest nie aus (wie heute). Der Once-Lock verhindert Doppel-Spawns bei identischem Vermerk.
+**Warum das sicher ist.** Der Vermerk entsteht erst beim `autoclear`-Aufruf am Ende der Phase (nach Phasenwechsel/Commit laut Befehlstext). Weil `autoclear` nach dem Phasenwechsel laeuft, arbeitet der Folgebefehl in derselben Phase mit derselben Fusszeile; deshalb gilt der Vermerk nur fuer den naechsten ausgewerteten Stop und wird dort verbraucht (Spawn, Veto, Nicht-Passen, Veraltet). Spaetere Turns der Phase (Rueckfrage, „go“) loesen erst nach einem neuen `autoclear`-Aufruf aus. Das 15-min-Fenster ist zusaetzliches Sicherheitsnetz, falls das Verbrauchen scheitert; ein alter State ohne Feld loest nie aus (wie heute). Der Once-Lock verhindert Doppel-Spawns bei identischem Vermerk.
 
 ## Expected Behavior
 
@@ -76,7 +79,9 @@ Danach unveraendert: Once-Lock (`name|phase|command`), Spawn. `has_clear_marker`
 
 - Ruft ein Befehl `autoclear` nicht auf, entsteht kein Vermerk und es gibt keinen Auto-/clear (wie bisher ohne Marker).
 - Der Vermerk garantiert nicht, dass der Befehl den Stand wirklich gesichert hat; das bleibt Aufgabe der Befehlstexte. Das Negativ-Veto schuetzt nur, wenn das Modell es ausgibt.
-- Das Feld `auto_clear_boundary` bleibt nach dem Auslesen im State stehen; es wirkt nur bei passender Phase und passendem Befehl, der Once-Lock deckt Wiederholung ab (10 min).
+- Das Feld `auto_clear_boundary` ist ein Einmal-Signal: der erste ausgewertete Stop verbraucht es. Scheitert das Entfernen (Schreibfehler, fail-open), begrenzen das 15-min-Fenster und der Once-Lock (10 min) die Wiederholung; bis zu 15 min nach der Grenze ist dann ein zweiter Auto-/clear moeglich.
+- Ein Stop mit `stop_hook_active` (Folge-Stop nach einer Fusszeilen-Korrektur per Exit 2) loest nie aus und verwirft einen vorhandenen Vermerk (`skip: stop_hook_active`). Nach einer Fusszeilen-Korrektur gibt es an dieser Grenze also kein Auto-/clear; der PO tippt `/clear` selbst. Das ist die sichere Richtung: kein Rest-Vermerk, der einen spaeteren Turn derselben Phase ausloest.
+- Das Verbrauchen ist ein Read-Modify-Write ohne Sperre; ein zeitgleicher Schreibzugriff von `workflow.py` auf denselben Workflow-State koennte verloren gehen (praktisch kein Fenster: Stop-Hook laeuft nach dem Turn).
 - Echtes TUI-Verhalten (Herdr tippt `/clear`) ist nur im realen Herdr pruefbar; Tests nutzen ein Stub-Binary.
 
 ## Definition of Done
@@ -130,3 +135,4 @@ Muster `tests/test_herdr_auto_clear_467.py`: isoliertes Projekt, Stub-Herdr (`HE
 ## Changelog
 
 - 2026-10-30: Initial spec created
+- 2026-10-30: Nach Adversary BROKEN (F001/F002): Vermerk wird beim ersten ausgewerteten Stop verbraucht, 15-min-Fenster (Implementation Details, Known Limitations); Verbrauch auch bei `stop_hook_active`
