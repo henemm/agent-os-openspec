@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **#487:** `workflow.py auto-approve` beachtet jetzt den benutzerweiten Schalter `OPENSPEC_AUTONOMY` (#481): die Modusprüfung läuft über `autonomy_mode()` statt über die Projekt-Config allein. Tests: `tests/test_auto_approve_env_487.py`.
+
 ## [4.4.1] - 2026-10-29
 
 PO-Briefing: Ampel nur noch rot bei echten offenen PO-Entscheidungen (Auto-Modus gibt damit die meisten Specs selbst frei).

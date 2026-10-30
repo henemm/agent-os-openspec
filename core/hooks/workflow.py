@@ -2902,8 +2902,7 @@ def _auto_approve_decision() -> "tuple[str, str, list]":
     config = trusted_config()
     if not isinstance(config, dict):
         return "human", "wirksame Config nicht lesbar", []
-    section = config.get("autonomy")
-    if not (isinstance(section, dict) and section.get("mode") == "auto"):
+    if autonomy_mode() != "auto":
         return "human", "Modus manual", []
     try:
         data, _name = _read_active()
