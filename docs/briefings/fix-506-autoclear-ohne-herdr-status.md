@@ -1,7 +1,7 @@
 ---
 spec_file: docs/specs/fix-506-autoclear-ohne-herdr-status.md
-spec_sha256: 8c10d3d276f0236aab7c0ccf5e30be8d131fc3c861cbcdbaeb99dc87bd44078b
-spec_frozen_sha256: 7dc5d1949b0bb2b23fc836069f330dc7342fb64f170f472c425a2b67d6e2eee5
+spec_sha256: 4e33b9a416c5e932dcc8981ad5d28fb1ea10ea655aa88ae6bd65adb1d9b32729
+spec_frozen_sha256: 6896f42bbcaf260df36c2caee982c0bd5425723a95276b9952b811b79c75ffc0
 ---
 
 # PO-Briefing: fix-506-autoclear-ohne-herdr-status
@@ -12,20 +12,20 @@ spec_frozen_sha256: 7dc5d1949b0bb2b23fc836069f330dc7342fb64f170f472c425a2b67d6e2
 
 ## Was gebaut wird
 
-Das automatische /clear an Phasengrenzen funktioniert wieder zuverlässig, weil das Plugin eigene Signale nutzt statt Herdrs Statusmeldung.
+Automatisches /clear mit anschließendem Folgebefehl klappt an Phasengrenzen auch dann, wenn Herdr die fertige Sitzung als wartend meldet.
 
 ## Definition of Done
 
-Im echten Herdr mit nachgebautem Regelwerk laufen /clear und Folgebefehl durch, während der alte Stand im selben Test abbricht.
+Im echten Herdr mit Ihren Erkennungsregeln laufen /clear und der nächste Befehl durch; bei offenem Berechtigungsdialog wird nichts getippt.
 
 ## Wie geprüft wird
 
-Automatische Tests und ein echter Herdr-Lauf belegen es; dein eigener Alltagsbetrieb bleibt ungeprüft.
+Automatische Tests und Läufe im echten Herdr belegen Erfolg sowie Abbruch bei neuer Eingabe oder offenem Dialog.
 
 ## Kritische Anmerkungen
 
-- Herdr wird nicht benachrichtigt, sondern nur als Tastatur benutzt; das erfüllt deinen Wunsch dem Sinn nach, nicht wörtlich.
-- Getippter, nicht abgeschickter Text vermischt sich mit /clear; Eingaben zwischen /clear und Folgebefehl bleiben unbemerkt (bekannte Grenze).
+- Restrisiko: Fortsetzung nur mit Text, länger als die Wartezeit, wird nicht erkannt; /clear könnte in den laufenden Turn gelangen.
+- Eingetippt wird per simulierten Tasten statt Herdrs Befehlsfunktion, weil Herdr diese bei Ihrem Status ablehnt.
 
 ## Freigabe-Frage
 
