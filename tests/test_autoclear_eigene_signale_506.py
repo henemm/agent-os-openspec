@@ -1,17 +1,22 @@
 """Auto-/clear mit eigenen Plugin-Signalen statt Herdr-Status (Issue #506).
 
-Spec: docs/specs/fix-506-autoclear-ohne-herdr-status.md (AC-1 bis AC-10; AC-11
-ist der Regressionslauf, AC-12/AC-13 das E2E-Skript).
+Spec: docs/specs/fix-506-autoclear-ohne-herdr-status.md v1.1 (AC-1 bis AC-10 und
+AC-14; AC-11 ist der Regressionslauf, AC-12/AC-13 das E2E-Skript).
 
-Stub-Herdr (bash), protokolliert jeden Aufruf NUL-getrennt in STUB_LOG:
-- `agent wait`: verhaelt sich wie beim PO (Pane `blocked`): Exit 1 mit
-  "timed out waiting for agent status". STUB_WAIT=idle liefert stattdessen
-  `idle` (nur fuer AC-1, damit der Fehlergrund allein "wait aufgerufen" ist).
-- `agent prompt <pane> /clear`: fuehrt optional STUB_CLEAR_HOOK aus (State-Umbau)
-  und schreibt optional den SessionStart-Marker nach STUB_SESSION_MARKER — simuliert
-  den echten SessionStart(clear)-Hook. Steuerung: STUB_SESSION_DELAY (Sekunden,
-  im Hintergrund), STUB_SESSION_SOURCE (Default `clear`), STUB_SESSION_AT_OFFSET
+Stub-Herdr (bash), protokolliert jeden Aufruf NUL-getrennt in STUB_LOG. Herdr ist
+nur noch Tastatur: getippt wird per `pane send-text <pane> <text>`, abgeschickt per
+`pane send-keys <pane> enter`.
+- `pane send-text <pane> <text>`: merkt sich den Text (`$STUB_LOG.pending`), Exit 0.
+- `pane send-keys <pane> enter`: war der gemerkte Text `/clear`, fuehrt der Stub
+  optional STUB_CLEAR_HOOK aus (State-Umbau) und schreibt optional den
+  SessionStart-Marker nach STUB_SESSION_MARKER — simuliert den echten
+  SessionStart(clear)-Hook. Steuerung: STUB_SESSION_DELAY (Sekunden, im
+  Hintergrund), STUB_SESSION_SOURCE (Default `clear`), STUB_SESSION_AT_OFFSET
   (Sekunden auf `time.time()`, negativ = Zeitstempel vor dem /clear).
+- `agent prompt`: bei STUB_BLOCKED=1 (Default der Runner-Tests, Pane `blocked` wie
+  beim PO) wie echtes Herdr 0.9.5 abgelehnt: `agent_blocked`, Exit 1. Sonst Exit 0
+  ohne Wirkung (kein Marker) — `agent prompt` tippt in diesem Stub nie.
+- `agent wait`: wie beim PO (Pane `blocked`): Exit 1 "timed out waiting for agent status".
 - alles andere: Exit 0.
 
 Marker-Vertrag (Spec, Implementation Details): `<base>/.claude/herdr_signals/`
@@ -46,16 +51,26 @@ IDLE_TIMEOUT = 2
 
 STUB_SCRIPT = r"""#!/bin/bash
 { for a in "$@"; do printf '%s\0' "$a"; done; printf '\n'; } >> "$STUB_LOG"
+PENDING="$STUB_LOG.pending"
 if [ "$1 $2" = "agent wait" ]; then
-  if [ "$STUB_WAIT" = "idle" ]; then
-    printf '%s\n' '{"result":{"agent":{"agent_status":"idle"}}}'
-    exit 0
-  fi
   printf '%s\n' 'timed out waiting for agent status' >&2
   exit 1
 fi
 if [ "$1 $2" = "agent prompt" ]; then
-  if [ "$4" = "/clear" ]; then
+  if [ "$STUB_BLOCKED" = "1" ]; then
+    printf '%s\n' '{"error":{"code":"agent_blocked","message":"agent is blocked"}}' >&2
+    exit 1
+  fi
+  exit 0
+fi
+if [ "$1 $2" = "pane send-text" ]; then
+  printf '%s' "$4" > "$PENDING"
+  exit 0
+fi
+if [ "$1 $2" = "pane send-keys" ]; then
+  typed=""
+  if [ -f "$PENDING" ]; then typed="$(cat "$PENDING")"; rm -f "$PENDING"; fi
+  if [ "$4" = "enter" ] && [ "$typed" = "/clear" ]; then
     if [ -n "$STUB_CLEAR_HOOK" ]; then bash "$STUB_CLEAR_HOOK"; fi
     if [ -n "$STUB_SESSION_MARKER" ]; then
       ( sleep "${STUB_SESSION_DELAY:-0}"
@@ -144,6 +159,7 @@ def _case(tmp_path: Path, label: str, *, session_to: "str | None" = PANE,
     stub = _make_stub(root)
     if session_to is not None:
         extra.setdefault("STUB_SESSION_MARKER", str(_marker(proj, session_to, "session")))
+    extra.setdefault("STUB_BLOCKED", "1")  # Pane `blocked` wie beim PO
     return proj, log, _env(proj, log, stub, **extra), root
 
 
@@ -161,16 +177,33 @@ def _kind(args: list) -> str:
     return " ".join(args[:2])
 
 
-def _prompts(calls: list) -> list:
-    return [c for c in calls if _kind(c) == "agent prompt"]
+TYPING_KINDS = ("pane send-text", "pane send-keys")
+
+
+def _typing(calls: list) -> list:
+    """Alle Tastatur-Aufrufe (`pane send-text`/`pane send-keys`) in Reihenfolge."""
+    return [c for c in calls if _kind(c) in TYPING_KINDS]
+
+
+def _typed_or_prompted(calls: list) -> list:
+    """Alles, womit der Runner Text an die Session schicken koennte."""
+    return [c for c in calls if _kind(c) in TYPING_KINDS + ("agent prompt",)]
+
+
+_NOW = object()  # Sentinel: --since = Zeitpunkt des Aufrufs (wie der Stop-Hook)
 
 
 def _runner_argv(*, command: str = CMD, phase: str = PHASE, grace: float = 0,
-                 idle_timeout: float = IDLE_TIMEOUT) -> list:
-    return [sys.executable, str(BRIDGE), "auto-clear",
+                 idle_timeout: float = IDLE_TIMEOUT, since=_NOW) -> list:
+    argv = [sys.executable, str(BRIDGE), "auto-clear",
             "--pane", PANE, "--workflow", WF, "--phase", phase, "--command", command,
             "--grace", str(grace), "--settle", "0", "--idle-timeout", str(idle_timeout),
             "--announce", "0"]
+    if since is _NOW:
+        since = time.time()
+    if since is not None:
+        argv += ["--since", repr(float(since))]
+    return argv
 
 
 def _run_runner(proj: Path, env: dict, timeout: float = 40, **kw):
@@ -194,8 +227,9 @@ def _assert_clean(res, proj):
     assert _runner_log(proj).strip(), "kein Eintrag in herdr_auto_clear.log"
 
 
-CLEAR = ["agent", "prompt", PANE, "/clear"]
-FOLLOW = ["agent", "prompt", PANE, "/agent-os-openspec:50-implement #506"]
+ENTER = ["pane", "send-keys", PANE, "enter"]
+CLEAR = [["pane", "send-text", PANE, "/clear"], ENTER]
+FOLLOW = [["pane", "send-text", PANE, "/agent-os-openspec:50-implement #506"], ENTER]
 
 
 def _state_changer(root: Path) -> Path:
@@ -216,27 +250,32 @@ def _state_changer(root: Path) -> Path:
 # --- AC-1 -------------------------------------------------------------------
 
 def test_runner_never_calls_agent_wait(tmp_path):
-    proj, log, env, _ = _case(tmp_path, "nowait", STUB_WAIT="idle",
-                              STUB_SESSION_DELAY="0.3")
+    proj, log, env, _ = _case(tmp_path, "nowait", STUB_SESSION_DELAY="0.3")
     res = _run_runner(proj, env)
     _assert_clean(res, proj)
     calls = _calls(log)
     assert [c for c in calls if _kind(c) == "agent wait"] == [], \
         f"Runner ruft weiterhin `agent wait` auf: {calls}"
-    assert [_kind(c) for c in calls] == ["agent prompt", "agent prompt"], calls
-    assert calls == [CLEAR, FOLLOW], calls
+    assert [c for c in calls if _kind(c) == "agent prompt"] == [], \
+        f"Runner tippt per `agent prompt` (bei `blocked` abgelehnt): {calls}"
+    assert [c for c in calls if c and c[0] == "agent"] == [], \
+        f"Runner nutzt weiterhin `agent`-Befehle: {calls}"
+    assert [_kind(c) for c in calls] == ["pane send-text", "pane send-keys"] * 2, calls
+    assert calls == CLEAR + FOLLOW, f"Log: {_runner_log(proj)!r} Aufrufe: {calls}"
+    assert "OK" in _runner_log(proj), _runner_log(proj)
 
 
 # --- AC-2 -------------------------------------------------------------------
 
 def test_new_input_since_spawn_aborts_without_typing(tmp_path):
     proj, log, env, _ = _case(tmp_path, "input")
-    proc = _start_runner(proj, env, grace=2.5)
+    since = time.time()  # Stop-Hook-Zeitpunkt
+    proc = _start_runner(proj, env, grace=2.5, since=since)
     time.sleep(0.8)  # Nutzer schickt in der Grace-Zeit einen neuen Prompt ab
     _write_marker(_marker(proj, PANE, "input"), at=time.time())
     out, err = proc.communicate(timeout=40)
     assert proc.returncode == 0, err
-    assert _prompts(_calls(log)) == [], _calls(log)
+    assert _typed_or_prompted(_calls(log)) == [], _calls(log)
     assert "Nutzer hat weitergeschrieben" in _runner_log(proj), _runner_log(proj)
 
 
@@ -245,13 +284,48 @@ def test_new_input_since_spawn_aborts_without_typing(tmp_path):
 @pytest.mark.parametrize("variant", ["none", "older"])
 def test_no_new_input_types_clear(tmp_path, variant):
     proj, log, env, _ = _case(tmp_path, variant, STUB_SESSION_DELAY="0.3")
+    since = time.time()
     if variant == "older":
-        _write_marker(_marker(proj, PANE, "input"), at=time.time() - 60)
-    res = _run_runner(proj, env)
+        _write_marker(_marker(proj, PANE, "input"), at=since - 60)
+    res = _run_runner(proj, env, since=since)
     _assert_clean(res, proj)
-    prompts = _prompts(_calls(log))
-    assert prompts and prompts[0] == CLEAR, \
+    typing = _typing(_calls(log))
+    assert typing[:2] == CLEAR, \
         f"/clear nicht getippt; Log: {_runner_log(proj)!r} Aufrufe: {_calls(log)}"
+
+
+# --- AC-14 ------------------------------------------------------------------
+
+def test_input_between_stop_and_runner_start_aborts(tmp_path):
+    # (a) Eingabe zwischen Stop-Hook (--since) und Runner-Start: zaehlt als neu
+    proj, log, env, _ = _case(tmp_path, "gap", STUB_SESSION_DELAY="0.3")
+    since = time.time()
+    _write_marker(_marker(proj, PANE, "input"), at=since + 0.1)
+    time.sleep(0.4)  # Runner startet erst nach der Eingabe
+    res = _run_runner(proj, env, since=since)
+    _assert_clean(res, proj)
+    assert _typed_or_prompted(_calls(log)) == [], \
+        f"(a) trotz Eingabe nach --since getippt: {_calls(log)}"
+    assert "Nutzer hat weitergeschrieben" in _runner_log(proj), _runner_log(proj)
+
+    # (b) ohne --since gilt der Runner-Start: dieselbe (dann aeltere) Eingabe zaehlt nicht
+    proj, log, env, _ = _case(tmp_path, "nosince", STUB_SESSION_DELAY="0.3")
+    _write_marker(_marker(proj, PANE, "input"), at=time.time() - 0.3)
+    time.sleep(0.1)
+    res = _run_runner(proj, env, since=None)
+    _assert_clean(res, proj)
+    assert _typing(_calls(log)) == CLEAR + FOLLOW, \
+        f"(b) Log: {_runner_log(proj)!r} Aufrufe: {_calls(log)}"
+
+    # (c) ohne --since: Eingabe nach Runner-Start (Grace-Zeit) bricht weiterhin ab
+    proj, log, env, _ = _case(tmp_path, "nosince-grace")
+    proc = _start_runner(proj, env, grace=2.0, since=None)
+    time.sleep(0.8)
+    _write_marker(_marker(proj, PANE, "input"), at=time.time())
+    _, err = proc.communicate(timeout=40)
+    assert proc.returncode == 0, err
+    assert _typed_or_prompted(_calls(log)) == [], f"(c) {_calls(log)}"
+    assert "Nutzer hat weitergeschrieben" in _runner_log(proj), _runner_log(proj)
 
 
 # --- AC-4 -------------------------------------------------------------------
@@ -260,7 +334,7 @@ def test_session_clear_after_own_clear_types_followup(tmp_path):
     proj, log, env, _ = _case(tmp_path, "followup", STUB_SESSION_DELAY="0.8")
     res = _run_runner(proj, env)
     _assert_clean(res, proj)
-    assert _prompts(_calls(log)) == [CLEAR, FOLLOW], \
+    assert _typing(_calls(log)) == CLEAR + FOLLOW, \
         f"Log: {_runner_log(proj)!r} Aufrufe: {_calls(log)}"
     assert "OK" in _runner_log(proj), _runner_log(proj)
     marker = json.loads(_marker(proj, PANE, "session").read_text())
@@ -275,7 +349,7 @@ def test_missing_session_signal_aborts_without_followup(tmp_path):
     res = _run_runner(proj, env)
     elapsed = time.monotonic() - start
     _assert_clean(res, proj)
-    assert _prompts(_calls(log)) == [CLEAR], \
+    assert _typing(_calls(log)) == CLEAR, \
         f"Log: {_runner_log(proj)!r} Aufrufe: {_calls(log)}"
     assert "ABBRUCH" in _runner_log(proj)
     assert "SessionStart" in _runner_log(proj), _runner_log(proj)
@@ -296,7 +370,7 @@ def test_session_start_before_own_clear_does_not_count(tmp_path, variant):
         proj, log, env, _ = _case(tmp_path, variant, STUB_SESSION_SOURCE="startup")
     res = _run_runner(proj, env)
     _assert_clean(res, proj)
-    assert _prompts(_calls(log)) == [CLEAR], \
+    assert _typing(_calls(log)) == CLEAR, \
         f"Log: {_runner_log(proj)!r} Aufrufe: {_calls(log)}"
     assert "ABBRUCH" in _runner_log(proj)
     assert "SessionStart" in _runner_log(proj), _runner_log(proj)
@@ -312,7 +386,7 @@ def test_markers_are_per_pane(tmp_path):
     _write_marker(_marker(proj, OTHER_PANE, "input"), at=time.time())
     _, err = proc.communicate(timeout=40)
     assert proc.returncode == 0, err
-    assert _prompts(_calls(log)) == [CLEAR, FOLLOW], \
+    assert _typing(_calls(log)) == CLEAR + FOLLOW, \
         f"(a) Log: {_runner_log(proj)!r} Aufrufe: {_calls(log)}"
 
     # (b) SessionStart(clear) eines fremden Panes zaehlt nicht fuer das eigene
@@ -320,7 +394,7 @@ def test_markers_are_per_pane(tmp_path):
     res = _run_runner(proj, env)
     _assert_clean(res, proj)
     assert _marker(proj, OTHER_PANE, "session").exists(), "Stub schrieb keinen Fremd-Marker"
-    assert _prompts(_calls(log)) == [CLEAR], \
+    assert _typing(_calls(log)) == CLEAR, \
         f"(b) Log: {_runner_log(proj)!r} Aufrufe: {_calls(log)}"
 
 
@@ -494,7 +568,7 @@ def test_manual_lock_and_recheck_unchanged(tmp_path):
     proj, log, env, _ = _case(tmp_path, "reset")
     res = _run_runner(proj, env, command="/99-reset #506")
     _assert_clean(res, proj)
-    assert _prompts(_calls(log)) == [], _calls(log)
+    assert _typed_or_prompted(_calls(log)) == [], _calls(log)
     assert "manuell" in _runner_log(proj), _runner_log(proj)
 
     # (b) Once-Lock gesetzt: footer_gate spawnt keinen Runner
@@ -522,7 +596,7 @@ def test_manual_lock_and_recheck_unchanged(tmp_path):
     subprocess.run(["bash", str(_state_changer(root))], check=True, timeout=30)
     _, err = proc.communicate(timeout=40)
     assert proc.returncode == 0, err
-    assert _prompts(_calls(log)) == [], _calls(log)
+    assert _typed_or_prompted(_calls(log)) == [], _calls(log)
     assert "vor /clear" in _runner_log(proj), _runner_log(proj)
 
     # (d) Phase wechselt beim /clear: SessionStart(clear) kommt, aber _recheck
@@ -531,6 +605,6 @@ def test_manual_lock_and_recheck_unchanged(tmp_path):
     env["STUB_CLEAR_HOOK"] = str(_state_changer(root))
     res = _run_runner(proj, env)
     _assert_clean(res, proj)
-    assert _prompts(_calls(log)) == [CLEAR], \
+    assert _typing(_calls(log)) == CLEAR, \
         f"Log: {_runner_log(proj)!r} Aufrufe: {_calls(log)}"
     assert "vor Folgebefehl" in _runner_log(proj), _runner_log(proj)
