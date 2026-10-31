@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.4.9] - 2026-10-31
+
+Auto-/clear haengt nicht mehr an Herdrs Statuserkennung: das Plugin entscheidet mit eigenen Hook-Signalen und bestaetigt nie einen offenen Dialog. Migration: grace_s: 3 in Projekt-Configs auf 10 setzen oder loeschen.
+
 ### Fixed
 
 - Auto-`/clear` brach an Phasengrenzen fast immer mit `ABBRUCH: wait 1/2: agent wait Exit 1 timed out waiting for agent status` ab (#506): Herdr klassifiziert den Pane per Erkennungs-Manifest, und eine lokale Regel wertet die Pflicht-Schlusszeile `❗ Du: …` als `blocked`, also nie `idle`. Der Runner fragt Herdrs Agent-Status nicht mehr ab (`agent wait`, `_wait_ready` und `READY_STATES` entfallen) und tippt nicht mehr per `agent prompt` (lehnt Herdr 0.9.5 bei `blocked` mit `agent_blocked` ab), sondern per `pane send-text <pane> <text>` + `pane send-keys <pane> enter` (beide Exit 0, sonst Abbruch); Herdr dient nur noch als Tastatur. Stattdessen schreiben die Hooks eigene Signale je Pane nach `.claude/herdr_signals/` (`herdr_bridge.record_signal`, nur mit `HERDR_ENV=1` und `HERDR_PANE_ID`, still, fail-open, Dateiname auf `[A-Za-z0-9_.-]` reduziert): `phase_listener.py` vermerkt jeden abgeschickten Prompt (`<pane>.input.json`), `session_banner.py` jeden SessionStart mit `source` (`<pane>.session.json`). Der Runner bricht nach der Grace-Zeit und direkt vor dem Tippen ab, wenn seit dem Stop-Hook eine Eingabe kam („Nutzer hat weitergeschrieben“; `maybe_auto_clear` uebergibt den Zeitpunkt als internes Runner-Argument `--since <epoch>`, ohne Argument gilt der Runner-Start), und tippt den Folgebefehl erst, wenn nach dem eigenen `/clear` ein SessionStart mit `source=clear` vermerkt ist (Frist `idle_timeout_s`, sonst „kein SessionStart(clear)“). Once-Lock, `_recheck`, `/99-reset`-Sperre und Befehlsform bleiben unveraendert.
