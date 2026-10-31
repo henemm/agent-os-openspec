@@ -4,7 +4,7 @@ type: bugfix
 created: 2026-10-31
 updated: 2026-10-31
 status: draft
-version: "1.0"
+version: "1.1"
 workflow: fix-506-autoclear-ohne-herdr-status
 tags: [herdr, auto-clear, hooks, signals, e2e]
 ---
@@ -17,7 +17,7 @@ tags: [herdr, auto-clear, hooks, signals, e2e]
 
 ## Purpose
 
-Auto-/clear bricht beim PO an Phasengrenzen fast immer ab (24 Abbrueche, 3 Erfolge, Log: `ABBRUCH: wait 1/2: agent wait Exit 1 timed out waiting for agent status`). Der Runner wartet per `herdr agent wait --until idle --until done` auf einen Zustand, den Herdr per lokalem Erkennungs-Manifest (`~/.config/herdr/agent-detection/claude.toml`, Prio 960) klassifiziert: Eine Antwort, die mit `❗ Du: …` endet, gilt als `blocked`. Genau diese Zeile verlangt das Plugin an jeder Phasengrenze, also wird Herdr dort nie `idle`. Statt Herdrs Heuristik zu umgehen, nutzt das Plugin kuenftig eigene, vom Plugin selbst erzeugte Signale (Hook-Marker je Pane); Herdr wird nur noch zum Tippen (`agent prompt`) gebraucht, `agent wait` entfaellt.
+Auto-/clear bricht beim PO an Phasengrenzen fast immer ab (24 Abbrueche, 3 Erfolge, Log: `ABBRUCH: wait 1/2: agent wait Exit 1 timed out waiting for agent status`). Der Runner wartet per `herdr agent wait --until idle --until done` auf einen Zustand, den Herdr per lokalem Erkennungs-Manifest (`~/.config/herdr/agent-detection/claude.toml`, Prio 960) klassifiziert: Eine Antwort, die mit `❗ Du: …` endet, gilt als `blocked`. Genau diese Zeile verlangt das Plugin an jeder Phasengrenze, also wird Herdr dort nie `idle`. Statt Herdrs Heuristik zu umgehen, nutzt das Plugin kuenftig eigene, vom Plugin selbst erzeugte Signale (Hook-Marker je Pane); Herdr wird nur noch als "Tastatur" benutzt (`pane send-text` + `pane send-keys … enter`); `agent wait`, jede Statusabfrage und jeder `agent`-Befehl entfallen. Beleg am echten Herdr 0.9.5 (E2E Szenario G mit PO-Manifest): `herdr agent prompt` lehnt ab, solange der Pane `blocked` ist (`{"error":{"code":"agent_blocked",...}}`, Runner-Log `ABBRUCH: agent prompt '/clear' Exit 1`), weil Herdr die Eingabe bei `blocked` nicht sendet. `pane send-text` gefolgt von `pane send-keys enter` tippt dagegen zuverlaessig (real: `❯ /clear`, `SessionStart:clear`, Marker geschrieben).
 
 ## Source
 
@@ -31,9 +31,9 @@ Auto-/clear bricht beim PO an Phasengrenzen fast immer ab (24 Abbrueche, 3 Erfol
 | `core/hooks/herdr_bridge.py` (#467/#495/#497/#499) | module | `_Runner`, `_recheck`, Once-Lock, `/99-reset`-Sperre (`MANUAL_COMMANDS`), `resolve_command_form`, `_ac_log`, `_ac_base` bleiben; nur das Warten wird ersetzt |
 | `core/hooks/hook_utils.py` | module | `atomic_write_json`, `read_state_json`, `framework_disabled` |
 | `hooks/hooks.json` | config | Reihenfolge SessionStart (`session_singleton_guard register` vor `session_banner`) und UserPromptSubmit (`phase_listener`) bleibt; keine neue Registrierung |
-| `tests/test_herdr_auto_clear_467.py`, `test_auto_clear_global_480.py`, `test_herdr_plan_deploy_sessionstart_478.py` | tests | Stub-Herdr beantwortet `agent wait`; Stub und Erwartungen anpassen |
+| `tests/test_herdr_auto_clear_467.py`, `test_auto_clear_global_480.py`, `test_herdr_plan_deploy_sessionstart_478.py` | tests | Stub-Herdr beantwortet `agent wait`/`agent prompt`; Stub und Erwartungen auf `pane send-text`/`pane send-keys` anpassen |
 | `scripts/e2e_auto_clear.sh` (#495/#497/#499) | script | echter E2E mit Herdr 0.9.5, Claude-TUI und Plugin |
-| Herdr 0.9.5 (`agent prompt`, Erkennungs-Manifest-Format) | extern | nur noch Tippen; Manifestformat fuer Szenario G am echten Binary belegen |
+| Herdr 0.9.5 (`pane send-text`, `pane send-keys`, Erkennungs-Manifest-Format) | extern | nur noch Tippen (Tastatur); `agent prompt` scheidet aus (lehnt bei `blocked` ab); Manifestformat fuer Szenario G am echten Binary belegt |
 
 ## Scope
 
@@ -41,18 +41,18 @@ Auto-/clear bricht beim PO an Phasengrenzen fast immer ab (24 Abbrueche, 3 Erfol
 
 | File | Change Type | Description |
 |------|-------------|-------------|
-| core/hooks/herdr_bridge.py | MODIFY | `record_signal(kind, source)` (Marker schreiben, fail-open); `_Runner`: `_wait_ready` entfernt, neu Eingabe-Pruefung vor `/clear` und Warten auf SessionStart-`clear` danach; Budget/Docstring angepasst; `READY_STATES` entfernt, falls ungenutzt |
+| core/hooks/herdr_bridge.py | MODIFY | `record_signal(kind, source)` (Marker schreiben, fail-open); `_Runner`: `_wait_ready` entfernt, neu Eingabe-Pruefung vor `/clear` (Referenz: Stop-Hook-Zeitpunkt aus `--since <epoch>`) und Warten auf SessionStart-`clear` danach; Tippen per `pane send-text` + `pane send-keys enter` statt `agent prompt`; Spawner (`maybe_auto_clear`) uebergibt `--since <epoch>`; Budget/Docstring angepasst; `READY_STATES` entfernt, falls ungenutzt |
 | core/hooks/phase_listener.py | MODIFY | Am Anfang von `main` (nach `framework_disabled`) `record_signal("input")`, eine Zeile, `try/except`, ohne Ausgabe |
 | core/hooks/session_banner.py | MODIFY | Am Anfang von `main` (nach `framework_disabled`, vor Wartung/Git-Sync) `record_signal("session", source)` |
-| tests/test_autoclear_eigene_signale_506.py | CREATE | Tests zu AC-1 bis AC-13 |
-| tests/test_herdr_auto_clear_467.py, tests/test_auto_clear_global_480.py, tests/test_herdr_plan_deploy_sessionstart_478.py | MODIFY | Stub: kein `agent wait` mehr; `agent prompt /clear` im Stub schreibt den SessionStart-Marker; Erwartungssequenz `agent prompt`, `agent prompt`; `test_runner_reads_real_agent_status_field` entfaellt bzw. wird durch AC-1 ersetzt |
+| tests/test_autoclear_eigene_signale_506.py | CREATE | Tests zu AC-1 bis AC-14 |
+| tests/test_herdr_auto_clear_467.py, tests/test_auto_clear_global_480.py, tests/test_herdr_plan_deploy_sessionstart_478.py | MODIFY | Stub: kein `agent wait`/`agent prompt` mehr; `pane send-text <pane> /clear` gefolgt von `pane send-keys <pane> enter` im Stub schreibt den SessionStart-Marker; Erwartungssequenz `send-text`, `send-keys`, `send-text`, `send-keys`; `test_runner_reads_real_agent_status_field` entfaellt bzw. wird durch AC-1 ersetzt |
 | scripts/e2e_auto_clear.sh | MODIFY | Szenario G (PO-Manifest nachgebaut) samt Gegenprobe G0 (alter Code), Szenario H (Eingabe in der Grace-Zeit); `H agent wait` der bestehenden Szenarien durch Pane-Text-Polling ersetzen |
 | CHANGELOG.md | MODIFY | Eintrag unter [Unreleased] / Fixed (#506) |
 
 ### Estimated Changes
 
 - Files: 1 neu, 8 geaendert
-- LoC: +85/-45 Produktion, +260 Test, +90 E2E-Skript
+- LoC: +95/-50 Produktion, +290 Test, +90 E2E-Skript
 - Risk Level: MEDIUM (Auto-/clear laeuft nur mit Herdr und Opt-in; Hooks bekommen einen Schreibzugriff, der strikt fail-open und ohne Ausgabe bleibt)
 
 ## Implementation Details
@@ -61,22 +61,26 @@ Auto-/clear bricht beim PO an Phasengrenzen fast immer ab (24 Abbrueche, 3 Erfol
 
 **Hook-Stellen.** `phase_listener.main`: unmittelbar nach `framework_disabled()`, noch vor Nachrichtenauswertung (auch injizierte Notification-Turns zaehlen als Eingabe, ein neuer Turn laeuft dann; Abbruch ist hier die sichere Seite). `session_banner.main`: vor `build_output`, weil Wartung und Haupt-Ordner-Sync Sekunden dauern koennen und der Runner auf dieses Signal wartet; `source` aus dem Hook-Payload.
 
-**Runner (`_Runner.run`).** `spawn_at = time.time()` zu Beginn. Ablauf:
+**Referenzzeitpunkt.** Massgeblich fuer "neue Eingabe seit…" ist der Zeitpunkt des Stop-Hooks, nicht der Runner-Start: `maybe_auto_clear` (laeuft im Stop-Hook) nimmt `since = time.time()` und uebergibt ihn dem gespawnten Runner als Argument `--since <epoch>` (Float, Sekunden). Das schliesst die ~100-ms-Luecke zwischen Stop-Hook und Runner-Start, in der eine Eingabe sonst als "alt" gelten wuerde. Fehlt `--since` (z. B. manueller Aufruf), faellt der Runner auf seinen eigenen Startzeitpunkt zurueck.
+
+**Tippen.** Der Runner tippt ausschliesslich per `herdr pane send-text <pane> <text>`, gefolgt von `herdr pane send-keys <pane> enter`; beide Aufrufe muessen Exit 0 liefern, sonst `_Abort` (`ABBRUCH`). Kein `agent prompt` (lehnt bei `blocked` mit `agent_blocked` ab), kein `agent wait`, keine Statusabfrage, kein `agent`-Befehl: Herdr dient nur noch als Tastatur.
+
+**Runner (`_Runner.run`).** `since` aus `--since` (Fallback `time.time()` zu Beginn). Ablauf:
 1. `/99-reset`-Sperre (unveraendert), Ankuendigung, Grace-Pause.
-2. Eingabe-Pruefung: `<pane>.input.json` mit `at > spawn_at` -> `_Abort("vor /clear: Nutzer hat weitergeschrieben")`. Fehlende oder unlesbare Datei heisst "keine neue Eingabe".
-3. settle, `_recheck("vor /clear")`, Eingabe-Pruefung ein zweites Mal (unmittelbar vor dem Tippen), dann `t_clear = time.time()` und `agent prompt /clear`.
+2. Eingabe-Pruefung: `<pane>.input.json` mit `at > since` -> `_Abort("vor /clear: Nutzer hat weitergeschrieben")`. Fehlende oder unlesbare Datei heisst "keine neue Eingabe".
+3. settle, `_recheck("vor /clear")`, Eingabe-Pruefung ein zweites Mal (unmittelbar vor dem Tippen, wieder gegen `since`), dann `t_clear = time.time()` und `pane send-text /clear` + `pane send-keys enter`.
 4. Warten (Poll alle 0,2 s, hoechstens `idle_timeout_s`) auf `<pane>.session.json` mit `source == "clear"` und `at >= t_clear`. Ein aelterer Marker (SessionStart vor dem eigenen `/clear`) zaehlt nicht. Zeitablauf -> `_Abort("nach /clear: kein SessionStart(clear)")`, es wird kein Folgebefehl getippt.
-5. settle, `_recheck("vor Folgebefehl")`, `agent prompt <resolve_command_form(command)>` (unveraendert).
+5. settle, `_recheck("vor Folgebefehl")`, `pane send-text <resolve_command_form(command)>` + `pane send-keys enter` (Befehlsform unveraendert).
 
-Der Config-Schluessel `idle_timeout_s` und das CLI-Argument `--idle-timeout` bleiben (Bedeutung: Frist fuer das Eintreffen des `/clear`-Signals); keine neue Option. Das Gesamt-Budget enthaelt nur noch eine Wartephase. Once-Lock, `_recheck`, Vermerk, Log-Tag und `/99-reset`-Sperre bleiben unveraendert. Warum kein Berechtigungsdialog-Risiko: Der Runner startet erst im Stop-Hook, also nach dem Turn-Ende; Dialoge entstehen nur waehrend eines Turns.
+Der Config-Schluessel `idle_timeout_s` und das CLI-Argument `--idle-timeout` bleiben (Bedeutung: Frist fuer das Eintreffen des `/clear`-Signals); einzige neue Option ist das interne Runner-Argument `--since`, keine neue Konfiguration. Das Gesamt-Budget enthaelt nur noch eine Wartephase. Once-Lock, `_recheck`, Vermerk, Log-Tag und `/99-reset`-Sperre bleiben unveraendert. Warum kein Berechtigungsdialog-Risiko: Der Runner startet erst im Stop-Hook, also nach dem Turn-Ende; Dialoge entstehen nur waehrend eines Turns.
 
-**E2E.** Szenario G: wie A (Testdouble `20-analyse`), aber der Test-Herdr bekommt `$XDG_CONFIG_HOME/herdr/agent-detection/claude.toml` mit den PO-Regeln (Antwort endet mit `❗ Du:` -> `blocked`, `ℹ️ Nichts zu tun` -> `working`, Prio 960). Das Format wird am echten 0.9.5 belegt (Herdr-Doku bzw. `agent explain`), nicht geraten; ein Vorab-Check im Skript bestaetigt per `agent explain`/Status, dass die Regel greift (`blocked`). Erwartung: Log `OK`, im TUI `❯ /clear` und `❯ /20-analyse #999`. Gegenprobe G0: dasselbe Szenario mit dem Code von `origin/main` (Worktree, `--plugin-dir`) muss mit `ABBRUCH: wait 1` enden. Szenario H: wie A mit `grace_s` 25; waehrend der Grace-Zeit sendet das Skript einen neuen Prompt an die Claude-Session; erwartet: Log `ABBRUCH` mit "Nutzer hat weitergeschrieben", kein `❯ /clear` danach im TUI. Bestehende `herdr agent wait`-Aufrufe des Skripts dienen nur als Testhilfe und werden, wo sie im Manifest-Szenario haengen wuerden, durch Polling auf den Pane-Text ersetzt. A'-D und F laufen unveraendert.
+**E2E.** Szenario G: wie A (Testdouble `20-analyse`), aber der Test-Herdr bekommt `$XDG_CONFIG_HOME/herdr/agent-detection/claude.toml` mit den PO-Regeln (Antwort endet mit `❗ Du:` -> `blocked`, `ℹ️ Nichts zu tun` -> `working`, Prio 960). Das Format wird am echten 0.9.5 belegt (Herdr-Doku bzw. `agent explain`), nicht geraten; ein Vorab-Check im Skript bestaetigt per `agent explain`/Status, dass die Regel greift (`blocked`). Erwartung: Log `OK`, im TUI `❯ /clear` und `❯ /20-analyse #999` (G muss mit `pane send-text`/`send-keys` gruen werden; mit `agent prompt` scheiterte es real an `agent_blocked`). Gegenprobe G0: dasselbe Szenario mit dem Code von `origin/main` (Worktree, `--plugin-dir`) muss mit `ABBRUCH: wait 1` enden. Szenario H: wie A mit `grace_s` 25; waehrend der Grace-Zeit sendet das Skript einen neuen Prompt an die Claude-Session; erwartet: Log `ABBRUCH` mit "Nutzer hat weitergeschrieben", kein `❯ /clear` danach im TUI. Bestehende `herdr agent wait`-Aufrufe des Skripts dienen nur als Testhilfe und werden, wo sie im Manifest-Szenario haengen wuerden, durch Polling auf den Pane-Text ersetzt. A'-D und F laufen unveraendert.
 
 ## Expected Behavior
 
 - **Input:** Auto-/clear ist aktiv, ein Grenz-Phasenwechsel hat einen Vermerk gesetzt, die Antwort endet mit `❗ Du: /<naechster> #N`, Herdr klassifiziert den Pane als `blocked`
-- **Output:** Nach der Grace-Zeit tippt der Runner `/clear`, wartet auf das SessionStart(clear)-Signal des Plugins und tippt dann den Folgebefehl; Herdrs Agent-Status spielt keine Rolle
-- **Side effects:** Dateien unter `.claude/herdr_signals/`; Runner-Log wie bisher; Abbruchgruende "Nutzer hat weitergeschrieben" und "kein SessionStart(clear)" im Log
+- **Output:** Nach der Grace-Zeit tippt der Runner (`pane send-text` + `pane send-keys enter`) `/clear`, wartet auf das SessionStart(clear)-Signal des Plugins und tippt dann den Folgebefehl; Herdrs Agent-Status spielt keine Rolle
+- **Side effects:** Dateien unter `.claude/herdr_signals/`; Runner-Log wie bisher; Abbruchgruende "Nutzer hat weitergeschrieben", "kein SessionStart(clear)" und "pane send-text/send-keys Exit N" im Log
 
 ## Known Limitations
 
@@ -96,13 +100,13 @@ Fertig ist diese Aenderung, wenn:
 
 ## Acceptance Criteria
 
-- **AC-1:** Given ein Stub-Herdr, der jeden Aufruf protokolliert / When der Runner einen vollstaendigen Lauf macht / Then enthaelt das Protokoll keinen Aufruf `agent wait`, nur `agent prompt` (`/clear`, dann Folgebefehl)
+- **AC-1:** Given ein Stub-Herdr, der jeden Aufruf protokolliert / When der Runner einen vollstaendigen Lauf macht / Then enthaelt das Protokoll keinen `agent wait` und keinen `agent prompt`; getippt wird per `pane send-text` (`/clear`, dann Folgebefehl) jeweils gefolgt von `pane send-keys … enter`
   - Test: tests/test_autoclear_eigene_signale_506.py::test_runner_never_calls_agent_wait
 
-- **AC-2:** Given eine Eingabe-Marke mit `at` nach dem Runner-Start (Nutzer schreibt in der Grace-Zeit weiter) / When der Runner vor `/clear` prueft / Then Abbruch "Nutzer hat weitergeschrieben", weder `/clear` noch Folgebefehl getippt
+- **AC-2:** Given eine Eingabe-Marke mit `at` nach dem Stop-Hook-Zeitpunkt `--since` (Nutzer schreibt in der Grace-Zeit weiter) / When der Runner vor `/clear` prueft / Then Abbruch "Nutzer hat weitergeschrieben", weder `/clear` noch Folgebefehl getippt (kein `pane send-text`/`send-keys`)
   - Test: tests/test_autoclear_eigene_signale_506.py::test_new_input_since_spawn_aborts_without_typing
 
-- **AC-3:** Given keine oder nur aeltere Eingabe-Marke / When der Runner prueft / Then wird `/clear` getippt
+- **AC-3:** Given keine oder nur aeltere Eingabe-Marke (`at <= since`) / When der Runner prueft / Then wird `/clear` per `pane send-text` + `pane send-keys enter` getippt
   - Test: tests/test_autoclear_eigene_signale_506.py::test_no_new_input_types_clear
 
 - **AC-4:** Given ein SessionStart-Marker `source=clear` nach dem eigenen `/clear` / When der Runner wartet / Then tippt er nach settle und `_recheck` den Folgebefehl
@@ -129,7 +133,10 @@ Fertig ist diese Aenderung, wenn:
 - **AC-11:** Given die angepassten Bestandstests / When `pytest tests/test_herdr_auto_clear_467.py tests/test_auto_clear_global_480.py tests/test_herdr_plan_deploy_sessionstart_478.py tests/test_autoclear_boundary_495.py tests/test_autoclear_transition_497.py tests/test_befehlsform_context_titel_499.py` laufen / Then sind sie gruen
   - Test: Regressionslauf `pytest tests/`
 
-- **AC-12:** Given echtes Herdr 0.9.5 mit nachgebautem PO-Manifest (`❗ Du:` -> `blocked`) und Claude-TUI / When Szenario G laeuft / Then Log `OK` und im TUI `❯ /clear` und `❯ /20-analyse #999`; die Gegenprobe G0 mit dem Code von `origin/main` endet mit `ABBRUCH: wait 1`
+- **AC-14:** Given eine Eingabe-Marke mit `at` zwischen Stop-Hook-Zeitpunkt (`--since`) und Runner-Start / When der Runner vor `/clear` prueft / Then wird sie als neue Eingabe erkannt: Abbruch "Nutzer hat weitergeschrieben", nichts getippt (die ~100-ms-Luecke ist geschlossen); ohne `--since` gilt der Runner-Start als Referenz
+  - Test: tests/test_autoclear_eigene_signale_506.py::test_input_between_stop_and_runner_start_aborts
+
+- **AC-12:** Given echtes Herdr 0.9.5 mit nachgebautem PO-Manifest (`❗ Du:` -> `blocked`; `agent prompt` wuerde hier mit `agent_blocked` abgelehnt) und Claude-TUI / When Szenario G laeuft / Then Log `OK` (getippt per `pane send-text` + `pane send-keys enter`) und im TUI `❯ /clear` und `❯ /20-analyse #999`; die Gegenprobe G0 mit dem Code von `origin/main` endet mit `ABBRUCH: wait 1`
   - Test: scripts/e2e_auto_clear.sh (ONLY="G G0")
 
 - **AC-13:** Given echtes Herdr und Szenario H (Nutzer schickt in der Grace-Zeit einen neuen Prompt) / When der Runner prueft / Then Log `ABBRUCH` mit "Nutzer hat weitergeschrieben" und kein `❯ /clear`; Szenarien A'-D und F bleiben gruen
@@ -137,7 +144,7 @@ Fertig ist diese Aenderung, wenn:
 
 ## Test Plan
 
-Muster `tests/test_herdr_auto_clear_467.py` (isoliertes Projekt, Stub-Herdr mit Protokoll, `HOME` auf Wegwerf-Verzeichnis). Der Stub kennt nur `agent prompt` (und `notification show`); bei `agent prompt <pane> /clear` schreibt er optional den SessionStart-Marker im selben Format wie `record_signal`. Marker fuer Eingaben und fremde Panes legen die Tests direkt als Dateien an.
+Muster `tests/test_herdr_auto_clear_467.py` (isoliertes Projekt, Stub-Herdr mit Protokoll, `HOME` auf Wegwerf-Verzeichnis). Der Stub kennt nur `pane send-text`, `pane send-keys` (und `notification show`); er protokolliert jeden Aufruf; bei `pane send-text <pane> /clear` gefolgt von `pane send-keys <pane> enter` schreibt er optional den SessionStart-Marker im selben Format wie `record_signal`. Der Runner wird mit explizitem `--since` gestartet. Marker fuer Eingaben und fremde Panes legen die Tests direkt als Dateien an.
 
 ### Automated Tests (TDD RED)
 
@@ -151,6 +158,7 @@ Muster `tests/test_herdr_auto_clear_467.py` (isoliertes Projekt, Stub-Herdr mit 
 - [ ] Test 8: GIVEN Hooks mit/ohne Pane-Id WHEN ausgefuehrt THEN Marker nur mit Pane-Id
 - [ ] Test 9: GIVEN Markerverzeichnis nicht schreibbar WHEN Hook THEN Exit 0 ohne Ausgabe
 - [ ] Test 10: GIVEN `/99-reset`, Once-Lock, Phasenwechsel WHEN Auto-/clear THEN wie bisher
+- [ ] Test 11: GIVEN Eingabe-Marke zwischen `--since` und Runner-Start WHEN Runner THEN Abbruch, nichts getippt (`test_input_between_stop_and_runner_start_aborts`)
 
 Weitere Laeufe:
 
@@ -166,3 +174,4 @@ Weitere Laeufe:
 ## Changelog
 
 - 2026-10-31: Initial spec created
+- 2026-10-31: v1.1 Nachtrag nach E2E G am echten Herdr 0.9.5: `agent prompt` wird bei `blocked` abgelehnt (`agent_blocked`); Runner tippt stattdessen per `pane send-text` + `pane send-keys enter` (Herdr nur noch als Tastatur). Referenzzeitpunkt fuer "neue Eingabe seit…" ist der Stop-Hook-Zeitpunkt (`--since <epoch>`, vom Spawner uebergeben) statt Runner-Start; die ~100-ms-Luecke entfaellt aus Known Limitations. Neues AC-14, AC-1/2/3/12 angepasst.
