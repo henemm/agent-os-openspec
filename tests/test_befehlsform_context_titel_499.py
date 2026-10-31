@@ -132,7 +132,9 @@ def _run_runner(proj: Path, env: dict, command: str = SHORT, phase: str = PHASE)
 
 
 def _texts(log: Path) -> list:
-    return [c[3] for c in _prompts(_calls(log)) if len(c) > 3]
+    """Getippte Texte (#506: `pane send-text`; `pane send-keys enter` ist kein Text)."""
+    return [c[3] for c in _prompts(_calls(log))
+            if len(c) > 3 and _kind(c) != "pane send-keys"]
 
 
 def _ac_log(proj: Path) -> str:

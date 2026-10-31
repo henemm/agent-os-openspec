@@ -521,6 +521,13 @@ def main() -> None:
     payload_cwd = _payload_str(payload, "cwd")
     if framework_disabled():
         return
+    if os.environ.get("HERDR_ENV") == "1" and os.environ.get("HERDR_PANE_ID"):
+        try:  # #506: SessionStart-Signal vor Wartung/Git-Sync (Runner wartet darauf)
+            import herdr_bridge
+            herdr_bridge.record_signal("session", _payload_str(payload, "source"),
+                                       cwd=payload_cwd or None)
+        except Exception:
+            pass
     output = build_output(plugin_root(), project_dir(payload_cwd),
                           Path(payload_cwd) if payload_cwd else None,
                           _payload_str(payload, "source"))

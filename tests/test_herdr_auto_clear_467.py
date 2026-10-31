@@ -4,18 +4,23 @@ Spec: docs/specs/feat-467-herdr-auto-clear.md (AC-1 bis AC-17).
 
 Das verzweigende Stub-Binary (bash) protokolliert jeden Aufruf NUL-getrennt in
 STUB_LOG und verzweigt nach Unterbefehl:
-- `agent wait`: konsumiert pro Aufruf eine Zeile aus der Sequenzdatei STUB_SEQ
-  (`exit|stdout-json|stderr-json|hook-skript`); leere/fehlende Sequenz = Status
-  idle, Exit 0. Das optionale Hook-Skript laeuft vor der Ausgabe (State-Umbau).
-- `agent prompt`: Exit 0; fuer den Text `/clear` Exit ${STUB_CLEAR_EXIT:-0}.
+- `agent wait`: antwortet wie Herdr beim PO (#506) mit Status `blocked` — der
+  Runner darf es gar nicht mehr aufrufen.
+- `agent prompt`: wie Herdr 0.9.5 bei `blocked` abgelehnt (`agent_blocked`, Exit 1).
+- `pane send-text <pane> <text>`: merkt den Text, Exit 0.
+- `pane send-keys <pane> enter`: war der gemerkte Text `/clear`, Exit
+  ${STUB_CLEAR_EXIT:-0}. Bei Exit 0 laeuft zuerst das optionale STUB_CLEAR_HOOK (State-Umbau), dann schreibt
+  der Stub wie der echte SessionStart(clear)-Hook den Marker
+  `$CLAUDE_PROJECT_DIR/.claude/herdr_signals/<pane>.session.json` mit
+  `source=${STUB_SESSION_SOURCE:-clear}`; `none` = kein Marker.
 - alles andere (z.B. `notification show`): Exit 0.
 - STUB_SLEEP: Schlaf vor jeder Verzweigung (Haengen des Binarys).
 
 Vertraege, die diese Tests festlegen (die Spec nennt sie nicht exakt):
-- `agent wait` liefert auf stdout `{"result": {"agent": {"agent_status": "<s>", ...}}}`.
 - Runner-CLI: `herdr_bridge.py auto-clear --pane P --workflow W --phase PH
   --command C --grace 0 --settle 0 --idle-timeout 5 --announce 0`; `--idle-timeout`
-  in Sekunden (-> `--timeout 5000`), `--announce 0` = keine Vorankuendigung.
+  in Sekunden (Frist fuer das SessionStart(clear)-Signal, #506), `--announce 0` =
+  keine Vorankuendigung.
 - Once-Lock `.claude/herdr_auto_clear_state.json`: flaches JSON-Objekt
   `{"<workflow>|<phase>|<befehl>": <epoch-sekunden als Zahl>}`.
 - `has_clear_marker(message) -> bool` (reine Funktion in herdr_bridge).
@@ -46,25 +51,41 @@ PHASE = "phase6_implement"
 CMD = "/50-implement #467"
 IDLE_TIMEOUT = 5
 
-# `wait`-Fehler fuer den Timeout-Fall; die Felder sind bewusst frei gewaehlt.
-TIMEOUT_ERR = '{"error": {"code": "timeout", "message": "agent wait timed out"}}'
-
 STUB_SCRIPT = r"""#!/bin/bash
 { for a in "$@"; do printf '%s\0' "$a"; done; printf '\n'; } >> "$STUB_LOG"
 if [ -n "$STUB_SLEEP" ]; then sleep "$STUB_SLEEP"; fi
 if [ "$1 $2" = "agent wait" ]; then
-  code=0; out='{"result":{"agent":{"agent_status":"idle"}}}'; err=""; hook=""
-  if [ -n "$STUB_SEQ" ] && [ -s "$STUB_SEQ" ]; then
-    IFS='|' read -r code out err hook < "$STUB_SEQ"
-    tail -n +2 "$STUB_SEQ" > "$STUB_SEQ.tmp"; mv "$STUB_SEQ.tmp" "$STUB_SEQ"
-  fi
-  if [ -n "$hook" ]; then bash "$hook"; fi
-  if [ -n "$out" ]; then printf '%s\n' "$out"; fi
-  if [ -n "$err" ]; then printf '%s\n' "$err" >&2; fi
-  exit "${code:-0}"
+  printf '%s\n' '{"result":{"agent":{"agent_status":"blocked"}}}'
+  exit 0
 fi
 if [ "$1 $2" = "agent prompt" ]; then
-  if [ "$4" = "/clear" ]; then exit "${STUB_CLEAR_EXIT:-0}"; fi
+  # #506: Pane `blocked` wie beim PO -> Herdr 0.9.5 lehnt ab; der Runner darf es nicht nutzen
+  printf '%s\n' '{"error":{"code":"agent_blocked","message":"agent is blocked"}}' >&2
+  exit 1
+fi
+if [ "$1 $2" = "pane send-text" ]; then
+  printf '%s' "$4" > "$STUB_LOG.pending"
+  exit 0
+fi
+if [ "$1 $2" = "pane send-keys" ]; then
+  typed=""
+  if [ -f "$STUB_LOG.pending" ]; then typed="$(cat "$STUB_LOG.pending")"; rm -f "$STUB_LOG.pending"; fi
+  if [ "$4" = "enter" ] && [ "$typed" = "/clear" ]; then
+    code="${STUB_CLEAR_EXIT:-0}"
+    if [ "$code" = 0 ] && [ -n "$STUB_CLEAR_HOOK" ]; then bash "$STUB_CLEAR_HOOK"; fi
+    if [ "$code" = 0 ] && [ "${STUB_SESSION_SOURCE:-clear}" != none ]; then
+      python3 - "$CLAUDE_PROJECT_DIR/.claude/herdr_signals/$3.session.json" \
+        "${STUB_SESSION_SOURCE:-clear}" <<'EOF'
+import json, os, sys, time
+path, source = sys.argv[1], sys.argv[2]
+os.makedirs(os.path.dirname(path), exist_ok=True)
+with open(path + ".tmp", "w") as fh:
+    json.dump({"source": source, "at": time.time()}, fh)
+os.replace(path + ".tmp", path)
+EOF
+    fi
+    exit "$code"
+  fi
   exit 0
 fi
 exit 0
@@ -136,54 +157,49 @@ def _assert_no_calls(log: Path):
     assert _calls(log) == [], f"Stub wurde unerwartet aufgerufen: {_calls(log)}"
 
 
-def _flag_values(args: list, flag: str) -> list:
-    return [args[i + 1] for i, a in enumerate(args) if a == flag and i + 1 < len(args)]
-
-
 def _kind(args: list) -> str:
     return " ".join(args[:2])
 
 
 def _prompts(calls: list) -> list:
-    return [c for c in calls if _kind(c) == "agent prompt"]
+    """Alles, womit der Runner Text an die Session schickt (#506: Tastatur + `agent prompt`)."""
+    return [c for c in calls
+            if _kind(c) in ("pane send-text", "pane send-keys", "agent prompt")]
+
+
+ENTER = ["pane", "send-keys", PANE, "enter"]
+CLEAR_TYPED = [["pane", "send-text", PANE, "/clear"], ENTER]
 
 
 def _waits(calls: list) -> list:
     return [c for c in calls if _kind(c) == "agent wait"]
 
 
-def _wait_line(status: str = "idle", code: int = 0, err: str = "", hook: str = "") -> str:
-    out = json.dumps({"result": {"agent": {"agent_status": status}}}) if code == 0 else ""
-    return f"{code}|{out}|{err}|{hook}"
-
-
-def _seq(tmp: Path, *lines: str) -> Path:
-    path = tmp / "seq.txt"
-    path.write_text("\n".join(lines) + "\n")
-    return path
-
-
 def _run_runner(proj: Path, env: dict, *, command: str = CMD, phase: str = PHASE,
+                idle_timeout: float = IDLE_TIMEOUT,
                 timeout: float = 30) -> subprocess.CompletedProcess:
     argv = [sys.executable, str(BRIDGE), "auto-clear",
             "--pane", PANE, "--workflow", WF, "--phase", phase, "--command", command,
-            "--grace", "0", "--settle", "0", "--idle-timeout", str(IDLE_TIMEOUT),
+            "--grace", "0", "--settle", "0", "--idle-timeout", str(idle_timeout),
             "--announce", "0"]
     return subprocess.run(argv, capture_output=True, text=True, env=env,
                           cwd=str(proj), timeout=timeout)
 
 
-def _runner_case(tmp_path: Path, label: str, *seq_lines: str, phase: str = PHASE,
-                 **env_extra):
+def _runner_case(tmp_path: Path, label: str, phase: str = PHASE, **env_extra):
     root = tmp_path / label
     root.mkdir()
     proj = _project(root, phase=phase)
     log = root / "stub.log"
     stub = _make_stub(root)
-    extra = dict(env_extra)
-    if seq_lines:
-        extra["STUB_SEQ"] = str(_seq(root, *seq_lines))
-    return proj, log, _env(proj, log, stub, **extra), root
+    return proj, log, _env(proj, log, stub, **env_extra), root
+
+
+def _input_marker(proj: Path, at: float) -> None:
+    """Eingabe-Signal wie phase_listener (#506); `at` in der Zukunft = nach Runner-Start."""
+    path = proj / ".claude" / "herdr_signals" / f"{PANE}.input.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"at": at}))
 
 
 def _runner_log(proj: Path) -> str:
@@ -280,7 +296,7 @@ def test_hook_spawns_runner_and_returns_immediately(tmp_path):
 # --- AC-2 -------------------------------------------------------------------
 
 def test_runner_exact_sequence_and_flags(tmp_path):
-    proj, log, env, _ = _runner_case(tmp_path, "seq", _wait_line("idle"), _wait_line("done"))
+    proj, log, env, _ = _runner_case(tmp_path, "seq")
     # Kurz-Alias im Projekt: der Runner tippt die Kurzform (#499, sonst Plugin-Form)
     alias = proj / ".claude" / "commands" / "50-implement.md"
     alias.parent.mkdir(parents=True, exist_ok=True)
@@ -288,16 +304,12 @@ def test_runner_exact_sequence_and_flags(tmp_path):
     res = _run_runner(proj, env)
     assert res.returncode == 0, res.stderr
     calls = _calls(log)
-    assert [_kind(c) for c in calls] == ["agent wait", "agent prompt",
-                                         "agent wait", "agent prompt"], calls
-    w1, p1, w2, p2 = calls
-    for w in (w1, w2):
-        assert w[:3] == ["agent", "wait", PANE], w
-        assert _flag_values(w, "--until") == ["idle", "done"], w
-        assert _flag_values(w, "--timeout") == [str(IDLE_TIMEOUT * 1000)], w
-    assert p1 == ["agent", "prompt", PANE, "/clear"], p1
-    assert p2 == ["agent", "prompt", PANE, CMD], p2
-    for p in (p1, p2):
+    # #506: kein `agent wait`/`agent prompt` mehr — Herdr dient nur noch als Tastatur
+    assert _waits(calls) == [], calls
+    assert [c for c in calls if c and c[0] == "agent"] == [], calls
+    assert [_kind(c) for c in calls] == ["pane send-text", "pane send-keys"] * 2, calls
+    assert calls == CLEAR_TYPED + [["pane", "send-text", PANE, CMD], ENTER], calls
+    for p in calls:
         assert "--wait" not in p, p
 
 
@@ -438,55 +450,63 @@ def test_once_lock_blocks_duplicate_and_expires_after_10_min(tmp_path):
 # --- AC-13 ------------------------------------------------------------------
 
 def test_runner_aborts_on_wait_timeout(tmp_path):
-    proj, log, env, _ = _runner_case(tmp_path, "timeout", _wait_line(code=1, err=TIMEOUT_ERR))
-    res = _run_runner(proj, env)
+    # #506: die einzige Wartephase ist das SessionStart(clear)-Signal nach /clear
+    proj, log, env, _ = _runner_case(tmp_path, "timeout", STUB_SESSION_SOURCE="none")
+    start = time.monotonic()
+    res = _run_runner(proj, env, idle_timeout=1)
     _assert_clean_abort(res, proj)
-    assert _prompts(_calls(log)) == [], _calls(log)
+    assert time.monotonic() - start >= 0.8, "Frist nicht abgewartet"
+    assert _prompts(_calls(log)) == CLEAR_TYPED, _calls(log)
+    assert "ABBRUCH" in _runner_log(proj) and "SessionStart" in _runner_log(proj)
 
 
 # --- AC-14 ------------------------------------------------------------------
 
-@pytest.mark.parametrize("status", ["blocked", "unknown", "working"])
-def test_runner_aborts_on_blocked_or_unknown(tmp_path, status):
-    proj, log, env, _ = _runner_case(tmp_path, f"first-{status}", _wait_line(status))
+@pytest.mark.parametrize("source", ["startup", "resume", "compact"])
+def test_runner_aborts_on_new_input_or_foreign_session_source(tmp_path, source):
+    # #506: Nutzer hat weitergeschrieben -> gar kein Prompt
+    proj, log, env, _ = _runner_case(tmp_path, f"first-{source}")
+    _input_marker(proj, time.time() + 60)
     res = _run_runner(proj, env)
     _assert_clean_abort(res, proj)
     assert _prompts(_calls(log)) == [], _calls(log)
+    assert "Nutzer hat weitergeschrieben" in _runner_log(proj), _runner_log(proj)
 
-    # blockiert erst nach /clear: kein Folgebefehl
-    proj2, log2, env2, _ = _runner_case(tmp_path, f"second-{status}",
-                                        _wait_line("idle"), _wait_line(status))
-    res = _run_runner(proj2, env2)
+    # SessionStart mit fremder Quelle nach /clear: kein Folgebefehl
+    proj2, log2, env2, _ = _runner_case(tmp_path, f"second-{source}",
+                                        STUB_SESSION_SOURCE=source)
+    res = _run_runner(proj2, env2, idle_timeout=1)
     _assert_clean_abort(res, proj2)
-    assert _prompts(_calls(log2)) == [["agent", "prompt", PANE, "/clear"]], _calls(log2)
+    assert _prompts(_calls(log2)) == CLEAR_TYPED, _calls(log2)
 
 
 # --- AC-15 ------------------------------------------------------------------
 
 def test_runner_aborts_when_state_changed_between_steps(tmp_path):
-    # (a) Aenderung waehrend des ersten wait: gar kein Prompt
+    # (a) Aenderung vor dem Recheck "vor /clear": gar kein Prompt
     root = tmp_path / "a"
     root.mkdir()
     proj = _project(root)
     hook = _state_changer(root)
     log = root / "stub.log"
-    env = _env(proj, log, _make_stub(root),
-               STUB_SEQ=str(_seq(root, _wait_line("idle", hook=str(hook)), _wait_line("idle"))))
+    env = _env(proj, log, _make_stub(root))
+    subprocess.run(["bash", str(hook)], check=True, timeout=30)
     res = _run_runner(proj, env)
     _assert_clean_abort(res, proj)
     assert _prompts(_calls(log)) == [], _calls(log)
+    assert "vor /clear" in _runner_log(proj), _runner_log(proj)
 
-    # (b) Aenderung waehrend des zweiten wait: nur /clear, kein Folgebefehl
+    # (b) Aenderung beim /clear: nur /clear, kein Folgebefehl
     root = tmp_path / "b"
     root.mkdir()
     proj = _project(root)
     hook = _state_changer(root)
     log = root / "stub.log"
-    env = _env(proj, log, _make_stub(root),
-               STUB_SEQ=str(_seq(root, _wait_line("idle"), _wait_line("idle", hook=str(hook)))))
+    env = _env(proj, log, _make_stub(root), STUB_CLEAR_HOOK=str(hook))
     res = _run_runner(proj, env)
     _assert_clean_abort(res, proj)
-    assert _prompts(_calls(log)) == [["agent", "prompt", PANE, "/clear"]], _calls(log)
+    assert _prompts(_calls(log)) == CLEAR_TYPED, _calls(log)
+    assert "vor Folgebefehl" in _runner_log(proj), _runner_log(proj)
 
 
 # --- AC-16 ------------------------------------------------------------------
@@ -495,7 +515,7 @@ def test_runner_aborts_when_clear_prompt_fails(tmp_path):
     proj, log, env, _ = _runner_case(tmp_path, "clearfail", STUB_CLEAR_EXIT="1")
     res = _run_runner(proj, env)
     _assert_clean_abort(res, proj)
-    assert _prompts(_calls(log)) == [["agent", "prompt", PANE, "/clear"]], _calls(log)
+    assert _prompts(_calls(log)) == CLEAR_TYPED, _calls(log)
 
 
 # --- AC-17 ------------------------------------------------------------------
@@ -506,7 +526,7 @@ def test_config_default_auto_clear_disabled():
     section = cfg["herdr"]["auto_clear"]
     # #480: Template schaltet nicht mehr ausdruecklich ab
     assert section.get("enabled") is not True
-    assert section["grace_s"] == 3
+    assert section["grace_s"] == 10  # #506 R2: Default 10 s (fremde Stop-Hooks)
     assert section["idle_timeout_s"] == 120
     assert section["announce"] is True
     # Ohne Umgebungsvariable bleibt Auto-/clear mit der Repo-Config aus

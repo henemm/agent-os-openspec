@@ -335,8 +335,8 @@ herdr:
   # ~/.claude/settings.json; ein Projektwert true/false hat Vorrang.
   auto_clear:
     # enabled: false   # true = an, false = aus (auch gegen den benutzerweiten Schalter); weglassen = Benutzer-Schalter entscheidet
-    grace_s: 3          # Wartezeit nach der Vorankuendigung (Sekunden)
-    idle_timeout_s: 120 # Hoechstwartezeit je `agent wait` (Sekunden)
+    grace_s: 10         # Wartezeit nach dem Stop vor /clear (Sekunden); laenger als eigene Stop-Hooks laufen (#506)
+    idle_timeout_s: 120 # Hoechstwartezeit auf SessionStart(clear) nach dem /clear (Sekunden)
     announce: true      # Vorankuendigung per `notification show`
   # Workflow-Plan rechts neben Claude (#476, Opt-out, nur Literal `false` schaltet
   # ab): `workflow.py start` oeffnet per `pane split --direction right` einen Pane

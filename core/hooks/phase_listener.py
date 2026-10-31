@@ -464,7 +464,16 @@ def main():
     if framework_disabled():
         sys.exit(0)
 
+    # get_user_message uebernimmt das Payload-`cwd` (adopt_payload_cwd), der
+    # Marker landet damit im selben Basisordner wie beim Spawner (#506 F004)
     message = get_user_message()
+    if os.environ.get("HERDR_ENV") == "1" and os.environ.get("HERDR_PANE_ID"):
+        try:  # #506: Eingabe-Signal fuer den Auto-/clear-Runner (still, fail-open)
+            import herdr_bridge
+            herdr_bridge.record_signal("input")
+        except Exception:
+            pass
+
     if not message:
         sys.exit(0)
 

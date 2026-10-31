@@ -21,10 +21,29 @@ haengendes Binary keinen Hook ausbremst.
 Auto-/clear (#467, Opt-in `herdr.auto_clear.enabled: true`): footer_gate ruft
 auf dem Pfad "Fusszeile korrekt" `maybe_auto_clear` auf. Sind alle Bedingungen
 erfuellt, startet `spawn_auto_clear` diesen Script detached als Runner
-(`herdr_bridge.py auto-clear ...`), der per `agent wait`/`agent prompt` erst
-`/clear` und dann den naechsten Workflow-Befehl in den Pane tippt. Der Runner
-bricht bei jedem Zweifel ab, protokolliert den Grund in
-`.claude/herdr_auto_clear.log` und endet immer mit Exit 0.
+(`herdr_bridge.py auto-clear ...`), der per `pane send-text` + `pane send-keys
+enter` erst `/clear` und dann den naechsten Workflow-Befehl in den Pane tippt. Der Runner bricht bei
+jedem Zweifel ab, protokolliert den Grund in `.claude/herdr_auto_clear.log` und
+endet immer mit Exit 0.
+
+#506: Herdrs Agent-Status (`agent wait`) entscheidet nicht mehr — lokale
+Erkennungsregeln koennen ihn beliebig verschieben. Der Runner liest eigene
+Plugin-Signale je Pane aus `.claude/herdr_signals/` (`record_signal`):
+`<pane>.input.json` schreibt phase_listener bei jedem abgeschickten Prompt
+(neue Eingabe seit dem Stop-Hook-Zeitpunkt `--since` -> Abbruch), `<pane>.session.json` schreibt
+session_banner bei jedem SessionStart (nach `/clear` wird auf `source=clear`
+gewartet). Herdr dient nur noch als Tastatur (`agent prompt` lehnt bei `blocked`
+mit `agent_blocked` ab). Ein Stop ist nicht zwingend das Turn-Ende (ein fremder
+Stop-Hook kann den Turn per `decision: block` fortsetzen); deshalb schreiben
+zusaetzlich session_singleton_guard (PreToolUse, `<pane>.activity.json`), der
+CLI-Modus `signal activity` (Notification `permission_prompt`, PermissionRequest)
+und footer_gate (jeder Stop, `<pane>.stop.json`) eigene Marker. Der Runner tippt
+nur, wenn seit dem Stop (bzw. nach dem eigenen `/clear` + Toleranz) keines
+dieser Signale eintraf (`_check_activity`), sonst "Claude arbeitet weiter".
+Adversary R2: Default-grace 10 s (fremde Stop-Hooks laufen ohne Signal), erneute
+Pruefung zwischen `send-text` und Enter (bei Abbruch Zeile per `ctrl+u` loeschen),
+SessionEnd (`signal activity`, `kind=session_end`) und ein SessionStart mit
+`source != clear` nach der Referenz zaehlen als Abbruch.
 
 Plan-Pane (#476, Opt-out `herdr.plan_pane.enabled: false`): `workflow.py start`
 ruft `open_plan_pane`, das den Runner `herdr_bridge.py plan-pane ...` detached
@@ -35,8 +54,7 @@ Log `.claude/herdr_plan_pane.log`; immer Exit 0.
 
 #478: session_banner ruft `open_plan_pane_for_active` (Pane nur bei aktivem
 Workflow). `maybe_auto_clear` loggt bei aktivem Opt-in jeden Skip-Grund
-(`skip: <grund>`, gleiche Zeile in Folge nur einmal); `_wait_ready` liest
-`agent_status` (Herdr 0.9.5), Fallback `status`.
+(`skip: <grund>`, gleiche Zeile in Folge nur einmal).
 
 #496 Lebenszyklus: Besitz steht als Token am Pane (`owner`, `workflow`,
 `version`), nicht mehr in der ID-Datei (die nur noch das cwd fuer
@@ -259,14 +277,22 @@ AC_STATE_FILE = "herdr_auto_clear_state.json"
 AC_LOG_FILE = "herdr_auto_clear.log"
 AC_LOCK_SECONDS = 600  # Once-Lock: identischer Schluessel loest 10 min nicht erneut aus
 AC_BOUNDARY_MAX_AGE_S = 900  # Grenz-Vermerk (#495) gilt hoechstens 15 min
-AC_DEFAULTS = {"grace_s": 3, "idle_timeout_s": 120, "announce": True}
+# grace_s 10 (#506 R2): fremde Stop-Hooks laufen ohne Signal; blockt einer nach
+# laengerer Laufzeit, kommt die Fortsetzung (PreToolUse/Stop) erst danach
+AC_DEFAULTS = {"grace_s": 10, "idle_timeout_s": 120, "announce": True}
 AC_SETTLE_S = 2.0       # Wartezeit vor State-Recheck bzw. nach /clear
-AC_PROMPT_TIMEOUT = 15  # Sekunden fuer `agent prompt`/`notification show`
+AC_PROMPT_TIMEOUT = 15  # Sekunden je `pane send-text`/`send-keys`/`notification show`
 AC_LOG_MAX_LINES = 200
 
 POSITIVE_MARKER = "`/clear` ist jetzt gefahrlos"
 NEGATIVE_MARKER = "`/clear` jetzt NICHT"
-READY_STATES = ("idle", "done")
+AC_SIGNAL_DIR = "herdr_signals"  # eigene Hook-Signale je Pane (#506)
+AC_SIGNAL_POLL_S = 0.2
+AC_CLEAR_TOLERANCE_S = 2.0  # Signale bis t_clear + 2 s gehoeren zum eigenen /clear (#506)
+AC_SINCE_FUTURE_S = 5.0     # `--since` hoechstens so weit in der Zukunft (#506)
+AC_CONTINUE_KINDS = ("input", "activity", "stop")  # Fortsetzungs-Signale (#506)
+AC_CLEAR_KEY = "ctrl+u"  # Eingabezeile loeschen (Herdr 0.9.5: `pane send-keys <p> ctrl+u`)
+_PANE_FILE_RE = re.compile(r"[^A-Za-z0-9_.-]")
 
 
 def _hooks_on_path() -> None:
@@ -348,8 +374,15 @@ def has_clear_marker(message) -> bool:
         return False
 
 
-def _ac_base() -> Path:
-    """Worktree-lokale Basis (Vorbild: footer_gate._state_path)."""
+def _ac_base(cwd=None) -> Path:
+    """Worktree-lokale Basis (Vorbild: footer_gate._state_path).
+
+    Mit `cwd` (Payload-`cwd` eines Hooks, #506) wird dieselbe Aufloesung fuer
+    dieses Verzeichnis gerechnet, ohne den Prozess-cwd zu aendern; fehlt es oder
+    existiert es nicht, gilt der Prozess-cwd.
+    """
+    if isinstance(cwd, str) and cwd.strip() and os.path.isdir(cwd):
+        return _ac_base_for(Path(cwd))
     _hooks_on_path()
     from hook_utils import _find_worktree_root, find_project_root
     try:
@@ -359,6 +392,25 @@ def _ac_base() -> Path:
     except Exception:
         pass
     return find_project_root()
+
+
+def _ac_base_for(start: Path) -> Path:
+    """`_ac_base` fuer ein gegebenes Verzeichnis (Worktree, sonst Projekt-Root)."""
+    _hooks_on_path()
+    from hook_utils import find_project_root
+    current = start.absolute()
+    for parent in [current, *current.parents]:
+        marker = parent / ".git"
+        if marker.is_file():
+            return parent
+        if marker.is_dir():
+            break
+    if os.environ.get("CLAUDE_PROJECT_DIR"):
+        return find_project_root()
+    for parent in [current, *current.parents]:
+        if (parent / ".git").is_dir():
+            return parent
+    return current
 
 
 def _lock_active(stamp, now: float) -> bool:
@@ -400,15 +452,21 @@ def _release_lock(key: str) -> None:
 
 
 def spawn_auto_clear(pane: str, workflow_name: str, phase: str, command: str,
-                     cfg: dict) -> bool:
-    """Runner detached starten (kein Shell, eigene Session, DEVNULL); sofort zurueck."""
+                     cfg: dict, since: "float | None" = None) -> bool:
+    """Runner detached starten (kein Shell, eigene Session, DEVNULL); sofort zurueck.
+
+    `since` (Epoch-Sekunden, Default jetzt) ist der Stop-Hook-Zeitpunkt (#506):
+    Eingaben danach gelten fuer den Runner als "Nutzer hat weitergeschrieben".
+    """
     try:
+        since = time.time() if since is None else float(since)
         argv = [sys.executable, str(Path(__file__).resolve()), "auto-clear",
                 "--pane", pane, "--workflow", workflow_name, "--phase", phase,
                 "--command", command,
                 "--grace", str(cfg.get("grace_s", AC_DEFAULTS["grace_s"])),
                 "--idle-timeout", str(cfg.get("idle_timeout_s", AC_DEFAULTS["idle_timeout_s"])),
-                "--announce", "1" if cfg.get("announce", True) else "0"]
+                "--announce", "1" if cfg.get("announce", True) else "0",
+                "--since", repr(since)]
         subprocess.Popen(
             argv,
             stdin=subprocess.DEVNULL,
@@ -469,6 +527,7 @@ def maybe_auto_clear(payload, message, data) -> bool:
     Fail-open: jede nicht erfuellte Bedingung oder Ausnahme = kein Spawn.
     """
     try:
+        since = time.time()  # Stop-Hook-Zeitpunkt: Referenz fuer neue Eingaben (#506)
         pane = _pane()
         if pane is None:
             return False
@@ -516,7 +575,7 @@ def maybe_auto_clear(payload, message, data) -> bool:
         key = f"{name}|{phase}|{command}"
         if not _acquire_lock(key):
             return _ac_skip("Once-Lock aktiv")
-        if not spawn_auto_clear(pane, name, phase, command, cfg):
+        if not spawn_auto_clear(pane, name, phase, command, cfg, since=since):
             _release_lock(key)
             return _ac_skip("Spawn fehlgeschlagen")
         return True
@@ -611,6 +670,109 @@ def _ac_log(line: str, log_file: str = AC_LOG_FILE) -> None:
         pass
 
 
+def _signal_path(pane, kind: str, cwd=None) -> "tuple[Path, Path] | None":
+    """(Marker-Pfad, Wurzel) je Pane; Dateiname nur aus `[A-Za-z0-9_.-]` (#506)."""
+    safe = _PANE_FILE_RE.sub("", str(pane or ""))
+    if not safe.strip("."):
+        return None
+    base = _ac_base(cwd)
+    return base / ".claude" / AC_SIGNAL_DIR / f"{safe}.{kind}.json", base
+
+
+def record_signal(kind: str, source=None, cwd=None, reason=None) -> None:
+    """Hook-Signal fuer das eigene Herdr-Pane vermerken (#506).
+
+    `input` (Prompt), `session` (`source` = SessionStart-Quelle), `activity`
+    (`source` = pretooluse/notification/permission/session_end, als Feld `kind`;
+    bei session_end zusaetzlich `reason` aus dem SessionEnd-Payload), `stop`.
+    Basis aus `cwd` (Payload-`cwd`), sonst Prozess-cwd. Nur mit `HERDR_ENV == "1"`
+    und gesetzter `HERDR_PANE_ID`; ohne Config-Zugriff, Subprozess oder Ausgabe.
+    Jede Ausnahme wird verschluckt (fail-open).
+    """
+    try:
+        if os.environ.get("HERDR_ENV") != "1":
+            return
+        located = _signal_path(os.environ.get("HERDR_PANE_ID", "").strip(), kind, cwd)
+        if located is None:
+            return
+        data = {"at": time.time()}
+        if kind == "session":
+            data["source"] = source if isinstance(source, str) else None
+        elif kind == "activity":
+            data["kind"] = source if isinstance(source, str) else None
+            if isinstance(reason, str):
+                data["reason"] = reason[:40]
+        from hook_utils import atomic_write_json
+        atomic_write_json(located[0], data, root=located[1])
+    except Exception:
+        pass
+
+
+SIGNAL_ACTIVITY_KINDS = {"Notification": "notification", "PermissionRequest": "permission",
+                         "SessionEnd": "session_end"}
+
+
+def run_signal(argv) -> int:
+    """CLI `signal activity` (Notification/PermissionRequest/SessionEnd, #506); immer 0, still.
+
+    Liest den Payload von stdin, Basis aus dessen `cwd`; `kind` aus
+    `hook_event_name` (SessionEnd: `reason` mit, damit der Runner das Ende durch
+    das eigene `/clear` erkennt). Ungueltiger Payload oder fehlende Pane-Id: nichts.
+    """
+    try:
+        if list(argv) != ["activity"]:
+            return 0
+        if os.environ.get("HERDR_ENV") != "1" or not os.environ.get("HERDR_PANE_ID"):
+            return 0
+        payload = json.loads(sys.stdin.read() or "null")
+        if not isinstance(payload, dict):
+            return 0
+        kind = SIGNAL_ACTIVITY_KINDS.get(payload.get("hook_event_name"), "notification")
+        cwd = payload.get("cwd")
+        reason = payload.get("reason") if kind == "session_end" else None
+        record_signal("activity", kind, cwd=cwd if isinstance(cwd, str) else None,
+                      reason=reason)
+    except Exception:
+        pass
+    return 0
+
+
+def read_signal(pane, kind: str) -> dict:
+    """Marker lesen; fehlend, unlesbar oder kein Objekt -> {}."""
+    try:
+        located = _signal_path(pane, kind)
+        if located is None:
+            return {}
+        from hook_utils import read_state_json
+        data = read_state_json(located[0], located[1])
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _signal_at(data: dict) -> "float | None":
+    at = data.get("at")
+    if isinstance(at, (int, float)) and not isinstance(at, bool):
+        return float(at)
+    return None
+
+
+def _parse_since(value, now: float) -> "float | None":
+    """`--since` nur endlich, > 0 und hoechstens AC_SINCE_FUTURE_S in der Zukunft (#506).
+
+    Sonst None (Runner-Start gilt): `nan` machte jeden Vergleich falsch, ein
+    Zukunftswert jeden echten Marker "zu alt" — beides hebelte die Pruefung aus.
+    """
+    import math
+    try:
+        since = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(since) or since <= 0 or since > now + AC_SINCE_FUTURE_S:
+        return None
+    return since
+
+
 class _Runner:
     def __init__(self, args):
         self.args = args
@@ -619,8 +781,19 @@ class _Runner:
         self.settle = max(0.0, float(args.settle))
         grace = max(0.0, float(args.grace))
         self.grace = grace
-        # Gesamt-Deadline: zwei Wartephasen, Delays und Prompts plus Puffer
-        budget = grace + 2 * self.settle + 2 * (self.idle_timeout + 10) + 3 * AC_PROMPT_TIMEOUT + 10
+        # Referenz fuer "weitergemacht seit": Stop-Hook-Zeitpunkt `--since`, sonst
+        # Runner-Start (#506); unbrauchbare Werte werden verworfen (Vermerk im Log)
+        now = time.time()
+        raw = getattr(args, "since", None)
+        since = _parse_since(raw, now)
+        self.since_note = None
+        if since is None:
+            self.since_note = ("--since fehlt" if raw is None
+                               else f"--since {str(raw)[:40]!r} verworfen") + \
+                ", Referenz ist der Runner-Start"
+        self.since = since if since is not None else now
+        # Gesamt-Deadline: eine Wartephase (SessionStart nach /clear), Delays, Prompts, Puffer
+        budget = grace + 2 * self.settle + self.idle_timeout + 5 * AC_PROMPT_TIMEOUT + 20
         self.deadline = time.monotonic() + budget
 
     def _remaining(self) -> float:
@@ -653,26 +826,48 @@ class _Runner:
         except Exception:
             pass  # Vorankuendigung ist nur Hinweis
 
-    def _wait_ready(self, label: str) -> None:
-        timeout_ms = int(self.idle_timeout * 1000)
-        res = self._call(["agent", "wait", self.args.pane, "--until", "idle",
-                          "--until", "done", "--timeout", str(timeout_ms)],
-                         self.idle_timeout + 10)
-        if res.returncode != 0:
-            raise _Abort(f"{label}: agent wait Exit {res.returncode} "
-                         f"{(res.stderr or '').strip()[:200]}")
-        # Herdr 0.9.5 liefert `agent_status`; `status` nur als Fallback (#478)
-        try:
-            agent = json.loads(res.stdout)["result"]["agent"]
-            status = agent.get("agent_status")
-            if not isinstance(status, str):
-                status = agent.get("status")
-        except Exception:
-            status = None
-        if not isinstance(status, str):
-            raise _Abort(f"{label}: agent wait Ausgabe nicht parsbar")
-        if status not in READY_STATES:
-            raise _Abort(f"{label}: Agent-Status {status!r}")
+    def _check_activity(self, ref: float, label: str, own_clear: bool = False) -> None:
+        """Eingabe, Aktivitaet oder weiterer Stop im eigenen Pane nach `ref` -> Abbruch.
+
+        Ein Stop ist nicht zwingend das Turn-Ende (fremder Stop-Hook mit
+        `decision: block`); jedes Hook-Signal danach heisst: nicht tippen (#506).
+        Ebenso Sitzungsende (`activity` kind=session_end) und ein SessionStart mit
+        `source != clear` (Claude im Pane neu gestartet/fortgesetzt, R2-F003).
+        `own_clear`: nach dem eigenen `/clear` gehoert SessionEnd(reason=clear) dazu.
+        """
+        for kind in AC_CONTINUE_KINDS:
+            data = read_signal(self.args.pane, kind)
+            at = _signal_at(data)
+            if at is None or at <= ref:
+                continue
+            if kind == "activity" and data.get("kind") == "session_end":
+                if own_clear and data.get("reason") == "clear":
+                    continue
+                raise _Abort(f"{label}: Sitzung beendet (session_end {at - ref:+.1f}s)")
+            why = "Nutzer hat weitergeschrieben" if kind == "input" else "Claude arbeitet weiter"
+            raise _Abort(f"{label}: {why} ({kind} {at - ref:+.1f}s)")
+        data = read_signal(self.args.pane, "session")
+        at = _signal_at(data)
+        if at is not None and at > ref and data.get("source") != "clear":
+            raise _Abort(f"{label}: Sitzung neu gestartet "
+                         f"(session {str(data.get('source'))[:20]} {at - ref:+.1f}s)")
+
+    def _wait_session_clear(self, t_clear: float) -> None:
+        """Bis `idle_timeout` auf SessionStart(clear) nach dem eigenen /clear warten.
+
+        Je Poll auch Fortsetzungs-Signale nach `t_clear` + Toleranz pruefen (#506).
+        """
+        end = time.monotonic() + self.idle_timeout
+        while True:
+            self._check_activity(t_clear + AC_CLEAR_TOLERANCE_S, "nach /clear", own_clear=True)
+            data = read_signal(self.args.pane, "session")
+            at = _signal_at(data)
+            if data.get("source") == "clear" and at is not None and at >= t_clear:
+                return
+            rest = end - time.monotonic()
+            if rest <= 0:
+                raise _Abort("nach /clear: kein SessionStart(clear)")
+            self._sleep(min(AC_SIGNAL_POLL_S, rest))
 
     def _recheck(self, label: str) -> None:
         """Workflow noch in derselben Phase mit demselben erwarteten Befehl?"""
@@ -693,27 +888,54 @@ class _Runner:
         if workflow.expected_footer_command(data) != self.args.command:
             raise _Abort(f"{label}: erwarteter Befehl geaendert")
 
-    def _prompt(self, text: str) -> None:
-        # Bewusst ohne --wait (sonst agent_prompt_stalled bei /clear) und ohne Retry.
-        res = self._call(["agent", "prompt", self.args.pane, text], AC_PROMPT_TIMEOUT)
+    def _prompt(self, text: str, ref: float, label: str, own_clear: bool = False) -> None:
+        """Text tippen und abschicken; Herdr nur als Tastatur (#506), ohne Retry.
+
+        Kein `agent prompt`: das lehnt Herdr ab, sobald der Pane `blocked` ist.
+        Zwischen Text und Enter erneut pruefen (R2-F002): kam inzwischen ein Signal,
+        wird die Zeile per `ctrl+u` geloescht und nichts abgeschickt.
+        """
+        res = self._call(["pane", "send-text", self.args.pane, text], AC_PROMPT_TIMEOUT)
         if res.returncode != 0:
-            raise _Abort(f"agent prompt {text!r} Exit {res.returncode}")
+            raise _Abort(f"pane send-text {text!r} Exit {res.returncode}")
+        try:
+            self._check_activity(ref, label, own_clear=own_clear)
+        except _Abort as exc:
+            try:
+                res = self._call(["pane", "send-keys", self.args.pane, AC_CLEAR_KEY],
+                                 AC_PROMPT_TIMEOUT)
+                note = "Zeile geloescht" if res.returncode == 0 else \
+                    f"Zeile loeschen Exit {res.returncode}"
+            except _Abort as inner:
+                note = f"Zeile loeschen: {inner}"
+            raise _Abort(f"{exc} [zwischen Text und Enter, {note}]")
+        res = self._call(["pane", "send-keys", self.args.pane, "enter"], AC_PROMPT_TIMEOUT)
+        if res.returncode != 0:
+            raise _Abort(f"pane send-keys enter ({text!r}) Exit {res.returncode}")
 
     def run(self) -> None:
         if _command_name(self.args.command) in MANUAL_COMMANDS:
             raise _Abort("Workflow-Abschluss bleibt manuell")
         if str(self.args.announce).strip() not in ("0", "false", "False", ""):
             self._announce()
+        if self.since_note:
+            _ac_log(f"{self.args.workflow}|{self.args.phase}|{self.args.command}: "
+                    f"Hinweis: {self.since_note}")
         self._sleep(self.grace)
-        self._wait_ready("wait 1")
+        self._check_activity(self.since, "vor /clear")
         self._sleep(self.settle)
         self._recheck("vor /clear")
-        self._prompt("/clear")
+        self._check_activity(self.since, "vor /clear")  # unmittelbar vor dem Tippen
+        t_clear = time.time()
+        self._prompt("/clear", self.since, "vor /clear")
+        self._wait_session_clear(t_clear)
         self._sleep(self.settle)
-        self._wait_ready("wait 2")
         self._recheck("vor Folgebefehl")
+        after = t_clear + AC_CLEAR_TOLERANCE_S
+        self._check_activity(after, "vor Folgebefehl", own_clear=True)
         # Vermerk/Log/Lock bleiben in Kurzform; nur der getippte Text folgt der Form (#499)
-        self._prompt(resolve_command_form(self.args.command))
+        self._prompt(resolve_command_form(self.args.command), after, "vor Folgebefehl",
+                     own_clear=True)
 
 
 def run_auto_clear(argv) -> int:
@@ -730,6 +952,8 @@ def run_auto_clear(argv) -> int:
         parser.add_argument("--idle-timeout", type=float,
                             default=AC_DEFAULTS["idle_timeout_s"])
         parser.add_argument("--announce", default="1")
+        # Stop-Hook-Epoch (#506); roh als Text, `_parse_since` prueft
+        parser.add_argument("--since", default=None)
         try:
             args = parser.parse_args(argv)
         except SystemExit:
@@ -1313,6 +1537,8 @@ if __name__ == "__main__":
             run_plan_pane(sys.argv[2:])
         elif len(sys.argv) > 1 and sys.argv[1] == "plan-pane-close":
             run_plan_pane_close()
+        elif len(sys.argv) > 1 and sys.argv[1] == "signal":
+            run_signal(sys.argv[2:])
     except BaseException:
         pass
     sys.exit(0)

@@ -13,7 +13,9 @@ Vertraege, die diese Tests festlegen (zusaetzlich zur Spec):
   „kein Slash-Befehl“, fehlender Positivmarker enthaelt „Marker“.
 - Stub-Binary: `pane split` liefert `{"result":{"pane":{"pane_id":"pane-new"}}}`,
   `agent wait` liefert Herdr-0.9.5-Format mit nur `agent_status` (Status aus
-  $STUB_STATUS, Default idle).
+  $STUB_STATUS, Default idle; seit #506 darf der Runner es nicht mehr aufrufen),
+  `agent prompt` wird bei STUB_STATUS=blocked abgelehnt; `pane send-text <pane> /clear`
+  + `pane send-keys <pane> enter` schreibt den SessionStart(clear)-Marker (#506).
 
 Importfehler/fehlende Funktionen erscheinen als Test-FAIL: Module werden erst im
 Testkoerper importiert, Hooks/CLI/Runner laufen als Subprozess.
@@ -51,6 +53,23 @@ fi
 if [ "$1 $2" = "agent wait" ]; then
   printf '{"id":"cli:agent:wait","result":{"agent":{"terminal_id":"t1","agent_status":"%s","pane_id":"P","workspace_id":"w1","tab_id":"t","focused":true}}}\n' "${STUB_STATUS:-idle}"
   exit 0
+fi
+if [ "$1 $2" = "agent prompt" ] && [ "${STUB_STATUS:-idle}" = blocked ]; then
+  exit 1  # Herdr 0.9.5 lehnt bei `blocked` ab (agent_blocked, #506)
+fi
+if [ "$1 $2" = "pane send-text" ]; then printf '%s' "$4" > "$STUB_LOG.pending"; exit 0; fi
+typed=""
+if [ "$1 $2" = "pane send-keys" ] && [ -f "$STUB_LOG.pending" ]; then
+  typed="$(cat "$STUB_LOG.pending")"; rm -f "$STUB_LOG.pending"
+fi
+if [ "$1 $2 $4" = "pane send-keys enter" ] && [ "$typed" = "/clear" ]; then  # #506: SessionStart(clear)-Marker wie der Hook
+  python3 - "$CLAUDE_PROJECT_DIR/.claude/herdr_signals/$3.session.json" <<'EOF'
+import json, os, sys, time
+os.makedirs(os.path.dirname(sys.argv[1]), exist_ok=True)
+with open(sys.argv[1] + ".tmp", "w") as fh:
+    json.dump({"source": "clear", "at": time.time()}, fh)
+os.replace(sys.argv[1] + ".tmp", sys.argv[1])
+EOF
 fi
 exit 0
 """
@@ -362,24 +381,26 @@ def _run_runner(proj: Path, env: dict, command: str = "/50-implement #478",
     return _run(argv, env, proj)
 
 
-def test_runner_reads_real_agent_status_field(tmp_path):
+def test_runner_ignores_herdr_agent_status(tmp_path):
+    # #506 ersetzt test_runner_reads_real_agent_status_field: Herdrs Status (auch
+    # `blocked` wie beim PO-Manifest) entscheidet nicht mehr, `agent wait` entfaellt.
     cmd = "/50-implement #478"
     data = _wf_data(phase="phase6_implement")
 
-    proj, log, env = _case(tmp_path, "idle", AUTO_ON, data)
-    # Kurz-Alias im Projekt: der Runner tippt die Kurzform (#499, sonst Plugin-Form)
-    alias = proj / ".claude" / "commands" / "50-implement.md"
-    alias.parent.mkdir(parents=True, exist_ok=True)
-    alias.write_text("Alias\n")
-    res = _run_runner(proj, env, cmd)
-    assert res.returncode == 0, res.stderr
-    prompts = _of(_calls(log), "agent prompt")
-    assert prompts == [["agent", "prompt", PANE, "/clear"],
-                       ["agent", "prompt", PANE, cmd]], (_calls(log), _skip_log(proj))
-
-    proj, log, env = _case(tmp_path, "blocked", AUTO_ON, data, STUB_STATUS="blocked")
-    res = _run_runner(proj, env, cmd)
-    assert res.returncode == 0, res.stderr
-    assert "Traceback" not in res.stderr, res.stderr
-    assert _of(_calls(log), "agent prompt") == [], _calls(log)
-    assert "nicht parsbar" not in _skip_log(proj), _skip_log(proj)
+    for status in ("idle", "blocked"):
+        proj, log, env = _case(tmp_path, status, AUTO_ON, data, STUB_STATUS=status)
+        # Kurz-Alias im Projekt: der Runner tippt die Kurzform (#499, sonst Plugin-Form)
+        alias = proj / ".claude" / "commands" / "50-implement.md"
+        alias.parent.mkdir(parents=True, exist_ok=True)
+        alias.write_text("Alias\n")
+        res = _run_runner(proj, env, cmd)
+        assert res.returncode == 0, res.stderr
+        assert "Traceback" not in res.stderr, res.stderr
+        assert _of(_calls(log), "agent wait") == [], (status, _calls(log))
+        assert _of(_calls(log), "agent prompt") == [], (status, _calls(log))
+        enter = ["pane", "send-keys", PANE, "enter"]
+        typed = [c for c in _calls(log) if c[:1] == ["pane"]]
+        assert typed == [["pane", "send-text", PANE, "/clear"], enter,
+                         ["pane", "send-text", PANE, cmd], enter], \
+            (status, _calls(log), _skip_log(proj))
+        assert "OK" in _skip_log(proj), _skip_log(proj)

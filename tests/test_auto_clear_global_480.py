@@ -46,11 +46,23 @@ GRACE_ONLY = "herdr:\n  auto_clear:\n    grace_s: 7\n"
 
 POSITIVE = "✅ **`/clear` ist jetzt gefahrlos** — alles auf Platte gesichert."
 
+# #506: `/clear` loest im Stub den SessionStart(clear)-Marker aus wie der echte Hook
 STUB_SCRIPT = r"""#!/bin/bash
 { for a in "$@"; do printf '%s\0' "$a"; done; printf '\n'; } >> "$STUB_LOG"
-if [ "$1 $2" = "agent wait" ]; then
-  printf '%s\n' '{"result":{"agent":{"agent_status":"idle"}}}'
-  exit 0
+if [ "$1 $2" = "agent prompt" ]; then exit 1; fi  # Pane `blocked`: abgelehnt (#506)
+if [ "$1 $2" = "pane send-text" ]; then printf '%s' "$4" > "$STUB_LOG.pending"; exit 0; fi
+typed=""
+if [ "$1 $2" = "pane send-keys" ] && [ -f "$STUB_LOG.pending" ]; then
+  typed="$(cat "$STUB_LOG.pending")"; rm -f "$STUB_LOG.pending"
+fi
+if [ "$1 $2 $4" = "pane send-keys enter" ] && [ "$typed" = "/clear" ]; then
+  python3 - "$CLAUDE_PROJECT_DIR/.claude/herdr_signals/$3.session.json" <<'EOF'
+import json, os, sys, time
+os.makedirs(os.path.dirname(sys.argv[1]), exist_ok=True)
+with open(sys.argv[1] + ".tmp", "w") as fh:
+    json.dump({"source": "clear", "at": time.time()}, fh)
+os.replace(sys.argv[1] + ".tmp", sys.argv[1])
+EOF
 fi
 exit 0
 """
@@ -183,9 +195,9 @@ def test_footer_gate_spawns_with_env_switch(tmp_path):
     res = subprocess.run([sys.executable, str(FOOTER_GATE)], input=json.dumps(payload),
                          capture_output=True, text=True, env=env, cwd=str(proj), timeout=30)
     assert res.returncode == 0, res.stderr
-    calls = _wait_for(log, 2)
+    calls = _wait_for(log, 2, timeout=20.0)  # Default grace 10 s + settle 2 s vor /clear (#506)
     kinds = [" ".join(c[:2]) for c in calls]
-    assert "agent wait" in kinds, f"Runner nicht gestartet (kein `agent wait`): {calls}"
+    assert "pane send-text" in kinds, f"Runner nicht gestartet (kein `pane send-text`): {calls}"
 
 
 # --- AC-5 -------------------------------------------------------------------
