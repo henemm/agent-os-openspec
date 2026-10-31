@@ -920,6 +920,24 @@ def _do_cleanup(payload: dict) -> None:
 # Entry point
 # ---------------------------------------------------------------------------
 
+def _record_activity(payload: dict) -> None:
+    """Aktivitaets-Signal fuer den Auto-/clear-Runner (#506): still, fail-open.
+
+    PreToolUse laeuft vor einem Berechtigungsdialog; der Runner tippt nicht,
+    solange Claude nach dem Stop weiterarbeitet. Ohne Herdr-Pane reiner
+    Env-Check (kein Import, keine Datei).
+    """
+    if os.environ.get("HERDR_ENV") != "1" or not os.environ.get("HERDR_PANE_ID"):
+        return
+    try:
+        import herdr_bridge
+        cwd = payload.get("cwd")
+        herdr_bridge.record_signal("activity", "pretooluse",
+                                   cwd=cwd if isinstance(cwd, str) else None)
+    except Exception:
+        pass
+
+
 def main() -> None:
     mode = sys.argv[1] if len(sys.argv) > 1 else ""
     if mode == "claim":
@@ -933,6 +951,7 @@ def main() -> None:
     if mode == "register":
         _do_register(payload)
     elif mode == "guard":
+        _record_activity(payload)  # erste Handlung, vor jeder Pruefung/jedem Block (#506)
         _do_guard(payload)
     elif mode == "cleanup":
         _do_cleanup(payload)

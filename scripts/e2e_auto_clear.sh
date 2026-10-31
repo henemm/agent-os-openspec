@@ -23,12 +23,34 @@
 #   F  PLUGIN-FORM   (#499) wie A, aber ohne Testdouble und ohne Aliase (nur
 #                    --plugin-dir) -> Herdr tippt /agent-os-openspec:20-analyse #999,
 #                    der Plugin-Befehl startet, kein "Unknown command".
+#   G  PO-MANIFEST   (#506) wie A, aber der Test-Herdr bekommt das PO-Manifest nachgebaut
+#                    ($XDG_CONFIG_HOME/herdr/agent-detection/claude.toml = mitgeliefertes
+#                    Manifest + `gz_du_am_zug` "❗ Du:" -> blocked, `gz_nichts_zu_tun`
+#                    "ℹ️ Nichts zu tun" -> working, Prio 960). Vorab per `agent explain
+#                    --file` belegt; waehrend der Grace-Zeit meldet Herdr `blocked`. Der
+#                    Runner tippt trotzdem /clear + Folgebefehl (eigene Plugin-Signale).
+#   G0 GEGENPROBE    (nur explizit, nur sinnvoll mit dem Code von origin/main: Skript in
+#                    einen origin/main-Worktree kopieren und dort ONLY=G0 starten) wie G;
+#                    der alte Runner endet mit `ABBRUCH: wait 1` (agent wait Timeout).
+#   H  WEITERGESCHRIEBEN (#506) wie A mit grace_s 25; nach dem Turn-Ende schickt der
+#                    Nutzer einen neuen Prompt ab -> `ABBRUCH: vor /clear: Nutzer hat
+#                    weitergeschrieben`, kein ❯ /clear.
+#   P  STOP+DIALOG   (#506 R1) wie A plus fremder Projekt-Stop-Hook, der einmal blockt und
+#                    `touch <W>/PERM-PROBE-FILE` verlangt (nicht freigegeben -> Bash-
+#                    Berechtigungsdialog) -> `ABBRUCH: vor /clear: Claude arbeitet weiter`,
+#                    kein Enter/`/clear`, Dialog steht noch, PERM-PROBE-FILE fehlt.
+#   Q  STOP+SLEEP    (#506 R1) wie P, aber Fortsetzung `sleep 12` (freigegeben) -> ABBRUCH
+#                    "Claude arbeitet weiter", kein ❯ /clear waehrend und nach dem Turn.
+#   S  LANGSAMER STOP-HOOK (#506 R2-F001) fremder Stop-Hook schlaeft 8 s und blockt DANN,
+#                    Fortsetzung mit freigegebenem `sleep 3`; OHNE grace_s in der Config
+#                    (Default-grace 10 s) -> ABBRUCH "Claude arbeitet weiter", kein
+#                    ❯ /clear und kein SessionStart(clear) waehrend und nach der Fortsetzung.
 #
 # Aufruf:
 #   HERDR_E2E_BIN=/pfad/zu/herdr bash scripts/e2e_auto_clear.sh   # vorhandenes Binary
 #   bash scripts/e2e_auto_clear.sh                                # laedt v0.9.5, prueft SHA256
 #   KEEP=1 ...      laesst die Arbeitsordner stehen
-#   ONLY="A C" ...  nur ausgewaehlte Szenarien (Default "A B C D F"; E nur explizit)
+#   ONLY="A C" ...  nur ausgewaehlte Szenarien (Default "A B C D F G H P Q S"; E, G0 nur explizit)
 #   E2E_MODEL=...   Modell (Default haiku fuer A-D, opus fuer E)
 #
 # Voraussetzungen: claude (eingeloggt bzw. Auth per Umgebung), git, python3, curl.
@@ -49,7 +71,10 @@ MODEL_E="${E2E_MODEL:-opus}"
 MODEL="$MODEL_AD"
 E_TIMEOUT_S="${E_TIMEOUT_S:-900}"
 KEEP="${KEEP:-0}"
-ONLY="${ONLY:-A B C D F}"
+ONLY="${ONLY:-A B C D F G H P Q S}"
+CASE_GRACE=1      # grace_s je Szenario (run_case); leer = Eintrag fehlt, Default gilt (S)
+CASE_MANIFEST=0   # 1 = PO-Manifest im Test-Herdr (G, G0)
+CASE_STOPHOOK=""  # perm|sleep|slowsleep = fremder Projekt-Stop-Hook, der einmal blockt (P, Q, S)
 
 log() { printf '[e2e %s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 
@@ -127,16 +152,22 @@ setup_case() {  # $1 = stub|plugin|real; setzt W, P, T; startet Herdr + Claude; 
     if [ "$mode" = "real" ]; then write_demo_project "$P"; fi
     git -C "$P" add -A
     git -C "$P" -c user.email=e2e@example.invalid -c user.name=e2e commit -q --allow-empty -m init
-    cat >"$P/config.yaml" <<'YAML'
+    local grace_line=""  # leer: kein grace_s-Eintrag, der Default gilt (S)
+    [ -n "$CASE_GRACE" ] && grace_line="    grace_s: $CASE_GRACE"
+    cat >"$P/config.yaml" <<YAML
 herdr:
   enabled: true
   auto_clear:
     enabled: true
-    grace_s: 1
+$grace_line
     idle_timeout_s: 60
   plan_pane:
     enabled: false
 YAML
+    if [ "$CASE_MANIFEST" = "1" ]; then
+        write_po_manifest || { echo "setup: PO-Manifest nicht erzeugbar"; return 1; }
+        manifest_precheck || return 1
+    fi
     mkdir -p "$P/.claude"
     git -C "$P" worktree add -q "$P/.claude/worktrees/e2e" -b e2e
     T="$P/.claude/worktrees/e2e"
@@ -170,6 +201,10 @@ json.dump({"permissions": {"allow": [
     f"Read(/{repo}/**)", f"Grep(/{repo}/**)", f"Glob(/{repo}/**)"]}},
           open(sys.argv[1], "w"), indent=2)
 PY
+    fi
+    # P/Q: fremder Projekt-Stop-Hook muss vor dem Claude-Start stehen (Hook-Snapshot)
+    if [ -n "$CASE_STOPHOOK" ]; then
+        write_foreign_stop_hook "$CASE_STOPHOOK" || { echo "setup: Stop-Hook nicht erzeugbar"; return 1; }
     fi
     trust_project "$P" "$T"
 
@@ -253,6 +288,100 @@ Bash-Regel fuer dieses Projekt (Rechtepruefung per Allow-Liste):
 - Dateien mit Read/Grep/Glob lesen, nicht mit cat/head/find/grep — auch im Framework-Code
   unter $REPO (dafuer ist Lesen freigegeben).
 MD
+}
+
+# PO-Manifest (#506): Ein lokales agent-detection/claude.toml ERSETZT das mitgelieferte
+# (Herdr 0.9.5: nur die lokalen Regeln -> "rule: none"). Daher wie beim PO: mitgeliefertes
+# Claude-Manifest aus dem Binary + zwei Regeln mit Prioritaet 960 (ueber live_prompt_box 950).
+write_po_manifest() {
+    local dir="$XDG_CONFIG_HOME/herdr/agent-detection"
+    mkdir -p "$dir"
+    python3 - "$HB" "$dir/claude.toml" <<'PY' || return 1
+import re, sys
+blob = open(sys.argv[1], "rb").read()
+start = blob.find(b'id = "claude"\nversion = ')
+if start < 0:
+    sys.exit("mitgeliefertes Claude-Manifest im Binary nicht gefunden")
+nxt = re.compile(rb'\nid = "[^"]+"\nversion = |\x00').search(blob, start + 1)
+text = blob[start:nxt.start() if nxt else len(blob)].decode("utf-8")
+text += r'''
+
+# Nachbau des PO-Manifests (Issue #506): Fusszeile der letzten Antwort. Bereich die
+# unteren Zeilen (unter der Antwort steht noch "✻ Crunched for …"); die Zeile kann eine
+# eigene Antwort (● ❗ Du:) oder die Schlusszeile eines Antwortblocks (eingerueckt) sein.
+[[rules]]
+id = "gz_du_am_zug"
+state = "blocked"
+priority = 960
+region = "bottom_non_empty_lines(8)"
+visible_blocker = true
+line_regex = ['^\s*(?:[\x{25CF}\x{23FA}]\s*)?❗\s*Du:']
+
+[[rules]]
+id = "gz_nichts_zu_tun"
+state = "working"
+priority = 960
+region = "bottom_non_empty_lines(8)"
+visible_working = true
+line_regex = ['^\s*(?:[\x{25CF}\x{23FA}]\s*)?ℹ️?\s*Nichts zu tun']
+'''
+open(sys.argv[2], "w").write(text)
+PY
+    log "PO-Manifest: $dir/claude.toml ($(grep -c '^\[\[rules\]\]' "$dir/claude.toml") Regeln, $(sed -n 2p "$dir/claude.toml"))"
+}
+
+manifest_precheck() {  # drei Endbildschirme wie in #506 -> blocked / working / idle
+    local s want got ok=0 name line state rule
+    for s in "du|❗ Du: \`/40-tdd-red #142\`|blocked|gz_du_am_zug" \
+             "info|ℹ️ Nichts zu tun: alles erledigt.|working|gz_nichts_zu_tun" \
+             "done|Fertig.|idle|live_prompt_box"; do
+        IFS='|' read -r name line state rule <<<"$s"
+        printf '❯ Bitte schliesse die Phase ab.\n\n● Phase abgeschlossen.\n\n● %s\n\n✻ Crunched for 6s · done 7:50 AM\n\n%s\n❯ \n%s\n  ? for shortcuts\n' \
+            "$line" "$(printf '─%.0s' $(seq 1 80))" "$(printf '─%.0s' $(seq 1 80))" >"$W/screen-$name.txt"
+        got="$("$HB" agent explain --file "$W/screen-$name.txt" --agent claude 2>&1)"
+        echo "$got" | sed "s/^/    explain $name | /"
+        want="state: $state"
+        if ! echo "$got" | grep -Fxq "$want" || ! echo "$got" | grep -Fq "rule: $rule " \
+                || ! echo "$got" | grep -Fq "manifest: $XDG_CONFIG_HOME/herdr/agent-detection/claude.toml"; then
+            echo "setup: agent explain $name: erwartet $state/$rule"; ok=1
+        fi
+    done
+    return $ok
+}
+
+# Fremder Projekt-Stop-Hook (#506 Adversary R1): blockt genau einmal (`decision: block`),
+# Claude setzt den Turn ohne UserPromptSubmit fort. perm: `touch <W>/PERM-PROBE-FILE`
+# ist NICHT freigegeben -> Bash-Berechtigungsdialog. sleep: `sleep 12` ist freigegeben
+# -> der Turn laeuft 12 s weiter. slowsleep (#506 R2-F001): der Hook schlaeft beim ersten
+# Stop 8 s und blockt DANN, Fortsetzung `sleep 3` (freigegeben); `.fired` enthaelt Start-
+# und Block-Epoch. Die Rechtepruefung bleibt an (nur Allow-Liste).
+write_foreign_stop_hook() {  # $1 = perm|sleep|slowsleep; nutzt W, T
+    python3 - "$1" "$W" "$T/.claude/settings.json" "$CMD" <<'PY'
+import json, sys
+mode, w, settings, cmd = sys.argv[1:5]
+task = {"perm": f"touch {w}/PERM-PROBE-FILE", "sleep": "sleep 12", "slowsleep": "sleep 3"}[mode]
+reason = (f"Projektregel (Stop-Hook): Fuehre jetzt noch mit dem Bash-Werkzeug genau den Befehl  "
+          f"{task}  aus (unveraendert, ohne Zusatz, nicht im Hintergrund) und gib danach als "
+          f"gesamte Antwort genau diese eine Zeile aus: ❗Du: `{cmd}`")
+hook = f"{w}/foreign_stophook.py"
+slow = mode == "slowsleep"
+open(hook, "w").write(
+    "import json, os, sys, time\n"
+    f"m = {w + '/foreign_stophook.fired'!r}\n"
+    "if not os.path.exists(m):\n"
+    "    t0 = time.time()\n"
+    + ("    time.sleep(8)\n" if slow else "") +
+    "    open(m, 'w').write(f'start={t0!r} block={time.time()!r}')\n"
+    f"    print(json.dumps({{'decision': 'block', 'reason': {reason!r}}}))\n"
+    "sys.exit(0)\n")
+d = json.load(open(settings))
+if mode == "sleep":
+    d.setdefault("permissions", {}).setdefault("allow", []).append("Bash(sleep 12)")
+if slow:
+    d.setdefault("permissions", {}).setdefault("allow", []).append("Bash(sleep 3)")
+d["hooks"] = {"Stop": [{"hooks": [{"type": "command", "command": f"python3 {hook}"}]}]}
+json.dump(d, open(settings, "w"), indent=2)
+PY
 }
 
 teardown_case() {
@@ -475,6 +604,214 @@ Gib danach als gesamte Antwort genau diese eine Zeile aus, ohne Codeblock und oh
     check_plugin_followup F
 }
 
+# --- Szenarien G, G0, H (#506) -----------------------------------------------
+boundary_turn() {  # $1 = Du-Zeile; ohne --wait: beim PO-Manifest bleibt Herdr auf blocked
+    H agent prompt e2e "$INTRO
+Fuehre mit dem Bash-Werkzeug genau diesen Befehl aus, unveraendert, ohne cd und ohne Zusatz:
+$PHASE_CMD
+Gib danach als gesamte Antwort genau diese eine Zeile aus, ohne Codeblock und ohne weiteren Text:
+$1" >/dev/null 2>&1 || { echo "  FAIL agent prompt (Testaufbau)"; CASE_FAIL=1; return 1; }
+}
+
+wait_turn_end() {  # Phase 2 erreicht und Vermerk verbraucht = Stop-Hook hat den Runner gestartet
+    local i
+    for i in $(seq 1 240); do
+        if H agent read e2e --source visible 2>/dev/null | grep -Fq "Do you want to proceed?"; then
+            echo "  FAIL Claude haengt an einer Freigabe (Testaufbau)"; CASE_FAIL=1; return 1
+        fi
+        if [ "$(cur_phase)" = "phase2_analyse" ] && ! has_boundary >/dev/null; then
+            log "Turn-Ende nach $((i / 2))s (Phase 2, Vermerk verbraucht)"; return 0
+        fi
+        sleep 0.5
+    done
+    echo "  FAIL Turn-Ende nicht erreicht (Phase $(cur_phase))"; CASE_FAIL=1; return 1
+}
+
+check_herdr_blocked() {  # in der Grace-Zeit: Herdr fuehrt den Pane per gz_du_am_zug als blocked
+    local i ex="" st=""
+    for i in $(seq 1 10); do  # explain wertet sofort aus, `agent get` meldet den veroeffentlichten Stand
+        ex="$(H agent explain e2e 2>&1)"; st="$(agent_status)"
+        echo "$ex" | grep -Fq "rule: gz_du_am_zug" && [ "$st" = "blocked" ] && break
+        sleep 0.5
+    done
+    echo "$ex" | grep -Fxq "state: blocked" && echo "$ex" | grep -Fq "rule: gz_du_am_zug"
+    check "Herdr: state blocked, rule gz_du_am_zug (agent explain, Grace-Zeit)" $?
+    [ "$st" = "blocked" ]; check "Herdr: agent get -> blocked ($st)" $?
+    echo "$ex" | sed 's/^/    explain | /'
+    [ "$CASE_FAIL" -eq 0 ] || H agent read e2e --source visible 2>&1 | sed 's/^/    grace | /'
+}
+
+scenario_G() {
+    boundary_turn "❗ Du: \`$CMD\`" || return
+    wait_turn_end || return
+    check_herdr_blocked
+    wait_log "$WF|phase2_analyse|$CMD: " 120
+    ac_log | grep -Fq "$WF|phase2_analyse|$CMD: OK"; check "Log: $WF|phase2_analyse|$CMD: OK" $?
+    wait_pane "E2E-FOLGEBEFEHL-OK #999" 90; check "TUI: E2E-FOLGEBEFEHL-OK #999" $?
+    local txt; txt="$(pane_text 400)"
+    echo "$txt" | grep -Fq "SessionStart:clear"; check "TUI: SessionStart:clear" $?
+    echo "$txt" | grep -Fq "❯ /clear"; check "TUI: ❯ /clear" $?
+    echo "$txt" | grep -Fq "❯ $CMD"; check "TUI: ❯ $CMD" $?
+    echo "  Belege G:"; ac_log | sed 's/^/    log  | /'
+    echo "$txt" | grep -E "SessionStart:clear|❯ /clear|❯ /20-analyse|E2E-FOLGEBEFEHL-OK|❗ Du" | sed 's/^/    pane | /'
+}
+
+scenario_G0() {  # nur gegen den Code von origin/main sinnvoll (siehe Kopf)
+    boundary_turn "❗ Du: \`$CMD\`" || return
+    wait_turn_end || return
+    check_herdr_blocked
+    wait_log "$WF|phase2_analyse|$CMD: " 150
+    ac_log | grep -Fq "$WF|phase2_analyse|$CMD: ABBRUCH: wait 1"
+    check "Log: ABBRUCH: wait 1 (alter Code wartet auf idle)" $?
+    local txt; txt="$(pane_text 400)"
+    ! echo "$txt" | grep -Fq "❯ /clear"; check "TUI: kein ❯ /clear" $?
+    echo "  Belege G0:"; ac_log | sed 's/^/    log  | /'
+    echo "$txt" | grep -E "❯ /clear|❗ Du" | sed 's/^/    pane | /'
+}
+
+scenario_H() {
+    boundary_turn "❗Du: \`$CMD\`" || return
+    wait_turn_end || return
+    log "H: Nutzer schickt in der Grace-Zeit einen neuen Prompt ab"
+    H agent prompt e2e "Automatisierter Ende-zu-Ende-Test, Zwischenfrage. Benutze keine Werkzeuge. Antworte nur mit genau einer Zeile: H-ZWISCHENFRAGE-OK" \
+        >/dev/null 2>&1 || { echo "  FAIL agent prompt (Testaufbau)"; CASE_FAIL=1; return; }
+    wait_log "$WF|phase2_analyse|$CMD: " 60
+    ac_log | grep -Fq "$WF|phase2_analyse|$CMD: ABBRUCH: vor /clear: Nutzer hat weitergeschrieben"
+    check "Log: ABBRUCH: vor /clear: Nutzer hat weitergeschrieben" $?
+    ls "$T/.claude/herdr_signals/"*.input.json >/dev/null 2>&1; check "Eingabe-Marker vorhanden" $?
+    wait_pane "H-ZWISCHENFRAGE-OK" 90; check "TUI: Zwischenfrage beantwortet" $?
+    sleep 5
+    local txt; txt="$(pane_text 400)"
+    ! echo "$txt" | grep -Fq "❯ /clear"; check "TUI: kein ❯ /clear" $?
+    ! ac_log | grep -Fq ": OK"; check "Log: kein Runner-OK" $?
+    echo "  Belege H:"; ac_log | sed 's/^/    log  | /'
+    for f in "$T/.claude/herdr_signals/"*.json; do [ -f "$f" ] && echo "    marker | $(basename "$f") $(cat "$f" | tr -d '\n ')"; done
+    echo "$txt" | grep -E "❯ /clear|H-ZWISCHENFRAGE|❗Du" | sed 's/^/    pane | /'
+}
+
+# --- Szenarien P, Q (#506 Adversary R1: Stop ist nicht zwingend das Turn-Ende) ---
+dialog_open() { H agent read e2e --source visible 2>/dev/null | grep -Fq "Do you want to proceed?"; }
+
+print_markers() {
+    local f
+    for f in "$T/.claude/herdr_signals/"*.json; do
+        [ -f "$f" ] && echo "    marker | $(basename "$f") $(tr -d '\n ' <"$f")"
+    done
+}
+
+scenario_P() {
+    boundary_turn "❗Du: \`$CMD\`" || return
+    local i seen=1
+    for i in $(seq 1 120); do dialog_open && { seen=0; break; }; sleep 0.5; done
+    check "TUI: Berechtigungsdialog fuer touch PERM-PROBE-FILE offen (fremder Stop-Hook)" $seen
+    [ -f "$W/foreign_stophook.fired" ]; check "fremder Stop-Hook hat geblockt" $?
+    wait_log "$WF|phase2_analyse|$CMD: " 60
+    ac_log | grep -Fq "$WF|phase2_analyse|$CMD: ABBRUCH: vor /clear: Claude arbeitet weiter"
+    check "Log: ABBRUCH: vor /clear: Claude arbeitet weiter" $?
+    sleep 10  # deutlich nach grace + settle: haette der Runner getippt, waere es jetzt passiert
+    [ ! -e "$W/PERM-PROBE-FILE" ]; check "PERM-PROBE-FILE existiert NICHT (Dialog nicht bestaetigt)" $?
+    dialog_open; check "TUI: Dialog steht noch" $?
+    local txt; txt="$(pane_text 400)"
+    ! echo "$txt" | grep -Fq "❯ /clear"; check "TUI: kein ❯ /clear" $?
+    ! ac_log | grep -Fq ": OK"; check "Log: kein Runner-OK" $?
+    ls "$T/.claude/herdr_signals/"*.activity.json >/dev/null 2>&1; check "Aktivitaets-Marker vorhanden" $?
+    echo "  Belege P:"; ac_log | sed 's/^/    log  | /'
+    print_markers
+    H agent read e2e --source visible 2>&1 | grep -E "touch|Do you want|1\. Yes|❯ /clear|Stop hook" \
+        | sed 's/^/    dlg  | /'
+    log "P: Skript schliesst den Dialog selbst (esc)"
+    H pane send-keys "$PANE" esc >/dev/null 2>&1
+    sleep 4
+    [ ! -e "$W/PERM-PROBE-FILE" ]; check "PERM-PROBE-FILE auch nach esc nicht angelegt" $?
+}
+
+scenario_Q() {
+    boundary_turn "❗Du: \`$CMD\`" || return
+    local i fired=1
+    for i in $(seq 1 120); do [ -f "$W/foreign_stophook.fired" ] && { fired=0; break; }; sleep 0.5; done
+    check "fremder Stop-Hook hat geblockt (Fortsetzung mit sleep 12)" $fired
+    wait_log "$WF|phase2_analyse|$CMD: " 60
+    ac_log | grep -Fq "$WF|phase2_analyse|$CMD: ABBRUCH: vor /clear: Claude arbeitet weiter"
+    check "Log: ABBRUCH: vor /clear: Claude arbeitet weiter" $?
+    local txt; txt="$(pane_text 400)"
+    ! echo "$txt" | grep -Fq "❯ /clear"; check "TUI: kein ❯ /clear waehrend des Turns" $?
+    echo "$txt" | grep -Fq "sleep 12"; check "TUI: sleep 12 laeuft bzw. lief" $?
+    ! dialog_open; check "TUI: kein Berechtigungsdialog (sleep 12 freigegeben)" $?
+    sleep 18  # Turn (sleep 12) endet; danach darf nichts nachgereicht werden
+    txt="$(pane_text 400)"
+    ! echo "$txt" | grep -Fq "❯ /clear"; check "TUI: kein ❯ /clear nach dem Turn" $?
+    ! ac_log | grep -Fq ": OK"; check "Log: kein Runner-OK" $?
+    echo "  Belege Q:"; ac_log | sed 's/^/    log  | /'
+    print_markers
+    echo "$txt" | grep -E "sleep 12|❯ /clear|❗Du|Stop hook" | sed 's/^/    pane | /'
+}
+
+# --- Szenario S (#506 R2-F001: langsamer fremder Stop-Hook, Default-grace) -------------
+print_timeline() {  # Marker und Stop-Hook-Zeiten relativ zum ersten Stop des Plugins
+    python3 - "$T/.claude/herdr_signals" "$W/foreign_stophook.fired" <<'PY'
+import glob, json, os, re, sys
+sig, fired = sys.argv[1], sys.argv[2]
+rows = []
+for f in sorted(glob.glob(os.path.join(sig, "*.json"))):
+    try:
+        d = json.load(open(f))
+    except Exception:
+        continue
+    if isinstance(d.get("at"), (int, float)):
+        rows.append((d["at"], os.path.basename(f), {k: v for k, v in d.items() if k != "at"}))
+if os.path.exists(fired):
+    for k, v in re.findall(r"(\w+)=([0-9.]+)", open(fired).read()):
+        rows.append((float(v), f"foreign_stophook {k}", {}))
+rows.sort()
+t0 = next((t for t, n, _ in rows if n == "foreign_stophook start"), rows[0][0] if rows else 0)
+for t, n, extra in rows:
+    print(f"    time | {t - t0:+7.2f}s  {n} {json.dumps(extra) if extra else ''}")
+PY
+}
+
+scenario_S() {
+    local eff
+    eff="$(cd "$T" && HERDR_ENV=1 HERDR_PANE_ID=x python3 - "$REPO" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1] + "/core/hooks")
+import herdr_bridge
+print((herdr_bridge._auto_clear_config() or {}).get("grace_s"))
+PY
+)"
+    ! grep -q "grace_s" "$P/config.yaml"; check "config.yaml ohne grace_s (Default gilt)" $?
+    [ "$eff" = "10" ]; check "wirksame grace_s = Default 10 ($eff)" $?
+    boundary_turn "❗Du: \`$CMD\`" || return
+    local i fired=1
+    for i in $(seq 1 180); do [ -s "$W/foreign_stophook.fired" ] && { fired=0; break; }; sleep 0.5; done
+    check "fremder Stop-Hook hat nach 8 s geblockt (Fortsetzung mit sleep 3)" $fired
+    wait_log "$WF|phase2_analyse|$CMD: " 90
+    ac_log | grep -Fq "$WF|phase2_analyse|$CMD: ABBRUCH: vor /clear: Claude arbeitet weiter"
+    check "Log: ABBRUCH: vor /clear: Claude arbeitet weiter" $?
+    local txt; txt="$(pane_text 400)"
+    ! echo "$txt" | grep -Fq "❯ /clear"; check "TUI: kein ❯ /clear waehrend der Fortsetzung" $?
+    sleep 15  # Fortsetzung (sleep 3) endet; danach darf nichts nachgereicht werden
+    txt="$(pane_text 400)"
+    echo "$txt" | tr -s ' \n' '  ' | grep -Fq "Befehl sleep 3 aus"
+    check "TUI: Stop-Hook-Fortsetzung (sleep 3) angezeigt" $?
+    python3 - "$T/.claude/herdr_signals" "$W/foreign_stophook.fired" <<'PY'
+import glob, json, re, sys
+block = float(re.search(r"block=([0-9.]+)", open(sys.argv[2]).read()).group(1))
+ats = [json.load(open(f)).get("at", 0) for f in glob.glob(sys.argv[1] + "/*.activity.json")]
+sys.exit(0 if any(a > block for a in ats) else 1)
+PY
+    check "Fortsetzung lief: PreToolUse-Marker nach dem Block des fremden Stop-Hooks" $?
+    ! echo "$txt" | grep -Fq "❯ /clear"; check "TUI: kein ❯ /clear nach der Fortsetzung" $?
+    ! echo "$txt" | grep -Fq "SessionStart:clear"; check "TUI: kein SessionStart:clear" $?
+    ! grep -Fq '"clear"' "$T/.claude/herdr_signals/$PANE.session.json" 2>/dev/null \
+        && ! grep -Fq '"clear"' "$T/.claude/herdr_signals/"*.session.json 2>/dev/null
+    check "kein session-Marker source=clear" $?
+    ! ac_log | grep -Fq ": OK"; check "Log: kein Runner-OK" $?
+    echo "  Belege S:"; ac_log | sed 's/^/    log  | /'
+    print_markers
+    print_timeline
+    echo "$txt" | grep -E "sleep 3|❯ /clear|❗Du|Stop hook|SessionStart:clear" | sed 's/^/    pane | /'
+}
+
 usage_report() {  # Token-Summe je Modell aus den Transkripten der isolierten Konfiguration
     python3 - "$CFG/projects" <<'PY'
 import glob, json, os, sys
@@ -502,9 +839,14 @@ PY
 run_case() {
     local name="$1"; CASE_FAIL=0; W=""; SERVER_PID=""
     local t0=$SECONDS mode=stub
-    MODEL="$MODEL_AD"
+    MODEL="$MODEL_AD"; CASE_GRACE=1; CASE_MANIFEST=0; CASE_STOPHOOK=""
     if [ "$name" = "E" ]; then mode=real; MODEL="$MODEL_E"; fi
     if [ "$name" = "F" ]; then mode=plugin; fi
+    if [ "$name" = "G" ] || [ "$name" = "G0" ]; then CASE_GRACE=8; CASE_MANIFEST=1; fi
+    if [ "$name" = "H" ]; then CASE_GRACE=25; fi
+    if [ "$name" = "P" ]; then CASE_GRACE=8; CASE_STOPHOOK=perm; fi
+    if [ "$name" = "Q" ]; then CASE_GRACE=6; CASE_STOPHOOK=sleep; fi
+    if [ "$name" = "S" ]; then CASE_GRACE=""; CASE_STOPHOOK=slowsleep; fi  # MUSS Default-grace
     log "=== Szenario $name ==="
     trap 'teardown_case; cleanup_global' EXIT
     if setup_case "$mode"; then

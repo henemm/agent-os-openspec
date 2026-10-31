@@ -14,6 +14,7 @@ unklare Fall endet mit Exit 0; keine Ausnahme darf nach aussen dringen.
 
 import hashlib
 import json
+import os
 import re
 import sys
 from datetime import datetime
@@ -203,17 +204,32 @@ def _discard_boundary(name: str) -> None:
         pass
 
 
-def main() -> None:
-    if framework_disabled():
-        sys.exit(0)
+def _record_stop() -> None:
+    """Stop-Signal fuer den Auto-/clear-Runner (#506), vor jedem Ausgang; still, fail-open.
 
+    Laeuft vor `maybe_auto_clear` (dessen `since` damit nach dem eigenen Stop
+    liegt); jeder weitere Stop (fremder Stop-Hook setzt den Turn fort) ist neuer.
+    """
+    if os.environ.get("HERDR_ENV") != "1" or not os.environ.get("HERDR_PANE_ID"):
+        return
+    try:
+        import herdr_bridge
+        herdr_bridge.record_signal("stop")
+    except Exception:
+        pass
+
+
+def main() -> None:
+    # "aus" wie bisher im Start-cwd; Stop-Marker trotzdem auf jedem Pfad (#506)
+    disabled = framework_disabled()
     try:
         payload = json.load(sys.stdin)
     except Exception:
-        sys.exit(0)
-    if not isinstance(payload, dict):
-        sys.exit(0)
+        payload = None
     adopt_payload_cwd(payload)
+    _record_stop()
+    if disabled or not isinstance(payload, dict):
+        sys.exit(0)
 
     message = payload.get("last_assistant_message")
     if not isinstance(message, str) or not message:

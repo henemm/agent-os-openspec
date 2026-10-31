@@ -1222,3 +1222,156 @@ def test_markers_use_payload_cwd_base(tmp_path):
 
 
 AC_SIGNAL_DIR_NAME = "herdr_signals"
+
+
+# --- Adversary R2 (F001-F003): langsamer Stop-Hook, TOCTOU, Sitzungsende ---------
+
+CTRL_U = ["pane", "send-keys", PANE, "ctrl+u"]  # Zeile loeschen (Herdr 0.9.5 belegt)
+DEFAULT_GRACE_MIN = 10
+
+
+def _write_marker_later(root: Path, marker: Path, delay: float, **fields) -> None:
+    """Marker `delay` s nach jetzt im Hintergrund schreiben (Zeitstempel = Schreibzeit)."""
+    writer = root / "marker_writer.py"
+    writer.write_text(_WRITER)
+    subprocess.Popen([sys.executable, str(writer), str(marker), repr(delay), json.dumps(fields)],
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL)
+
+
+def test_slow_foreign_stop_hook_within_default_grace_no_clear(tmp_path):
+    # Default-grace deckt typische fremde Stop-Hooks ab (F001): >= 10 s in Code und Template
+    sys.path.insert(0, str(HOOKS_DIR))
+    try:
+        import importlib
+        import herdr_bridge
+        importlib.reload(herdr_bridge)
+        assert herdr_bridge.AC_DEFAULTS["grace_s"] >= DEFAULT_GRACE_MIN, herdr_bridge.AC_DEFAULTS
+    finally:
+        sys.path.remove(str(HOOKS_DIR))
+    import yaml  # noqa: PLC0415
+    template = yaml.safe_load((REPO_ROOT / "config.yaml").read_text())
+    assert template["herdr"]["auto_clear"]["grace_s"] >= DEFAULT_GRACE_MIN, \
+        template["herdr"]["auto_clear"]
+
+    # Runner ohne `--grace` (Default): fremder Stop-Hook schlaeft 8 s und blockt dann,
+    # die Fortsetzung ruft ein Werkzeug auf (PreToolUse-Marker bei ~8,5 s) -> nichts tippen
+    proj, log, env, root = _case(tmp_path, "slow-stophook", STUB_SESSION_DELAY="0.3")
+    argv = _argv_v12(since_raw=None, settle=0, idle_timeout=2)
+    i = argv.index("--grace")
+    del argv[i:i + 2]
+    since = time.time()
+    argv.append(f"--since={since!r}")
+    _write_marker_later(root, _marker(proj, PANE, "activity"), 8.5, kind="pretooluse")
+    proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                            env=env, cwd=str(proj))
+    _finish(proc, timeout=90)
+    assert _typed_or_prompted(_calls(log)) == [], \
+        f"/clear in den noch laufenden Turn getippt (Default-grace zu kurz): {_calls(log)} " \
+        f"Log {_runner_log(proj)!r}"
+    assert WORKING in _runner_log(proj), _runner_log(proj)
+
+
+def _wrapping_stub(root: Path, marker: Path, on_text: str, **fields) -> Path:
+    """Stub-Wrapper: nach `pane send-text <pane> <on_text>` sofort `marker` schreiben.
+
+    Simuliert einen Dialog/Tool-Aufruf, der genau zwischen Text und Enter entsteht.
+    """
+    inner = _make_stub(root)
+    writer = root / "marker_writer.py"
+    writer.write_text(_WRITER)
+    wrap = root / "herdr-stub-wrap"
+    wrap.write_text(
+        "#!/bin/bash\n"
+        f"{str(inner)!r} \"$@\"\n"
+        "rc=$?\n"
+        f"if [ \"$1 $2\" = \"pane send-text\" ] && [ \"$4\" = {on_text!r} ]; then\n"
+        f"  python3 {str(writer)!r} {str(marker)!r} 0 {json.dumps(fields)!r}\n"
+        "fi\n"
+        "exit $rc\n")
+    wrap.chmod(wrap.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    return wrap
+
+
+def test_recheck_between_text_and_enter_clears_line(tmp_path):
+    # (a) Aktivitaet zwischen `send-text /clear` und Enter: Zeile loeschen, kein Enter
+    proj, log, env, root = _case(tmp_path, "toctou-clear", STUB_SESSION_DELAY="0.3")
+    env["HERDR_BIN_PATH"] = str(_wrapping_stub(root, _marker(proj, PANE, "activity"),
+                                               "/clear", kind="pretooluse"))
+    proc = _start_v12(proj, env, since_raw=repr(time.time() - 0.5))
+    _finish(proc)
+    typing = _typing(_calls(log))
+    assert typing == [["pane", "send-text", PANE, "/clear"], CTRL_U], \
+        f"(a) Log: {_runner_log(proj)!r} Aufrufe: {_calls(log)}"
+    assert WORKING in _runner_log(proj), f"(a) {_runner_log(proj)!r}"
+
+    # (b) Aktivitaet zwischen Folgebefehl-Text und Enter: Folgebefehl geloescht, nicht gesendet
+    follow = FOLLOW[0][3]
+    proj, log, env, root = _case(tmp_path, "toctou-follow", STUB_SESSION_DELAY="2.6")
+    env["HERDR_BIN_PATH"] = str(_wrapping_stub(root, _marker(proj, PANE, "activity"),
+                                               follow, kind="permission"))
+    proc = _start_v12(proj, env, since_raw=repr(time.time()), idle_timeout=6)
+    _finish(proc)
+    typing = _typing(_calls(log))
+    assert typing == CLEAR + [FOLLOW[0], CTRL_U], \
+        f"(b) Log: {_runner_log(proj)!r} Aufrufe: {_calls(log)}"
+    assert WORKING in _runner_log(proj), f"(b) {_runner_log(proj)!r}"
+
+
+def test_session_end_or_restart_aborts(tmp_path):
+    # (a) Claude im Pane neu gestartet (SessionStart source != clear nach since): nichts tippen
+    for source in ("startup", "resume"):
+        proj, log, env, root = _case(tmp_path, f"restart-{source}", STUB_SESSION_DELAY="0.3")
+        since = time.time()
+        proc = _start_v12(proj, env, since_raw=repr(since), grace=1.5)
+        time.sleep(0.5)
+        _write_marker(_marker(proj, PANE, "session"), source=source, at=time.time())
+        _finish(proc)
+        assert _typed_or_prompted(_calls(log)) == [], \
+            f"(a/{source}) nach Neustart getippt: {_calls(log)} Log {_runner_log(proj)!r}"
+        assert "ABBRUCH" in _runner_log(proj), _runner_log(proj)
+
+    # (b) hooks.json: SessionEnd ruft `signal activity` direkt nach plan-pane-close, kleiner timeout
+    hooks = json.loads(HOOKS_JSON.read_text())["hooks"]
+    cmds = [h for g in hooks["SessionEnd"] for h in g.get("hooks", [])]
+    names = [h["command"] for h in cmds]
+    sig = "${CLAUDE_PLUGIN_ROOT}/core/hooks/herdr_bridge.py signal activity"
+    close = "${CLAUDE_PLUGIN_ROOT}/core/hooks/herdr_bridge.py plan-pane-close"
+    assert sig in names, f"SessionEnd ohne `signal activity`: {names}"
+    assert names.index(sig) == names.index(close) + 1, names
+    assert cmds[names.index(sig)].get("timeout", 99) <= 2, cmds[names.index(sig)]
+
+    # (c) CLI: SessionEnd -> activity kind=session_end mit reason, still, Exit 0
+    root = tmp_path / "cli-end"
+    root.mkdir()
+    proj = _project(root)
+    henv = _hook_env(proj, root, herdr_env="1", pane=PANE)
+    payload = {"session_id": "sess-506", "cwd": str(proj), "hook_event_name": "SessionEnd",
+               "reason": "prompt_input_exit"}
+    res = _run_signal_cli(henv, root, json.dumps(payload))
+    assert (res.returncode, res.stdout, res.stderr) == (0, "", ""), res
+    data = json.loads(_marker(proj, PANE, "activity").read_text())
+    assert data.get("kind") == "session_end", data
+    assert data.get("reason") == "prompt_input_exit", data
+
+    # (d) Sitzung in der Grace-Zeit beendet (Marker session_end nach since): nichts tippen
+    proj, log, env, root = _case(tmp_path, "ended", STUB_SESSION_DELAY="0.3")
+    proc = _start_v12(proj, env, since_raw=repr(time.time()), grace=1.5)
+    time.sleep(0.5)
+    _write_marker(_marker(proj, PANE, "activity"), kind="session_end",
+                  reason="prompt_input_exit", at=time.time())
+    _finish(proc)
+    assert _typed_or_prompted(_calls(log)) == [], \
+        f"(d) nach Sitzungsende getippt: {_calls(log)} Log {_runner_log(proj)!r}"
+    assert "ABBRUCH" in _runner_log(proj), _runner_log(proj)
+
+    # (e) SessionEnd(reason=clear) des EIGENEN /clear (auch nach der Toleranz) blockt den
+    #     Folgebefehl nicht
+    proj, log, env, root = _case(tmp_path, "own-clear-end", STUB_SESSION_DELAY="3.4")
+    env["STUB_CLEAR_HOOK"] = str(_clear_hook_writing(
+        root, _marker(proj, PANE, "activity"), TOLERANCE_S + 0.6, kind="session_end",
+        reason="clear"))
+    proc = _start_v12(proj, env, since_raw=repr(time.time()), idle_timeout=7)
+    _finish(proc)
+    assert _typing(_calls(log)) == CLEAR + FOLLOW, \
+        f"(e) Log: {_runner_log(proj)!r} Aufrufe: {_calls(log)}"
