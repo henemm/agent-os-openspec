@@ -282,7 +282,8 @@ def test_watch_follows_archive(tmp_path):
                            OPENSPEC_PLAN_WATCH_ROUNDS="2",
                            OPENSPEC_PLAN_WATCH_INTERVAL="1.5",
                            PYTHONUNBUFFERED="1")
-    wf = _write_wf(proj, _wf_data())
+    # #510: ohne Deploy-Marker bliebe nach dem Archiv „Deploy (nicht eingerichtet)“ offen
+    wf = _write_wf(proj, _wf_data(deploy_status="done"))
     proc = subprocess.Popen([sys.executable, str(WORKFLOW_PY), "plan", "--watch"],
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env,
                             cwd=str(proj))

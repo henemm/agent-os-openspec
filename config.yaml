@@ -204,6 +204,8 @@ e2e_scope:
 #   verify:   woran sieht man, dass er live ist (z.B. "./scripts/verify-live.sh /")
 #   rollback: wie geht es zurueck (optional, empfohlen)
 #   autonomous: true — /60-validate darf /70-deploy ohne Freigabe-Halt anstossen
+#   enabled: false — Projekt ohne Deploy (#510): der Workflow-Plan zeigt dann keinen
+#            Deploy-Schritt statt „Deploy (nicht eingerichtet)“
 deploy:
   command: ""
   verify: ""
