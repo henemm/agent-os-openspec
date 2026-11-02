@@ -191,11 +191,12 @@ def _norm(res, proj: Path, root: Path) -> str:
 # --- AC-1 -------------------------------------------------------------------
 
 def test_render_phase8_with_deploy_shows_open_deploy():
+    # #510: mit Deploy-Schritt heisst Schritt 8 "Code fertig"
     out = _render(_wf_data(), deploy=True)
     lines = out.splitlines()
     steps = _step_lines(out)
-    assert "✔ 8 Fertig" in steps, steps
-    assert steps.index("✔ 8 Fertig") + 1 == steps.index("▶ Deploy  (offen)"), steps
+    assert "✔ 8 Code fertig" in steps, steps
+    assert steps.index("✔ 8 Code fertig") + 1 == steps.index("▶ Deploy  (offen)"), steps
     assert steps[-1] == "▶ Deploy  (offen)", steps
     assert lines[-1] == "Nächster: /70-deploy #478", lines
     assert "abgeschlossen" not in out, out
@@ -204,9 +205,15 @@ def test_render_phase8_with_deploy_shows_open_deploy():
 # --- AC-2 -------------------------------------------------------------------
 
 def test_render_deploy_archived_and_early_phase():
+    # #510: Archivierung allein hakt Deploy nicht mehr ab, erst der done-Marker
     out = _render(_wf_data(), archived=True, deploy=True)
     steps = _step_lines(out)
-    assert steps.index("✔ 8 Fertig") + 1 == steps.index("✔ Deploy"), steps
+    assert steps.index("✔ 8 Code fertig") + 1 == steps.index("▶ Deploy  (offen)"), steps
+    assert out.splitlines()[-1] == "Nächster: /70-deploy #478", out
+
+    out = _render(_wf_data(deploy_status="done"), archived=True, deploy=True)
+    steps = _step_lines(out)
+    assert steps.index("✔ 8 Code fertig") + 1 == steps.index("✔ Deploy"), steps
     assert "▶" not in out, out
     assert out.splitlines()[-1] == "abgeschlossen", out
 
@@ -245,8 +252,10 @@ def test_cli_plan_uses_deploy_config(tmp_path):
         proj, log, env = _case(tmp_path, label, cfg, _wf_data(), herdr=False)
         res = _run([sys.executable, str(WORKFLOW_PY), "plan"], env, proj)
         assert res.returncode == 0, (label, res.stderr)
-        assert "Deploy" not in res.stdout, (label, res.stdout)
-        assert "abgeschlossen" in res.stdout, (label, res.stdout)
+        # #510: ohne vollstaendige deploy:-Config "nicht eingerichtet" statt keine Zeile
+        assert "▶ Deploy  (nicht eingerichtet)" in res.stdout, (label, res.stdout)
+        assert "Nächster: /70-deploy #478" in res.stdout, (label, res.stdout)
+        assert "abgeschlossen" not in res.stdout, (label, res.stdout)
 
     # deploy_configured() folgt derselben Regel (command UND verify)
     code = ("import sys; sys.path.insert(0, %r); import workflow; "

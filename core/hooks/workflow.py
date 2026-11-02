@@ -28,6 +28,7 @@ Usage:
     python3 workflow.py finish
     python3 workflow.py abandon --reason "<warum kein Abschluss>"
     python3 workflow.py list
+    python3 workflow.py deploy-status <running|done|failed> [<issue-nr|name>]
     python3 workflow.py sessions [--json]
     python3 workflow.py observable-surface
 """
@@ -338,12 +339,23 @@ _FAST_PLAN_PHASES = ("phase3_spec", "phase4_approved", "phase6_implement",
 PLAN_STEPS_FAST = tuple(s for s in PLAN_STEPS if s[2] in _FAST_PLAN_PHASES)
 
 
+def _plan_deploy_mode(deploy) -> "str | None":
+    """`deploy` von render_plan normalisieren (#510): "configured"/"unconfigured" oder None."""
+    if deploy is True or deploy == "configured":
+        return "configured"
+    if deploy == "unconfigured":
+        return "unconfigured"
+    return None  # False, "off", alles andere: kein Deploy-Schritt
+
+
 def render_plan(data, archived: bool = False, width: "int | None" = None,
-                deploy: bool = False) -> str:
+                deploy=False) -> str:
     """Workflow-Plan als Text (#476): ✔ erledigt, ▶ laeuft, ○ offen. Pure.
 
-    `deploy` (#478): nach "8 Fertig" ein Schritt Deploy; in Phase 8 offen bis
-    zur Archivierung, naechster Befehl dann `/70-deploy #N`.
+    `deploy` (#478, #510): True/"configured"/"unconfigured" fuegt nach
+    "8 Code fertig" einen Schritt Deploy an; False/"off" laesst ihn weg. Der
+    Deploy-Zustand kommt aus `data["deploy_status"]` (running/done/failed),
+    gesetzt von `/70-deploy` per `deploy-status` — Archivierung allein hakt nicht ab.
     """
     if not isinstance(data, dict):
         lines = ["Kein aktiver Workflow"]
@@ -352,6 +364,9 @@ def render_plan(data, archived: bool = False, width: "int | None" = None,
         steps = PLAN_STEPS_FAST if fast else PLAN_STEPS
         phase = data.get("current_phase")
         done_all = archived or phase == "phase8_complete"
+        mode = _plan_deploy_mode(deploy)
+        if data.get("status") == "abandoned" or data.get("no_build_reason"):
+            mode = None  # #510: ohne Build/abgebrochen kein Deploy
         running = None
         if not done_all and phase in PHASES and phase != "phase0_idle":
             # Phase nicht in der Liste (Fast Track): letzter Schritt davor laeuft
@@ -366,22 +381,33 @@ def render_plan(data, archived: bool = False, width: "int | None" = None,
         if isinstance(title, str) and title.strip():
             lines.append(title)  # #490: Kurztitel des Issues unter dem Namen
         lines.append("")
-        for i, (nr, label, _) in enumerate(steps):
+        for i, (nr, label, step_phase) in enumerate(steps):
+            if mode and step_phase == "phase8_complete":
+                label = "Code fertig"  # #510: fertig ist erst das Deploy
             if done_all or (running is not None and i < running):
                 lines.append(f"✔ {nr} {label}")
             elif i == running:
                 lines.append(f"▶ {nr} {label}  (läuft)")
             else:
                 lines.append(f"○ {nr} {label}")
-        deploy_open = bool(deploy) and not archived and phase == "phase8_complete"
-        if deploy:
-            if archived:
-                lines.append("✔ Deploy")
-            elif deploy_open:
-                lines.append("▶ Deploy  (offen)")
-            else:
+        deploy_pending = False
+        if mode:
+            status = data.get("deploy_status")
+            if not done_all:
                 lines.append("○ Deploy")
-        if deploy_open:
+            elif status == "done":
+                lines.append("✔ Deploy")
+            else:
+                deploy_pending = True
+                if status == "running":
+                    lines.append("▶ Deploy  (läuft)")
+                elif status == "failed":
+                    lines.append("✘ Deploy  (fehlgeschlagen)")
+                elif mode == "unconfigured":
+                    lines.append("▶ Deploy  (nicht eingerichtet)")
+                else:
+                    lines.append("▶ Deploy  (offen)")
+        if deploy_pending:
             lines += ["", f"Nächster: /70-deploy #{issue}" if issue else "Nächster: /70-deploy"]
         elif done_all:
             lines += ["", "abgeschlossen"]
@@ -1991,7 +2017,7 @@ def _plan_watch(target: "str | None" = None) -> None:
             _plan_follow_target(target, pane_file)  # #493: vor dem Aufloesen
             try:
                 width = shutil.get_terminal_size().columns
-                deploy = deploy_configured()  # je Runde neu (#478)
+                deploy = deploy_mode()  # je Runde neu (#478, #510)
                 found = _plan_active()
                 if found:
                     last_name, data = found
@@ -2040,7 +2066,7 @@ def cmd_plan(args: list[str]) -> None:
         found = _plan_active()
     except (Exception, SystemExit):
         found = None
-    print(render_plan(found[1] if found else None, deploy=deploy_configured()))
+    print(render_plan(found[1] if found else None, deploy=deploy_mode()))
 
 
 def cmd_issue_title(args: list[str]) -> None:
@@ -2784,6 +2810,77 @@ def deploy_configured() -> bool:
         return False
 
 
+def deploy_mode() -> str:
+    """Deploy-Modus fuer den Plan (#510): "configured" | "unconfigured" | "off".
+
+    "off" nur bei explizit `deploy.enabled: false`; "configured" nach der Regel
+    aus #478 (`command` UND `verify`); jede Ausnahme -> "unconfigured".
+    """
+    try:
+        block = _deploy_block()
+        if block.get("enabled") is False:
+            return "off"
+        if _deploy_is_configured(_deploy_config_steps(block)):
+            return "configured"
+    except Exception:
+        pass
+    return "unconfigured"
+
+
+DEPLOY_STATUS_VALUES = ("running", "done", "failed")
+
+
+def _deploy_status_target(ref: str) -> "Path | None":
+    """Workflow-Datei zu Issue-Nummer oder Name (#510): erst laufend, dann Archiv."""
+    ref = ref.lstrip("#")
+    pat = _re.compile(rf"(^|[-_]){_re.escape(ref)}([-_]|$)") if ref.isdigit() else None
+
+    def hits(folder: Path) -> "list[Path]":
+        if not folder.is_dir():
+            return []
+        return [f for f in folder.glob("*.json")
+                if f.stem == ref or (pat is not None and pat.search(f.stem))]
+
+    running = sorted(hits(_workflows_dir()))
+    if running:
+        exact = [f for f in running if f.stem == ref]
+        return (exact or running)[0]
+    archived = hits(_archive_dir())
+    if archived:
+        return max(archived, key=lambda f: f.stat().st_mtime)  # juengster gewinnt
+    return None
+
+
+def cmd_deploy_status(args: list[str]) -> None:
+    """`deploy-status <running|done|failed> [<issue-nr|name>]` (#510).
+
+    Setzt `deploy_status`/`deploy_at` im Workflow-State — ohne zweites Argument
+    im aktiven Workflow, sonst im laufenden oder (juengsten) archivierten Treffer.
+    Rein informativ, keine Gate-Wirkung.
+    """
+    if not args or args[0] not in DEPLOY_STATUS_VALUES:
+        print("Usage: workflow.py deploy-status <running|done|failed> [<issue-nr|name>]",
+              file=sys.stderr)
+        sys.exit(1)
+    value = args[0]
+    if len(args) > 1:
+        path = _deploy_status_target(args[1])
+        if path is None:
+            print(f"KEIN Workflow fuer '{args[1]}' (laufend oder im Archiv).",
+                  file=sys.stderr)
+            sys.exit(1)
+        data = _read_workflow(path)
+        name = data.get("name") or path.stem
+    else:
+        data, name = _read_active()
+        path = _workflow_file(name)
+    from datetime import timezone
+    data["deploy_status"] = value
+    data["deploy_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    _atomic_write(path, data)
+    print(f"DEPLOY_STATUS={value} ({name})")
+
+
 def cmd_deploy_config(args: list[str]) -> None:
     """Deploy-Ablauf des Projekts aus `deploy:` in der Projekt-Config (#81). Rein lesend.
 
@@ -3520,6 +3617,7 @@ COMMANDS = {
     "find": cmd_find,
     "approvals": cmd_approvals,
     "deploy-config": cmd_deploy_config,
+    "deploy-status": cmd_deploy_status,
     "retro-list": cmd_retro_list,
     "sessions": cmd_sessions,
     "observable-surface": cmd_observable_surface,

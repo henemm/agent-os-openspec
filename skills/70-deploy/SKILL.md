@@ -79,13 +79,29 @@ oder aus dem, was „üblich“ ist. Stattdessen:
 
 ## Step 3: Deploy ausführen
 
+**Plan-Marker (#510)** — vorher den Deploy als laufend vermerken (`<N>` = Issue-Nummer des
+Workflows; ohne Workflow/Issue-Nummer alle `deploy-status`-Aufrufe überspringen, bei
+`DEPLOY_CONFIGURED=no` gibt es keinen Marker):
+
+```bash
+$WF deploy-status running <N>
+```
+
 Führe die `command`-Zeilen aus der Ausgabe von Step 2 **wörtlich und in dieser Reihenfolge**
-aus. Bricht ein Befehl ab: STOPP, Fehlermeldung an den PO, nicht improvisieren.
+aus. Bricht ein Befehl ab: `$WF deploy-status failed <N>`, dann
+STOPP, Fehlermeldung an den PO, nicht improvisieren.
 
 ## Step 4: Nachprüfung
 
-Führe die `verify`-Zeilen aus. Erst wenn sie erfolgreich sind, ist der Deploy erledigt.
-Schlägt die Nachprüfung fehl: Ergebnis an den PO und die `rollback`-Zeilen **vorschlagen**
+Führe die `verify`-Zeilen aus. Erst wenn sie erfolgreich sind, ist der Deploy erledigt —
+erst dann den Marker setzen, der den Plan auf „✔ Deploy“ springen lässt:
+
+```bash
+$WF deploy-status done <N>
+```
+
+Schlägt die Nachprüfung fehl: `$WF deploy-status failed <N>`,
+Ergebnis an den PO und die `rollback`-Zeilen **vorschlagen**
 (nicht ungefragt ausführen — außer der PO hat das für dieses Projekt ausdrücklich festgelegt).
 
 ## Haupt-Ordner nachziehen (nach gemergtem PR)

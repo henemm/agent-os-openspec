@@ -282,7 +282,8 @@ def test_watch_follows_archive(tmp_path):
                            OPENSPEC_PLAN_WATCH_ROUNDS="2",
                            OPENSPEC_PLAN_WATCH_INTERVAL="1.5",
                            PYTHONUNBUFFERED="1")
-    wf = _write_wf(proj, _wf_data())
+    # #510: ohne Deploy-Marker bliebe nach dem Archiv „Deploy (nicht eingerichtet)“ offen
+    wf = _write_wf(proj, _wf_data(deploy_status="done"))
     proc = subprocess.Popen([sys.executable, str(WORKFLOW_PY), "plan", "--watch"],
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env,
                             cwd=str(proj))
@@ -338,6 +339,10 @@ def test_start_opens_pane_with_split_rename_run(tmp_path):
     assert run[2] == NEW_PANE, run
     assert run[3].startswith("exec "), run
     assert "workflow.py" in run[3] and run[3].endswith(f"plan --watch --target {PANE}"), run
+    # Der Runner schreibt die Pane-ID erst NACH `pane run` (Race auf langsamen CI-Runnern)
+    deadline = time.monotonic() + 5
+    while not _pane_file(proj).exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
     assert json.loads(_pane_file(proj).read_text())["panes"][PANE]["pane_id"] == NEW_PANE
 
     # stdout von `start` identisch zu ohne Herdr-Env
