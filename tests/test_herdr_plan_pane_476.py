@@ -339,6 +339,10 @@ def test_start_opens_pane_with_split_rename_run(tmp_path):
     assert run[2] == NEW_PANE, run
     assert run[3].startswith("exec "), run
     assert "workflow.py" in run[3] and run[3].endswith(f"plan --watch --target {PANE}"), run
+    # Der Runner schreibt die Pane-ID erst NACH `pane run` (Race auf langsamen CI-Runnern)
+    deadline = time.monotonic() + 5
+    while not _pane_file(proj).exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
     assert json.loads(_pane_file(proj).read_text())["panes"][PANE]["pane_id"] == NEW_PANE
 
     # stdout von `start` identisch zu ohne Herdr-Env
