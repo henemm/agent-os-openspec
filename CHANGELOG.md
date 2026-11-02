@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.5.0] - 2026-11-02
+
+Der Workflow-Plan hakt Deploy (#510, #511) erst ab, wenn `/70-deploy` die Nachpruefung (`verify`) bestanden hat; Archivieren allein reicht nicht mehr. Migration: Projekte ohne Deploy setzen `deploy.enabled: false`.
+
 ### Changed
 
 - **#510 (Plan-Pane: Deploy erst nach verify abgehakt):** Der Workflow-Plan hakte Deploy mit der Archivierung ab, egal ob `/70-deploy` lief, und zeigte schon in Phase 8 „✔ 8 Fertig“. Jetzt gilt Deploy erst als erledigt, wenn `/70-deploy` nach erfolgreichem `verify` den Marker setzt. Neu: `workflow.py deploy-status <running|done|failed> [<issue-nr|name>]` schreibt `deploy_status`/`deploy_at` (ISO-UTC) atomar in den aktiven, einen laufenden oder den jüngsten archivierten Workflow (Suche wie `find`); `/70-deploy` ruft es vor Step 3 (`running`), nach erfolgreicher Nachprüfung (`done`) und bei Abbruch/verify-Fehler (`failed`), ohne Workflow/Issue-Nummer nicht. Neu `workflow.deploy_mode()` (`configured`/`unconfigured`/`off`); `render_plan(..., deploy=...)` akzeptiert zusätzlich diese Modus-Strings. Mit Deploy-Schritt heißt Schritt 8 „8 Code fertig“, die Deploy-Zeile zeigt ab Phase 8 `▶ Deploy  (offen)`, `(läuft)`, `✘ Deploy  (fehlgeschlagen)`, `(nicht eingerichtet)` ohne `deploy:`-Config bzw. `✔ Deploy`; „abgeschlossen“ erst mit `deploy_status=done`. Abgebrochene Workflows und solche mit `no_build_reason` haben keinen Deploy-Schritt. `deploy_configured()`, `next_step`/`expected_footer_command` bleiben unverändert. **Migration:** Bereits archivierte Workflows ohne Marker erscheinen als „Deploy offen“ (bei Bedarf `workflow.py deploy-status done <N>`); Projekte ohne Deploy setzen `deploy: {enabled: false}`, sonst zeigt der Plan „Deploy (nicht eingerichtet)“. Tests: `tests/test_plan_deploy_status_510.py`, angepasst `tests/test_herdr_plan_deploy_sessionstart_478.py`.
