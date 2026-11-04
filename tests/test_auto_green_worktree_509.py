@@ -364,9 +364,12 @@ def test_green_artifact_file_uses_worktree_first_root(tmp_path, monkeypatch):
 # --- AC-12 ------------------------------------------------------------------
 
 def test_changelog_mentions_509():
-    """AC-12: CHANGELOG.md nennt #509 unter [Unreleased]."""
+    """AC-12: CHANGELOG.md nennt #509 unter [Unreleased] oder im direkt folgenden,
+    obersten Versionsabschnitt `## [x.y.z]` (Release im selben PR geschnitten)."""
     text = CHANGELOG.read_text()
     start = text.index("## [Unreleased]")
-    nxt = text.find("\n## [", start + 1)
+    m = re.compile(r"^## \[\d+\.\d+\.\d+\]", re.M).search(text, start + 1)
+    assert m, "Kein Versionsabschnitt nach [Unreleased]"
+    nxt = text.find("\n## [", m.end())
     section = text[start:nxt if nxt != -1 else len(text)]
-    assert "#509" in section, "Kein #509-Eintrag unter [Unreleased]"
+    assert "#509" in section, "Kein #509-Eintrag unter [Unreleased] oder oberster Version"
