@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **#508 (TAP-YAML-Block gilt als Zitat):** `tdd_enforcement.py` blockte echte RED-Artefakte von `node --test --test-reporter=tap`, wenn ein Assertion-Text im YAML-Diagnoseblock das Wort „Placeholder“ o. ä. zitierte. Neu `_tap_yaml_quote_lines`: ein formgerechter Block (`---` direkt nach einer `ok`/`not ok`-Zeile, tiefer eingerückt, beendet durch `...` auf genau Marker-Höhe, geprüft auf ANSI-bereinigten Zeilen) zählt wie die pytest-`E`-Zeilen (#262) als Zitat, `_iter_frame_lines` überspringt ihn. Fail-closed: ein Block ohne Ende bleibt Rahmen. Die Blockier-Meldung nennt „TAP-YAML-Blöcke“ unter den Ausnahmen; Fehler-Evidenz-Prüfung und `_PLACEHOLDER_RE` unverändert. Tests: `tests/test_tdd_enforcement_tap_yaml_508.py`.
+
 ## [4.5.1] - 2026-11-04
 
 Die ❗Du-Fußzeile nennt die echte Issue-Nummer und nach `/40-tdd-red` den Schritt `/50-implement` (#513); `auto-green` findet das GREEN-Artefakt im Worktree (#509). Migration: laufende Workflows mit mehrdeutigem Namen per `workflow.py set-field issue_number <N>` nachtragen.

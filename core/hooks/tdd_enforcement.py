@@ -12,7 +12,8 @@ erlaubt werden. Ergänzt edit_gate.py's einfache Boolean-Prüfung durch:
 - Keine Platzhalter-Patterns im RAHMEN der Testausgabe. Vom Runner zitierter
   Fremdinhalt (Assertion-Dumps, Quellzeilen, aufgefangenes stdout) ist davon
   ausgenommen, sonst blockt ein RED-Test ueber Framework-Dokumente das Gate mit
-  dessen eigener Platzhalter-Warnung (Issue #262).
+  dessen eigener Platzhalter-Warnung (Issue #262). Das gilt auch fuer die
+  TAP-YAML-Blöcke ('---' ... '...') von `node --test` (Issue #508).
 
 Fail-safe: Bei Import-Fehlern oder Parse-Fehlern → exit(0), nie blockieren.
 """
@@ -119,6 +120,45 @@ _CAPTURED_HEADER_RE = re.compile(
 # Markdown (YAML-Frontmatter!) den Block NICHT vorzeitig beendet.
 _SECTION_HEADER_RE = re.compile(r"^([=\-_])\1{9,}\s+\S")
 
+# --- TAP-YAML-Diagnoseblock (Issue #508) -----------------------------------
+# `node --test` (TAP-Reporter) haengt an jede Testzeile einen YAML-Block an:
+#   not ok 1 - name
+#     ---
+#     error: |-
+#       ... zitierter Assertion-Text, ggf. mit 'Placeholder' ...
+#     ...
+# Der Block ist Zitat wie die pytest-'E'-Zeilen (Issue #262). Er gilt nur, wenn
+# er formgerecht ist: '---' direkt nach einer ok/not-ok-Zeile, tiefer
+# eingerueckt als diese, und eine '...'-Zeile mit GENAU der Marker-Einrueckung
+# schliesst ihn. Schluessel stehen auf Marker-Hoehe, Block-Skalar-Inhalte
+# tiefer — eine '...'-Zeile auf Marker-Hoehe kann also kein Zitat sein.
+# Fail-closed: fehlt das Ende (abgeschnittenes Log), bleibt alles Rahmen.
+_TAP_TEST_LINE_RE = re.compile(r"^(\s*)(?:not )?ok\b")
+_TAP_YAML_START_RE = re.compile(r"^([ \t]*)---\s*$")
+
+
+def _tap_yaml_quote_lines(lines: "list[str]") -> "set[int]":
+    """0-basierte Indizes aller Zeilen formgerechter TAP-YAML-Bloecke,
+    Marker eingeschlossen (Issue #508)."""
+    plain = [hook_utils.strip_ansi(line) for line in lines]
+    quoted: "set[int]" = set()
+    i = 1
+    while i < len(plain):
+        start = _TAP_YAML_START_RE.match(plain[i])
+        test = _TAP_TEST_LINE_RE.match(plain[i - 1]) if start else None
+        if start and test and len(start.group(1)) > len(test.group(1)):
+            end_marker = start.group(1) + "..."
+            for j in range(i + 1, len(plain)):
+                if plain[j].rstrip() == end_marker:
+                    quoted.update(range(i, j + 1))
+                    i = j + 1
+                    break
+            else:
+                i += 1
+            continue
+        i += 1
+    return quoted
+
 
 def _iter_frame_lines(content: str):
     """Liefert (Zeilennummer, Zeile) fuer alle Zeilen, die der Runner SELBST
@@ -128,9 +168,14 @@ def _iter_frame_lines(content: str):
     der Blockier-Meldung benannt werden kann.
     Compiler-Quellzeilen-Echo ('NN | code', auch farbig) gilt ebenfalls als
     Zitat und wird uebersprungen (Issue #421).
+    TAP-YAML-Bloecke von `node --test` ebenso (Issue #508).
     """
+    lines = content.splitlines()
+    tap_yaml = _tap_yaml_quote_lines(lines)
     in_captured = False
-    for lineno, line in enumerate(content.splitlines(), start=1):
+    for lineno, line in enumerate(lines, start=1):
+        if lineno - 1 in tap_yaml:
+            continue
         if _CAPTURED_HEADER_RE.match(line):
             in_captured = True
             continue
@@ -224,7 +269,8 @@ def _validate_artifact(art: dict, project_root: Path) -> "str | None":
                 f"Artefakt enthält Platzhalter-Text: {path_str}\n"
                 f"  → Zeile {lineno}: {snippet}\n"
                 f"  → Echte Testausgabe eintragen, kein Copy-Paste-Beispiel.\n"
-                f"  → Zitierte Bereiche (E-/>-Zeilen, Captured-Abschnitte) sind "
+                f"  → Zitierte Bereiche (E-/>-Zeilen, Captured-Abschnitte, "
+                f"TAP-YAML-Blöcke) sind "
                 f"ausgenommen — dieser Treffer steht im Artefakt selbst."
             )
 
