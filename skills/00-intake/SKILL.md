@@ -124,16 +124,19 @@ Immer menschlich bleiben — auch bei `AUTONOMY=auto`: AMBIGUOUS-Verdict, zweite
 
 ### 3. Workflow starten (nach User-Bestätigung des Tracks, bei `AUTONOMY=auto` sofort)
 
+`--issue <N>` nur, wenn die Issue-Nummer bekannt ist — sonst weglassen (die Nummer kommt dann
+aus dem Namen).
+
 **Fast Track:**
 ```bash
-$WF start [name] --type feature-fast
+$WF start [name] --type feature-fast --issue <N>
 export OPENSPEC_ACTIVE_WORKFLOW=[name]
 ```
 → Weiter mit `/30-write-spec` (Mini-Spec-Format, siehe unten)
 
 **Voller Prozess:**
 ```bash
-$WF start [name] --type feature
+$WF start [name] --type feature --issue <N>
 export OPENSPEC_ACTIVE_WORKFLOW=[name]
 ```
 → Summe 1–3: weiter mit `/10-context` (Context + Analyse in einem Durchgang kombinieren)

@@ -106,6 +106,15 @@ $WF add-artifact test_output \
     phase5_tdd_red
 ```
 
+### 6. Mark RED
+
+Gleich nach dem Registrieren den RED-Stand im Workflow-State melden — damit nennt die Fußzeile
+schon jetzt `/50-implement`, auch wenn der Turn vor dem Phasenwechsel endet:
+
+```bash
+$WF mark-red "<kurzes Ergebnis, z. B. 3 tests failed>"
+```
+
 ## Artifact Requirements
 
 Each artifact MUST:
@@ -123,6 +132,7 @@ Before proceeding to implementation:
 - [ ] All tests FAIL (RED)
 - [ ] At least 1 artifact registered
 - [ ] Artifact shows failure evidence
+- [ ] RED gemeldet: `workflow.py mark-red "<Ergebnis>"` ausgeführt
 
 ## Next Step
 
@@ -141,6 +151,7 @@ Prüfe der Reihe nach, bevor du unten etwas ausgibst:
 - Phase im Workflow-State geschrieben — `$WF status` bestätigt sie
 - Alle Ergebnisdateien dieser Phase liegen auf der Platte
 - Alle RED-Artefakte per `add-artifact` registriert
+- RED per `workflow.py mark-red "<Ergebnis>"` gemeldet
 - Keine uncommitteten Änderungen an Dateien, die `/50-implement` braucht
 - Keine Erkenntnis, die für `/50-implement` nötig und nirgends niedergeschrieben ist
 

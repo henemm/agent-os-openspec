@@ -2131,6 +2131,61 @@ def is_test_file(file_path: str) -> bool:
     return any(pattern in file_path for pattern in test_patterns)
 
 
+# --- Issue-Nummer eines Workflows (Issue #513) ------------------------------
+# Eine Regel fuer workflow.py und session_singleton_guard.py. Die fruehere
+# "erste Ziffernfolge" machte aus i18n-a2-e2e-2681 die 18.
+
+_ISSUE_DIGITS_RE = re.compile(r"[0-9]+")
+_ISSUE_NAME_PREFIXES = frozenset({"fix", "feat", "feature", "bug", "issue", "gh"})
+
+
+def issue_number_from_name(name) -> "str | None":
+    """Issue-Nummer aus dem Workflow-Namen, nur an eindeutiger Stelle. Wirft nie.
+
+    Teile an `-`/`_`; Zahl = Teil nur aus ASCII-Ziffern. Erster Teil Zahl
+    (`513-foo`), Praefix fix/feat/feature/bug/issue/gh + Zahl (`fix-1761-xyz`),
+    letzter Teil Zahl mit Nicht-Zahl davor (`i18n-a2-e2e-2681`); sonst None.
+    """
+    try:
+        if not isinstance(name, str) or not name:
+            return None
+        parts = [p for p in re.split(r"[-_]", name) if p]
+        if not parts:
+            return None
+
+        def is_num(part: str) -> bool:
+            return bool(_ISSUE_DIGITS_RE.fullmatch(part))
+
+        if is_num(parts[0]):
+            return parts[0]
+        if len(parts) >= 2 and parts[0].lower() in _ISSUE_NAME_PREFIXES and is_num(parts[1]):
+            return parts[1]
+        if is_num(parts[-1]) and (len(parts) < 2 or not is_num(parts[-2])):
+            return parts[-1]
+        return None
+    except Exception:
+        return None
+
+
+def workflow_issue_number(data) -> "str | None":
+    """Issue-Nummer eines Workflow-States: Feld `issue_number` vor Namensregel. Wirft nie."""
+    try:
+        if not isinstance(data, dict):
+            return None
+        value = data.get("issue_number")
+        if isinstance(value, bool):
+            value = None
+        if isinstance(value, int) and value > 0:
+            return str(value)
+        if isinstance(value, str):
+            digits = value[1:] if value.startswith("#") else value
+            if _ISSUE_DIGITS_RE.fullmatch(digits):
+                return digits
+        return issue_number_from_name(data.get("name"))
+    except Exception:
+        return None
+
+
 # --- Beobachtbare Oberflaeche (Issue #260) ---------------------------------
 # Zwei Musterlisten als Modul-Konstanten, per Config ueberschreibbar (Vorbild
 # bash_gate.E2E_*_PATTERNS), geprueft per re.search gegen den Pfad, wie git ihn
