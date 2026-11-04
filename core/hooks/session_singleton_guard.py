@@ -14,6 +14,8 @@ Kernregel: Jede Session muss im eigenen Worktree laufen.
 - Lesende Tools (Read, Grep, ToolSearch, …) sind immer erlaubt.
 - Schreibende Tools (_BLOCKING_TOOLS) sind im Hauptverzeichnis blockiert.
 - Worktree-Sessions (.claude/worktrees/<name>/) sind uneingeschränkt.
+- Cloud-Sitzungen (CLAUDE_CODE_REMOTE == "true", Claude Code on the web) sind
+  von der Worktree-Pflicht ausgenommen: der Container ist die Isolation (#520).
 - Override-Token: Notausgang für Ausnahmefälle.
 
 Fail-safe: Jede unerwartete Exception → exit(0). Der Guard darf niemals
@@ -698,6 +700,12 @@ def _do_guard(payload: dict) -> None:
     # und rein lesende Tools den Heartbeat nie und verfallen nach
     # _STALE_SECONDS (AC-2/AC-4/AC-5).
     _heartbeat(session_id, cwd)
+
+    # Cloud-Sitzung (#520): ein Container = eine Sitzung, eigene Isolation —
+    # keine Worktree-Pflicht. Bewusst exakt "true" (so setzt es Claude Code);
+    # "1", "false" o.ae. lassen die Pflicht bestehen.
+    if os.environ.get("CLAUDE_CODE_REMOTE") == "true":
+        sys.exit(0)
 
     # Lesende Tools niemals blockieren — sonst ist auch EnterWorktree
     # via ToolSearch nicht mehr ladbar (kompletter Deadlock).

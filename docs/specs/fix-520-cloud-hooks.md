@@ -76,6 +76,8 @@ In Cloud-Sitzungen (Claude Code on the web) läuft für dieses Repo kein einzige
 
 **`release_check.py`:** neue Zeile „Cloud-Hooks“ in derselben Form wie „Skills“; ruft `sync_cloud_hooks` im Check-Modus auf (Funktion oder Subprozess), FAIL bei Drift.
 
+**Testisolation (`tests/conftest.py`):** Die Cloud setzt `CLAUDE_CODE_REMOTE=true` für die ganze Sitzung; Test-Subprozesse erben es, und Tests, die die Worktree-Pflicht erwarten, würden in Cloud-Sitzungen rot (25 Fälle). Die vorhandene autouse-Fixture, die schon `HERDR_*`/`OPENSPEC_*` entfernt, entfernt auch `CLAUDE_CODE_REMOTE`. Tests, die die Cloud prüfen, setzen die Variable selbst.
+
 **README:** Abschnitt „Cloud sessions (Claude Code on the web)“: Cloud lädt keine Plugins; Copy-Modus-Projekte haben ihre Hooks; dieses Repo registriert die Hooks per `sync_cloud_hooks.py` nur für die Cloud; nach jeder Änderung an `hooks/hooks.json` `python3 scripts/sync_cloud_hooks.py` ausführen; Plugin-Modus-Konsumenten sind in der Cloud ohne Gates (Folge-Issue).
 
 ## Expected Behavior
