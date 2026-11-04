@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.5.2] - 2026-11-04
+
+Echte RED-Ausgaben von `node --test` (TAP) mit Wörtern wie `placeholder:` im zitierten Assertion-Text werden nicht mehr als Platzhalter abgelehnt (#508). Keine Migration nötig.
+
 ### Fixed
 
 - **#508 (TAP-YAML-Block gilt als Zitat):** `tdd_enforcement.py` blockte echte RED-Artefakte von `node --test --test-reporter=tap`, wenn ein Assertion-Text im YAML-Diagnoseblock das Wort „Placeholder“ o. ä. zitierte. Neu `_tap_yaml_quote_lines`: ein formgerechter Block (`---` direkt nach einer `ok`/`not ok`-Zeile, tiefer eingerückt, beendet durch `...` auf genau Marker-Höhe, geprüft auf ANSI-bereinigten Zeilen) zählt wie die pytest-`E`-Zeilen (#262) als Zitat, `_iter_frame_lines` überspringt ihn. Fail-closed: ein Block ohne Ende bleibt Rahmen. Die Blockier-Meldung nennt „TAP-YAML-Blöcke“ unter den Ausnahmen; Fehler-Evidenz-Prüfung und `_PLACEHOLDER_RE` unverändert. Tests: `tests/test_tdd_enforcement_tap_yaml_508.py`.

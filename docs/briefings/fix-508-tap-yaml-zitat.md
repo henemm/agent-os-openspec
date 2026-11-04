@@ -1,7 +1,7 @@
 ---
 spec_file: docs/specs/fix-508-tap-yaml-zitat.md
-spec_sha256: 7017b13c819d652d2ce8018e42bbbd89d5346edc093560e9f49a4fa3333fa568
-spec_frozen_sha256: 92d0fea7c96fda55ffaf2d10f3f15acd8181890f88e51687061c2b402b5c4e97
+spec_sha256: 739464410468b0c1eca38f63b9e55d22a66aba3fc874381ea296b214898ccbc9
+spec_frozen_sha256: e0b085368dd64928985ac60bcb9be876d9b442e986b2f1f27d3b4eb7d9befbe8
 ---
 
 # PO-Briefing: fix-508-tap-yaml-zitat
@@ -12,20 +12,20 @@ spec_frozen_sha256: 92d0fea7c96fda55ffaf2d10f3f15acd8181890f88e51687061c2b402b5c
 
 ## Was gebaut wird
 
-Echte Testausgabe von Node mit dem Wort placeholder in zitiertem HTML wird nicht mehr fälschlich als Platzhalter-Text abgelehnt.
+Echte Testausgaben von node mit dem Wort „placeholder:" werden nicht mehr fälschlich als Platzhalter-Text abgelehnt.
 
 ## Definition of Done
 
-Die ursprünglich blockierte Testausgabe wird als gültiger Fehlschlag-Nachweis akzeptiert, echte Platzhalter außerhalb des Zitatblocks werden weiterhin abgelehnt.
+Die Beispielausgabe aus dem Ticket wird als gültiger fehlgeschlagener Test akzeptiert, und alle bisherigen Prüfungen bleiben unverändert grün.
 
 ## Wie geprüft wird
 
-Automatische Tests mit der echten Ausgabe, Grenzfällen und unveränderten Altfällen; nicht geprüft wird der alternative Spec-Reporter-Modus.
+Automatische Tests belegen jede Anforderung samt Gegenfällen; nicht abgedeckt ist die Ausgabe im node-Format „spec".
 
 ## Kritische Anmerkungen
 
-- Ausgabe im Spec-Reporter-Modus von Node bleibt blockiert (dokumentierte Einschränkung, Folge-Issue); Betroffene müssen dort weiter nachmessen.
-- Das Gate prüft künftig weniger Zeilen: Platzhalter in formgerechtem Zitatblock fallen durch, der Fehler-Nachweis bleibt Pflicht.
+- Bekannte Lücke: Bei der node-Ausgabe im Format „spec" wird „placeholder:" weiterhin abgelehnt; Folge-Ticket nötig.
+- Gefälschte Ausgaben können Platzhalter in solchen Blöcken verstecken; die Prüfung auf echte Fehlerhinweise bleibt als Schutz bestehen.
 
 ## Freigabe-Frage
 

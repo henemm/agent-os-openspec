@@ -41,12 +41,13 @@ Die Platzhalter-Suche in `tdd_enforcement` lehnt echte RED-Artefakte von `node -
 | File | Change Type | Description |
 |------|-------------|-------------|
 | core/hooks/tdd_enforcement.py | MODIFY | neue Funktion `_tap_yaml_quote_lines`, `_iter_frame_lines` überspringt deren Zeilen; Modul-Docstring und Blockier-Hinweis nennen TAP-YAML-Blöcke |
+| tests/test_auto_green_worktree_509.py | MODIFY | `test_changelog_mentions_509` release-fest (bricht sonst mit jedem neuen Versionsabschnitt) |
 | tests/test_tdd_enforcement_tap_yaml_508.py | CREATE | echter node-TAP-Fall, verschachtelte Subtests, Negativfälle (unvollständiger Block, falsche Stelle, falsche Einrückung), Rahmen nach dem Block |
 | CHANGELOG.md | MODIFY | Eintrag unter [Unreleased] |
 
 ### Estimated Changes
 
-- Files: 1 neu, 2 geändert
+- Files: 1 neu, 3 geändert
 - LoC: +35/−3 Produktion / +220 Test
 - Risk Level: MEDIUM (das Gate sieht weniger Zeilen: Platzhalter in einem formgerechten TAP-YAML-Block werden nicht mehr gemeldet; Fehler-Evidenz bleibt Pflicht, die Form ist eng definiert, unvollständige Blöcke bleiben Rahmen)
 
@@ -105,7 +106,7 @@ Testaufbau: direkter Aufruf von `tdd_enforcement._validate_artifact(art, tmp_pat
 - **AC-5:** Given `not ok 1 - x` gefolgt von `---` auf derselben Einrückung (nicht tiefer), `TODO` und `...` / When `_find_placeholder` läuft / Then wird die `TODO`-Zeile gemeldet
   - Test: tests/test_tdd_enforcement_tap_yaml_508.py::TestNegativeCasesStayFrame::test_yaml_block_not_indented_deeper_stays_frame
 
-- **AC-6:** Given ein formgerechter YAML-Block mit `placeholder:` und danach eine Rahmenzeile `# TODO: echte Ausgabe einfuegen` / When `_validate_artifact` läuft / Then lautet das Ergebnis „Artefakt enthält Platzhalter-Text“ mit der Zeilennummer der `# TODO`-Zeile
+- **AC-6:** Given ein formgerechter YAML-Block mit `placeholder:` und danach eine Rahmenzeile, die mit `# TODO` beginnt (Hinweis „echte Ausgabe einfuegen“, wörtlich im Test) / When `_validate_artifact` läuft / Then lautet das Ergebnis „Artefakt enthält Platzhalter-Text“ mit der Zeilennummer dieser `# TODO`-Zeile
   - Test: tests/test_tdd_enforcement_tap_yaml_508.py::TestNegativeCasesStayFrame::test_frame_after_yaml_block_is_still_checked
 
 - **AC-7:** Given ein formgerechter YAML-Block, dessen Inhalt eine tiefer eingerückte `...`-Zeile und danach `placeholder:` enthält / When `_find_placeholder` läuft / Then ist das Ergebnis `None` (nur `...` auf Marker-Höhe beendet den Block)
@@ -117,7 +118,7 @@ Testaufbau: direkter Aufruf von `tdd_enforcement._validate_artifact(art, tmp_pat
 - **AC-9:** Given ein Artefakt mit `placeholder:` im Rahmen / When `_validate_artifact` es ablehnt / Then nennt die Meldung „TAP-YAML“ unter den ausgenommenen Bereichen
   - Test: tests/test_tdd_enforcement_tap_yaml_508.py::TestUnchangedBehaviour::test_block_message_mentions_tap_yaml
 
-- **AC-10:** Given `CHANGELOG.md` / When gelesen / Then steht unter `[Unreleased]` oder im obersten Versionsabschnitt (Release im selben PR) ein Eintrag, der `#508` nennt
+- **AC-10:** Given `CHANGELOG.md` / When gelesen / Then steht ab `## [Unreleased]` (unter `[Unreleased]` oder in einem beliebigen Versionsabschnitt, release-fest wie #409) ein Eintrag, der `#508` nennt
   - Test: tests/test_tdd_enforcement_tap_yaml_508.py::test_changelog_mentions_508
 
 ## Test Plan
@@ -136,3 +137,5 @@ Testaufbau: direkter Aufruf von `tdd_enforcement._validate_artifact(art, tmp_pat
 
 - 2026-11-04: Initial spec created
 - 2026-11-04: Test-IDs mit Klassennamen der Testdatei
+- 2026-11-04: AC-6 umformuliert (CI-Spec-Gate wertet die zitierte Rahmenzeile als Platzhalter); Inhalt unverändert
+- 2026-11-04: AC-10 release-fest; CHANGELOG-Test aus #509 ebenso (brach mit Release 4.5.2)

@@ -259,12 +259,8 @@ class TestUnchangedBehaviour:
 
 
 def test_changelog_mentions_508():
-    """AC-10: CHANGELOG.md nennt #508 unter [Unreleased] oder im direkt folgenden,
-    obersten Versionsabschnitt `## [x.y.z]` (Release im selben PR geschnitten)."""
+    """AC-10 (release-fest): CHANGELOG.md nennt #508 ab der Zeile `## [Unreleased]`,
+    also unter [Unreleased] oder in irgendeinem Versionsabschnitt danach."""
     text = CHANGELOG.read_text()
     start = text.index("## [Unreleased]")
-    m = re.compile(r"^## \[\d+\.\d+\.\d+\]", re.M).search(text, start + 1)
-    assert m, "Kein Versionsabschnitt nach [Unreleased]"
-    nxt = text.find("\n## [", m.end())
-    section = text[start:nxt if nxt != -1 else len(text)]
-    assert "#508" in section, "Kein #508-Eintrag unter [Unreleased] oder oberster Version"
+    assert "#508" in text[start:], "Kein #508-Eintrag ab [Unreleased] im CHANGELOG"
