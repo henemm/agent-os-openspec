@@ -86,7 +86,7 @@ In Cloud-Sitzungen (Claude Code on the web) läuft für dieses Repo kein einzige
 
 ## Known Limitations
 
-- Konsumenten im Plugin-Modus bleiben in der Cloud ohne Gates: die Hook-Skripte liegen dort nicht im Repo. Folge-Issue.
+- Konsumenten im Plugin-Modus bleiben in der Cloud ohne Gates: die Hook-Skripte liegen dort nicht im Repo. PO-Entscheidung 2026-11-04: Folge-Issue #522.
 - In Cloud-Threads eines Claude-Projekts und in Sitzungen mit mehreren Repos führt Claude Code laut Doku keine Projekt-Hooks aus.
 - In der Cloud laufen die Hooks aus dem ausgecheckten Arbeitsstand dieses Repos, nicht aus dem gepinnten `@main`. Ein kaputter Hook endet mit Exit ≠ 2 und blockt nicht (nicht-blockierender Hook-Fehler); ein falsch blockender Hook ist per Override bzw. Rückbau der Zeile lösbar.
 - Ob eine schon laufende Sitzung die neuen Hooks sofort übernimmt, hängt von Claude Code ab; sicher greifen sie ab der nächsten Sitzung.
@@ -147,3 +147,4 @@ Testaufbau: echte Dateien in `tmp_path`, Befehle über `subprocess.run(["bash", 
 ## Changelog
 
 - 2026-11-04: Initial spec created
+- 2026-11-04: PO-Entscheidung Umfang: erst dieses Repo, Plugin-Konsumenten in #522
