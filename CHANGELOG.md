@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.5.1] - 2026-11-04
+
+Die ❗Du-Fußzeile nennt die echte Issue-Nummer und nach `/40-tdd-red` den Schritt `/50-implement` (#513); `auto-green` findet das GREEN-Artefakt im Worktree (#509). Migration: laufende Workflows mit mehrdeutigem Namen per `workflow.py set-field issue_number <N>` nachtragen.
+
 ### Fixed
 
 - **#509 (`auto-green` findet das GREEN-Artefakt im Worktree):** `workflow.py auto-green` suchte das registrierte GREEN-Artefakt nur unter dem Hauptrepo-Root. In Worktree-Sitzungen liegt `docs/artifacts/` (gitignored) aber nur im Worktree, die automatische GREEN-Freigabe (#471) antwortete dort deshalb immer `AUTO_GREEN=human` („GREEN-Artefakt fehlt, ist keine regulaere Datei oder liegt ausserhalb des Projekts“). `workflow._green_artifact_file` löst relative Pfade jetzt über das vorhandene `_worktree_first_root` auf (Worktree vor Hauptrepo, wie Spec und Briefing) und prüft die Grenze gegen genau diese Wurzel; ein `..` aus dem Worktree heraus bleibt abgelehnt, auch wenn das Ziel im Hauptrepo liegt. Absolute Pfade sind innerhalb von Worktree- oder Projekt-Root zulässig. Symlink-, Ausbruch- und Nicht-Datei-Schutz aus #471, Stop-Lock und State am Hauptrepo sowie die Hauptrepo-Sitzung bleiben unverändert. Tests: `tests/test_auto_green_worktree_509.py`.
