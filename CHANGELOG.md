@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **#513 (richtige Issue-Nummer statt erster Ziffer im Namen; `/40-tdd-red` meldet RED):** Die Issue-Nummer kam aus der ersten Ziffernfolge im Workflow-Namen, aus `i18n-a2-e2e-2681` wurde `18`, aus `e2e-2681` wurde `2`, und das stand dann in ❗Du-Fußzeile, Statuszeile, Plan-Pane, Herdr-Sidebar, Auto-`/clear` und Sitzungsregister. Neu ist eine gemeinsame Regel in `hook_utils.issue_number_from_name` (Teile an `-`/`_`, nur reine Ziffern-Teile zählen: erster Teil, Präfix `fix`/`feat`/`feature`/`bug`/`issue`/`gh` + Zahl oder letzter Teil mit Nicht-Zahl davor, sonst keine Nummer) und `hook_utils.workflow_issue_number(data)`, das ein neues State-Feld `issue_number` vorzieht. `workflow.py start <name> --issue N` (optional mit `#`, sonst Exit 1) speichert es, `workflow.py find N` trifft auch darüber. `workflow.issue_number()` bleibt als Hülle der Namensregel, `session_singleton_guard._extract_issue_number` delegiert an `hook_utils`, Registerfeld `issue` und Claim-Adoption nutzen das State-Feld. `/40-tdd-red` ruft nach dem Registrieren der Artefakte `workflow.py mark-red "<Ergebnis>"` auf, damit Phase 5 in der Fußzeile `/50-implement` nennt, auch wenn der Turn vor dem Phasenwechsel endet. `/00-intake` und `/10-context` geben `--issue <N>` beim Start mit, wenn die Nummer bekannt ist. **Migration:** Laufende Workflows mit mehrdeutigem Namen (z. B. `fix-v2-login-77-neu`) haben keine Nummer mehr, bis `workflow.py set-field issue_number <N>` sie setzt. Tests: `tests/test_issue_number_513.py`; aus `tests/test_proof_lock_453.py` entfällt der Scope-Wächter-Fall `hook_utils`, weil #453 gemergt ist und `hook_utils.py` bewusst erweitert wird.
+
 ## [4.5.0] - 2026-11-02
 
 Der Workflow-Plan hakt Deploy (#510, #511) erst ab, wenn `/70-deploy` die Nachpruefung (`verify`) bestanden hat; Archivieren allein reicht nicht mehr. Migration: Projekte ohne Deploy setzen `deploy.enabled: false`.
