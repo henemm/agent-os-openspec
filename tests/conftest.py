@@ -35,3 +35,7 @@ def _strip_herdr_env(monkeypatch):
     # duerfen Tests nicht beeinflussen; Tests setzen sie bei Bedarf selbst.
     for var in ("OPENSPEC_AUTONOMY", "OPENSPEC_HERDR_AUTO_CLEAR", "OPENSPEC_ACTIVE_WORKFLOW"):
         monkeypatch.delenv(var, raising=False)
+    # #520: In Cloud-Sitzungen setzt Claude Code CLAUDE_CODE_REMOTE=true; vererbt
+    # an die Subprozesse schaltete das die Worktree-Pflicht des Guards ab und
+    # liesse dessen Tests scheitern. Cloud-Tests setzen die Variable selbst.
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)

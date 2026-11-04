@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.5.3] - 2026-11-04
+
+Die Gates greifen jetzt auch in Cloud-Sitzungen (Claude Code on the web) dieses Repos (#520); lokal mit installiertem Plugin läuft nichts doppelt. Plugin-Konsumenten folgen in #522. Migration: keine.
+
+### Fixed
+
+- **#520 (Gates in Cloud-Sitzungen):** In Cloud-Sitzungen (Claude Code on the web) lief für dieses Repo kein einziger Framework-Hook: die Cloud lädt keine Plugins, auch nicht über `enabledPlugins`, sondern nur Hooks aus der Projekt-`.claude/settings.json`. Neu erzeugt `scripts/sync_cloud_hooks.py` dort aus `hooks/hooks.json` den `hooks`-Block (Event, Matcher, Reihenfolge, `type`, `timeout`, Argumente 1:1; `setup._PLUGIN_HOOK_CMD_RE` aus #279 wird importiert). Jeder Befehl startet nur bei `CLAUDE_CODE_REMOTE` exakt `true` und mit `CLAUDE_PLUGIN_ROOT=${CLAUDE_PROJECT_DIR}`; lokal endet er sofort mit Exit 0, neben dem Plugin läuft nichts doppelt. Ein nicht umsetzbares Kommando bricht die Erzeugung ab. `--check` meldet Drift (Exit 1), `release_check.py` prüft das in der neuen Zeile „Cloud-Hooks“. `session_singleton_guard.py guard` nimmt Cloud-Sitzungen von der Worktree-Pflicht aus (der Container ist die Isolation); `register`, `cleanup`, `claim`, `sync-main` unverändert. README: Abschnitt „Cloud sessions (Claude Code on the web)“. Plugin-Konsumenten bleiben in der Cloud vorerst ohne Gates (Folge-Issue #522). **Migration:** keine; nach jeder Änderung an `hooks/hooks.json` `python3 scripts/sync_cloud_hooks.py` ausführen. Tests: `tests/test_cloud_hooks_520.py`.
+
 ## [4.5.2] - 2026-11-04
 
 Echte RED-Ausgaben von `node --test` (TAP) mit Wörtern wie `placeholder:` im zitierten Assertion-Text werden nicht mehr als Platzhalter abgelehnt (#508). Keine Migration nötig.

@@ -7,5 +7,194 @@
     ],
     "deny": [],
     "ask": []
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || CLAUDE_PLUGIN_ROOT=\"${CLAUDE_PROJECT_DIR}\" python3 \"${CLAUDE_PROJECT_DIR}/core/hooks/session_singleton_guard.py\" register",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || CLAUDE_PLUGIN_ROOT=\"${CLAUDE_PROJECT_DIR}\" python3 \"${CLAUDE_PROJECT_DIR}/core/hooks/session_banner.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || CLAUDE_PLUGIN_ROOT=\"${CLAUDE_PROJECT_DIR}\" python3 \"${CLAUDE_PROJECT_DIR}/core/hooks/session_singleton_guard.py\" guard",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || CLAUDE_PLUGIN_ROOT=\"${CLAUDE_PROJECT_DIR}\" python3 \"${CLAUDE_PROJECT_DIR}/core/hooks/secret_egress_guard.py\"",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || CLAUDE_PLUGIN_ROOT=\"${CLAUDE_PROJECT_DIR}\" python3 \"${CLAUDE_PROJECT_DIR}/core/hooks/worktree_write_guard.py\"",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || CLAUDE_PLUGIN_ROOT=\"${CLAUDE_PROJECT_DIR}\" python3 \"${CLAUDE_PROJECT_DIR}/core/hooks/claude_md_protection.py\"",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || CLAUDE_PLUGIN_ROOT=\"${CLAUDE_PROJECT_DIR}\" python3 \"${CLAUDE_PROJECT_DIR}/core/hooks/edit_gate.py\"",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || CLAUDE_PLUGIN_ROOT=\"${CLAUDE_PROJECT_DIR}\" python3 \"${CLAUDE_PROJECT_DIR}/core/hooks/tdd_enforcement.py\"",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || CLAUDE_PLUGIN_ROOT=\"${CLAUDE_PROJECT_DIR}\" python3 \"${CLAUDE_PROJECT_DIR}/core/hooks/post_implementation_gate.py\"",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || CLAUDE_PLUGIN_ROOT=\"${CLAUDE_PROJECT_DIR}\" python3 \"${CLAUDE_PROJECT_DIR}/core/hooks/secrets_guard.py\"",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || CLAUDE_PLUGIN_ROOT=\"${CLAUDE_PROJECT_DIR}\" python3 \"${CLAUDE_PROJECT_DIR}/core/hooks/bash_gate.py\"",
+            "timeout": 300
+          }
+        ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || CLAUDE_PLUGIN_ROOT=\"${CLAUDE_PROJECT_DIR}\" python3 \"${CLAUDE_PROJECT_DIR}/core/hooks/secrets_guard.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || CLAUDE_PLUGIN_ROOT=\"${CLAUDE_PROJECT_DIR}\" python3 \"${CLAUDE_PROJECT_DIR}/core/hooks/post_bash.py\"",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || CLAUDE_PLUGIN_ROOT=\"${CLAUDE_PROJECT_DIR}\" python3 \"${CLAUDE_PROJECT_DIR}/core/hooks/process_watchdog.py\" hook",
+            "timeout": 15
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || CLAUDE_PLUGIN_ROOT=\"${CLAUDE_PROJECT_DIR}\" python3 \"${CLAUDE_PROJECT_DIR}/core/hooks/edit_verify.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || CLAUDE_PLUGIN_ROOT=\"${CLAUDE_PROJECT_DIR}\" python3 \"${CLAUDE_PROJECT_DIR}/core/hooks/phase_listener.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || CLAUDE_PLUGIN_ROOT=\"${CLAUDE_PROJECT_DIR}\" python3 \"${CLAUDE_PROJECT_DIR}/core/hooks/footer_gate.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "permission_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || CLAUDE_PLUGIN_ROOT=\"${CLAUDE_PROJECT_DIR}\" python3 \"${CLAUDE_PROJECT_DIR}/core/hooks/herdr_bridge.py\" signal activity",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || CLAUDE_PLUGIN_ROOT=\"${CLAUDE_PROJECT_DIR}\" python3 \"${CLAUDE_PROJECT_DIR}/core/hooks/herdr_bridge.py\" signal activity",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || CLAUDE_PLUGIN_ROOT=\"${CLAUDE_PROJECT_DIR}\" python3 \"${CLAUDE_PROJECT_DIR}/core/hooks/herdr_bridge.py\" plan-pane-close",
+            "timeout": 2
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || CLAUDE_PLUGIN_ROOT=\"${CLAUDE_PROJECT_DIR}\" python3 \"${CLAUDE_PROJECT_DIR}/core/hooks/herdr_bridge.py\" signal activity",
+            "timeout": 2
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || CLAUDE_PLUGIN_ROOT=\"${CLAUDE_PROJECT_DIR}\" python3 \"${CLAUDE_PROJECT_DIR}/core/hooks/session_singleton_guard.py\" cleanup",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || CLAUDE_PLUGIN_ROOT=\"${CLAUDE_PROJECT_DIR}\" python3 \"${CLAUDE_PROJECT_DIR}/core/hooks/process_watchdog.py\" end",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
   }
 }

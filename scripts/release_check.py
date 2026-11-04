@@ -218,6 +218,23 @@ def check_skills_sync() -> "tuple[bool, str]":
     return True, "skills/ synchron mit core/commands"
 
 
+def check_cloud_hooks(root: "Path | None" = None) -> "tuple[bool, str]":
+    """hooks-Block der .claude/settings.json muss dem Generat aus hooks/hooks.json
+    entsprechen (#520).
+
+    Cloud-Sitzungen laden keine Plugins; dort laufen nur die Projekt-Hooks.
+    Ein neuer Hook, der nur in hooks/hooks.json steht, fehlte in der Cloud still.
+
+    Default wie bei check_skills_sync: das Repo, aus dem die Skripte stammen
+    (sync_cloud_hooks.REPO_ROOT) — nicht das umbiegbare REPO_ROOT der
+    Git-Pruefungen; geprueft wird, was ausgeliefert wird.
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import sync_cloud_hooks
+
+    return sync_cloud_hooks.check(Path(root) if root is not None else sync_cloud_hooks.REPO_ROOT)
+
+
 def check_tests() -> "tuple[bool, str]":
     result = subprocess.run([sys.executable, "-m", "pytest", "tests/", "-q"],
                             cwd=str(REPO_ROOT), capture_output=True, text=True)
@@ -273,6 +290,7 @@ def run_pr_gate(base_ref: str) -> int:
         ("CLAUDE.md", check_claude_md_version(version, CLAUDE_MD.read_text())),
         ("Tag", check_tag_free(tag)),
         ("Skills", check_skills_sync()),
+        ("Cloud-Hooks", check_cloud_hooks()),
     ]
 
     failed = 0
@@ -331,6 +349,7 @@ def main() -> int:
         ("CLAUDE.md", check_claude_md_version(version, CLAUDE_MD.read_text())),
         ("Tag", check_tag_free(tag)),
         ("Skills", check_skills_sync()),
+        ("Cloud-Hooks", check_cloud_hooks()),
     ]
     if not args.no_tests:
         checks.append(("Tests", check_tests()))
