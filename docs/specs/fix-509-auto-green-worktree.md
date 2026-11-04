@@ -126,7 +126,7 @@ Testaufbau für alle Worktree-Fälle: echtes `tmp_path`, Hauptrepo mit `.git`-Or
 - **AC-11:** Given `workflow._worktree_first_root` ist per `monkeypatch` auf eine Funktion gesetzt, die einen Ordner `X` liefert, und unter `X/<rel>` liegt eine reguläre Datei, unter `find_project_root()/<rel>` nicht / When `workflow._green_artifact_file(rel)` läuft / Then ist das Ergebnis `(X / rel).resolve()` (die Auflösung läuft über die eine vorhandene Funktion, keine Kopie)
   - Test: tests/test_auto_green_worktree_509.py::test_green_artifact_file_uses_worktree_first_root
 
-- **AC-12:** Given `CHANGELOG.md` / When gelesen / Then steht unter `[Unreleased]` ein Eintrag, der `#509` nennt
+- **AC-12:** Given `CHANGELOG.md` / When gelesen / Then steht unter `[Unreleased]` oder im obersten Versionsabschnitt (Release im selben PR) ein Eintrag, der `#509` nennt
   - Test: tests/test_auto_green_worktree_509.py::test_changelog_mentions_509
 
 ## Test Plan
@@ -144,4 +144,5 @@ Testaufbau für alle Worktree-Fälle: echtes `tmp_path`, Hauptrepo mit `.git`-Or
 ## Changelog
 
 - 2026-11-04: Initial spec created
+- 2026-11-04: AC-12 release-fest: Eintrag darf im obersten Versionsabschnitt stehen
 - 2026-11-04: AC-10 korrigiert: Stop-Lock liegt seit #422 im Worktree, nicht im Hauptrepo

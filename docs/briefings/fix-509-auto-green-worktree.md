@@ -1,7 +1,7 @@
 ---
 spec_file: docs/specs/fix-509-auto-green-worktree.md
-spec_sha256: 1c6c2409aeabd469959cca1bb3caee915b8bf78f8da29b1e7e86cdad3e9f7701
-spec_frozen_sha256: 0ab2dd8d6727a860afe6f45046f3fb58ab01b576d856fa938fdfda1bf7f1e8b7
+spec_sha256: 6d2b40556c4d4a1671849d8977dc11a7721298d17567392e4f338db6cd871e41
+spec_frozen_sha256: fe18717ed99a4d9ed6dd7dd06891a0b854ba44f5d4e5e24f2a2aeb9903802355
 ---
 
 # PO-Briefing: fix-509-auto-green-worktree
