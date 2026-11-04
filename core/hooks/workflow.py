@@ -3464,19 +3464,25 @@ def cmd_auto_approve(args: list[str]) -> None:
 def _green_artifact_file(rel: str) -> "Path | None":
     """Pfad des GREEN-Artefakts, nur wenn regulaere Datei innerhalb des Projekts (#471).
 
-    Relative Pfade gegen den Projekt-Root; Symlink, Verzeichnis, Geraet oder
-    ausserhalb (nach `resolve()`) → None, ohne die Datei zu lesen.
+    Relative Pfade: Worktree vor Hauptrepo (#509, `_worktree_first_root`), Grenze
+    nur gegen genau diese Wurzel. Absolute Pfade: innerhalb Worktree- oder
+    Projekt-Root. Symlink, Verzeichnis, Geraet oder ausserhalb (nach
+    `resolve()`) → None, ohne die Datei zu lesen.
     """
     import stat as _stat
-    root = find_project_root()
     candidate = Path(rel)
-    if not candidate.is_absolute():
-        candidate = root / candidate
     try:
+        if candidate.is_absolute():
+            roots = [r for r in (_worktree_root_if_any(), find_project_root()) if r is not None]
+        else:
+            root = _worktree_first_root(rel)
+            candidate = root / candidate
+            roots = [root]
         if not _stat.S_ISREG(os.lstat(candidate).st_mode):
             return None
         resolved = candidate.resolve(strict=True)
-        resolved.relative_to(root.resolve())
+        if not any(resolved.is_relative_to(r.resolve()) for r in roots):
+            return None
     except (OSError, ValueError, RuntimeError):
         return None
     return resolved
