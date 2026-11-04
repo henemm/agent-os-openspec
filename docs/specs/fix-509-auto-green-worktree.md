@@ -62,7 +62,7 @@ tags: [workflow, auto-green, worktree, artifacts, security]
 
 Keine neue Worktree-Erkennung: Beide Wurzeln kommen aus den vorhandenen Funktionen `_worktree_first_root` und `_worktree_root_if_any` im selben Modul.
 
-**Aufrufer unverändert.** `_auto_green_decision` behält Reihenfolge, Meldungen und Evidence (`{"artifact": <registrierter Pfad>}`). Stop-Lock und State bleiben am Hauptrepo (`find_project_root()`), weil sie geteilt sind. Docstring von `_green_artifact_file` nennt künftig „Worktree vor Hauptrepo (#509)“.
+**Aufrufer unverändert.** `_auto_green_decision` behält Reihenfolge, Meldungen und Evidence (`{"artifact": <registrierter Pfad>}`). Der State bleibt am Hauptrepo (`find_project_root()`), weil er geteilt ist; der Stop-Lock wird wie bisher über `hook_utils._stop_lock_location` gefunden (seit #422 worktree-lokal). Docstring von `_green_artifact_file` nennt künftig „Worktree vor Hauptrepo (#509)“.
 
 **Warum relativ nur eine Wurzel.** Ein relativer Pfad gilt für den Arbeitsbaum, in dem die Datei gefunden wurde. Ein `..`, das aus dem Worktree herausführt, wird abgelehnt, auch wenn das Ziel im Hauptrepo liegt. So kann ein Worktree unter `.claude/worktrees/<n>/` nicht per `..` auf Dateien eines anderen Arbeitsbaums zeigen.
 
@@ -120,8 +120,8 @@ Testaufbau für alle Worktree-Fälle: echtes `tmp_path`, Hauptrepo mit `.git`-Or
 - **AC-9:** Given eine Hauptrepo-Sitzung ohne Worktree (`cwd` = Hauptrepo) und (a) das GREEN-Log relativ im Hauptrepo, (b) das GREEN-Log nur unter `<main>/.claude/worktrees/wt/<relativer Pfad>` / When `workflow.py auto-green` läuft / Then (a) `AUTO_GREEN=done`, (b) `AUTO_GREEN=human` mit dem Grund aus AC-5 (die Hauptrepo-Sitzung sucht nicht in Worktrees)
   - Test: tests/test_auto_green_worktree_509.py::test_main_repo_session_unchanged
 
-- **AC-10:** Given eine Worktree-Sitzung mit gültigem GREEN-Log im Worktree und aktivem Stop-Lock in `<main>/.claude/stop_lock.json` / When `workflow.py auto-green` läuft / Then `AUTO_GREEN=human` mit Grund „Stop-Lock aktiv“ und State byte-identisch (geteilter State bleibt am Hauptrepo)
-  - Test: tests/test_auto_green_worktree_509.py::test_stop_lock_from_main_repo_applies_in_worktree
+- **AC-10:** Given eine Worktree-Sitzung mit gültigem GREEN-Log im Worktree und aktivem Stop-Lock in `<wt>/.claude/stop_lock.json` (Ablageort seit #422) / When `workflow.py auto-green` läuft / Then `AUTO_GREEN=human` mit Grund „Stop-Lock aktiv“ und State byte-identisch (geteilter State bleibt am Hauptrepo)
+  - Test: tests/test_auto_green_worktree_509.py::test_stop_lock_in_worktree_applies
 
 - **AC-11:** Given `workflow._worktree_first_root` ist per `monkeypatch` auf eine Funktion gesetzt, die einen Ordner `X` liefert, und unter `X/<rel>` liegt eine reguläre Datei, unter `find_project_root()/<rel>` nicht / When `workflow._green_artifact_file(rel)` läuft / Then ist das Ergebnis `(X / rel).resolve()` (die Auflösung läuft über die eine vorhandene Funktion, keine Kopie)
   - Test: tests/test_auto_green_worktree_509.py::test_green_artifact_file_uses_worktree_first_root
@@ -144,3 +144,4 @@ Testaufbau für alle Worktree-Fälle: echtes `tmp_path`, Hauptrepo mit `.git`-Or
 ## Changelog
 
 - 2026-11-04: Initial spec created
+- 2026-11-04: AC-10 korrigiert: Stop-Lock liegt seit #422 im Worktree, nicht im Hauptrepo
