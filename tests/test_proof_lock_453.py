@@ -385,26 +385,21 @@ def _segment(source: str, name: str) -> str:
     raise AssertionError(f"{name} nicht gefunden")
 
 
-@pytest.mark.parametrize("part", ["_CONFIG_WRITERS", "_copy_targets", "hook_utils"])
+@pytest.mark.parametrize("part", ["_CONFIG_WRITERS", "_copy_targets"])
 def test_shared_pieces_unchanged_and_existing_suites_green(part):
     """Scope-Wächter der laufenden Änderung gegen ihre Abzweigung von main.
 
     Basis ist `git merge-base HEAD origin/main` (für #453: b599ee3). Fehlt sie (z. B. flacher
     CI-Checkout), wird übersprungen; liegt der Code schon auf main (Basis == HEAD), ist der
     Vergleich trivial gleich. Ein Branch, der diese Bausteine bewusst ändert (z. B. #452),
-    muss diesen Test anpassen.
+    muss diesen Test anpassen. Der Fall `hook_utils` ist mit #513 entfallen: #453 ist gemergt,
+    und hook_utils.py wird bewusst erweitert (issue_number_from_name/workflow_issue_number).
 
     Die vier Regressionssuiten (tests/test_proof_lock_448.py, tests/test_evidence_gate_447.py,
     tests/test_bash_gate_config_lock_418.py, tests/test_bash_gate_main_write_417.py) laufen
     separat (Test Plan), nicht als Subprozess dieses Tests — zu teuer.
     """
     base = _scope_base()
-    if part == "hook_utils":
-        r = subprocess.run(["git", "diff", "--quiet", base, "--",
-                            "core/hooks/hook_utils.py"], cwd=str(REPO), capture_output=True,
-                           text=True, env=_env())
-        assert r.returncode == 0, f"core/hooks/hook_utils.py verändert: {r.stderr.strip()}"
-        return
     old = subprocess.run(["git", "show", f"{base}:core/hooks/bash_gate.py"],
                          cwd=str(REPO), capture_output=True, text=True, env=_env())
     assert old.returncode == 0, old.stderr

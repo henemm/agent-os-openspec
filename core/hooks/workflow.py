@@ -9,7 +9,7 @@ cross-session drift. Always set: export OPENSPEC_ACTIVE_WORKFLOW=<name>
 Atomic writes via tempfile + rename (no file locks).
 
 Usage:
-    python3 workflow.py start <name> [--type feature|bug]
+    python3 workflow.py start <name> [--type feature|feature-fast] [--issue N]
     python3 workflow.py switch <name>
     python3 workflow.py status
     python3 workflow.py phase <phase>
@@ -35,6 +35,7 @@ Usage:
 
 from hook_utils import setup_path, find_project_root
 from hook_utils import UnsafeStateError, atomic_write_json, read_state_json
+from hook_utils import issue_number_from_name, workflow_issue_number
 setup_path()
 
 import hashlib as _hashlib
@@ -301,15 +302,17 @@ def next_step(data: dict) -> "str | None":
 
 
 def issue_number(workflow_name: str) -> "str | None":
-    """Erste Ziffernfolge im Workflow-Namen (fix-1761-xyz -> '1761')."""
-    match = _re.search(r"\d+", workflow_name or "")
-    return match.group(0) if match else None
+    """Issue-Nummer aus dem Namen (#513) — Huelle um hook_utils.issue_number_from_name.
+
+    Liegt der State vor, gilt workflow_issue_number(data) (Feld `issue_number`).
+    """
+    return issue_number_from_name(workflow_name)
 
 
 def expected_footer_command(data: dict) -> "str | None":
     """Erwarteter Fusszeilen-Befehl — dieselbe Quelle wie status_note() (#234).
 
-    Duenne Huelle um next_step() + issue_number(), damit footer_gate.py die
+    Duenne Huelle um next_step() + workflow_issue_number(), damit footer_gate.py die
     Fusszeile gegen genau den Wert prueft, den status_note() ansagt. Keine
     eigene Logik: None und Freitext-Schritte werden unveraendert
     durchgereicht.
@@ -317,7 +320,7 @@ def expected_footer_command(data: dict) -> "str | None":
     step = next_step(data)
     if not step or not step.startswith("/"):
         return step  # None oder Freitext-Schritt (z.B. "Freigabe der Spec ...")
-    issue = issue_number((data or {}).get("name", ""))
+    issue = workflow_issue_number(data)
     return f"{step} #{issue}" if issue else step
 
 
@@ -375,7 +378,7 @@ def render_plan(data, archived: bool = False, width: "int | None" = None,
                 if PHASES.index(step_phase) <= pos:
                     running = i
         name = str(data.get("name") or "")
-        issue = issue_number(name)
+        issue = workflow_issue_number(data)
         lines = [f"Workflow #{issue}" if issue else "Workflow", name]
         title = data.get("issue_title")
         if isinstance(title, str) and title.strip():
@@ -445,7 +448,7 @@ def status_note(data: dict) -> "str | None":
     if not step:
         return None
     if step.startswith("/"):
-        issue = issue_number(name)
+        issue = workflow_issue_number(data)
         if issue:
             step = f"{step} #{issue}"
     if step == AUTO_APPROVAL_STEP:
@@ -1812,18 +1815,29 @@ def _final_loc(data: dict) -> "tuple[int, int] | None":
 
 def cmd_start(args: list[str]) -> None:
     workflow_type = "feature"
+    issue_arg = None
     name_args = []
     i = 0
     while i < len(args):
         if args[i] == "--type" and i + 1 < len(args):
             workflow_type = args[i + 1]
             i += 2
+        elif args[i] == "--issue" and i + 1 < len(args):
+            issue_arg = args[i + 1]
+            i += 2
         else:
             name_args.append(args[i])
             i += 1
     if not name_args:
-        print("Usage: workflow.py start <name> [--type feature|feature-fast]", file=sys.stderr)
+        print("Usage: workflow.py start <name> [--type feature|feature-fast] [--issue N]",
+              file=sys.stderr)
         sys.exit(1)
+    if issue_arg is not None:
+        issue_arg = issue_arg[1:] if issue_arg.startswith("#") else issue_arg
+        if not _re.fullmatch(r"[0-9]+", issue_arg):
+            print(f"Ungueltige Issue-Nummer fuer --issue: {issue_arg!r} (nur Ziffern, "
+                  "optional mit fuehrendem #).", file=sys.stderr)
+            sys.exit(1)
     if workflow_type == "bug":
         print("Typ `bug` wurde entfernt (#333). Fehler laufen über /00-intake; "
               "Kleinkram über `--type feature-fast`.", file=sys.stderr)
@@ -1839,6 +1853,8 @@ def cmd_start(args: list[str]) -> None:
         sys.exit(1)
     data = _new_workflow(name)
     data["workflow_type"] = workflow_type
+    if issue_arg is not None:
+        data["issue_number"] = issue_arg  # #513: echte Nummer statt Namensregel
     data["base_commit"] = _start_base_commit()  # #259: Basis-Kandidat fuer Phase 8
     if workflow_type == "feature-fast":
         # Fast-track for small features: skip context/analyse, start at spec
@@ -1850,7 +1866,7 @@ def cmd_start(args: list[str]) -> None:
     _atomic_write(wf_file, data)
     _set_active(name)
     _herdr("report", data)
-    issue = issue_number(name)
+    issue = workflow_issue_number(data)
     if issue and cached_issue_title(issue) is None:
         _spawn_issue_title_fetch(issue)  # #490: abgekoppelt, wartet nicht
     if workflow_type == "feature-fast":
@@ -1892,7 +1908,7 @@ def _with_issue_title(data: dict) -> dict:
     Der Cache-Wert wird erneut normalisiert (#492); leer = kein Titel.
     """
     try:
-        issue = issue_number(str(data.get("name") or ""))
+        issue = workflow_issue_number(data)
         title = short_title(cached_issue_title(issue)) if issue else None
         if title:
             data["issue_title"] = title
@@ -1906,7 +1922,7 @@ def _plan_fetch_missing(data, tried: set) -> None:
     try:
         if not isinstance(data, dict) or data.get("issue_title"):
             return
-        issue = issue_number(str(data.get("name") or ""))
+        issue = workflow_issue_number(data)
         if not issue or issue in tried:
             return
         tried.add(issue)
@@ -2924,9 +2940,16 @@ def cmd_find(args: list[str]) -> None:
     wf_dir = _workflows_dir()
     hits = []
     for f in sorted(wf_dir.glob("*.json")) if wf_dir.exists() else []:
-        if not pat.search(f.stem):
-            continue
-        d = _read_workflow(f)
+        if pat.search(f.stem):
+            d = _read_workflow(f)
+        else:
+            # #513: Treffer auch ueber das State-Feld `issue_number`
+            try:
+                d = _read_workflow(f)
+            except Exception:
+                continue
+            if workflow_issue_number(d) != issue:
+                continue
         hits.append((f.stem, d.get("current_phase"), d.get("spec_file") or "Not created",
                      d.get("adversary_verdict"), d.get("affected_files") or []))
     if not hits:

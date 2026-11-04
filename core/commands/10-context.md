@@ -33,8 +33,11 @@ Meldet der Block `KEIN laufender Workflow`, sag das und frage, ob ein neuer Work
 ### 1. Start or Resume Workflow
 
 ```bash
-python3 .claude/hooks/workflow.py start "[feature-name]"
+python3 .claude/hooks/workflow.py start "[feature-name]" --issue <N>
 ```
+
+`--issue <N>` nur, wenn die Issue-Nummer bekannt ist — sonst weglassen (die Nummer kommt dann
+aus dem Namen).
 
 Or switch to existing:
 ```bash

@@ -335,12 +335,38 @@ def _read_branch(cwd: str) -> "str | None":
 
 
 def _extract_issue_number(workflow_name: str) -> "str | None":
-    """Erste Ziffernfolge im Workflow-Namen (feat-106-... -> '106')."""
+    """Issue-Nummer aus dem Namen — dieselbe Regel wie workflow.py (#513).
+
+    Delegiert lazy an hook_utils.issue_number_from_name; jeder Fehler → None.
+    """
     try:
-        m = re.search(r"\d+", workflow_name or "")
-        return m.group(0) if m else None
+        from hook_utils import issue_number_from_name
+        return issue_number_from_name(workflow_name)
     except Exception:
         return None
+
+
+def _workflow_issue_number(workflow_name: str) -> "str | None":
+    """Issue-Nummer aus dem State (`issue_number`), sonst aus dem Namen (#513).
+
+    Liest den State wie _read_workflow_phase; nicht lesbar → Namensregel.
+    """
+    try:
+        from hook_utils import (UnsafeStateError, find_project_root, read_state_json,
+                                workflow_issue_number)
+        root = find_project_root()
+        path = root / ".claude" / "workflows" / f"{workflow_name}.json"
+        try:
+            data = read_state_json(path, root)
+        except UnsafeStateError:
+            data = None
+        if isinstance(data, dict):
+            data = dict(data)
+            data.setdefault("name", workflow_name)
+            return workflow_issue_number(data)
+    except Exception:
+        pass
+    return _extract_issue_number(workflow_name)
 
 
 def _read_workflow_phase(workflow_name: str) -> "str | None":
@@ -420,7 +446,7 @@ def _context_fields(cwd: str) -> dict:
     name = _current_workflow_name()
     if name:
         out["workflow"] = name
-        issue = _extract_issue_number(name)
+        issue = _workflow_issue_number(name)
         if issue:
             out["issue"] = issue
         phase = _read_workflow_phase(name)
@@ -448,7 +474,7 @@ def _claim_holds(entry: dict, fields: dict) -> bool:
         return True                        # Fall 1 + Fall 3
 
     if not claim_wf and current:           # Fall 2 — Adoption nur bei Passung
-        number = _extract_issue_number(current)
+        number = _workflow_issue_number(current)
         claimed = [p.strip() for p in str(entry.get("issue") or "").split(",")]
         if number is None or number in claimed:
             entry["issue_claim_workflow"] = current      # Fall 2a / 2b

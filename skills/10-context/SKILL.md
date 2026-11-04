@@ -48,8 +48,11 @@ Meldet der Block `KEIN laufender Workflow`, sag das und frage, ob ein neuer Work
 ### 1. Start or Resume Workflow
 
 ```bash
-$WF start "[feature-name]"
+$WF start "[feature-name]" --issue <N>
 ```
+
+`--issue <N>` nur, wenn die Issue-Nummer bekannt ist — sonst weglassen (die Nummer kommt dann
+aus dem Namen).
 
 Or switch to existing:
 ```bash

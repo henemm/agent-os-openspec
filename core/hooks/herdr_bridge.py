@@ -196,7 +196,7 @@ def build_report(data) -> "dict | None":
     import workflow  # Lazy: workflow.py importiert diese Datei (zirkulaer vermeiden)
 
     name = str(data.get("name") or "")
-    issue = workflow.issue_number(name) or ""
+    issue = workflow.workflow_issue_number(data) or ""  # #513: State-Feld vor Name
     phase_nr = f"{workflow.PHASE_NUMBERS[phase]}/{workflow.TOTAL_PHASES}"
     nxt = workflow.expected_footer_command(data) or ""
     if nxt and not nxt.startswith("/"):
