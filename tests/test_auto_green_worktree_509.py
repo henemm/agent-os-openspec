@@ -333,11 +333,11 @@ def test_main_repo_session_unchanged(tmp_path):
 
 # --- AC-10 ------------------------------------------------------------------
 
-def test_stop_lock_from_main_repo_applies_in_worktree(tmp_path):
-    """AC-10: Stop-Lock im Hauptrepo gilt auch in der Worktree-Sitzung -> human."""
+def test_stop_lock_in_worktree_applies(tmp_path):
+    """AC-10: Stop-Lock im Worktree (Ablageort seit #422) gilt in der Worktree-Sitzung -> human."""
     s = _setup(tmp_path)
     _write(s.wt / REL_GREEN, PYTEST_GREEN)
-    (s.main / ".claude" / "stop_lock.json").write_text(json.dumps({"enabled": True}))
+    (s.wt / ".claude" / "stop_lock.json").write_text(json.dumps({"enabled": True}))
     _assert_human(s, "Stop-Lock aktiv")
 
 
