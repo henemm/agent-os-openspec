@@ -563,10 +563,16 @@ def main():
                 briefing_err = _check_po_briefing(wf_data)
             except Exception:
                 briefing_err = None
-            if adr_err or briefing_err:
+            # Spec-Inhaltspruefung des CI-Gates (#521), gleiche Toleranz.
+            try:
+                from workflow import _check_spec_content
+                spec_err = _check_spec_content(wf_data)
+            except Exception:
+                spec_err = None
+            if adr_err or briefing_err or spec_err:
                 # Alle Gründe nennen, und zwar auch Claude (additionalContext),
                 # nicht nur dem Nutzer — sonst kann niemand die Spec reparieren (#372).
-                reasons = [r for r in (adr_err, briefing_err) if r]
+                reasons = [r for r in (adr_err, briefing_err, spec_err) if r]
                 _notify("Freigabe blockiert: " + " | ".join(reasons))
                 block_note = (
                     "Freigabe blockiert — spec_approved NICHT gesetzt, Workflow bleibt "

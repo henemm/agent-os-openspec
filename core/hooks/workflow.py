@@ -1269,7 +1269,19 @@ PO_BRIEFING_SECTIONS = (
 # ist eine Überschrift ohne Aussage.
 _PO_BRIEFING_MIN_BODY = 20
 
-_PO_BRIEFING_PLACEHOLDERS = ("[todo", "[tbd", "todo:", "fixme:", "xxx:", "<platzhalter")
+# Die EINE Platzhalter-Liste (#521) fuer Spec und Briefing; das CI-Gate nutzt
+# sie ueber `check_spec_content`. Kleingeschrieben, Pruefung case-insensitive
+# und rein textuell: auch zitierte Zeilen zaehlen.
+PLACEHOLDER_MARKERS = ("[todo", "[tbd", "todo:", "fixme:", "xxx:", "<platzhalter")
+
+
+def find_placeholder(content: str) -> "str | None":
+    """Erster Marker aus PLACEHOLDER_MARKERS (Listen-Reihenfolge) im Text oder None."""
+    lowered = content.lower()
+    for marker in PLACEHOLDER_MARKERS:
+        if marker in lowered:
+            return marker
+    return None
 
 # Obergrenze für die Wortzahl (Pflicht-Abschnitte + Freigabe-Frage). Der
 # po-briefer zielt auf ≤ 120 Wörter; 150 lässt Puffer, damit das Gate nicht an
@@ -1341,10 +1353,9 @@ def check_briefing_content(content: str, max_words: "int | None" = None) -> "str
     `max_words` kommt von konfigurationskundigen Aufrufern
     (po_briefing_gate.max_words); ohne Angabe gilt `_PO_BRIEFING_MAX_WORDS`.
     """
-    lowered = content.lower()
-    for marker in _PO_BRIEFING_PLACEHOLDERS:
-        if marker in lowered:
-            return f"PO-Briefing enthält noch einen Platzhalter ('{marker}') — nicht fertig."
+    marker = find_placeholder(content)
+    if marker:
+        return f"PO-Briefing enthält noch einen Platzhalter ('{marker}') — nicht fertig."
 
     for section, pattern in PO_BRIEFING_SECTIONS:
         raw = _briefing_section_body(content, pattern)
@@ -1609,6 +1620,132 @@ def _check_po_briefing(data: dict, config: "dict | None" = None) -> "str | None"
     return None
 
 
+# --- Spec-Inhaltspruefung des CI-Gates, lokal bei der Freigabe (#521) -------
+
+# Pflicht-Sektionen einer Spec: (Name fuer Meldungen, Regex fuer die Ueberschrift).
+SPEC_REQUIRED_SECTIONS = (
+    ("Scope", r"Scope"),
+    ("Definition of Done", r"(?:Definition\s+of\s+Done|DoD)"),
+    ("Acceptance Criteria", r"Acceptance\s+Criteria"),
+    ("Test Plan", r"Test\s*Plan"),
+)
+
+
+def check_spec_content(content: str) -> "list[str]":
+    """Prueft den Spec-TEXT wie das CI-Gate. Liste der Befunde (leer = in Ordnung).
+
+    Eine Regel, zwei Aufrufer: `scripts/ci_spec_gate.py` setzt den Pfad davor,
+    die Freigabe (`_check_spec_content`) verbindet die Befunde zu einer Meldung.
+    """
+    from hook_utils import extract_ac_entries
+
+    findings = []
+    for label, pattern in SPEC_REQUIRED_SECTIONS:
+        if _briefing_section_body(content, pattern) is None:
+            findings.append(f"Pflicht-Sektion '## {label}' fehlt.")
+
+    marker = find_placeholder(content)
+    if marker:
+        findings.append(f"enthält noch einen Platzhalter ('{marker}').")
+
+    if _briefing_section_body(content, r"Acceptance\s+Criteria") is not None:
+        entries = extract_ac_entries(content)
+        if not entries:
+            findings.append(
+                "'## Acceptance Criteria' ohne AC-N-Einträge "
+                "(Format: '- **AC-1:** Given ... / When ... / Then ...')."
+            )
+        for label, desc, _raw in entries:
+            if len(desc.strip()) < 30:
+                findings.append(
+                    f"{label} ist zu knapp ({len(desc.strip())} Zeichen, ≥ 30 nötig)."
+                )
+
+    adr_err = check_adr_content(content)
+    if adr_err:
+        findings.append(adr_err)
+    return findings
+
+
+def _ci_checked_spec_rel(spec_file: str) -> "str | None":
+    """Relativer Spec-Pfad, wenn das CI-Gate diese Spec prueft, sonst None.
+
+    Wie `ci_spec_gate._is_spec`/`_is_fast_spec`: unter docs/specs/, Endung .md,
+    nicht _template.md, nicht docs/specs/fast/. Absolute Pfade zaehlen relativ
+    zur Worktree- bzw. Projekt-Wurzel.
+    """
+    import posixpath
+    raw = str(spec_file).replace("\\", "/")
+    if Path(raw).is_absolute():
+        rel = None
+        for root in (_worktree_root_if_any(), find_project_root()):
+            if root is None:
+                continue
+            for a, b in ((Path(raw), root), (Path(raw).resolve(), root.resolve())):
+                try:
+                    rel = a.relative_to(b).as_posix()
+                    break
+                except ValueError:
+                    continue
+            if rel is not None:
+                break
+        if rel is None:
+            return None
+    else:
+        rel = raw
+    rel = posixpath.normpath(rel)
+    if (not rel.startswith("docs/specs/") or not rel.endswith(".md")
+            or Path(rel).name == "_template.md" or rel.startswith("docs/specs/fast/")):
+        return None
+    return rel
+
+
+def _check_spec_content(data: dict, config: "dict | None" = None) -> "str | None":
+    """CI-Spec-Gate lokal bei der Freigabe (#521). Meldung oder None.
+
+    Lenient wie `_check_adr`: Kill-Switch `ci_spec_gate.enabled: false`, eine
+    Spec, die die CI nicht prueft, oder eine fehlende/unlesbare Spec ergeben
+    None. Ein Config-Fehler laesst die Pruefung an. Den ADR-Befund meldet
+    `_check_adr` schon, solange das ADR-Gate aktiv ist.
+    """
+    adr_gate_on = True
+    try:
+        if config is None:
+            from config_loader import load_config
+            config = load_config()
+        if isinstance(config, dict):
+            ci_cfg = config.get("ci_spec_gate", {})
+            if isinstance(ci_cfg, dict) and ci_cfg.get("enabled") is False:
+                return None
+            adr_cfg = config.get("adr_gate", {})
+            if isinstance(adr_cfg, dict) and adr_cfg.get("enabled") is False:
+                adr_gate_on = False
+    except Exception:
+        pass  # Config load failure → Pruefung bleibt an (lenient)
+
+    spec_file = data.get("spec_file")
+    if not spec_file or _ci_checked_spec_rel(spec_file) is None:
+        return None
+    content = _read_spec_content(data)
+    if content is None:
+        return None
+
+    findings = check_spec_content(content)
+    if adr_gate_on:
+        adr_err = check_adr_content(content)
+        findings = [f for f in findings if f != adr_err]
+    if not findings:
+        return None
+    return "Spec besteht das CI-Spec-Gate nicht: " + " | ".join(findings)
+
+
+def _spec_gate_due(data: dict) -> bool:
+    """Spec-Pruefung nur beim Ueberschreiten der Freigabe-Grenze (#521)."""
+    current = data.get("current_phase", "phase0_idle")
+    cur_idx = PHASES.index(current) if current in PHASES else 0
+    return cur_idx < PHASES.index("phase4_approved")
+
+
 # --- Phase Transition Validation ---
 
 def _not_approved_msg() -> str:
@@ -1654,6 +1791,10 @@ def _validate_transition(data: dict, target: str) -> str | None:
             briefing_err = _check_po_briefing(data)
             if briefing_err:
                 return briefing_err
+            if _spec_gate_due(data):
+                spec_err = _check_spec_content(data)
+                if spec_err:
+                    return spec_err
         # #447: sonst waere das Evidence-Gate per `start --type feature-fast` umgehbar.
         if target == "phase8_complete":
             return _evidence_reason(target, data)
@@ -1687,6 +1828,10 @@ def _validate_transition(data: dict, target: str) -> str | None:
         briefing_err = _check_po_briefing(data)
         if briefing_err:
             return briefing_err
+        if _spec_gate_due(data):
+            spec_err = _check_spec_content(data)
+            if spec_err:
+                return spec_err
 
     if tgt_idx >= PHASES.index("phase6_implement"):
         red_artifacts = [a for a in data.get("test_artifacts", [])
@@ -3401,6 +3546,9 @@ def _auto_approve_decision() -> "tuple[str, str, list]":
     briefing_err = _check_po_briefing(data, config)
     if briefing_err:
         return "human", "Briefing: " + briefing_err, []
+    spec_err = _check_spec_content(data, config)
+    if spec_err:
+        return "human", "Spec: " + spec_err, []
     entry = data.get("po_briefing")
     if not (isinstance(entry, dict) and entry.get("file") and entry.get("briefing_sha256")):
         return "human", "kein Briefing mit Hash registriert", []

@@ -183,10 +183,22 @@ PO_BRIEFING_BODY = (
 )
 
 
+# CI-vollstaendige Spec: die Freigabe prueft die Spec seit #521 wie das CI-Gate.
+SPEC_COMPLETE_521 = (
+    "# Test Spec\n\n"
+    "## Purpose\n\nBeliebiger Inhalt.\n\n"
+    "## Scope\n\n- Eine Datei im Modul.\n\n"
+    "## Definition of Done\n\n- Fertig, wenn X sichtbar ist.\n\n"
+    "## Acceptance Criteria\n\n"
+    "- **AC-1:** Given ein Nutzer / When er klickt / Then passiert etwas Sichtbares.\n\n"
+    "## Test Plan\n\n- pytest tests/\n\n"
+)
+
+
 def _spec_and_briefing(proj: Path) -> dict:
     spec = proj / "docs" / "specs" / "m" / "spec.md"
     spec.parent.mkdir(parents=True)
-    spec.write_text("# Test Spec\n\n## Purpose\n\nBeliebiger Inhalt.\n")
+    spec.write_text(SPEC_COMPLETE_521)
     brief = proj / "docs" / "briefings" / "b.md"
     brief.parent.mkdir(parents=True)
     brief.write_text(PO_BRIEFING_BODY)

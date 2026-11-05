@@ -256,7 +256,8 @@ Die Aktualität hängt am `spec_sha256`-Stempel, den `set-briefing` in den
 Briefing-Frontmatter schreibt.
 
 Das Gate dupliziert keine Regeln: Es ruft `workflow.check_briefing_content`,
-`workflow.check_adr_content` und `hook_utils.extract_ac_entries` auf.
+`workflow.check_spec_content`, `workflow.check_adr_content` und `hook_utils.extract_ac_entries` auf.
+Dieselbe Spec-Prüfung läuft lokal schon bei der Freigabe (Kill-Switch gilt für beide).
 
 - Einzelner PR raus: Commit-Trailer `Spec-Gate: skip <Grund>` (sichtbar in der Historie)
 - Projekt raus: `config.yaml` → `ci_spec_gate.enabled: false`

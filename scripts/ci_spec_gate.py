@@ -16,8 +16,9 @@ Geprüft wird pro Pull Request:
      set-briefing` in den Briefing-Frontmatter schreibt.
 
 Die Regeln kommen aus denselben Funktionen wie die lokalen Gates
-(`workflow.check_briefing_content`, `workflow.check_adr_content`,
-`hook_utils.extract_ac_entries`) — eine Regel, zwei Aufrufer.
+(`workflow.check_spec_content`, `workflow.check_briefing_content`,
+`workflow.check_adr_content`, `hook_utils.extract_ac_entries`) — eine Regel,
+zwei Aufrufer. `check_spec_content` läuft auch lokal bei der Freigabe (#521).
 
 Aufruf:
 
@@ -49,15 +50,6 @@ DEFAULT_EXEMPT_PREFIXES = (
 )
 DEFAULT_EXEMPT_SUFFIXES = (".md", ".txt", ".lock")
 DEFAULT_EXEMPT_FILES = (".gitignore", "LICENSE", "CHANGELOG.md", "README.md")
-
-SPEC_REQUIRED_SECTIONS = (
-    ("Scope", r"Scope"),
-    ("Definition of Done", r"(?:Definition\s+of\s+Done|DoD)"),
-    ("Acceptance Criteria", r"Acceptance\s+Criteria"),
-    ("Test Plan", r"Test\s*Plan"),
-)
-
-SPEC_PLACEHOLDERS = ("[todo", "[tbd", "todo:", "fixme:", "xxx:")
 
 TRAILER_RE = re.compile(r"^\s*Spec-Gate:\s*skip\b[ \t]*(.*)$", re.IGNORECASE | re.MULTILINE)
 
@@ -227,46 +219,28 @@ def _is_fast_spec(path: str) -> bool:
     return path.startswith("docs/specs/fast/")
 
 
-def _section_body(content: str, pattern: str) -> "str | None":
-    match = re.search(
-        r"^#{2,3}\s*" + pattern + r"[^\n]*$(.*?)(?=^#{1,3}\s|\Z)",
-        content, re.IGNORECASE | re.MULTILINE | re.DOTALL,
-    )
-    return match.group(1) if match else None
-
-
 def _check_spec(root: Path, rel: str, problems: list[str]) -> None:
+    """Spec-Inhalt per `workflow.check_spec_content` prüfen (#521) — dieselbe
+    Regel wie bei der lokalen Freigabe. Fail-closed, wenn sie fehlt."""
     content = (root / rel).read_text()
 
-    for label, pattern in SPEC_REQUIRED_SECTIONS:
-        if _section_body(content, pattern) is None:
-            problems.append(f"{rel}: Pflicht-Sektion '## {label}' fehlt.")
-
-    lowered = content.lower()
-    for marker in SPEC_PLACEHOLDERS:
-        if marker in lowered:
-            problems.append(f"{rel}: enthält noch einen Platzhalter ('{marker}').")
-            break
-
-    hook_utils = _load_hook_module(root, "hook_utils")
-    if hook_utils is not None and _section_body(content, r"Acceptance\s+Criteria") is not None:
-        entries = hook_utils.extract_ac_entries(content)
-        if not entries:
-            problems.append(
-                f"{rel}: '## Acceptance Criteria' ohne AC-N-Einträge "
-                "(Format: '- **AC-1:** Given ... / When ... / Then ...')."
-            )
-        for label, desc, _raw in entries:
-            if len(desc.strip()) < 30:
-                problems.append(
-                    f"{rel}: {label} ist zu knapp ({len(desc.strip())} Zeichen, ≥ 30 nötig)."
-                )
-
     workflow = _load_hook_module(root, "workflow")
-    if workflow is not None:
-        adr_err = workflow.check_adr_content(content)
-        if adr_err:
-            problems.append(f"{rel}: {adr_err}")
+    if workflow is None:
+        problems.append(
+            "workflow.py nicht gefunden (weder core/hooks noch .claude/hooks) — "
+            "Spec kann nicht geprüft werden."
+        )
+        return
+    check = getattr(workflow, "check_spec_content", None)
+    if check is None:
+        problems.append(
+            f"{rel}: geladenes workflow.py kennt check_spec_content nicht (veraltete "
+            "Projekt-Kopie) — Spec kann nicht geprüft werden. Framework aktualisieren "
+            "mit setup.py --update (Aufruf: python3 <framework>/setup.py <projekt> --update)."
+        )
+        return
+    for finding in check(content):
+        problems.append(f"{rel}: {finding}")
 
 
 def _find_briefing(root: Path, spec_rel: str, workflow) -> "tuple[Path, dict] | None":
