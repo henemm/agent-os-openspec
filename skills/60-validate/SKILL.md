@@ -298,6 +298,29 @@ Bei `AUTONOMY=auto` (nach Step 4, also mit `phase8_complete`):
    `deploy.autonomous` (siehe „Autonomen Weiterlauf prüfen" oben) ist eine eigene, getrennte
    Entscheidung des Projekts und wird von `AUTONOMY=auto` weder gesetzt noch ersetzt. Kein
    `/70-deploy` aus dem Auto-Modus heraus.
+   **Merge und PR — Ausliefern prüfen (#525):**
+
+   ```bash
+   $WF auto-ship
+   ```
+
+   Nur die ausdrücklich gelesene Zeile `AUTO_SHIP=on` schaltet um; jede andere Ausgabe (auch ein
+   Fehler) gilt als `AUTO_SHIP=off`. Default im Auto-Modus ist an; abschalten per
+   `autonomy.ship: false` in der Projekt-`config.yaml` (`settings.local.json` zählt nicht).
+   **Bei `AUTO_SHIP=on` liefert Claude selbst aus:** Nach Punkt 1 und 2 im selben Turn den PR vom
+   Feature-Branch auf den Default-Branch anlegen (PR-Vorlage des Repos beachten), die CI abwarten
+   (PR-Aktivität abonnieren statt Polling, wo verfügbar) und bei grüner CI und konfliktfreiem PR
+   mergen, mit der im Repo üblichen Methode (an der Historie des Default-Branchs ablesbar, im
+   Zweifel Squash); danach den Feature-Branch auf den neuen Stand bringen. Merge-Konflikt:
+   Default-Branch in den Feature-Branch mergen, Konflikt lösen, Tests erneut laufen lassen, wieder
+   warten. Bei roter CI die Ursache suchen und beheben (ein Code-Fix zählt wie BROKEN: zurück zu
+   `phase6_implement`) oder, wenn nicht aus diesem Änderungssatz behebbar, das Problem in
+   Alltagssprache melden. Hat das Repo keine CI-Checks, wird auf Basis der grünen lokalen
+   Testsuite aus Phase 7 gemergt. Schutzregeln (Pflicht-Reviews, Branch-Protection) werden nie
+   umgangen, nie `--force`, rote CI nie überbrücken; verhindert eine Schutzregel den Merge, lautet
+   die Meldung „wartet auf Prüfung durch einen Techniker“. Auch ohne Zugang zu Remote oder GitHub:
+   in Alltagssprache melden, nie ein Git-Auftrag an den PO.
+   **Bei `AUTO_SHIP=off`** gilt unverändert:
    **Merge und PR — Git-Policy des Projekts sticht:** Steht in der `CLAUDE.md` des Projekts
    (oder in der Memory), dass Claude Git und Auslieferung selbst erledigt (Formulierungen wie
    „Git entscheidet Claude selbst“, „bis `main` ausliefern“, „PO will mit Git nichts zu tun haben“),
@@ -349,8 +372,22 @@ durch die kurze Ankündigung, dass du den Code jetzt festschreibst. Es gibt in d
 nichts, was der User beurteilen könnte — eine Rückfrage wäre inhaltsleer.
 
 **Ausnahme im Auto-Modus (`AUTONOMY=auto`, siehe Prüfung oben):** Committe und pushe den
-Feature-Branch im selben Turn und ersetze die letzte Zeile durch das Ergebnis (Commit-Hash,
-gepushter Branch) plus den Block:
+Feature-Branch im selben Turn und ersetze die letzte Zeile durch das Ergebnis plus den Block —
+keine Commit-Frage.
+
+Bei `AUTO_SHIP=on` (Claude hat ausgeliefert, siehe Punkt 3):
+
+```
+**Ergebnis:** <PR-Link> · gemergt ja/nein · <Merge-Commit>   (sonst in Alltagssprache, warum nicht)
+**Automatisch freigegeben:**
+- <Gate> · <Zeit> · <Grund>     (je Zeile aus `workflow.py approvals --auto`)
+**Offen beim PO:** [fachliche Abnahme][, Deploy]   (nie Merge, PR, CI oder Vorspulen)
+```
+
+Die ❗Du-Zeile nennt nie einen Git-Schritt (PR, Merge, Push, Branch, Commit); ist für den PO
+nichts zu tun, gilt die vorgeschriebene ℹ️-Variante bzw. der nächste fachliche Schritt.
+
+Bei `AUTO_SHIP=off` (Ergebnis: Commit-Hash, gepushter Branch):
 
 ```
 **Automatisch freigegeben:**
@@ -358,7 +395,7 @@ gepushter Branch) plus den Block:
 **Offen beim PO:** Merge / PR[, Deploy]   (Bei Git-Policy des Projekts, siehe Punkt 3: NIE Merge, PR, CI oder Vorspulen nennen — Claude hat ausgeliefert; die Zeile nennt dann nur fachliche Abnahme oder Deploy, die ❗Du-Zeile nie einen Git-Schritt.)
 ```
 
-Die ❗Du-Zeile nennt den nächsten PO-Schritt (Merge/PR prüfen) — keine Commit-Frage.
+Ohne Git-Policy nennt die ❗Du-Zeile hier den nächsten PO-Schritt (Merge bzw. PR).
 
 ## On Failure
 
