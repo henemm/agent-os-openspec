@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.5.4] - 2026-11-05
+
+Der Auto-Modus von `/60-validate` liefert in Projekten mit Git-Policy selbst bis zum Default-Branch aus. Migration: keine.
+
+### Changed
+
+- **`/60-validate` Auto-Modus, Git-Policy:** Punkt 3 hieß bisher „Merge, PR und Deploy bleiben beim PO“, und die Abschlussvorlage nannte „Offen beim PO: Merge / PR“. Steht in der `CLAUDE.md` des Projekts, dass Claude Git und Auslieferung selbst erledigt (z. B. „bis main ausliefern“), sticht das: PR anlegen, CI abwarten und nach der Projektregel ausliefern macht Claude im selben Turn, und die Abschlussmeldung nennt nie Git-Schritte als Aufgabe des PO. Deploy bleibt beim PO; ohne Policy bleibt alles wie bisher; nie `--force`, nie Schutzregeln umgehen.
+
 ## [4.5.3] - 2026-11-04
 
 Die Gates greifen jetzt auch in Cloud-Sitzungen (Claude Code on the web) dieses Repos (#520); lokal mit installiertem Plugin läuft nichts doppelt. Plugin-Konsumenten folgen in #522. Migration: keine.
