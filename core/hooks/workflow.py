@@ -999,6 +999,25 @@ def autonomy_mode() -> str:
     return "manual"
 
 
+def auto_ship_enabled() -> bool:
+    """Liefert Claude im Auto-Modus selbst aus (PR → CI → Merge)? (#525).
+
+    True nur bei `autonomy_mode() == "auto"` UND wenn `autonomy.ship` in
+    `trusted_config()` nicht ausdruecklich `False` ist. Nur ein echtes `False`
+    schaltet ab; fehlender Schluessel, andere Werte (auch String "false") und
+    eine unlesbare Config lassen den Schalter im Auto-Modus an. Nie
+    `settings.local.json`. Wirft nie.
+    """
+    try:
+        if autonomy_mode() != "auto":
+            return False
+        cfg = trusted_config()
+        section = cfg.get("autonomy") if isinstance(cfg, dict) else None
+        return not (isinstance(section, dict) and section.get("ship") is False)
+    except Exception:
+        return False
+
+
 def record_approval(data: dict, gate: str, by: str, reason: str,
                     evidence=None) -> dict:
     """Freigabe an `data["approvals"]` anhaengen und den Eintrag zurueckgeben (#469).
@@ -3448,6 +3467,21 @@ def cmd_autonomy(args: list[str]) -> None:
         pass
 
 
+def cmd_auto_ship(args: list[str]) -> None:
+    """Auskunft, kein Gate: genau eine Zeile `AUTO_SHIP=on|off`, Exit immer 0 (#525).
+
+    Bewusst ohne aktiven Workflow, Vorbild `cmd_autonomy`.
+    """
+    try:
+        state = "on" if auto_ship_enabled() else "off"
+    except Exception:
+        state = "off"
+    try:
+        print(f"AUTO_SHIP={state}")
+    except Exception:
+        pass
+
+
 def cmd_autoclear(args: list[str]) -> None:
     """Auskunft, kein Gate: genau eine Zeile `AUTO_CLEAR=on|off`, Exit immer 0 (#489).
 
@@ -3800,6 +3834,7 @@ COMMANDS = {
     "observable-surface": cmd_observable_surface,
     "autonomy": cmd_autonomy,
     "autoclear": cmd_autoclear,
+    "auto-ship": cmd_auto_ship,
     "auto-approve": cmd_auto_approve,
     "auto-green": cmd_auto_green,
     "retro": cmd_retro,
