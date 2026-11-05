@@ -114,7 +114,7 @@ workflow: [workflow-name]
 
 Vor dem Speichern MUSS verifiziert werden:
 
-1. **Keine Platzhalter** - Kein `[TODO]`, `[TBD]`, `FIXME` darf verbleiben
+1. **Keine Platzhalter** - Kein `[TODO]`, `[TBD]`, `FIXME` darf verbleiben. Die Prüfung ist rein textuell und case-insensitive: auch zitierte Zeilen zählen (etwa ein Testkommentar mit TODO und Doppelpunkt in einem AC). Die Liste ist `workflow.PLACEHOLDER_MARKERS`; dieselbe Prüfung läuft bei der Freigabe und im CI-Spec-Gate
 2. **Purpose ist klar** - Spezifisch und verstaendlich, nicht generisch
 3. **Alle Dependencies gelistet** - Vollstaendig, nicht "wird spaeter ergaenzt"
 4. **Approval Checkbox** - Muss `[ ]` (unchecked) sein
