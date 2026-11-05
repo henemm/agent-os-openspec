@@ -102,7 +102,16 @@ def _write_spec(tmp_path: Path, rel_spec: str, adr_section: str | None) -> None:
     """
     spec_path = tmp_path / rel_spec
     spec_path.parent.mkdir(parents=True, exist_ok=True)
-    body = "# Test Spec\n\n## Purpose\n\nBeliebiger Inhalt.\n\n"
+    # CI-vollstaendig (#521): die Freigabe prueft Pflicht-Sektionen wie das
+    # CI-Gate; hier entscheidet weiterhin nur die ADR-Sektion.
+    body = (
+        "# Test Spec\n\n## Purpose\n\nBeliebiger Inhalt.\n\n"
+        "## Scope\n\n- Eine Datei im Modul.\n\n"
+        "## Definition of Done\n\n- Fertig, wenn X sichtbar ist.\n\n"
+        "## Acceptance Criteria\n\n"
+        "- **AC-1:** Given ein Nutzer / When er klickt / Then passiert etwas Sichtbares.\n\n"
+        "## Test Plan\n\n- pytest tests/\n\n"
+    )
     if adr_section is not None:
         body += adr_section
     spec_path.write_text(body)

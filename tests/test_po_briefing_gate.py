@@ -39,9 +39,11 @@ REL_BRIEFING = "docs/briefings/po-wf.md"
 SPEC_BODY = (
     "# Test Spec\n\n"
     "## Purpose\n\nEin Feature, das etwas tut.\n\n"
+    "## Scope\n\n- Eine Datei im Modul.\n\n"
     "## Definition of Done\n\n- Fertig, wenn X sichtbar ist.\n\n"
     "## Acceptance Criteria\n\n"
-    "- **AC-1:** Given ein Nutzer / When er klickt / Then passiert etwas Sichtbares.\n"
+    "- **AC-1:** Given ein Nutzer / When er klickt / Then passiert etwas Sichtbares.\n\n"
+    "## Test Plan\n\n- pytest tests/\n"
 )
 
 BRIEFING_COMPLETE = (

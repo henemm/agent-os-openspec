@@ -28,6 +28,7 @@ REL_BRIEFING = "docs/briefings/fix-405.md"
 SPEC_BODY = (
     "# Spec fix-405\n\n"
     "## Purpose\n\nRuecksprung nimmt die Freigabe mit zurueck.\n\n"
+    "## Scope\n\n- Eine Datei im Modul.\n\n"
     "## Definition of Done\n\n- Fertig, wenn erneutes approved wirkt.\n\n"
     "## Acceptance Criteria\n\n"
     "- **AC-1:** Given ein Ruecksprung / When approved / Then Phase 4.\n\n"
