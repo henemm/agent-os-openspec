@@ -279,10 +279,18 @@ Bei `AUTONOMY=auto` (nach Step 4, also mit `phase8_complete`):
    Nie `main`, `master` oder den Default-Branch pushen (auch kein detached `HEAD`), nie
    `--force`: steht der Checkout darauf, wird nur committet und der PO in der Abschlussmeldung
    darauf hingewiesen. Schlägt der Push fehl, melden statt umgehen.
-3. **Merge, PR und Deploy bleiben beim PO.** Der Auto-Modus löst nie ein Deploy aus —
+3. **Deploy bleibt beim PO.** Der Auto-Modus löst nie ein Deploy aus —
    `deploy.autonomous` (siehe „Autonomen Weiterlauf prüfen" oben) ist eine eigene, getrennte
    Entscheidung des Projekts und wird von `AUTONOMY=auto` weder gesetzt noch ersetzt. Kein
-   `/70-deploy`, kein Merge, kein PR aus dem Auto-Modus heraus.
+   `/70-deploy` aus dem Auto-Modus heraus.
+   **Merge und PR — Git-Policy des Projekts sticht:** Steht in der `CLAUDE.md` des Projekts
+   (oder in der Memory), dass Claude Git und Auslieferung selbst erledigt (Formulierungen wie
+   „Git entscheidet Claude selbst“, „bis `main` ausliefern“, „PO will mit Git nichts zu tun haben“),
+   dann ist das bindend: Du legst den PR an, wartest die CI ab und lieferst nach den dort
+   beschriebenen Regeln (z. B. Vorspulen) selbst auf den Default-Branch aus, im selben Turn, und
+   meldest nur das Ergebnis. Das Verbot aus Punkt 2 (nie `main` pushen) gilt dann nur so weit,
+   wie die Projektregel den Weg nicht ausdrücklich vorgibt; nie `--force`, nie Schutzregeln
+   umgehen, rote CI nie überbrücken. Ohne solche Policy bleiben Merge und PR beim PO.
 4. **Automatische Freigaben auflisten** — für die Abschlussmeldung:
 
    ```bash
@@ -332,7 +340,7 @@ gepushter Branch) plus den Block:
 ```
 **Automatisch freigegeben:**
 - <Gate> · <Zeit> · <Grund>     (je Zeile aus `workflow.py approvals --auto`)
-**Offen beim PO:** Merge / PR[, Deploy]
+**Offen beim PO:** Merge / PR[, Deploy]   (Bei Git-Policy des Projekts, siehe Punkt 3: NIE Merge, PR, CI oder Vorspulen nennen — Claude hat ausgeliefert; die Zeile nennt dann nur fachliche Abnahme oder Deploy, die ❗Du-Zeile nie einen Git-Schritt.)
 ```
 
 Die ❗Du-Zeile nennt den nächsten PO-Schritt (Merge/PR prüfen) — keine Commit-Frage.

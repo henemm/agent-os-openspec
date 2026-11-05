@@ -294,10 +294,18 @@ Bei `AUTONOMY=auto` (nach Step 4, also mit `phase8_complete`):
    Nie `main`, `master` oder den Default-Branch pushen (auch kein detached `HEAD`), nie
    `--force`: steht der Checkout darauf, wird nur committet und der PO in der Abschlussmeldung
    darauf hingewiesen. Schlägt der Push fehl, melden statt umgehen.
-3. **Merge, PR und Deploy bleiben beim PO.** Der Auto-Modus löst nie ein Deploy aus —
+3. **Deploy bleibt beim PO.** Der Auto-Modus löst nie ein Deploy aus —
    `deploy.autonomous` (siehe „Autonomen Weiterlauf prüfen" oben) ist eine eigene, getrennte
    Entscheidung des Projekts und wird von `AUTONOMY=auto` weder gesetzt noch ersetzt. Kein
-   `/70-deploy`, kein Merge, kein PR aus dem Auto-Modus heraus.
+   `/70-deploy` aus dem Auto-Modus heraus.
+   **Merge und PR — Git-Policy des Projekts sticht:** Steht in der `CLAUDE.md` des Projekts
+   (oder in der Memory), dass Claude Git und Auslieferung selbst erledigt (Formulierungen wie
+   „Git entscheidet Claude selbst“, „bis `main` ausliefern“, „PO will mit Git nichts zu tun haben“),
+   dann ist das bindend: Du legst den PR an, wartest die CI ab und lieferst nach den dort
+   beschriebenen Regeln (z. B. Vorspulen) selbst auf den Default-Branch aus, im selben Turn, und
+   meldest nur das Ergebnis. Das Verbot aus Punkt 2 (nie `main` pushen) gilt dann nur so weit,
+   wie die Projektregel den Weg nicht ausdrücklich vorgibt; nie `--force`, nie Schutzregeln
+   umgehen, rote CI nie überbrücken. Ohne solche Policy bleiben Merge und PR beim PO.
 4. **Automatische Freigaben auflisten** — für die Abschlussmeldung:
 
    ```bash
@@ -347,7 +355,7 @@ gepushter Branch) plus den Block:
 ```
 **Automatisch freigegeben:**
 - <Gate> · <Zeit> · <Grund>     (je Zeile aus `workflow.py approvals --auto`)
-**Offen beim PO:** Merge / PR[, Deploy]
+**Offen beim PO:** Merge / PR[, Deploy]   (Bei Git-Policy des Projekts, siehe Punkt 3: NIE Merge, PR, CI oder Vorspulen nennen — Claude hat ausgeliefert; die Zeile nennt dann nur fachliche Abnahme oder Deploy, die ❗Du-Zeile nie einen Git-Schritt.)
 ```
 
 Die ❗Du-Zeile nennt den nächsten PO-Schritt (Merge/PR prüfen) — keine Commit-Frage.
@@ -365,7 +373,7 @@ Beende deine letzte Nachricht in diesem Befehl mit diesen Zeilen, in dieser Reih
 
 ❗ Du: `/<befehl> #<N>` — <ein Halbsatz, warum>
 ℹ️ Status: Workflow `<name>` · Phase `<x>` von 8
-⚙ /60-validate · agent-os-openspec 4.5.3
+⚙ /60-validate · agent-os-openspec 4.5.4
 
 Die erste Zeile sagt, wer am Zug ist — GENAU EINMAL, nur hier in der Fußzeile, nie zusätzlich als Vokabular mitten im Fließtext davor — und steht in genau einer von zwei Formen: `❗ Du: …`, wenn der PO den Schritt tippen oder eine Entscheidung treffen muss (bei Dringendem `‼️` statt `❗`). Das gilt AUCH, wenn du selbst gerade nichts mehr zu tun hast und nur auf den nächsten Befehl des PO wartest — das ist niemals „nichts zu tun“. Oder `ℹ️ Nichts zu tun: <du arbeitest gerade selbst / wartest auf ein Ergebnis, z. B. einen Hintergrund-Agenten> — danach: /<befehl> #<N>`, ausschließlich wenn du auf etwas ANDERES als den PO wartest. So muss der PO nie raten, ob etwas von ihm erwartet wird.
 
