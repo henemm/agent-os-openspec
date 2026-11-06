@@ -230,6 +230,8 @@ Vorher `python3 .claude/hooks/workflow.py autoclear` ausführen (#489): Bei `AUT
 `40-tdd-red` NICHT selbst aufrufen, sondern die Antwort mit dem Checkpoint-Block unten und der
 ❗Du-Zeile `/40-tdd-red #<N>` beenden — Herdr tippt `/clear` und den Folgebefehl. Bei `AUTO_CLEAR=off`: unverändert.
 
+Vor dem Selbstaufruf zusätzlich `python3 .claude/hooks/workflow.py context` ausführen (Kontext-Haushalt): Bei `CONTEXT_CUT=on` (Kontext über der Schwelle aus `context_budget`, Default 100.000 Token) den Skill `40-tdd-red` NICHT selbst aufrufen, sondern die Antwort mit dem Checkpoint und der ❗Du-Zeile `/40-tdd-red #<N>` beenden — der Stand liegt auf der Platte, der PO (oder Herdr) tippt `/clear`. Ein Schritt mit 200k Token Kontext kostet etwa das Fünffache eines Schritts mit 40k. Bei `CONTEXT_CUT=off` oder `CONTEXT_TOKENS=unknown`: unverändert.
+
 Nach der Freigabe kannst du dem User zusätzlich den Kontext-Reset anbieten:
 
 ### Checkpoint prüfen (Anweisung an dich — nicht ausgeben)

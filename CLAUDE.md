@@ -279,6 +279,16 @@ Einmal-Bypass fuer Gates:
 - Oeffnet NICHT den Spec-Freeze (#439): nach der Freigabe sind nur bewegliche Spec-Teile (Frontmatter, `- Test:`-Zeilen, Known Limitations, Implementation Details, Test Plan, Changelog, Approval) aenderbar; Freigegebenes nur per Ruecksprung nach `phase3_spec`
 - Keywords konfigurierbar via `openspec.yaml` → `override_token`
 
+## Kontext-Haushalt (Token)
+
+Etwa 70–75 % des Wiederlesens entstehen in Schritten mit über 100.000 Token Kontext; ein Schritt mit 200k kostet rund das Fünffache eines Schritts mit 40k. Fünf Regeln, die Hooks und Befehle stützen:
+
+1. **Früh schneiden (Schwelle 100k, nicht 200k):** `post_bash.py` misst die Kontextgröße aus dem Transcript (`.claude/context_usage/<session>.json`) und weist ab `context_budget.clear_threshold_tokens` darauf hin (einmal je Stufe, danach je 50k). `workflow.py context` meldet `CONTEXT_TOKENS=` und `CONTEXT_CUT=on|off`; bei `on` rufen die Phasen-Befehle den Folge-Skill nicht mehr selbst auf, sondern beenden den Turn mit Checkpoint und ❗Du-Zeile — Stand auf der Platte (Workflow-State, Commit, Issue), `/clear` gefahrlos. Auskunft, kein Gate; Kill-Switch `context_budget.enabled: false`.
+2. **Nachschlagen abgeben:** „Wo wird X benutzt?“ geht an einen Explore-Teilagenten (Haiku), der nur die Antwort zurückgibt (`templates/agent_orchestration.md`, Nachschlage-Agent).
+3. **Befehle bündeln:** `workflow.py batch a -- b -- c` führt mehrere Workflow-Aufrufe in einem Schritt aus (Stopp beim ersten Fehler, dessen Exit-Code); `scripts/ship.py` erledigt pushen, PR anlegen, CI abwarten und optional mergen in einem Aufruf.
+4. **Gezielt lesen:** Zeilenbereiche und gezielte Suchen statt ganzer Dateien; mehrere `grep`/`sed -n` zur selben Frage in einen Aufruf.
+5. **Steuerungs-Overhead klein halten:** Statusabfragen nur, wenn die Antwort eine Entscheidung ändert; Zustandsänderungen per `batch` statt als Einzelaufrufe.
+
 ## Hook-Architektur (4 Kern-Gates + ergänzende Guards)
 
 Registrierung zentral in `hooks/hooks.json` (Plugin-Modus) bzw. `.claude/settings.json` (Copy-Modus). Reihenfolge innerhalb eines Events entspricht der Listen-Reihenfolge in `hooks.json`.
@@ -447,6 +457,7 @@ python3 /path/to/agent-os-openspec/setup.py --version
 | `core/agents/fresh-eyes-inspector.md` | Unabhaengiger UI-Beobachter ohne Bug-Kontext |
 | `core/agents/po-briefer.md` | Unabhaengiges PO-Freigabe-Briefing (Spec vs. Ursprungsanfrage) |
 | `scripts/ci_spec_gate.py` | CI-Gate: prueft Spec + Briefing serverseitig im Pull Request |
+| `scripts/ship.py` | Eigenstaendiges Werkzeug, KEIN Hook: pushen, PR anlegen, CI abwarten, optional mergen in EINEM Aufruf (Kontext-Haushalt); `setup.py` kopiert es nach `.claude/scripts/` |
 
 ## Slash-Commands Übersicht
 

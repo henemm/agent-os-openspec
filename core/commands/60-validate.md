@@ -302,6 +302,16 @@ Bei `AUTONOMY=auto` (nach Step 4, also mit `phase8_complete`):
    Nie `main`, `master` oder den Default-Branch pushen (auch kein detached `HEAD`), nie
    `--force`. Nur bei `AUTO_SHIP=off` gilt: steht der Checkout darauf, wird nur committet und der
    PO in der Abschlussmeldung darauf hingewiesen. Schlägt der Push fehl, melden statt umgehen.
+   **Ein Aufruf statt vieler (Kontext-Haushalt):** `python3 .claude/scripts/ship.py` erledigt Punkt 3
+   und Punkt 5 in einem Schritt: Branch prüfen (nie Default-Branch, nie detached `HEAD`; mit
+   `--branch <workflow-name>` legt es den Feature-Branch aus Punkt 2 an, bei Namenskonflikt mit
+   Suffix `-2`, `-3` …), `git push -u origin <feature-branch>`, PR anlegen oder den offenen PR
+   wiederverwenden, CI abwarten und bei `AUTO_SHIP=on` mit `--merge squash` (bzw. der im Repo
+   üblichen Methode) mergen. Zurück kommen nur wenige Zeilen `BRANCH=… PR=… CI=green|red|none
+   MERGED=yes|no|skipped`; bei `CI=red` nennt `FAILED_CHECKS=` die roten Checks — dann gilt Punkt 5
+   (Ursache beheben oder in Alltagssprache melden). Die Regeln dieses Abschnitts (nie `--force`,
+   nie Schutzregeln umgehen, rote CI nie überbrücken) gelten im Skript genauso; bei `AUTO_SHIP=off`
+   ohne `--merge` aufrufen.
 4. **Deploy bleibt beim PO.** Der Auto-Modus löst nie ein Deploy aus —
    `deploy.autonomous` (siehe „Autonomen Weiterlauf prüfen" oben) ist eine eigene, getrennte
    Entscheidung des Projekts und wird von `AUTONOMY=auto` weder gesetzt noch ersetzt. Kein

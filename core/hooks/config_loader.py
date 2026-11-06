@@ -47,6 +47,7 @@ PLUGIN_CONFIG_KEYS = frozenset({
     "scope_guard", "spec_validation", "bash_gate", "e2e_scope", "claude_md",
     "protected_paths", "always_allowed", "home_assistant", "ios_swiftui",
     "bug_fix", "e2e_tests", "output_specs", "qa_gate", "herdr", "autonomy",
+    "context_budget",
 })
 
 # Namen, die auch eine App-Config plausibel verwendet — allein qualifizieren

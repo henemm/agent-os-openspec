@@ -60,6 +60,8 @@ docs/artifacts/feat-285/*
 # Schleifenschutz des Footer-Gates (Issue #234) — merkt sich die zuletzt
 # korrigierte Turn-Kennung. Reiner Laufzeit-Zustand wie stop_lock.json.
 .claude/footer_gate_state.json
+# Kontext-Messung je Sitzung (post_bash.py, `workflow.py context`) — Laufzeit-Zustand.
+.claude/context_usage/
 
 # Herdr-/Titel-Laufzeitdateien (#490, #492, #496)
 .claude/issue_titles.json

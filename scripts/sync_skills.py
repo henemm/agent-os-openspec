@@ -14,7 +14,8 @@ Transformationen (Befehl → Skill):
      fuer Plugin-Installationen) vor die erste `## `-Ueberschrift.
   3. `python3 .claude/hooks/workflow.py` → `$WF`,
      `python3 .claude/hooks/<x>.py` → `python3 ${_H}/<x>.py`,
-     sonstige `.claude/hooks/` → `${_H}/`.
+     sonstige `.claude/hooks/` → `${_H}/`, `.claude/scripts/` → `${_S}/`
+     (Plugin: `<root>/scripts`, Kopiermodus: `.claude/scripts`).
   4. `{{OPENSPEC_VERSION}}` → Version aus .claude-plugin/plugin.json.
   5. Versions-Marker anhaengen: jede Phase endet mit `⚙ /<befehl> ·
      agent-os-openspec <version>`. Ohne ihn sieht der PO am Ergebnis nicht,
@@ -56,6 +57,7 @@ SETUP_BLOCK = (
     '[ -n "$_p" ] && [ -d "$_p/core/hooks" ] && _H="$_p/core/hooks"; fi\n'
     '_H="${_H:-.claude/hooks}"\n'
     'WF="python3 ${_H}/workflow.py"\n'
+    '_S="${_H%/core/hooks}/scripts"; [ "$_H" = ".claude/hooks" ] && _S=".claude/scripts"\n'
     "```\n"
     "\n"
 )
@@ -63,6 +65,7 @@ SETUP_BLOCK = (
 DEFAULT_FRONTMATTER = {"description": "", "disable-model-invocation": "false"}
 
 _HOOK_PATH = ".claude/hooks/"
+_SCRIPT_PATH = ".claude/scripts/"   # eigenstaendige Werkzeuge (ship.py, ci_spec_gate.py)
 
 # 30-write-spec gibt die Freigabe woertlich als Briefing plus eigene
 # Marker-Zeile aus ("keine eigene Zusammenfassung davor oder danach"). Ein
@@ -142,7 +145,8 @@ def extract_frontmatter(skill_text: str) -> "str | None":
 def rewrite_hook_paths(body: str) -> str:
     body = body.replace("python3 .claude/hooks/workflow.py", "$WF")
     body = re.sub(r"python3 \.claude/hooks/([\w.-]+\.py)", r"python3 ${_H}/\1", body)
-    return body.replace(_HOOK_PATH, "${_H}/")
+    body = body.replace(_HOOK_PATH, "${_H}/")
+    return body.replace(_SCRIPT_PATH, "${_S}/")
 
 
 def insert_setup_block(body: str) -> str:

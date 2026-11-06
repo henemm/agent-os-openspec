@@ -17,6 +17,8 @@ Exit Codes: 0 always (never blocks)
 """
 
 from hook_utils import setup_path, find_project_root, get_tool_result, get_active_workflow_name, framework_disabled, strip_ansi, read_state_json, UnsafeStateError
+from hook_utils import (context_budget_settings, context_tokens_from_transcript, read_context_usage,
+                        record_context_usage, context_bucket, context_cut_note)
 setup_path()
 
 import json
@@ -145,6 +147,42 @@ def _record_test_run(result: str, runner: str) -> None:
             pass  # #416: bei Verweis still, nicht zurueckschreiben
 
 
+def _track_context(payload: dict) -> None:
+    """Kontextgroesse messen, ab der Schwelle einmal je Stufe hinweisen (Kontext-Haushalt).
+
+    Liest das Transcript (`transcript_path`), merkt den Wert je Sitzung unter
+    `.claude/context_usage/<session_id>.json` und gibt beim Erreichen der
+    Schwelle (`context_budget.clear_threshold_tokens`, Default 100k; danach je
+    50k erneut) `additionalContext` fuer Claude aus. Beobachtung, kein Gate:
+    fail-open, jeder Fehler ist still, Exit bleibt 0.
+    """
+    try:
+        settings = context_budget_settings()
+        if not settings["enabled"]:
+            return
+        session_id = payload.get("session_id")
+        transcript = payload.get("transcript_path")
+        if not session_id or not transcript:
+            return
+        tokens = context_tokens_from_transcript(transcript)
+        if tokens is None:
+            return
+        previous = read_context_usage(str(session_id), _root, fallback_newest=False) or {}
+        last_bucket = previous.get("announced_bucket", 0)
+        last_bucket = last_bucket if type(last_bucket) is int else 0
+        bucket = context_bucket(tokens, settings["threshold"])
+        if bucket > last_bucket:
+            record_context_usage(str(session_id), tokens, _root, announced_bucket=bucket)
+            print(json.dumps({"hookSpecificOutput": {
+                "hookEventName": "PostToolUse",
+                "additionalContext": context_cut_note(tokens, settings["threshold"]),
+            }}, ensure_ascii=False))
+        else:
+            record_context_usage(str(session_id), tokens, _root)
+    except Exception:
+        pass
+
+
 def main():
     # Testlauf-Erkennung gehoert zum Workflow; ohne ihn gibt es keine Phase,
     # in die ein Test-Ergebnis gemeldet werden koennte (#132).
@@ -158,6 +196,7 @@ def main():
         sys.exit(0)
 
     _detect_test_output(command, _extract_stdout(payload))
+    _track_context(payload)
 
     sys.exit(0)
 

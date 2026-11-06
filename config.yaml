@@ -319,6 +319,19 @@ ci_spec_gate:
 session_banner:
   behind_check: true
 
+# Kontext-Haushalt: Ein Schritt mit 200k Token Kontext kostet etwa das Fuenffache
+# eines Schritts mit 40k; 70-75 % des Wiederlesens entstehen oberhalb von 100k.
+# post_bash.py misst die Kontextgroesse aus dem Transcript und weist Claude ab
+# der Schwelle (einmal je Stufe: Schwelle, danach je 50k) darauf hin, den
+# laufenden Block abzuschliessen und den Turn mit Checkpoint + Du-Zeile zu
+# beenden. `workflow.py context` meldet dann CONTEXT_CUT=on, und die Phasen-
+# Befehle rufen den Folge-Skill im Auto-Modus nicht mehr selbst auf — der PO
+# (oder Herdr) tippt /clear. Messung je Sitzung in .claude/context_usage/.
+# Auskunft, kein Gate. Nur das Literal false schaltet ab.
+context_budget:
+  enabled: true
+  clear_threshold_tokens: 100000
+
 # Herdr-Sidebar (#466): Laeuft Claude in einem Herdr-Pane (HERDR_ENV=1), meldet
 # core/hooks/herdr_bridge.py den Workflow-Stand display-only per
 # `herdr pane report-metadata` (Tokens workflow, issue, phase, step, next).

@@ -3624,6 +3624,80 @@ def _auto_approve_decision() -> "tuple[str, str, list]":
             exceeded or [])
 
 
+def cmd_context(args: list[str]) -> None:
+    """Auskunft, kein Gate: `CONTEXT_TOKENS=<n|unknown>` und `CONTEXT_CUT=on|off`, Exit immer 0.
+
+    Quelle ist die Messung von `post_bash.py` unter
+    `.claude/context_usage/<session_id>.json` (Sitzung aus `CLAUDE_CODE_SESSION_ID`,
+    sonst die juengste Messung). `on` nur bei eingeschaltetem `context_budget` und
+    Messung >= `clear_threshold_tokens` (Default 100000). Bewusst ohne aktiven
+    Workflow (Vorbild `autonomy`): die Phasen-Befehle rufen bei `on` den
+    Folge-Skill nicht mehr selbst auf, sondern beenden den Turn mit Checkpoint und
+    Du-Zeile, damit `/clear` den Kontext schneidet.
+    """
+    tokens, cut = None, "off"
+    try:
+        from hook_utils import context_budget_settings, read_context_usage
+        settings = context_budget_settings()
+        usage = read_context_usage(None, find_project_root())
+        if isinstance(usage, dict) and type(usage.get("tokens")) is int:
+            tokens = usage["tokens"]
+        if settings["enabled"] and tokens is not None and tokens >= settings["threshold"]:
+            cut = "on"
+    except Exception:
+        cut = "off"
+    try:
+        print(f"CONTEXT_TOKENS={tokens if tokens is not None else 'unknown'}")
+        print(f"CONTEXT_CUT={cut}")
+    except Exception:
+        pass
+
+
+def _split_batch(args: list[str]) -> list[list[str]]:
+    groups: list[list[str]] = [[]]
+    for arg in args:
+        if arg == "--":
+            groups.append([])
+        else:
+            groups[-1].append(arg)
+    return [g for g in groups if g]
+
+
+def cmd_batch(args: list[str]) -> None:
+    """Mehrere Unterbefehle in EINEM Aufruf, getrennt durch `--` (Kontext-Haushalt).
+
+        workflow.py batch add-artifact test_output logs/t.log "3 failed" phase5_tdd_red \
+                          -- mark-red "3 failed" -- status
+
+    Jeder Schritt laeuft wie ein eigener Aufruf (gleicher State, gleiche Gates), nur
+    ohne den Tool-Roundtrip dazwischen. Vor jedem Schritt eine Kopfzeile
+    `# batch i/n: <befehl>`. Der erste Schritt mit Exit != 0 beendet den Lauf mit
+    genau diesem Exit-Code; die restlichen Schritte laufen nicht. `batch` in
+    `batch` ist nicht erlaubt.
+    """
+    groups = _split_batch(args)
+    if not groups:
+        print("Usage: workflow.py batch <cmd> [args] -- <cmd> [args] ...", file=sys.stderr)
+        sys.exit(1)
+    total = len(groups)
+    for index, group in enumerate(groups, 1):
+        sub = group[0]
+        if sub == "batch" or sub not in COMMANDS:
+            print(f"BATCH: Schritt {index}/{total}: unbekannter Befehl {sub!r}", file=sys.stderr)
+            sys.exit(1)
+        print(f"# batch {index}/{total}: {' '.join(group)}")
+        sys.stdout.flush()
+        try:
+            COMMANDS[sub](group[1:])
+        except SystemExit as exc:
+            code = exc.code if isinstance(exc.code, int) else (0 if exc.code is None else 1)
+            if code != 0:
+                print(f"BATCH: Schritt {index}/{total} `{sub}` endete mit Exit {code}; "
+                      f"{total - index} Schritt(e) nicht ausgefuehrt", file=sys.stderr)
+                sys.exit(code)
+        sys.stdout.flush()
+
+
 def cmd_auto_approve(args: list[str]) -> None:
     """Automatische Spec-Freigabe im Auto-Modus (#470).
 
@@ -3842,6 +3916,8 @@ COMMANDS = {
     "auto-ship": cmd_auto_ship,
     "auto-approve": cmd_auto_approve,
     "auto-green": cmd_auto_green,
+    "context": cmd_context,
+    "batch": cmd_batch,
     "retro": cmd_retro,
     "cleanup-stale-locks": cmd_cleanup_stale_locks,
 }

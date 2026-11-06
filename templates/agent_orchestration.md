@@ -90,6 +90,19 @@
 
 ## Dispatching-Muster
 
+### Nachschlage-Agent (1x Explore/Haiku) — Kontext-Haushalt
+
+Fuer jede Frage, deren Antwort kurz ist, deren Suche aber viele Dateien beruehrt
+("Wo wird X benutzt?", "Welche Tests decken Y ab?", "Wie heisst der Config-Key fuer Z?"):
+
+```
+Task(subagent_type="Explore", model="haiku", prompt="Antworte nur mit Datei:Zeile und einem Satz: ...")
+```
+
+Der Teilagent liest mit eigenem, kleinem Kontext; im Hauptkontext landet nur die
+Antwort. Ohne Teilagent zahlt jeder spaetere Schritt das Wiederlesen aller dabei
+geoeffneten Dateien erneut — ab 100k Token Kontext das Mehrfache eines kleinen Schritts.
+
 ### Parallel Explore (3x Haiku)
 
 Fuer schnelle Kontextsammlung. Ideal fuer Analyse-Phasen.
