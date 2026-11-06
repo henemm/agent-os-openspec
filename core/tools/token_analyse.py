@@ -46,7 +46,7 @@ K_PROBIEREN = "Probieren und Messen (Wegwerf-Skripte)"
 K_LESEN_CODE = "Lesen: Code und Sonstiges"
 K_LESEN_DOKU = "Lesen: Specs, ADRs, Doku, Nachweise"
 K_LESEN_TESTS = "Lesen: Tests"
-_DOKU = re.compile(r"docs/(specs|adr|artifacts|context)|openspec/|\.md\b")
+_DOKU = re.compile(r"docs/(specs|adr|artifacts|context)|(^|[\s/'\"])openspec/|\.md\b")
 _TEST = re.compile(r"/tests/|test_")
 
 
