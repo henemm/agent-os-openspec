@@ -454,13 +454,18 @@ class TestScopeOfCheck:
 
     def test_later_phase_transition_not_blocked(self, tmp_path):
         """AC-10: Workflow in phase6_implement mit Platzhalter in der Spec →
-        `phase phase7_validate` wird von der Spec-Pruefung nicht blockiert."""
+        ein spaeterer Phasenwechsel wird von der Spec-Pruefung nicht blockiert.
+
+        Ziel ist `phase6b_adversary` statt `phase7_validate`: seit
+        fix-schritte-ueberspringen verlangt Phase 7 den Adversary-Nachweis, der
+        hier nichts zur Sache tut. Die Spec-Pruefung (ab phase4) liegt auf beiden
+        Wegen gleich."""
         proj = _project(tmp_path, SPEC_PLACEHOLDER)
         _write_state(proj, current_phase="phase6_implement", spec_approved=True,
                      red_test_done=True)
-        res = _cli(["phase", "phase7_validate"], proj)
+        res = _cli(["phase", "phase6b_adversary"], proj)
         assert res.returncode == 0, f"stdout={res.stdout!r} stderr={res.stderr!r}"
-        assert _state(proj)["current_phase"] == "phase7_validate"
+        assert _state(proj)["current_phase"] == "phase6b_adversary"
 
 
 # --- AC-9: ADR-Befund nicht doppelt -----------------------------------------

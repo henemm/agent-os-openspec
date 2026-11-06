@@ -103,6 +103,10 @@ ist (`/50-implement` Step 8).
 binden — `adversary_dialog.py required-files` listet genau diese Aenderungsmenge. Eine nicht zitierte
 Code-Datei (etwa aus einem Fix nach dem Dialog) blockt Phase 8 ebenso wie eine geaenderte zitierte.
 
+**Schon beim Wechsel nach Phase 7:** `workflow.py phase phase7_validate` prueft Verdict, registriertes
+und gestempeltes Artefakt und Abdeckung bereits beim Eintritt in diese Phase, nicht erst bei Phase 8
+oder beim Commit. Ergibt die Validierung BROKEN, bleibt der Ruecksprung `phase phase6_implement` frei.
+
 ## Your Tasks
 
 ### Step 1: Parallele Validierung (4x Haiku)
