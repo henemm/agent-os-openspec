@@ -1,7 +1,7 @@
 ---
 spec_file: docs/specs/fix-528-ship-default-branch.md
-spec_sha256: e72d66e4c152fa0c890f384efd49b433c872e3d27ae062d86cabfd9758f2763b
-spec_frozen_sha256: 55f77f54322b60e127b3399e71cd65ae469cdaa7a77b6bc325aa5b55554bfa87
+spec_sha256: f71dff50690528e1e464f06032480759e535df47a04a3c9c0dcb80cd93f9a2f7
+spec_frozen_sha256: cf6f54349468f7f3c351a43f40f4581fee6e14ffd64a8d73a76a1a7134891595
 ---
 
 # PO-Briefing: fix-528-ship-default-branch
@@ -12,20 +12,20 @@ spec_frozen_sha256: 55f77f54322b60e127b3399e71cd65ae469cdaa7a77b6bc325aa5b55554b
 
 ## Was gebaut wird
 
-Claude liefert im Auto-Modus auch dann selbständig aus, wenn die Arbeit direkt auf dem Hauptzweig liegt.
+Claude liefert auch vom Hauptzweig aus selbst aus: eigener Zweig, Pull-Request, Prüfung, Merge – ohne Git-Aufgabe für den PO.
 
 ## Definition of Done
 
-Bei Selbst-Ausliefern auf dem Hauptzweig legt Claude einen eigenen Arbeitszweig an und liefert aus, ohne dem PO einen Git-Schritt zu nennen.
+Bei automatischem Ausliefern auf dem Hauptzweig beschreibt die Anleitung einen eigenen Zweig vor dem Commit, nie eine Git-Aufgabe für den PO.
 
 ## Wie geprüft wird
 
-Automatische Textprüfungen belegen jede Anforderung in der Anleitung; das tatsächliche Verhalten im Lauf wird nicht getestet.
+Automatische Texttests belegen jede Anforderung in der Anleitung; ob Claude sie im echten Lauf befolgt, wird nicht geprüft.
 
 ## Kritische Anmerkungen
 
-- Zusatz: Auch "master" und losgelöster Stand lösen den neuen Arbeitszweig aus; das ist sinngemäss von der Anfrage gedeckt.
-- Früher lokal auf dem Hauptzweig gespeicherte Änderungen landen im neuen Pull Request; der lokale Hauptzweig weicht danach ab.
+- Schon vorhandene lokale Commits auf dem Hauptzweig landen im neuen Zweig und damit im Pull-Request.
+- Der lokale Hauptzweig läuft nach dem Merge vom Remote auseinander; er wird bewusst nicht zurückgesetzt.
 
 ## Freigabe-Frage
 

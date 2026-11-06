@@ -40,7 +40,7 @@ Seit #525 liefert Claude im Auto-Modus bei `AUTO_SHIP=on` selbst aus (PR, CI, Me
 
 | File | Change Type | Description |
 |------|-------------|-------------|
-| core/commands/60-validate.md | MODIFY | Auto-Modus-Liste neu geordnet: `auto-ship` prüfen, Committen (bei on auf Default-Branch/detached `HEAD`: vorher Feature-Branch anlegen), Pushen, Ausliefern, Deploy, Freigaben auflisten |
+| core/commands/60-validate.md | MODIFY | Auto-Modus-Liste neu geordnet: `auto-ship` prüfen, Committen (bei on auf Default-Branch/detached `HEAD`: vorher Feature-Branch anlegen), Pushen, Deploy, Ausliefern, Freigaben auflisten |
 | skills/60-validate/SKILL.md | MODIFY | generiert per `python3 scripts/sync_skills.py` |
 | tests/test_auto_ship_525.py | MODIFY | `_on_windows` endet am off-Marker statt nach 4000 Zeichen; Testnamen und Aussagen bleiben |
 | tests/test_ship_default_branch_528.py | CREATE | Command-Text-Tests zu allen AC |
@@ -59,11 +59,11 @@ Seit #525 liefert Claude im Auto-Modus bei `AUTO_SHIP=on` selbst aus (PR, CI, Me
 1. **`auto-ship` prüfen** als eigener erster Punkt: Aufruf `python3 .claude/hooks/workflow.py auto-ship`, nur die ausdrücklich gelesene Zeile `AUTO_SHIP=on` schaltet um, sonst `off`, Schalter `autonomy.ship: false` dokumentiert. Inhaltlich unverändert aus #525, nur aus dem Deploy-Punkt herausgelöst.
 2. **Committen ohne Rückfrage** (bisher Punkt 1). Neu bei `AUTO_SHIP=on`: Steht der Checkout auf `main`, `master`, dem Default-Branch des Remotes (`git symbolic-ref --short refs/remotes/origin/HEAD`) oder einem detached `HEAD`, wird VOR dem Commit ein Feature-Branch mit dem Workflow-Namen angelegt (`git switch -c <workflow-name>`). Existiert der Name schon, wird `-2`, `-3` und so weiter angehängt. Der lokale Default-Branch wird nie zurückgesetzt (kein `reset`, kein `--force`). Bei `AUTO_SHIP=off` gilt der bisherige Text unverändert.
 3. **Den Feature-Branch pushen** (bisher Punkt 2). Das Verbot, `main`, `master` oder den Default-Branch zu pushen, bleibt. Der Satz „nur committet und der PO in der Abschlussmeldung darauf hingewiesen“ gilt ausdrücklich nur für `AUTO_SHIP=off`.
-4. **Ausliefern** als eigener Punkt: der bisherige on-Text aus #525 im Wortlaut (PR, CI, Merge, rote CI, Schutzregeln, kein Git-Auftrag an den PO), danach der off-Fall (`**Bei \`AUTO_SHIP=off\`**`, Git-Policy des Projekts, 4.5.4) im Wortlaut. Die Abschlussmeldung bei `on` nennt dem PO keinen Git-Schritt, auch nicht für den neu angelegten Branch.
-5. **Deploy bleibt beim PO** als eigener Punkt mit nur dem Deploy-Satz (`deploy.autonomous` getrennt, kein `/70-deploy` aus dem Auto-Modus). Kein Ausliefer- oder `auto-ship`-Text mehr darin.
+4. **Deploy bleibt beim PO** als eigener Punkt mit nur dem Deploy-Satz (`deploy.autonomous` getrennt, kein `/70-deploy` aus dem Auto-Modus). Kein Ausliefer- oder `auto-ship`-Text mehr darin.
+5. **Ausliefern** als eigener Punkt: der bisherige on-Text aus #525 im Wortlaut (PR, CI, Merge, rote CI, Schutzregeln, kein Git-Auftrag an den PO), danach der off-Fall (`**Bei \`AUTO_SHIP=off\`**`, Git-Policy des Projekts, 4.5.4) im Wortlaut. Die Abschlussmeldung bei `on` nennt dem PO keinen Git-Schritt, auch nicht für den neu angelegten Branch.
 6. **Automatische Freigaben auflisten** (unverändert).
 
-Der Verweis „siehe Punkt 3“ in der Abschlussvorlage wird auf die neue Nummer des Ausliefer-Punkts angepasst. Die Fenster-Tests aus #472/#489 bleiben grün, weil der Deploy-Satz im Wortlaut erhalten bleibt.
+Der Verweis „siehe Punkt 3“ in der Abschlussvorlage wird auf die neue Nummer des Ausliefer-Punkts angepasst. Deploy steht vor dem Ausliefern, damit der Deploy-Satz im 4000-Zeichen-Fenster der Tests aus #472/#489 bleibt (on- und off-Text bleiben im Wortlaut und sind zusammen lang); inhaltlich ist die Reihenfolge gleichwertig, weil der Auto-Modus ohnehin nie deployt.
 
 **`tests/test_auto_ship_525.py`**: `_on_windows` schneidet jedes Fenster ab `AUTO_SHIP=on` am nächsten off-Marker (`**Bei \`AUTO_SHIP=off\`**`) ab, falls dahinter, und nutzt sonst weiter die Breite. Damit werden AC-9/AC-10 nur vom on-Absatz erfüllt (Fund F002).
 
@@ -146,3 +146,4 @@ Automatische Tests (jeweils an eine AC oben gebunden):
 ## Changelog
 
 - 2026-11-06: Initial spec created
+- 2026-11-06: Reihenfolge Deploy vor Ausliefern (Deploy-Satz bleibt im Fenster des #472-Tests, Befund aus TDD-RED)
