@@ -44,3 +44,42 @@ Der PO berichtet, dass Claude in Sessions wiederholt Workflow-Schritte überspri
 - Alias-Umbau trifft jedes Konsumenten-Projekt beim nächsten `--refresh-aliases`/Banner-Refresh; Inline-Bash im Alias braucht `allowed-tools`, sonst bricht der Befehl im Default-Permission-Modus ab.
 - Gate in Phase 7: bestehende Workflows, die in phase6b stehen, brauchen ab jetzt den Nachweis vor Phase 7 (gewollt; Migration dokumentieren). Fast Track bleibt unverändert.
 - Footer-Meldung: fail-open muss bleiben; zusätzliche Daten (Phase) dürfen keinen neuen Ausnahmepfad öffnen.
+
+## Analysis
+
+### Type
+Bugfix (drei Lücken im Gate-/Befehlssystem, die Schritte überspringbar machen)
+
+### Affected Files (with changes)
+| File | Change Type | Description |
+|------|-------------|-------------|
+| core/hooks/alias_sync.py | MODIFY | `alias_content()`: Text-Redirect bekommt `allowed-tools`-Frontmatter, Erklärungssatz und einen ```! -Block mit EINZEILIGEM `python3 -c`-Aufruf: Plugin installiert → keine Ausgabe; sonst `skills/<name>/SKILL.md` unter Projekt-Root ausgeben (Root: env `CLAUDE_PROJECT_DIR`, dann cwd, dann substituiertes Argument) plus `CLAUDE_PLUGIN_ROOT`-Hinweis, wenn `<root>/core/hooks` existiert; sonst Stopp-Text „BEFEHLSTEXT FEHLT“ |
+| .claude/commands/*.md (11 Redirects) | MODIFY | regeneriert aus `alias_content` (`tests/test_repo_own_aliases_147.py` erzwingt Gleichheit) |
+| core/hooks/workflow.py | MODIFY | `_validate_transition`: Verdict + `check_dialog_evidence` (+Abdeckung) ab `phase7_validate` statt erst `phase8_complete`; `_evidence_reason` (#447) bleibt Phase 8 |
+| core/hooks/footer_gate.py | MODIFY | `_expected_command` liefert (Befehl, Phase); Blockmeldung nennt Workflow, Phase (`PHASE_NAMES`) und den Grund „diese Phase verlässt nur `<Befehl>`“ |
+| core/commands/50-implement.md, core/commands/60-validate.md | MODIFY | Gate-Wirkung: Nachweis schon beim Wechsel nach Phase 7; Hinweis auf BROKEN-Rücksprung |
+| skills/50-implement/SKILL.md, skills/60-validate/SKILL.md | MODIFY | regeneriert (`scripts/sync_skills.py`) |
+| CLAUDE.md, README.md | MODIFY | Hook-Beschreibung (Phase 7 statt 8), Alias-Fallback ohne Plugin |
+| CHANGELOG.md | MODIFY | Eintrag unter [Unreleased] mit Migrationshinweis |
+| tests/test_fix_schritte_ueberspringen.py | CREATE | RED-Tests für alle AC |
+| tests/test_effort_budget_250b.py, tests/test_spec_content_gate_521.py, tests/test_red_marker_phase_gate_f004.py, tests/test_autoclear_transition_497.py | MODIFY | Setzen heute `phase7_validate` ohne Verdict → gestempeltes Dialog-Fixture oder Ziel `phase6b_adversary` |
+
+### Scope Assessment
+- Files: 3 Quelldateien, 1 neue Testdatei, 4 angepasste Tests, 13 generierte Dateien, 5 Doku-Dateien
+- Estimated LoC: +~60 Produktion (alias_sync +35, workflow ~12 verschoben, footer_gate ~10), +~250 Test
+- Risk Level: HIGH (Gate-Code und Alias-Erzeugung treffen alle Konsumenten-Projekte)
+
+### Technical Approach
+Unabhängige Bewertung (Plan-Agent, gegen den Code geprüft):
+- **B (Phase-7-Gate) zuerst, reine Logik:** `_verify_examined_file_hashes` hasht den Arbeitsbaum (adversary_dialog.py:664ff), `phase8_code_files` diffiert Basis..Arbeitsbaum plus untracked (:1335ff). Der Wechsel nach Phase 7 vor dem Commit (50-implement.md:326) besteht also, wenn der Dialog nach der letzten Änderung gestempelt wurde — heute schon so getestet in test_adversary_coverage_gate_259.py:254-270 und test_adversary_evidence_gate_253.py:395-414. Nur `cmd_phase` und `complete` rufen `_validate_transition`; kein Hook schreibt Phase 7 programmatisch. BROKEN-Rücksprung phase6b→phase6 ist rückwärts (workflow.py:1832) und bleibt frei. Fast Track unverändert.
+- **C (Footer-Grund), trivial:** kein Test prüft den Meldungstext wörtlich (test_footer_gate_234.py prüft nur Substrings beider Befehle). Freitext-Schritte liefern weiterhin None (fail-open).
+- **A (Alias-Fallback), riskantester Teil:** Bash-Permission-Regeln sind Präfix-Treffer, die an Shell-Operatoren enden → Befehl muss EINE Zeile `python3 -c '…' <args>` ohne `&&`/`;`/`|` sein (wie SETUP_BLOCK in sync_skills.py:52-56). `${CLAUDE_PROJECT_DIR}`-Substitution im ```! -Block ist dokumentiert, aber ohne Präzedenz im Repo → Root zuerst aus env/cwd, Substitution nur als Rückfall. Keine Zeile der Laufzeitausgabe darf mit `⚙ ` beginnen (`_VERSION_PREFIX`), sonst würde `alias_version` die Datei nicht mehr als Redirect lesen — betrifft aber nur Dateitext, nicht stdout. Befund gegen den Plan: `allowed-tools: Bash(python3 -c *)` genehmigt während des Befehls jedes `python3 -c` vor — hinnehmen und als Known Limitation dokumentieren (eine exakt-Präfix-Regel mit eingebettetem Code ist YAML-fragil).
+- Reihenfolge: B → C → A.
+
+### Dependencies
+- `adversary_dialog.check_dialog_evidence`, `phase8_code_files`, `coverage_gate_enabled` (geteilt mit bash_gate 5c)
+- `workflow.next_step`, `PHASE_NAMES`, `expected_footer_command` (footer_gate)
+- `alias_sync` ← `setup.py`, `session_banner.py`; `tests/test_repo_own_aliases_147.py` bindet die committeten Aliase an `alias_content`
+
+### Open Questions
+- [ ] Keine, die den PO vor der Freigabe brauchen. Entscheidung „Bash(python3 -c *) hinnehmen“ steht als Known Limitation in der Spec.
