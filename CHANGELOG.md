@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.6.0] - 2026-11-06
+
+Im Auto-Modus liefert Claude jetzt selbst aus: PR anlegen, CI abwarten, mergen — der PO bekommt nie einen Git-Auftrag (#525, #528, #530). Die Spec-Prüfung des CI-Gates läuft schon bei der lokalen Freigabe (#521). Migration: Specs unter `docs/specs/` ohne Pflicht-Sektionen werden jetzt schon bei der Freigabe abgelehnt (#521); im Auto-Modus mergt Claude selbst, abschaltbar mit `autonomy.ship: false` (#525).
+
 ### Changed
 
 - **#525 (Auto-Modus: Claude erstellt PR, wartet auf CI und mergt):** Im Auto-Modus (`autonomy.mode: auto`) blieben Merge und PR seit 4.5.4 beim PO, sofern die Projekt-`CLAUDE.md` keine Git-Policy enthielt; die Abschlussmeldung endete mit „❗ Du: PR … erstellen lassen oder selbst mergen“. Neu: `workflow.py auto-ship` liefert genau eine Zeile `AUTO_SHIP=on|off` (Exit immer 0, kein Workflow nötig); `on` nur bei `AUTONOMY=auto` und wenn `autonomy.ship` in der Projekt-`config.yaml` nicht ausdrücklich `false` ist (gelesen nur über `trusted_config()`, nie `settings.local.json`; fail-closed über `autonomy_mode`). `/60-validate` prüft den Schalter nach Commit und Push: Bei `AUTO_SHIP=on` legt Claude den PR an, wartet die CI ab und mergt bei grüner CI mit der im Repo üblichen Methode (im Zweifel Squash); rote CI wird behoben oder in Alltagssprache gemeldet, ohne CI-Checks gilt die lokale Testsuite aus Phase 7; nie `--force`, nie Schutzregeln umgehen, blockiert eine Schutzregel, heißt es „wartet auf Prüfung durch einen Techniker“. Die Abschlussvorlage nennt dann PR-Link, gemergt ja/nein und Merge-Commit; die ❗Du-Zeile nennt nie einen Git-Schritt. Bei `AUTO_SHIP=off` bleibt der 4.5.4-Text (Git-Policy der Projekt-`CLAUDE.md`) unverändert. Deploy bleibt getrennt (`deploy.autonomous`). **Migration:** Im Auto-Modus mergt Claude jetzt selbst auf den Default-Branch; wer das nicht will, setzt `autonomy.ship: false` in der Projekt-`config.yaml`. Tests: `tests/test_auto_ship_525.py`.
