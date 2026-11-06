@@ -218,8 +218,8 @@ phase6_implement → User-Freigabe ("go") → phase6b_adversary → Dialog → V
 
 ### Hooks
 - `post_bash.py` erkennt Test-Framework-Output und vermerkt ihn nur als Hinweis `last_test_run` — es setzt kein Verdict (#253)
-- `bash_gate.py` (bei `git commit`) und der Uebergang nach Phase 8 akzeptieren VERIFIED (bzw. AMBIGUOUS+Override) nur mit gueltigem, gestempeltem Dialog-Artefakt (`adversary_dialog.check_dialog_evidence`)
-- Abdeckungsprüfung (#259): der Hash-Block muss jede Code-Datei der Änderungsmenge binden — beim Commit der entstehende Commit (teilweise gestagt blockt), in Phase 8 alles seit `base_commit` bzw. `merge-base(origin/main, HEAD)`; `adversary_dialog.py required-files` listet sie, Kill-Switch `adversary_coverage_gate.enabled`
+- `bash_gate.py` (bei `git commit`) und die Uebergaenge nach Phase 7 (`workflow.py phase phase7_validate`) und Phase 8 akzeptieren VERIFIED (bzw. AMBIGUOUS+Override) nur mit gueltigem, gestempeltem Dialog-Artefakt (`adversary_dialog.check_dialog_evidence`)
+- Abdeckungsprüfung (#259): der Hash-Block muss jede Code-Datei der Änderungsmenge binden — beim Commit der entstehende Commit (teilweise gestagt blockt), beim Wechsel nach Phase 7 und in Phase 8 alles seit `base_commit` bzw. `merge-base(origin/main, HEAD)`; `adversary_dialog.py required-files` listet sie, Kill-Switch `adversary_coverage_gate.enabled`
 - `qa_gate.py` validiert Test-Output + optional Adversary-Dialog-Checklist (`--checklist`)
 
 ### Fresh Eyes Inspector
@@ -405,7 +405,7 @@ python3 /path/to/agent-os-openspec/setup.py /path/to/project --update --force
 python3 /path/to/agent-os-openspec/setup.py /path/to/project --module ios-swiftui
 
 # Kurze Slash-Command-Aliase generieren (z.B. /50-implement statt /agent-os-openspec:50-implement)
-python3 /path/to/agent-os-openspec/setup.py /path/to/project --command-aliases   # empfohlen: pro Projekt
+python3 /path/to/agent-os-openspec/setup.py /path/to/project --command-aliases   # empfohlen: pro Projekt; Redirect-Aliase liefern ohne geladenes Plugin (Cloud-Sitzung) den Befehlstext aus skills/<name>/SKILL.md selbst nach oder stoppen mit BEFEHLSTEXT FEHLT
 # Global (~) NUR falls kein Projekt eine eigene Version von 40-tdd-red/50-implement/
 # 60-validate/70-deploy/80-workflow/81-add-artifact/99-reset pflegt — sonst shadowed
 # der globale Alias die Projekt-Datei (Issue #87, Claude-Code-Scope-Präzedenz-Bug)

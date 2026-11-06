@@ -1859,7 +1859,10 @@ def _validate_transition(data: dict, target: str) -> str | None:
                 and not data.get("ui_test_red_done")):
             return "No RED test artifacts — run /tdd-red first"
 
-    if tgt_idx >= PHASES.index("phase8_complete"):
+    # Phase 7 war der einzige Vorwaertswechsel ohne eigene Pruefung: Verdict und
+    # Dialog-Nachweis griffen erst bei Phase 8, das Commit-Gate fing es spaet.
+    # Deshalb gilt die Pruefung schon beim Wechsel nach phase7_validate.
+    if tgt_idx >= PHASES.index("phase7_validate"):
         verdict = str(data.get("adversary_verdict", "") or "")
         if verdict.startswith("VERIFIED"):
             pass
@@ -1885,6 +1888,8 @@ def _validate_transition(data: dict, target: str) -> str | None:
             reason = f"Nachweis-Prüfung nicht verfügbar ({type(exc).__name__}: {exc})"
         if reason:
             return f"Adversary verdict ohne gültigen Dialog-Nachweis — {reason}"
+
+    if tgt_idx >= PHASES.index("phase8_complete"):
         # #447: Evidence-Gate (opt-in) erst nach bestandenem Dialog-Check.
         return _evidence_reason(target, data)
 

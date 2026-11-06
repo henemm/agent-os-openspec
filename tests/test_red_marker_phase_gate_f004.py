@@ -136,16 +136,19 @@ def test_ui_red_marker_alone_allows_phase6(tmp_path):
     assert _phase_on_disk(project) == "phase6_implement"
 
 
-def test_ui_red_marker_alone_allows_phase7(tmp_path):
-    """(b) Der RED-Check haengt an `tgt_idx >= phase6` — auch ein Sprung nach
-    phase7_validate laeuft durch ihn hindurch und darf nicht blockieren."""
+def test_ui_red_marker_alone_allows_phase6b(tmp_path):
+    """(b) Der RED-Check haengt an `tgt_idx >= phase6` — auch ein Sprung hinter
+    phase6 (nach phase6b_adversary) laeuft durch ihn hindurch und darf nicht
+    blockieren. Frueher war das Ziel phase7_validate; seit
+    fix-schritte-ueberspringen verlangt Phase 7 zusaetzlich den
+    Adversary-Nachweis, der mit dem RED-Check nichts zu tun hat."""
     project = _project(tmp_path, ui_test_red_done=True)
-    result = _run_phase(project, "phase7_validate")
+    result = _run_phase(project, "phase6b_adversary")
     assert result.returncode == 0, (
-        "Erwartet: Durchlass nach phase7_validate mit ui_test_red_done.\n"
+        "Erwartet: Durchlass nach phase6b_adversary mit ui_test_red_done.\n"
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
-    assert _phase_on_disk(project) == "phase7_validate"
+    assert _phase_on_disk(project) == "phase6b_adversary"
 
 
 # --- Regressions-Guards: die bisherigen Wege bleiben offen ----------------

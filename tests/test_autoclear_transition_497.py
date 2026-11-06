@@ -85,6 +85,8 @@ BOUNDARIES = [
     ("phase1_context", "phase2_analyse", _PRE_APPROVAL, "/20-analyse"),
     ("phase2_analyse", "phase3_spec", _PRE_APPROVAL, "/30-write-spec"),
     ("phase5_tdd_red", "phase6_implement", _POST_APPROVAL, "/50-implement"),
+    # Phase 7 verlangt seit fix-schritte-ueberspringen den Adversary-Nachweis;
+    # _case legt dafuer einen gestempelten Dialog an (_adversary_evidence).
     ("phase6b_adversary", "phase7_validate", _POST_APPROVAL, "/60-validate"),
 ]
 
@@ -125,7 +127,12 @@ def _case(tmp_path: Path, label: str, phase: str, *, config: "str | None" = CFG_
     root = tmp_path / label
     root.mkdir(parents=True)
     proj = _project(root, phase, config=config, **fields)
-    return proj, _env(proj, root, herdr=herdr), root
+    env = _env(proj, root, herdr=herdr)
+    if phase == "phase6b_adversary":
+        # Seit fix-schritte-ueberspringen verlangt der Wechsel nach Phase 7 den
+        # Adversary-Nachweis; fuer Rueckspruenge ist er unschaedlich.
+        _adversary_evidence(proj, env)
+    return proj, env, root
 
 
 def _wf(proj: Path, env: dict, *args: str) -> subprocess.CompletedProcess:
@@ -163,6 +170,32 @@ def _approval_project(root: Path, config: str = AUTO_ON) -> "tuple[Path, dict]":
     res = _wf(proj, env, "set-briefing", REL_BRIEFING)
     assert res.returncode == 0, f"set-briefing: {res.stdout!r} {res.stderr!r}"
     return proj, env
+
+
+def _adversary_evidence(proj: Path, env: dict) -> None:
+    """Gestempelter, registrierter Dialog + VERIFIED: seit fix-schritte-ueberspringen
+    Voraussetzung fuer den Wechsel nach phase7_validate (Vorbild: test_adversary_evidence_gate_253)."""
+    (proj / "src").mkdir(exist_ok=True)
+    (proj / "src" / "checked_module.py").write_text("VALUE = 1\n")
+    rel = f"docs/artifacts/{WF}/adversary-dialog.md"
+    art = proj / rel
+    art.parent.mkdir(parents=True, exist_ok=True)
+    art.write_text(
+        f"# Adversary Dialog — {WF}\n\n## Checkliste\n"
+        "- [x] AC-1: Vermerk entsteht — Beweis: Testlauf\n"
+        "  Code reference: src/checked_module.py:1\n\n## Dialog\n\n"
+        "### Runde 1\n**Adversary:** A1\n**Implementierer:** B1\n\n"
+        "### Runde 2\n**Adversary:** A2\n**Implementierer:** B2\n\nVERDICT: VERIFIED\n")
+    stamp = subprocess.run([sys.executable, str(WORKFLOW.parent / "adversary_dialog.py"),
+                            "stamp", str(art)], capture_output=True, text=True, env=env,
+                           cwd=str(proj), timeout=60)
+    assert stamp.returncode == 0, stamp.stdout + stamp.stderr
+    data = _state(proj)
+    data["adversary_verdict"] = "VERIFIED:Tests PASSED: 5 passed"
+    data["test_artifacts"] = [{"type": "adversary_dialog", "path": rel,
+                               "description": "dialog", "phase": "phase6b_adversary",
+                               "created": "2026-11-06T10:00:00"}]
+    (proj / ".claude" / "workflows" / f"{WF}.json").write_text(json.dumps(data))
 
 
 # --- AC-1 -------------------------------------------------------------------

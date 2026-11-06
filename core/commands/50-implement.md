@@ -282,6 +282,10 @@ Standardpfad oben. Ein gruener Testlauf aktualisiert nur `last_test_run` — er 
 oeffnet keinen Commit. Aendert ein spaeterer Fix (auch ein Auto-Fix in `/60-validate`) eine zitierte
 Datei, braucht es einen neuen Dialog.
 
+**Schon beim Wechsel nach Phase 7:** `workflow.py phase phase7_validate` prueft dasselbe — Verdict,
+registriertes und gestempeltes Artifact, Abdeckung (#259) — nicht erst Phase 8 oder der Commit. Fehlt
+etwas, blockt der Wechsel mit `BLOCKED`. Der BROKEN-Ruecksprung `phase phase6_implement` bleibt frei.
+
 **Aufsetzen auf main nach dem VERIFIED (#289):** `stamp` haelt zusaetzlich einen `## Prüfbasis`-Block
 fest (merge-base mit `origin/main`, der gepruefte Stand je Datei als Git-Blob). Aendert main eine
 gebundene Datei, gilt der Nachweis nach Rebase/Merge weiter, solange der 3-Wege-Merge (gepruefte

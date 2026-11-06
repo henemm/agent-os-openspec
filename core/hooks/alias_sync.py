@@ -8,6 +8,11 @@ bekommen dabei den KOMPLETTEN SKILL.md-Inhalt eingebettet (ein Text-Redirect
 scheitert dort am Skill-Tool-Gate). Diese Vollkopien veralten bei jedem
 Plugin-Update still — genau das erkennt `find_stale_aliases`.
 
+Die uebrigen Skills bekommen einen Text-Redirect. Ohne geladenes Plugin
+(Cloud-Sitzungen) liefe er ins Leere; deshalb traegt er einen einzeiligen
+Inline-Bash-Block, der dann die lokale `skills/<name>/SKILL.md` ausgibt oder
+hoerbar mit `BEFEHLSTEXT FEHLT` stoppt (fix-schritte-ueberspringen).
+
 Bewusst in core/hooks/: `setup.py` (Erzeugen) und `session_banner.py`
 (Erkennen) importieren beide diese Funktionen, damit Soll-Inhalt und
 Veraltet-Pruefung nie auseinanderlaufen.
@@ -64,6 +69,10 @@ def alias_content(name: str, skill_text: str) -> str:
     Der Marker steht direkt hinter dem Frontmatter (#251): stuende er davor,
     waere das Frontmatter nicht parsbar und die Befehlsauswahl zeigte den
     Marker statt der Beschreibung (#238).
+
+    Redirect: `allowed-tools: Bash(python3 -c *)` genehmigt den Inline-Block
+    vor; der Block ist still, wenn das Plugin installiert ist, gibt sonst die
+    lokale SKILL.md aus (oder den Stopp-Text `BEFEHLSTEXT FEHLT`).
     """
     if embeds_full_skill(skill_text):
         lines = skill_text.split("\n")
@@ -74,11 +83,66 @@ def alias_content(name: str, skill_text: str) -> str:
     return (
         "---\n"
         f"description: Kurz-Alias für /agent-os-openspec:{name}\n"
+        "allowed-tools: Bash(python3 -c *)\n"
         "---\n"
         f"{ALIAS_MARKER}\n"
         "\n"
         f"/agent-os-openspec:{name} $ARGUMENTS\n"
+        "\n"
+        f"{_FALLBACK_NOTE}\n"
+        "\n"
+        "```!\n"
+        f"{_fallback_command(name)}\n"
+        "```\n"
     )
+
+
+# Redirect-Fallback ohne Plugin (Cloud-Sitzungen laden keine Plugins): der
+# Inline-Bash-Block laeuft vor dem Senden an Claude und ersetzt sich durch seine
+# Ausgabe. EINE Zeile ohne `&&`, `;` oder `|`, weil Bash-Permission-Regeln
+# Praefix-Treffer sind, die an Shell-Operatoren enden (wie SETUP_BLOCK in
+# scripts/sync_skills.py). Exit immer 0; keine Ausgabezeile beginnt mit `⚙ `.
+_FALLBACK_NOTE = (
+    "Ist das Plugin agent-os-openspec geladen, gilt die Weiterleitung oben und der "
+    "Block unten gibt nichts aus. Steht unten der Befehlstext, arbeite danach. "
+    "Steht unten BEFEHLSTEXT FEHLT, beginne die Phase nicht und informiere den PO. "
+    "Erscheint der Codeblock unten wörtlich statt seiner Ausgabe, führe ihn per Bash aus."
+)
+
+_FALLBACK_SOURCE = "\n".join([
+    "import json, os, sys",
+    "n = sys.argv[1]",
+    "try:",
+    "    d = json.load(open(os.path.expanduser(\"~/.claude/plugins/installed_plugins.json\")))",
+    "    ok = any(str(k).startswith(\"agent-os-openspec@\") for k in (d.get(\"plugins\") or {}))",
+    "except Exception:",
+    "    ok = False",
+    "c = [os.environ.get(\"CLAUDE_PROJECT_DIR\") or \"\", os.getcwd()]",
+    "c += [a for a in sys.argv[2:] if a and not a.startswith(\"${\")]",
+    "s = lambda x: os.path.join(x, \"skills\", n, \"SKILL.md\")",
+    "r = next((x for x in c if x and os.path.isfile(s(x))), None)",
+    "if ok:",
+    "    pass",
+    "elif r:",
+    "    print(\"Plugin agent-os-openspec ist in dieser Sitzung nicht geladen — "
+    "der folgende Befehlstext gilt.\")",
+    "    if os.path.isdir(os.path.join(r, \"core\", \"hooks\")):",
+    "        print(\"export CLAUDE_PLUGIN_ROOT=\" + r)",
+    "    for line in open(s(r), encoding=\"utf-8\").read().splitlines():",
+    "        v = line.startswith(\"\\u2699 \")",
+    "        print((\"Versionsmarker (als letzte Zeile ausgeben): \" + line) if v else line)",
+    "else:",
+    "    print(\"BEFEHLSTEXT FEHLT: Plugin agent-os-openspec ist nicht geladen und unter \""
+    " + s(c[0] or c[1]) + \" liegt keine Kopie. Beginne die Phase NICHT und rate nicht — "
+    "informiere den PO, dass der Befehlstext in dieser Sitzung fehlt.\")",
+])
+
+
+def _fallback_command(name: str) -> str:
+    """Einzeiler `python3 -c 'exec("...")' <name> "${CLAUDE_PROJECT_DIR}"`."""
+    literal = (_FALLBACK_SOURCE.replace("\\", "\\\\").replace("\"", "\\\"")
+               .replace("\n", "\\n"))
+    return f"python3 -c 'exec(\"{literal}\")' {name} \"${{CLAUDE_PROJECT_DIR}}\""
 
 
 def is_alias_file(text: str) -> bool:

@@ -25,7 +25,7 @@ setup_path()
 
 from hook_utils import adopt_payload_cwd, block, find_project_root, framework_disabled, resolve_active_workflow  # noqa: E402
 from hook_utils import atomic_write_json, read_state_json, UnsafeStateError  # noqa: E402
-from workflow import expected_footer_command  # noqa: E402
+from workflow import PHASE_NAMES, expected_footer_command  # noqa: E402
 
 # Marker-Zeile: „❗ Du: ..." bzw. „‼️ Du: ..." (Variation Selector optional).
 DU_LINE_RE = re.compile(r"^\s*(?:❗|‼)️?\s*Du\s*:")
@@ -153,25 +153,39 @@ def _footer_commands(message: str) -> list:
     return SLASH_CMD_RE.findall(marker)
 
 
-def _expected_command(name: str) -> "str | None":
-    """Erwarteter Slash-Befehl aus dem Workflow-State, oder None (fail-open)."""
+def _expected_command(name: str) -> "tuple[str | None, str | None]":
+    """(Erwarteter Slash-Befehl, aktuelle Phase) aus dem State; (None, None) fail-open."""
     try:
         root = find_project_root()
         path = root / ".claude" / "workflows" / f"{name}.json"
         data = read_state_json(path, root)
         if not isinstance(data, dict):
-            return None
+            return None, None
         data.setdefault("name", name)
         expected = expected_footer_command(data)
+        phase = data.get("current_phase")
     except UnsafeStateError as exc:
         # #416: kein Abgleich gegen einen moeglicherweise gefaelschten State.
         print(f"WARNUNG: {exc}", file=sys.stderr)
-        return None
+        return None, None
     except Exception:
-        return None
+        return None, None
     if not isinstance(expected, str) or not expected.startswith("/"):
-        return None
-    return expected.split()[0]
+        return None, None
+    return expected.split()[0], (phase if isinstance(phase, str) else None)
+
+
+def _reason_line(name: str, phase: "str | None", expected: str) -> str:
+    """Grund-Zeile der Blockmeldung: Workflow, Phase, Bezeichnung; leer bei Fehler."""
+    try:
+        if not phase:
+            return ""
+        label = PHASE_NAMES.get(phase) if isinstance(PHASE_NAMES, dict) else None
+        suffix = f" ({label})" if label else ""
+        return (f"Grund: Workflow `{name}` steht in `{phase}`{suffix}; "
+                f"diese Phase verlässt nur `{expected}`.\n")
+    except Exception:
+        return ""
 
 
 def _maybe_auto_clear(payload: dict, message: str, name: str) -> None:
@@ -246,7 +260,7 @@ def main() -> None:
     if not name or source == "none":
         sys.exit(0)
 
-    expected = _expected_command(name)
+    expected, phase = _expected_command(name)
     if not expected or expected in actuals:
         _maybe_auto_clear(payload, message, name)
         sys.exit(0)
@@ -269,6 +283,7 @@ def main() -> None:
     # bisherigen Verhalten.
     block(
         f"FUSSZEILE FALSCH: Fußzeile nennt `{actuals[0]}`, korrekt ist `{expected}`.\n"
+        f"{_reason_line(name, phase, expected)}"
         "Gib die Fußzeile erneut mit dem korrekten Befehl aus."
     )
 

@@ -195,6 +195,37 @@ def test_within_budget_stays_silent(tmp_path):
 # --- AC-5: nie blockieren -------------------------------------------------
 
 
+def _adversary_evidence(project: Path) -> None:
+    """Gueltiger Dialog-Nachweis + VERIFIED (Vorbild: test_adversary_evidence_gate_253)."""
+    examined = project / "src" / "checked_module.py"
+    examined.parent.mkdir(parents=True, exist_ok=True)
+    examined.write_text("VALUE = 1\n")
+    rel = f"docs/artifacts/{WF}/adversary-dialog.md"
+    art = project / rel
+    art.parent.mkdir(parents=True, exist_ok=True)
+    art.write_text(
+        f"# Adversary Dialog — {WF}\n\n## Checkliste\n"
+        "- [x] AC-1: Budget blockt nicht — Beweis: Testlauf\n"
+        "  Code reference: src/checked_module.py:1\n\n## Dialog\n\n"
+        "### Runde 1\n**Adversary:** A1\n**Implementierer:** B1\n\n"
+        "### Runde 2\n**Adversary:** A2\n**Implementierer:** B2\n\nVERDICT: VERIFIED\n")
+    env = _env(project)
+    stamp = subprocess.run([sys.executable, str(HOOKS_DIR / "adversary_dialog.py"), "stamp",
+                            str(art)], capture_output=True, text=True, env=env,
+                           cwd=str(project))
+    assert stamp.returncode == 0, stamp.stdout + stamp.stderr
+    add = _cli(project, ["add-artifact", "adversary_dialog", rel, "dialog", "phase6b_adversary"])
+    assert add.returncode == 0, add.stdout + add.stderr
+    green = project / "docs" / "artifacts" / WF / "test-green-output.txt"
+    green.write_text("collected 5 items\n\ntests/test_x.py .....\n\n"
+                     "============================== 5 passed in 0.12s "
+                     "===============================\n")
+    qa = subprocess.run([sys.executable, str(HOOKS_DIR / "qa_gate.py"), str(green),
+                         "--checklist", str(art)], capture_output=True, text=True, env=env,
+                        cwd=str(project))
+    assert qa.returncode == 0, qa.stdout + qa.stderr
+
+
 def test_budget_never_blocks_a_transition(tmp_path):
     """AC-5: Trotz ueberschrittenem Budget gelingen die Wechsel nach Adversary und Validate."""
     project = _project(tmp_path, BUDGET_CONFIG, {
@@ -210,6 +241,10 @@ def test_budget_never_blocks_a_transition(tmp_path):
     # Gegenprobe: das Budget IST ueberschritten und wird gemeldet — der Wechsel gelingt trotzdem
     assert "RÜCKFRAGE AN DEN PO:" in first.stdout + first.stderr
     assert _state(project)["current_phase"] == "phase6b_adversary"
+    # Seit fix-schritte-ueberspringen verlangt Phase 7 den Adversary-Nachweis.
+    # Er wird auf dem dokumentierten Weg erbracht (stamp → add-artifact → qa_gate),
+    # damit der Test weiter nur eines prueft: das Budget blockt keinen Wechsel.
+    _adversary_evidence(project)
     second = _cli(project, ["phase", "phase7_validate"])
     assert second.returncode == 0, second.stdout + second.stderr
     assert _state(project)["current_phase"] == "phase7_validate"
