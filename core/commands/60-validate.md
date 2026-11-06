@@ -269,21 +269,7 @@ Fehler) gilt als `manual` — dann gilt die Tabelle oben unverändert.
 
 Bei `AUTONOMY=auto` (nach Step 4, also mit `phase8_complete`):
 
-1. **Committen ohne Rückfrage** — unabhängig von `OBSERVABLE_SURFACE`; die Frage „Soll ich den
-   Code committen?" entfällt. Die Commit-Gates (`bash_gate.py`) gelten wie immer.
-2. **Den Feature-Branch pushen** — Branch prüfen mit `git rev-parse --abbrev-ref HEAD` und den
-   Default-Branch des Remotes mit `git symbolic-ref --short refs/remotes/origin/HEAD`
-   (z. B. `origin/main` → `main`). Gepusht wird nur, wenn der aktuelle Branch weder `main` noch
-   `master` noch der Default-Branch des Remotes ist: dann `git push -u origin <feature-branch>`.
-   Schlägt `git symbolic-ref` fehl, wird nicht gepusht und das in der Abschlussmeldung gemeldet.
-   Nie `main`, `master` oder den Default-Branch pushen (auch kein detached `HEAD`), nie
-   `--force`: steht der Checkout darauf, wird nur committet und der PO in der Abschlussmeldung
-   darauf hingewiesen. Schlägt der Push fehl, melden statt umgehen.
-3. **Deploy bleibt beim PO.** Der Auto-Modus löst nie ein Deploy aus —
-   `deploy.autonomous` (siehe „Autonomen Weiterlauf prüfen" oben) ist eine eigene, getrennte
-   Entscheidung des Projekts und wird von `AUTONOMY=auto` weder gesetzt noch ersetzt. Kein
-   `/70-deploy` aus dem Auto-Modus heraus.
-   **Merge und PR — Ausliefern prüfen (#525):**
+1. **`auto-ship` prüfen (#525)** — vor dem Commit, denn davon hängt Punkt 2 ab:
 
    ```bash
    python3 .claude/hooks/workflow.py auto-ship
@@ -292,7 +278,28 @@ Bei `AUTONOMY=auto` (nach Step 4, also mit `phase8_complete`):
    Nur die ausdrücklich gelesene Zeile `AUTO_SHIP=on` schaltet um; jede andere Ausgabe (auch ein
    Fehler) gilt als `AUTO_SHIP=off`. Default im Auto-Modus ist an; abschalten per
    `autonomy.ship: false` in der Projekt-`config.yaml` (`settings.local.json` zählt nicht).
-   **Bei `AUTO_SHIP=on` liefert Claude selbst aus:** Nach Punkt 1 und 2 im selben Turn den PR vom
+2. **Committen ohne Rückfrage** — unabhängig von `OBSERVABLE_SURFACE`; die Frage „Soll ich den
+   Code committen?" entfällt. Die Commit-Gates (`bash_gate.py`) gelten wie immer.
+   Bei `AUTO_SHIP=on`: Steht der Checkout auf `main`, `master`, dem Default-Branch des Remotes
+   (`git symbolic-ref --short refs/remotes/origin/HEAD`) oder einem detached `HEAD`, legst du VOR
+   dem Commit einen Feature-Branch mit dem Workflow-Namen an (`git switch -c <workflow-name>`).
+   Existiert der Name schon, wird `-2`, `-3` und so weiter angehängt. Der lokale Default-Branch
+   wird nie zurückgesetzt (kein `reset`, kein `--force`). Bei `AUTO_SHIP=off` gilt der Text oben
+   unverändert.
+3. **Den Feature-Branch pushen** — Branch prüfen mit `git rev-parse --abbrev-ref HEAD` und den
+   Default-Branch des Remotes mit `git symbolic-ref --short refs/remotes/origin/HEAD`
+   (z. B. `origin/main` → `main`). Gepusht wird nur, wenn der aktuelle Branch weder `main` noch
+   `master` noch der Default-Branch des Remotes ist: dann `git push -u origin <feature-branch>`.
+   Schlägt `git symbolic-ref` fehl, wird nicht gepusht und das in der Abschlussmeldung gemeldet.
+   Nie `main`, `master` oder den Default-Branch pushen (auch kein detached `HEAD`), nie
+   `--force`. Nur bei `AUTO_SHIP=off` gilt: steht der Checkout darauf, wird nur committet und der
+   PO in der Abschlussmeldung darauf hingewiesen. Schlägt der Push fehl, melden statt umgehen.
+4. **Deploy bleibt beim PO.** Der Auto-Modus löst nie ein Deploy aus —
+   `deploy.autonomous` (siehe „Autonomen Weiterlauf prüfen" oben) ist eine eigene, getrennte
+   Entscheidung des Projekts und wird von `AUTONOMY=auto` weder gesetzt noch ersetzt. Kein
+   `/70-deploy` aus dem Auto-Modus heraus.
+5. **Ausliefern (Merge und PR, #525)** —
+   **Bei `AUTO_SHIP=on` liefert Claude selbst aus:** Nach Punkt 2 und 3 im selben Turn den PR vom
    Feature-Branch auf den Default-Branch anlegen (PR-Vorlage des Repos beachten), die CI abwarten
    (PR-Aktivität abonnieren statt Polling, wo verfügbar) und bei grüner CI und konfliktfreiem PR
    mergen, mit der im Repo üblichen Methode (an der Historie des Default-Branchs ablesbar, im
@@ -304,17 +311,18 @@ Bei `AUTONOMY=auto` (nach Step 4, also mit `phase8_complete`):
    Testsuite aus Phase 7 gemergt. Schutzregeln (Pflicht-Reviews, Branch-Protection) werden nie
    umgangen, nie `--force`, rote CI nie überbrücken; verhindert eine Schutzregel den Merge, lautet
    die Meldung „wartet auf Prüfung durch einen Techniker“. Auch ohne Zugang zu Remote oder GitHub:
-   in Alltagssprache melden, nie ein Git-Auftrag an den PO.
+   in Alltagssprache melden, nie ein Git-Auftrag an den PO. Die Abschlussmeldung nennt dem PO
+   keinen Git-Schritt, auch nicht für den neu angelegten Branch.
    **Bei `AUTO_SHIP=off`** gilt unverändert:
    **Merge und PR — Git-Policy des Projekts sticht:** Steht in der `CLAUDE.md` des Projekts
    (oder in der Memory), dass Claude Git und Auslieferung selbst erledigt (Formulierungen wie
    „Git entscheidet Claude selbst“, „bis `main` ausliefern“, „PO will mit Git nichts zu tun haben“),
    dann ist das bindend: Du legst den PR an, wartest die CI ab und lieferst nach den dort
    beschriebenen Regeln (z. B. Vorspulen) selbst auf den Default-Branch aus, im selben Turn, und
-   meldest nur das Ergebnis. Das Verbot aus Punkt 2 (nie `main` pushen) gilt dann nur so weit,
+   meldest nur das Ergebnis. Das Verbot aus Punkt 3 (nie `main` pushen) gilt dann nur so weit,
    wie die Projektregel den Weg nicht ausdrücklich vorgibt; nie `--force`, nie Schutzregeln
    umgehen, rote CI nie überbrücken. Ohne solche Policy bleiben Merge und PR beim PO.
-4. **Automatische Freigaben auflisten** — für die Abschlussmeldung:
+6. **Automatische Freigaben auflisten** — für die Abschlussmeldung:
 
    ```bash
    python3 .claude/hooks/workflow.py approvals --auto
@@ -360,7 +368,7 @@ nichts, was der User beurteilen könnte — eine Rückfrage wäre inhaltsleer.
 Feature-Branch im selben Turn und ersetze die letzte Zeile durch das Ergebnis plus den Block —
 keine Commit-Frage.
 
-Bei `AUTO_SHIP=on` (Claude hat ausgeliefert, siehe Punkt 3):
+Bei `AUTO_SHIP=on` (Claude hat ausgeliefert, siehe Punkt 5):
 
 ```
 **Ergebnis:** <PR-Link> · gemergt ja/nein · <Merge-Commit>   (sonst in Alltagssprache, warum nicht)
@@ -377,7 +385,7 @@ Bei `AUTO_SHIP=off` (Ergebnis: Commit-Hash, gepushter Branch):
 ```
 **Automatisch freigegeben:**
 - <Gate> · <Zeit> · <Grund>     (je Zeile aus `workflow.py approvals --auto`)
-**Offen beim PO:** Merge / PR[, Deploy]   (Bei Git-Policy des Projekts, siehe Punkt 3: NIE Merge, PR, CI oder Vorspulen nennen — Claude hat ausgeliefert; die Zeile nennt dann nur fachliche Abnahme oder Deploy, die ❗Du-Zeile nie einen Git-Schritt.)
+**Offen beim PO:** Merge / PR[, Deploy]   (Bei Git-Policy des Projekts, siehe Punkt 5: NIE Merge, PR, CI oder Vorspulen nennen — Claude hat ausgeliefert; die Zeile nennt dann nur fachliche Abnahme oder Deploy, die ❗Du-Zeile nie einen Git-Schritt.)
 ```
 
 Ohne Git-Policy nennt die ❗Du-Zeile hier den nächsten PO-Schritt (Merge bzw. PR).

@@ -100,10 +100,25 @@ def _flat(text: str) -> str:
     return re.sub(r"\s+", " ", text)
 
 
+OFF_MARKER = "**Bei `AUTO_SHIP=off`**"
+
+
 def _on_windows(text: str, width: int = 4000) -> "list[str]":
-    """Textfenster ab jeder Erwaehnung von `AUTO_SHIP=on` (der `on`-Fall)."""
+    """Textfenster ab jeder Erwaehnung von `AUTO_SHIP=on` (der `on`-Fall).
+
+    Jedes Fenster endet am naechsten off-Marker `**Bei `AUTO_SHIP=off`**`, falls er
+    dahinter steht (und naeher liegt als `width`), sonst nach `width` Zeichen. So
+    erfuellt der off-Absatz die Regeln des on-Falls nicht mit (#528, Fund F002).
+    """
     flat = _flat(text)
-    return [flat[m.start(): m.start() + width] for m in re.finditer(re.escape(ON), flat)]
+    windows = []
+    for m in re.finditer(re.escape(ON), flat):
+        end = m.start() + width
+        off = flat.find(OFF_MARKER, m.end())
+        if off != -1:
+            end = min(end, off)
+        windows.append(flat[m.start(): end])
+    return windows
 
 
 def _missing(text: str, patterns: dict) -> list:
