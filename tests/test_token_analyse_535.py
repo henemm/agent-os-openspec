@@ -15,13 +15,18 @@ def tool(name, **eingabe):
 
 def test_zuordnung():
     assert ta.taetigkeit([{"type": "text"}]) == ta.K_OHNE_WERKZEUG
-    assert ta.taetigkeit([tool("Read", file_path="/a")]) == ta.K_RECHERCHE
+    assert ta.taetigkeit([tool("Read", file_path="/a/engine/x.py")]) == ta.K_LESEN_CODE
+    assert ta.taetigkeit([tool("Read", file_path="/r/docs/specs/a.md")]) == ta.K_LESEN_DOKU
+    assert ta.taetigkeit([tool("Grep", pattern="x", path="/r/openspec/specs")]) == ta.K_LESEN_DOKU
+    assert ta.taetigkeit([tool("Read", file_path="/home/x/agent-os-openspec/core/a.py")]) == ta.K_LESEN_CODE
+    assert ta.taetigkeit([tool("Read", file_path="/r/tests/test_a.py")]) == ta.K_LESEN_TESTS
+    assert ta.taetigkeit([tool("Bash", command="sed -n 1,20p docs/adr/0001.md")]) == ta.K_LESEN_DOKU
     assert ta.taetigkeit([tool("Edit", file_path="/r/engine/x.py")]) == ta.K_CODE
     assert ta.taetigkeit([tool("Edit", file_path="/r/tests/test_x.py")]) == ta.K_TESTS_SCHREIBEN
     assert ta.taetigkeit([tool("Write", file_path="/r/docs/spec.md")]) == ta.K_SPEC
     assert ta.taetigkeit([tool("Bash", command="python -m pytest -q")]) == ta.K_TESTEN
     assert ta.taetigkeit([tool("Bash", command="git push origin HEAD")]) == ta.K_GIT
-    assert ta.taetigkeit([tool("Bash", command="grep -n foo a.py | head")]) == ta.K_RECHERCHE
+    assert ta.taetigkeit([tool("Bash", command="grep -n foo a.py | head")]) == ta.K_LESEN_CODE
     assert ta.taetigkeit([tool("Bash", command="cat > /tmp/claude-1/scratchpad/x.py <<E\nE")]) == ta.K_PROBIEREN
     assert ta.taetigkeit([tool("Bash", command="python3 workflow.py status")]) == ta.K_STEUERUNG
     assert ta.taetigkeit([tool("Agent", prompt="x")]) == ta.K_AGENT
@@ -45,7 +50,7 @@ def test_antwort_wird_nur_einmal_gezaehlt_und_bloecke_gesammelt(tmp_path):
     b = ta.bericht(list((tmp_path / "-proj").glob("**/*.jsonl")))
     assert b["antworten"] == 2
     namen = {z["taetigkeit"]: z for z in b["taetigkeiten"]}
-    assert namen[ta.K_RECHERCHE]["schritte"] == 1
+    assert namen[ta.K_LESEN_CODE]["schritte"] == 1
     assert namen[ta.K_OHNE_WERKZEUG]["schritte"] == 1
     stufen = {s["kontext"]: s for s in b["kontext"]}
     assert stufen["> 200k"]["schritte"] == 1

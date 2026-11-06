@@ -43,7 +43,24 @@ K_TESTEN = "Tests ausführen"
 K_STEUERUNG = "Steuerung (Workflow, Skills, Nachrichten)"
 K_GIT = "Git und GitHub (Branch, PR, CI, Issues)"
 K_PROBIEREN = "Probieren und Messen (Wegwerf-Skripte)"
-K_RECHERCHE = "Recherche im Code (Lesen, Suchen)"
+K_LESEN_CODE = "Lesen: Code und Sonstiges"
+K_LESEN_DOKU = "Lesen: Specs, ADRs, Doku, Nachweise"
+K_LESEN_TESTS = "Lesen: Tests"
+_DOKU = re.compile(r"docs/(specs|adr|artifacts|context)|openspec/|\.md\b")
+_TEST = re.compile(r"/tests/|test_")
+
+
+def _lesen(uses):
+    """Lesende Zugriffe nach Ziel trennen: Doku/Specs, Tests, sonst Code."""
+    text = " ".join(
+        str((u.get("input") or {}).get(k, ""))
+        for u in uses for k in ("file_path", "path", "pattern", "command", "glob")
+    )
+    if _DOKU.search(text):
+        return K_LESEN_DOKU
+    if _TEST.search(text):
+        return K_LESEN_TESTS
+    return K_LESEN_CODE
 K_BASH = "Bash sonstiges (Server, Skripte)"
 K_WARTEN = "Warten auf CI und Hintergrundläufe"
 K_SONST = "Sonstiges"
@@ -94,14 +111,14 @@ def taetigkeit(bloecke):
                 return K_TESTS_SCHREIBEN
             return K_CODE
         if re.search(r"\b(grep|rg|find|ls|cat|head|tail|sed|wc|diff|date)\b", c):
-            return K_RECHERCHE
+            return _lesen(uses)
         return K_BASH
     if "Monitor" in namen:
         return K_WARTEN
     if "AskUserQuestion" in namen:
         return K_OHNE_WERKZEUG
     if any(n in ("Read", "Grep", "Glob") for n in namen):
-        return K_RECHERCHE
+        return _lesen(uses)
     if any(n in ("Skill", "ToolSearch", "ScheduleWakeup", "SendMessage", "ListAgents") for n in namen):
         return K_STEUERUNG
     return K_SONST
