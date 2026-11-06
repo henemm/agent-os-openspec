@@ -296,16 +296,20 @@ Bei `AUTONOMY=auto` (nach Step 4, also mit `phase8_complete`):
 2. **Committen ohne Rückfrage** — unabhängig von `OBSERVABLE_SURFACE`; die Frage „Soll ich den
    Code committen?" entfällt. Die Commit-Gates (`bash_gate.py`) gelten wie immer.
    Bei `AUTO_SHIP=on`: Steht der Checkout auf `main`, `master`, dem Default-Branch des Remotes
-   (`git symbolic-ref --short refs/remotes/origin/HEAD`) oder einem detached `HEAD`, legst du VOR
-   dem Commit einen Feature-Branch mit dem Workflow-Namen an (`git switch -c <workflow-name>`).
-   Existiert der Name schon, wird `-2`, `-3` und so weiter angehängt. Der lokale Default-Branch
+   (ermittelt wie in Punkt 3) oder einem detached `HEAD`, legst du VOR dem Commit einen
+   Feature-Branch mit dem Workflow-Namen an (`git switch -c <workflow-name>`). Existiert der Name
+   schon lokal oder auf dem Remote, wird `-2`, `-3` und so weiter angehängt. Der lokale Default-Branch
    wird nie zurückgesetzt (kein `reset`, kein `--force`). Bei `AUTO_SHIP=off` gilt der Text oben
    unverändert.
 3. **Den Feature-Branch pushen** — Branch prüfen mit `git rev-parse --abbrev-ref HEAD` und den
-   Default-Branch des Remotes mit `git symbolic-ref --short refs/remotes/origin/HEAD`
-   (z. B. `origin/main` → `main`). Gepusht wird nur, wenn der aktuelle Branch weder `main` noch
-   `master` noch der Default-Branch des Remotes ist: dann `git push -u origin <feature-branch>`.
-   Schlägt `git symbolic-ref` fehl, wird nicht gepusht und das in der Abschlussmeldung gemeldet.
+   Default-Branch des Remotes ermitteln: zuerst `git symbolic-ref --short refs/remotes/origin/HEAD`
+   (z. B. `origin/main` → `main`); schlägt das fehl, `git ls-remote --symref origin HEAD` und die
+   Zeile `ref: refs/heads/<name>` auswerten. Gepusht wird nur, wenn der aktuelle Branch weder
+   `main` noch `master` noch der Default-Branch des Remotes ist: dann
+   `git push -u origin <feature-branch>`. Schlagen beide Wege fehl, gilt: bei `AUTO_SHIP=off` wird
+   wie bisher nicht gepusht und das in der Abschlussmeldung gemeldet; bei `AUTO_SHIP=on` wird
+   ebenfalls nicht gepusht und das Problem in Alltagssprache gemeldet (etwa „Der Server war nicht
+   erreichbar, ausgeliefert wird später“), nie als Git-Auftrag an den PO.
    Nie `main`, `master` oder den Default-Branch pushen (auch kein detached `HEAD`), nie
    `--force`. Nur bei `AUTO_SHIP=off` gilt: steht der Checkout darauf, wird nur committet und der
    PO in der Abschlussmeldung darauf hingewiesen. Schlägt der Push fehl, melden statt umgehen.
