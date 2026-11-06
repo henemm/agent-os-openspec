@@ -19,6 +19,7 @@ import json
 import os
 import posixpath
 import re
+import time
 import shlex
 import stat
 import subprocess
@@ -2487,3 +2488,171 @@ def has_observable_surface() -> "tuple[bool, str]":
     """
     report = observable_surface_report()
     return bool(report["surface"]), str(report["reason"])
+
+
+# --- Kontext-Haushalt: Kontextgroesse messen, Schnitt empfehlen ------------------
+# Ein Schritt mit 200k Token Kontext kostet etwa das Fuenffache eines Schritts mit
+# 40k; 70-75 % des Wiederlesens entstehen oberhalb von 100k. Die Hooks lesen die
+# Kontextgroesse aus dem Transcript (letzte assistant-Zeile: input + cache_create +
+# cache_read = Prompt-Groesse der letzten Anfrage) und merken sie je Sitzung unter
+# `.claude/context_usage/<session_id>.json`. `workflow.py context` liest den Wert
+# und meldet `CONTEXT_CUT=on`, sobald die Schwelle (`context_budget.
+# clear_threshold_tokens`, Default 100000) erreicht ist. Alles fail-open: ein
+# Fehler bei der Messung aendert nie eine Gate-Entscheidung.
+CONTEXT_BUDGET_DEFAULT_THRESHOLD = 100_000
+CONTEXT_BUDGET_REPEAT_EVERY = 50_000       # Hinweis erneut je 50k ueber der Schwelle
+CONTEXT_USAGE_DIRNAME = "context_usage"
+CONTEXT_USAGE_MAX_AGE_S = 12 * 3600        # aeltere Messungen gelten als fremd/veraltet
+_TRANSCRIPT_TAIL_BYTES = 512 * 1024
+
+
+def context_budget_settings(config: "dict | None" = None) -> dict:
+    """`{"enabled": bool, "threshold": int}` aus `context_budget` der Config.
+
+    Nur das Literal `false` schaltet ab; die Schwelle muss ein int >= 1000 sein,
+    sonst gilt der Default. Fail-open: jeder Fehler ergibt Default-Werte.
+    """
+    enabled, threshold = True, CONTEXT_BUDGET_DEFAULT_THRESHOLD
+    try:
+        if config is None:
+            from config_loader import load_config
+            config = load_config()
+        section = config.get("context_budget") if isinstance(config, dict) else None
+        if isinstance(section, dict):
+            if section.get("enabled") is False:
+                enabled = False
+            value = section.get("clear_threshold_tokens")
+            if type(value) is int and value >= 1000:
+                threshold = value
+    except Exception:
+        pass
+    return {"enabled": enabled, "threshold": threshold}
+
+
+def context_tokens_from_transcript(path) -> "int | None":
+    """Kontextgroesse der letzten Hauptsitzungs-Antwort im Transcript (Tokens).
+
+    Liest nur die letzten `_TRANSCRIPT_TAIL_BYTES`, von hinten: erste
+    `assistant`-Zeile ohne `isSidechain` mit `message.usage`. Wert = input +
+    cache_creation + cache_read. None, wenn nichts Brauchbares gefunden wurde.
+    """
+    try:
+        p = Path(path)
+        size = p.stat().st_size
+        with open(p, "rb") as fh:
+            if size > _TRANSCRIPT_TAIL_BYTES:
+                fh.seek(size - _TRANSCRIPT_TAIL_BYTES)
+                fh.readline()  # angeschnittene Zeile verwerfen
+            lines = fh.read().decode("utf-8", errors="replace").splitlines()
+    except (OSError, ValueError):
+        return None
+    for line in reversed(lines):
+        if '"assistant"' not in line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(row, dict) or row.get("type") != "assistant" or row.get("isSidechain"):
+            continue
+        msg = row.get("message")
+        usage = msg.get("usage") if isinstance(msg, dict) else None
+        if not isinstance(usage, dict):
+            continue
+        total = 0
+        for key in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"):
+            value = usage.get(key)
+            if type(value) is int and value > 0:
+                total += value
+        if total > 0:
+            return total
+    return None
+
+
+def context_usage_dir(root=None) -> Path:
+    base = Path(root) if root is not None else find_project_root()
+    return base / ".claude" / CONTEXT_USAGE_DIRNAME
+
+
+def _context_usage_file(session_id: str, root=None) -> "Path | None":
+    sid = str(session_id or "").strip()
+    if not sid or not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", sid):
+        return None
+    return context_usage_dir(root) / f"{sid}.json"
+
+
+def record_context_usage(session_id: str, tokens: int, root=None,
+                         announced_bucket: "int | None" = None) -> "dict | None":
+    """Messung je Sitzung speichern; `announced_bucket` nur ueberschreiben, wenn gegeben."""
+    path = _context_usage_file(session_id, root)
+    if path is None or type(tokens) is not int:
+        return None
+    previous = read_context_usage(session_id, root, fallback_newest=False) or {}
+    data = {
+        "session_id": str(session_id),
+        "tokens": tokens,
+        "at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "announced_bucket": (announced_bucket if announced_bucket is not None
+                             else previous.get("announced_bucket", 0)),
+    }
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_json(path, data, path.parent)
+    except Exception:
+        return None
+    return data
+
+
+def read_context_usage(session_id: "str | None" = None, root=None,
+                       fallback_newest: bool = True) -> "dict | None":
+    """Messung lesen: per Sitzungs-Id, sonst `CLAUDE_CODE_SESSION_ID`, sonst (nur mit
+    `fallback_newest`) die juengste Datei, hoechstens `CONTEXT_USAGE_MAX_AGE_S` alt.
+    None, wenn nichts da ist."""
+    try:
+        sid = session_id or os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+        path = _context_usage_file(sid, root) if sid else None
+        if path is None or not path.is_file():
+            if not fallback_newest:
+                return None
+            directory = context_usage_dir(root)
+            if not directory.is_dir():
+                return None
+            candidates = [p for p in directory.glob("*.json") if p.is_file()]
+            if not candidates:
+                return None
+            path = max(candidates, key=lambda p: p.stat().st_mtime)
+            if time.time() - path.stat().st_mtime > CONTEXT_USAGE_MAX_AGE_S:
+                return None
+        data = read_state_json(path, path.parent)
+        if not isinstance(data, dict) or type(data.get("tokens")) is not int:
+            return None
+        return data
+    except Exception:
+        return None
+
+
+def context_bucket(tokens: int, threshold: int) -> int:
+    """0 unter der Schwelle; ab der Schwelle 1, danach +1 je `CONTEXT_BUDGET_REPEAT_EVERY`."""
+    if type(tokens) is not int or tokens < threshold:
+        return 0
+    return 1 + (tokens - threshold) // CONTEXT_BUDGET_REPEAT_EVERY
+
+
+def _de_thousands(n: int) -> str:
+    return f"{n:,}".replace(",", ".")
+
+
+def context_cut_note(tokens: int, threshold: int) -> str:
+    """Hinweistext fuer Claude, wenn der Kontext die Schwelle erreicht hat."""
+    return (
+        f"KONTEXT-SCHWELLE: Dieser Kontext hat ~{_de_thousands(tokens)} Token "
+        f"(Schwelle {_de_thousands(threshold)}). Jeder weitere Schritt zahlt das "
+        "Wiederlesen des gesamten Kontexts. Bring den laufenden Block zu Ende (Spec "
+        "fertig, PR angelegt, Phasenwechsel), sichere den Stand auf der Platte "
+        "(Workflow-State, Commit oder Issue-Kommentar) und beende den Turn mit "
+        "Checkpoint-Block und Du-Zeile, damit `/clear` gefahrlos ist. Im Auto-Modus "
+        "den naechsten Skill NICHT selbst aufrufen (`workflow.py context` -> "
+        "CONTEXT_CUT=on). Bis dahin: Nachschlagen (\"Wo wird X benutzt?\") an einen "
+        "Explore-Teilagenten abgeben, Dateien nur mit Zeilenbereich lesen, Befehle "
+        "buendeln (`workflow.py batch`, `ship.py`)."
+    )

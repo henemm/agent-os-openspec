@@ -427,6 +427,10 @@ def install_ci_gate(project_path: Path, force: bool = False):
     scripts_dst.mkdir(parents=True, exist_ok=True)
     shutil.copy(script_src, scripts_dst / script_src.name)
     print(f"  Copied CI gate: .claude/scripts/{script_src.name}")
+    ship_src = SCRIPTS_DIR / "ship.py"
+    if ship_src.exists():
+        shutil.copy(ship_src, scripts_dst / ship_src.name)
+        print(f"  Copied ship tool: .claude/scripts/{ship_src.name}")
 
     workflow_src = TEMPLATES_DIR / "ci_spec_gate.yml"
     workflow_dst = project_path / ".github" / "workflows" / "spec-gate.yml"
@@ -1040,6 +1044,15 @@ All specs must contain:
 ```
 
 Template: `docs/specs/_template.md`
+
+---
+
+## Context Budget (tokens)
+
+Re-reading a 200k-token context costs about five times a 40k one, and most re-reading happens above 100k:
+- `post_bash.py` measures the context from the transcript and warns at `context_budget.clear_threshold_tokens` (default 100000). `workflow.py context` prints `CONTEXT_CUT=on|off`; at `on` the phase commands end the turn with the checkpoint instead of chaining — state is on disk, `/clear` is safe.
+- Delegate lookups ("where is X used?") to an Explore subagent; read with line ranges, not whole files.
+- Bundle calls: `workflow.py batch status -- phase phase6_implement`; `python3 .claude/scripts/ship.py [--merge squash]` pushes, opens the PR and waits for CI in one step.
 
 ---
 

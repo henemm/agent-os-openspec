@@ -194,6 +194,11 @@ python3 .claude/hooks/workflow.py list
 python3 .claude/hooks/workflow.py sessions
 python3 .claude/hooks/workflow.py sessions --json
 
+# Context budget — several state changes per call, context size of this session
+python3 .claude/hooks/workflow.py batch add-artifact test_output logs/t.log "3 failed" phase5_tdd_red -- mark-red "3 failed" -- status
+python3 .claude/hooks/workflow.py context          # CONTEXT_TOKENS=<n|unknown>, CONTEXT_CUT=on|off
+python3 .claude/scripts/ship.py [--merge squash]   # push, open/reuse PR, wait for CI, optionally merge — one call
+
 # Phase management
 python3 .claude/hooks/workflow.py phase phase4_approved
 python3 .claude/hooks/workflow.py set-field spec_file "docs/specs/auth/login.md"
@@ -290,6 +295,12 @@ python3 .claude/hooks/workflow.py set-field github_issue 42
 | `secret_egress_guard.py` | PreToolUse (all tools) | Blocks secret *values* from leaving via any tool's output, and (since #97) Bash redirects (`>`, `>>`, `tee`) writing outside the project |
 
 **Exit codes:** `0` = allowed, `2` = blocked (stderr shown to Claude)
+
+## Context budget
+
+A step with a 200k-token context costs about five times a step with 40k, and 70–75 % of all re-reading happens above 100k. The framework therefore cuts early: `post_bash.py` measures the context size from the transcript (`.claude/context_usage/<session>.json`) and, from `context_budget.clear_threshold_tokens` (default 100000) on, tells Claude to finish the current block, save state and end the turn with the checkpoint. `workflow.py context` prints `CONTEXT_CUT=on|off`; at `on` the phase commands no longer chain into the next skill, so `/clear` happens at ~100k instead of ~200k. Lookups ("where is X used?") go to an Explore subagent, files are read with line ranges, and calls are bundled: `workflow.py batch a -- b -- c` and `scripts/ship.py` (push, PR, CI wait, optional merge in one call). Information only, never a gate; disable with `context_budget.enabled: false`.
+
+---
 
 ### Gate-Event-Log
 

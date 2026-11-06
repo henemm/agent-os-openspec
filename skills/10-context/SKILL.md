@@ -15,6 +15,7 @@ _H="${CLAUDE_PLUGIN_ROOT:+${CLAUDE_PLUGIN_ROOT}/core/hooks}"
 if [ -z "$_H" ]; then _p="$(python3 -c 'import json,os;d=json.load(open(os.path.expanduser("~/.claude/plugins/installed_plugins.json")));print(next((e["installPath"] for k,v in d.get("plugins",{}).items() if k.startswith("agent-os-openspec@") for e in [next((x for x in v if x.get("scope")=="user"),v[0])]),""))' 2>/dev/null)"; [ -n "$_p" ] && [ -d "$_p/core/hooks" ] && _H="$_p/core/hooks"; fi
 _H="${_H:-.claude/hooks}"
 WF="python3 ${_H}/workflow.py"
+_S="${_H%/core/hooks}/scripts"; [ "$_H" = ".claude/hooks" ] && _S=".claude/scripts"
 ```
 
 ## Purpose
@@ -76,6 +77,8 @@ Search and collect:
 4. **Dependencies** - What does the affected code depend on?
 
 5. **Dependents** - What depends on the code we'll change?
+
+**Kontext-Haushalt (Nachschlagen abgeben, gezielt lesen):** Nachschlagefragen („Wo wird X benutzt?“, „Welche Dateien importieren Y?“, „Wie heißt die Funktion für Z?“) gehen an einen Explore-Teilagenten (Haiku), der mit eigenem, kleinem Kontext liest und nur die Antwort zurückgibt — Recherche ist der größte Token-Posten, und im Hauptkontext zahlt jeder Schritt das Wiederlesen aller vorher gelesenen Dateien erneut. Selbst liest du nur, was du gleich brauchst, mit Zeilenbereich (`sed -n 120,160p`, Read mit offset/limit) oder gezielter Suche statt ganzer Dateien. Mehrere `grep`/`sed -n` zur selben Frage in einen Aufruf bündeln; Workflow-Aufrufe mit `workflow.py batch a -- b -- c` zusammenfassen.
 
 ### 3. Create Context Document
 
@@ -171,6 +174,8 @@ $WF autonomy
 ```
 
 Bei `AUTONOMY=auto` und ohne `/clear` in derselben Session: Rufe den Skill `20-analyse` jetzt sofort selbst auf — warte nicht auf eine User-Eingabe. Der Checkpoint-Block oben bleibt trotzdem in der Ausgabe (Wiedereinstieg über `/20-analyse #<N>`, Herdr-Auto-Clear #467). Bei `AUTONOMY=manual` (oder jeder anderen Ausgabe): wie bisher auf den User warten.
+
+Vor dem Selbstaufruf zusätzlich `$WF context` ausführen (Kontext-Haushalt): Bei `CONTEXT_CUT=on` (Kontext über der Schwelle aus `context_budget`, Default 100.000 Token) den Skill `20-analyse` NICHT selbst aufrufen, sondern die Antwort mit dem Checkpoint und der ❗Du-Zeile `/20-analyse #<N>` beenden — der Stand liegt auf der Platte, der PO (oder Herdr) tippt `/clear`. Ein Schritt mit 200k Token Kontext kostet etwa das Fünffache eines Schritts mit 40k. Bei `CONTEXT_CUT=off` oder `CONTEXT_TOKENS=unknown`: unverändert.
 
 ### Herdr-Auto-/clear: Turn an der Grenze beenden (#489)
 

@@ -80,6 +80,8 @@ Task (Explore/haiku, run_in_background: false): "Lies folgende Dateien und fasse
   implementiert werden, welche Imports werden benoetigt."
 ```
 
+**Kontext-Haushalt (Nachschlagen abgeben, gezielt lesen):** Nachschlagefragen („Wo wird X benutzt?“, „Welche Dateien importieren Y?“, „Wie heißt die Funktion für Z?“) gehen an einen Explore-Teilagenten (Haiku), der mit eigenem, kleinem Kontext liest und nur die Antwort zurückgibt — Recherche ist der größte Token-Posten, und im Hauptkontext zahlt jeder Schritt das Wiederlesen aller vorher gelesenen Dateien erneut. Selbst liest du nur, was du gleich brauchst, mit Zeilenbereich (`sed -n 120,160p`, Read mit offset/limit) oder gezielter Suche statt ganzer Dateien. Mehrere `grep`/`sed -n` zur selben Frage in einen Aufruf bündeln; Workflow-Aufrufe mit `workflow.py batch a -- b -- c` zusammenfassen.
+
 ### Step 3: Developer Agent spawnen (ORCHESTRATOR-PRINZIP)
 
 **Der Hauptkontext schreibt KEINEN Code. Nie. Keine Ausnahmen.**
@@ -390,6 +392,8 @@ Workflow: `<name>` · Issue: **#<N>** · Verdict: VERIFIED
 Erst sichern, dann ist `/clear` gefahrlos.
 
 ---
+
+Vor dem Selbstaufruf zusätzlich `python3 .claude/hooks/workflow.py context` ausführen (Kontext-Haushalt): Bei `CONTEXT_CUT=on` (Kontext über der Schwelle aus `context_budget`, Default 100.000 Token) den Skill `60-validate` NICHT selbst aufrufen, sondern die Antwort mit dem Checkpoint und der ❗Du-Zeile `/60-validate #<N>` beenden — der Stand liegt auf der Platte, der PO (oder Herdr) tippt `/clear`. Ein Schritt mit 200k Token Kontext kostet etwa das Fünffache eines Schritts mit 40k. Bei `CONTEXT_CUT=off` oder `CONTEXT_TOKENS=unknown`: unverändert.
 
 Zuerst `python3 .claude/hooks/workflow.py autoclear` ausführen (#489): Bei `AUTO_CLEAR=on` den Skill
 `60-validate` NICHT selbst aufrufen, sondern die Antwort mit dem Checkpoint (Positiv-Block, bei
