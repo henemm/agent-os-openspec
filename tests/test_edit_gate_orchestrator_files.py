@@ -118,3 +118,29 @@ def test_project_settings_allowed_with_valid_token(tmp_path):
     }
     result = _run_edit_gate(env, str(project_settings), cwd=str(proj))
     assert result.returncode == 0, result.stderr
+
+
+# --- (d) #545: nicht normalisierte Schreibweisen umgehen die Sperre nicht ---
+
+@pytest.mark.parametrize("name", ["settings.json", "settings.local.json", "active_workflow"])
+@pytest.mark.parametrize("pattern", [
+    "{proj}/.claude//{name}",
+    "{proj}/./.claude/./{name}",
+    "{proj}/.claude/../.claude/{name}",
+    "./.claude/./{name}",
+])
+def test_unnormalized_orchestrator_paths_blocked(tmp_path, name, pattern):
+    fake_home = tmp_path / "fakehome"
+    (fake_home / ".claude").mkdir(parents=True)
+    proj = _make_project(tmp_path)
+    (proj / ".claude" / name).write_text("{}")
+
+    env = {
+        "HOME": str(fake_home),
+        "CLAUDE_PROJECT_DIR": str(proj),
+        "OPENSPEC_ACTIVE_WORKFLOW": "",
+    }
+    file_path = pattern.format(proj=proj, name=name)
+    result = _run_edit_gate(env, file_path, cwd=str(proj))
+    assert result.returncode == 2, result.stderr
+    assert "Orchestrator" in result.stderr, result.stderr

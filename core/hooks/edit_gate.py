@@ -840,8 +840,14 @@ def main():
     except (ValueError, AttributeError):
         _under_home_claude = str(_resolved_fp).startswith(str(_home_claude) + os.sep)
     if not _under_home_claude:
+        # #545: normalisierter UND aufgeloester Pfad — `.claude//settings.json`,
+        # `./.claude/./settings.json` o.ae. duerfen die Sperre nicht umgehen.
+        _of_candidates = [
+            os.path.normpath(os.path.expanduser(file_path)).replace(os.sep, "/"),
+            str(_resolved_fp).replace(os.sep, "/"),
+        ]
         for of in ORCHESTRATOR_FILES:
-            if of in file_path:
+            if any(of in c for c in _of_candidates):
                 # Valid user override token releases the file (#48) — same
                 # mechanism / consume behaviour as the infrastructure step below.
                 if _has_override_token("__infra__") or _has_override_token():
