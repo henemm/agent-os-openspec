@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - `/60-validate`: PR und Merge liegen auch ohne Git-Policy im Projekt beim Tech Lead (Claude), nie beim PO; Abschlussblock bei `AUTO_SHIP=off` nennt keinen Git-Schritt mehr (#539, PO-Vorgabe 2026-11-08).
 - `CLAUDE.md`: Abschnitt „Rollen und Zusammenarbeit“ (#539).
+- Neu `docs/arbeitsweise.md`: feste Projektregeln für jede Sitzung, auch Cloud (Grundsätze, Umgang mit dem PO, Issues, Liefer-Weg, lokale Tests, Cloud/Plugin), Kurzfassung in `CLAUDE.md`; veraltete Zeile „Versionsnummer in setup.py“ korrigiert (#541).
 
 ## [4.7.0] - 2026-11-07
 
