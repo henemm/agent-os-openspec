@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `edit_gate.py` Schritt 1b: enge Ausnahme für die projektlokale `.claude/settings.json` — ändert eine Bearbeitung (Write/Edit/MultiEdit, auch Neuanlage per Write) nachweislich nur `enabledPlugins` und `extraKnownMarketplaces`, entfällt die Orchestrator-Sperre, ohne einen Override-Token zu verbrauchen. Neue Fassungen werden wie beim Spec-Freeze simuliert, streng geparst (doppelte Schlüssel, kaputtes JSON, falsche Form der Plugin-Werte, Symlink, jeder Fehler = Sperre) und kanonisch gegen die alte verglichen; alles andere (`hooks`, `permissions`, `env`, `disableAllHooks` …) bleibt gesperrt, `settings.local.json` und `active_workflow` unverändert. Die Sperrmeldung nennt die Ausnahme und den Grund; der wirkungslose Hinweis auf den update-config-Skill ist durch den Override-Ausweg ersetzt. Migration: keine. Tests: `tests/test_edit_gate_settings_plugins_543.py` (#543).
+
 ### Changed
 - `/60-validate`: PR und Merge liegen auch ohne Git-Policy im Projekt beim Tech Lead (Claude), nie beim PO; Abschlussblock bei `AUTO_SHIP=off` nennt keinen Git-Schritt mehr (#539, PO-Vorgabe 2026-11-08).
 - `CLAUDE.md`: Abschnitt „Rollen und Zusammenarbeit“ (#539).

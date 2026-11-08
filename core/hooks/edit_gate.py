@@ -6,6 +6,7 @@ Replaces 17 separate hooks with 1. Sequential short-circuit logic:
 
 1. Protected State Files → BLOCK
 1b. Orchestrator-Only Files (settings.json, settings.local.json, active_workflow) → BLOCK
+    (Ausnahme #543: settings.json-Aenderung nur an enabledPlugins/extraKnownMarketplaces → weiter)
 1c. Path Origin (ausserhalb Projekt/Worktree) → ALLOW
 1d. Spec-Freeze: spec_file eines Workflows in Phase >= phase4_approved →
     BLOCK, wenn der Edit den freigegebenen Teil aendert (Teil-Hash, #439;
@@ -58,6 +59,10 @@ ORCHESTRATOR_FILES = [
     ".claude/settings.local.json",
     ".claude/active_workflow",
 ]
+
+# Ausnahme von Schritt 1b (#543): nur diese Schluessel der projektlokalen
+# `.claude/settings.json` duerfen sich ohne Override aendern (Plugin-Einrichtung).
+SETTINGS_PLUGIN_KEYS = ("enabledPlugins", "extraKnownMarketplaces")
 
 INFRASTRUCTURE_DIRS = [".claude/hooks/", ".claude/agents/"]
 
@@ -436,6 +441,105 @@ def _simulate_spec_write(file_path: str, tool_input: dict,
             variants = _spec_edit_variants(variants, edit, deadline)
         return current, variants
     raise _SpecSimError(f"Werkzeug nicht erkennbar ({tool or 'unbekannt'})")
+
+
+class _SettingsReject(Exception):
+    """Plugin-Ausnahme (#543) greift nicht; Nachricht = Grund fuer die Meldung."""
+
+
+def _no_duplicate_keys(pairs):
+    out = {}
+    for key, value in pairs:
+        if key in out:
+            raise _SettingsReject(f"doppelter Schlüssel `{key}`")
+        out[key] = value
+    return out
+
+
+def _reject_constant(name):
+    raise _SettingsReject(f"ungültiger JSON-Wert {name}")
+
+
+def _strict_settings_obj(text, label: str) -> dict:
+    """Streng parsen: doppelte Schluessel/NaN → Grund; Ergebnis muss ein Objekt sein."""
+    if not isinstance(text, str):
+        raise _SettingsReject(f"{label}: kein Text")
+    try:
+        data = json.loads(text, object_pairs_hook=_no_duplicate_keys,
+                          parse_constant=_reject_constant)
+    except ValueError as exc:
+        raise _SettingsReject(f"{label}: kein gültiges JSON ({exc.__class__.__name__})")
+    if not isinstance(data, dict):
+        raise _SettingsReject(f"{label}: kein JSON-Objekt")
+    return data
+
+
+def _check_plugin_shape(data: dict) -> None:
+    """`enabledPlugins`: Text → true/false; `extraKnownMarketplaces`: Werte sind Objekte."""
+    plugins = data.get("enabledPlugins", {})
+    if not isinstance(plugins, dict) or not all(
+            isinstance(k, str) and type(v) is bool for k, v in plugins.items()):
+        raise _SettingsReject("`enabledPlugins` muss ein Objekt mit true/false-Werten sein")
+    markets = data.get("extraKnownMarketplaces", {})
+    if not isinstance(markets, dict) or not all(
+            isinstance(v, dict) for v in markets.values()):
+        raise _SettingsReject("`extraKnownMarketplaces` muss ein Objekt mit Objekt-Werten sein")
+
+
+def _settings_versions(file_path: str, tool_input: dict) -> "tuple[dict, list]":
+    """(bisheriges Objekt, neue Fassungen als Text); neue Datei nur per Write."""
+    if not os.path.lexists(file_path):
+        content = tool_input.get("content")
+        if _spec_tool_name(tool_input) != "Write" or not isinstance(content, str):
+            raise _SettingsReject("neue Datei nur per Write mit Inhalt")
+        return {}, [content]
+    try:
+        current, variants = _simulate_spec_write(file_path, tool_input)
+    except _SpecSimError as exc:
+        raise _SettingsReject(f"neue Fassung nicht sicher berechenbar ({exc})")
+    return _strict_settings_obj(current, "bisherige Datei"), variants
+
+
+def _settings_plugin_change_reason(file_path: str, tool_input: dict) -> "str | None":
+    """#543: None, wenn die Bearbeitung nur `SETTINGS_PLUGIN_KEYS` aendert.
+
+    Sonst ein kurzer Grund. Jeder Fehler oder Zweifel ergibt einen Grund
+    (fail-closed): Symlink, falscher Pfad, kaputtes/doppeltes JSON, falsche
+    Form der Plugin-Schluessel, Aenderung an einem anderen Schluessel.
+    """
+    try:
+        file_path = os.path.expanduser(file_path)
+        if (not os.path.isabs(file_path) or os.path.normpath(file_path) != file_path
+                or "//" in file_path or file_path.endswith(os.sep)):
+            return ("Pfad nicht eindeutig (nur sauberer absoluter Pfad ohne `..`, "
+                    "`./`, `//` oder abschließenden `/`)")
+        if os.path.islink(file_path):
+            return "Symlink wird nicht ausgenommen"
+        given, real = Path(file_path), Path(file_path).resolve()
+        for p in (given, real):
+            if p.name != "settings.json" or p.parent.name != ".claude":
+                return "Pfad ist nicht `.claude/settings.json`"
+        current, variants = _settings_versions(file_path, tool_input)
+
+        def rest(d: dict) -> "dict":
+            return {k: v for k, v in d.items() if k not in SETTINGS_PLUGIN_KEYS}
+
+        before = rest(current)
+        for text in variants:
+            new = _strict_settings_obj(text, "neue Fassung")
+            _check_plugin_shape(new)
+            after = rest(new)
+            if json.dumps(before, sort_keys=True) != json.dumps(after, sort_keys=True):
+                changed = sorted(k for k in set(before) | set(after)
+                                 if json.dumps(before.get(k), sort_keys=True)
+                                 != json.dumps(after.get(k), sort_keys=True)
+                                 or (k in before) != (k in after))
+                return "geändert: " + ", ".join(f"`{k}`" for k in changed)
+        return None
+    except _SettingsReject as exc:
+        return str(exc)
+    except Exception as exc:  # fail-closed: jeder unerwartete Fehler sperrt
+        return f"nicht sicher prüfbar ({exc.__class__.__name__})"
 
 
 def _check_spec_freeze(workflow: dict, file_path: str, tool_input: dict) -> None:
@@ -841,16 +945,30 @@ def main():
         _under_home_claude = str(_resolved_fp).startswith(str(_home_claude) + os.sep)
     if not _under_home_claude:
         for of in ORCHESTRATOR_FILES:
-            if of in file_path:
-                # Valid user override token releases the file (#48) — same
-                # mechanism / consume behaviour as the infrastructure step below.
-                if _has_override_token("__infra__") or _has_override_token():
-                    allow()
-                block(
-                    f"BLOCKED: {Path(of).name} ist Orchestrator-Domäne — nie direkt bearbeiten.\n"
-                    "→ Blocker im Report an den Orchestrator zurückmelden.\n"
-                    "→ Konfigurationsänderungen: update-config Skill verwenden."
-                )
+            if of not in file_path:
+                continue
+            # #543: reine Plugin-Einrichtung in settings.json → Block auslassen
+            # (Schritt 2 erlaubt .json). Vor dem Token, damit er nicht verbraucht wird.
+            plugin_reason = None
+            if of == ".claude/settings.json":
+                plugin_reason = _settings_plugin_change_reason(file_path, tool_input)
+                if plugin_reason is None:
+                    continue
+            # Valid user override token releases the file (#48) — same
+            # mechanism / consume behaviour as the infrastructure step below.
+            if _has_override_token("__infra__") or _has_override_token():
+                allow()
+            exception = (
+                "→ Ausnahme (#543): Änderungen nur an `enabledPlugins` und "
+                "`extraKnownMarketplaces` sind erlaubt — hier nicht erfüllt: "
+                f"{plugin_reason}.\n"
+            ) if plugin_reason else ""
+            block(
+                f"BLOCKED: {Path(of).name} ist Orchestrator-Domäne — nie direkt bearbeiten.\n"
+                + exception +
+                "→ Blocker im Report an den Orchestrator zurückmelden.\n"
+                "→ Andere Änderungen nur mit Override (User tippt „override“)."
+            )
 
     # 1c. Path origin (#80): a target outside the project is not project code
     # -- the strict code gate (steps 2 onward) protects THIS project's source,
