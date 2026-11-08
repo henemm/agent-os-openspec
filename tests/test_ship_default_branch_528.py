@@ -205,7 +205,7 @@ class TestOrder:
             "Ergebnis.",
             "(nie `main` pushen) gilt dann nur so weit, wie die Projektregel den Weg nicht "
             "ausdrücklich vorgibt; nie `--force`, nie Schutzregeln umgehen, rote CI nie "
-            "überbrücken. Ohne solche Policy bleiben Merge und PR beim PO.",
+            "überbrücken. Auch ohne ausdrückliche Policy liegen PR und Merge beim Tech Lead",
         ]
         wrong = []
         for path, section in _texts():

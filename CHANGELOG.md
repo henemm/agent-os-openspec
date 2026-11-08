@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `/60-validate`: PR und Merge liegen auch ohne Git-Policy im Projekt beim Tech Lead (Claude), nie beim PO; Abschlussblock bei `AUTO_SHIP=off` nennt keinen Git-Schritt mehr (#539, PO-Vorgabe 2026-11-08).
+- `CLAUDE.md`: Abschnitt „Rollen und Zusammenarbeit“ (#539).
+
 ## [4.7.0] - 2026-11-07
 
 Kontext-Haushalt: `post_bash.py` meldet ab 100k Token Kontext den Schnitt, `workflow.py context` gibt `CONTEXT_CUT` aus, `workflow.py batch` bündelt Workflow-Aufrufe und `scripts/ship.py` pusht, legt den PR an, wartet die CI ab und mergt in einem Aufruf (#537). Migration: keine; Kill-Switch `context_budget.enabled: false`.

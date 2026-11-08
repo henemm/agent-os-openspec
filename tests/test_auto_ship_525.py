@@ -319,7 +319,7 @@ class TestCommandText:
             "Steht in der `CLAUDE.md` des Projekts",
             "„Git entscheidet Claude selbst“",
             "„PO will mit Git nichts zu tun haben“",
-            "Ohne solche Policy bleiben Merge und PR beim PO.",
+            "Auch ohne ausdrückliche Policy liegen PR und Merge beim Tech Lead",
         ]
         wrong = []
         for path, text in _texts():

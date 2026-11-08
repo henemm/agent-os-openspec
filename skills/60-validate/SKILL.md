@@ -355,7 +355,9 @@ Bei `AUTONOMY=auto` (nach Step 4, also mit `phase8_complete`):
    beschriebenen Regeln (z. B. Vorspulen) selbst auf den Default-Branch aus, im selben Turn, und
    meldest nur das Ergebnis. Das Verbot aus Punkt 3 (nie `main` pushen) gilt dann nur so weit,
    wie die Projektregel den Weg nicht ausdrücklich vorgibt; nie `--force`, nie Schutzregeln
-   umgehen, rote CI nie überbrücken. Ohne solche Policy bleiben Merge und PR beim PO.
+   umgehen, rote CI nie überbrücken. Auch ohne ausdrückliche Policy liegen PR und Merge beim Tech Lead
+   (Claude), nie beim PO (PO-Vorgabe 2026-11-08): PR anlegen, CI abwarten, bei grün mergen und
+   dem PO nur das Ergebnis melden.
 6. **Automatische Freigaben auflisten** — für die Abschlussmeldung:
 
    ```bash
@@ -419,10 +421,10 @@ Bei `AUTO_SHIP=off` (Ergebnis: Commit-Hash, gepushter Branch):
 ```
 **Automatisch freigegeben:**
 - <Gate> · <Zeit> · <Grund>     (je Zeile aus `workflow.py approvals --auto`)
-**Offen beim PO:** Merge / PR[, Deploy]   (Bei Git-Policy des Projekts, siehe Punkt 5: NIE Merge, PR, CI oder Vorspulen nennen — Claude hat ausgeliefert; die Zeile nennt dann nur fachliche Abnahme oder Deploy, die ❗Du-Zeile nie einen Git-Schritt.)
+**Offen beim PO:** [fachliche Abnahme][, Deploy]   (NIE Merge, PR, CI oder Vorspulen nennen — das erledigt Claude, siehe Punkt 5.)
 ```
 
-Ohne Git-Policy nennt die ❗Du-Zeile hier den nächsten PO-Schritt (Merge bzw. PR).
+Die ❗Du-Zeile nennt auch hier nie einen Git-Schritt (PR, Merge, Push, Branch, Commit).
 
 ## On Failure
 
