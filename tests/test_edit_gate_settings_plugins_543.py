@@ -295,3 +295,47 @@ def test_exception_limited_to_settings_json(tmp_path):
     link.symlink_to(other)
     r = _write(env, proj, link, json.dumps({"enabledPlugins": PLUGINS}))
     assert r.returncode == 2, "symlink: " + r.stderr
+
+
+# --- F001: Tilde-Pfad ---
+
+def test_tilde_path_existing_file_not_treated_as_new(tmp_path):
+    home = tmp_path / "h"
+    proj = home / "proj"
+    (proj / ".git").mkdir(parents=True)
+    (proj / ".claude").mkdir(parents=True)
+    env = {"HOME": str(home), "CLAUDE_PROJECT_DIR": str(proj),
+           "OPENSPEC_ACTIVE_WORKFLOW": ""}
+    _settings(proj, {"hooks": {"a": 1}, "permissions": {"allow": ["x"]}})
+    tilde = "~/proj/.claude/settings.json"
+
+    r = _run(env, "Write", {"file_path": tilde,
+                            "content": json.dumps({"enabledPlugins": {}})}, str(proj))
+    assert r.returncode == 2, r.stderr
+
+    ok = {"hooks": {"a": 1}, "permissions": {"allow": ["x"]}, "enabledPlugins": PLUGINS}
+    r = _run(env, "Write", {"file_path": tilde, "content": json.dumps(ok)}, str(proj))
+    assert r.returncode == 0, r.stderr
+
+
+# --- F003: unsauberer Pfad ---
+
+_UNCLEAN = [
+    "{p}/missing/../.claude/settings.json",
+    "{p}/a/b/../../.claude/settings.json",
+    "{p}/.claude/settings.json/",
+    "{p}/./.claude/settings.json",
+    pytest.param("{p}/.claude//settings.json",
+                 marks=pytest.mark.xfail(reason="#545", strict=True)),
+    ".claude/settings.json",
+]
+
+
+@pytest.mark.parametrize("tmpl", _UNCLEAN)
+def test_unclean_path_not_excepted(tmp_path, tmpl):
+    proj, env = _setup(tmp_path)
+    _settings(proj, BASE)
+    fp = tmpl.format(p=str(proj))
+    r = _run(env, "Write", {"file_path": fp,
+                            "content": json.dumps({"enabledPlugins": {}})}, str(proj))
+    assert r.returncode == 2, r.stderr
