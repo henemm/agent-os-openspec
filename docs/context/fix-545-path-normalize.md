@@ -88,3 +88,55 @@ Skript: Scratchpad `repro.py` (nicht im Repo); die Fälle werden RED-Tests.
   gar nicht als Muster (bewusst schmaler, eigene Frage); `PROTECTED_STATE_FILES` in Bash deckt
   `.claude/workflows/*.json` ab. Kein neues Muster in diesem Fix.
 - **Risiko-Stufe Adversary:** hoch (Gate-Code) → mind. 2 Dialog-Runden.
+
+## Analysis
+
+### Type
+Bug (Sicherheitslücke in Gates, reproduziert)
+
+Unabhängige Bewertung (Plan/Sonnet) bestätigt den Ansatz und fand zwei weitere Stellen; beide
+nachgestellt (Exit 0 = durchgelassen):
+- `<proj>/tests/../.claude/hooks/x.py` → edit_gate **0**: Schritt 2 (always-allowed dirs,
+  `Path(file_path).parts`) sieht die Komponente `tests` und erlaubt, bevor Schritt 4 (Infra) läuft.
+- `cd .claude/./workflows && echo x > w.json` → bash_gate **0**: `_cd_into_claude` normalisiert
+  `.`/`..` nicht (nur `//` wird über leere Teile gefiltert).
+
+### Affected Files (with changes)
+| File | Change Type | Description |
+|------|-------------|-------------|
+| `core/hooks/edit_gate.py` | MODIFY | Hilfsfunktion Pfad-Varianten (roh, normpath(expanduser), resolve); Sperren in Schritt 1, 1b, 4 treffen bei irgendeiner Variante; Schritt 2 (Freigabe!) rechnet NUR auf der normalisierten Variante |
+| `core/hooks/bash_gate.py` | MODIFY | `_matches_file_token`/`_is_sensitive` mit Option `normalize`, gesetzt nur von `_references_protected` (PROTECTED_FILE_PATTERNS); `_redirects_to_protected` prüft Ziel roh UND normalisiert; `_cd_into_claude` normalisiert das cd-Ziel |
+| `tests/test_path_normalize_545.py` | CREATE | RED-Tests für alle Schreibweisen (edit + bash), Plugin-Ausnahme, Regressionen |
+| `tests/test_edit_gate_settings_plugins_543.py` | MODIFY | strict-xfail `#545` in `_UNCLEAN` entfernen |
+| `CHANGELOG.md` | MODIFY | Eintrag unter [Unreleased] |
+
+### Scope Assessment
+- Files: 5 (2 Gate-Dateien Code)
+- Estimated LoC: +60–100 Code, +150–200 Tests
+- Risk Level: HIGH (Gate-Code; Adversary mind. 2 Runden)
+
+### Technical Approach
+- **Richtung beachten:** Sperren (Schritte 1, 1b, 4; Bash-Protected-Muster) = Treffer bei
+  IRGENDEINER Variante (nur mehr Blocks). Freigaben (Schritt 2 always-allowed dirs) = nur auf der
+  normalisierten Variante, sonst öffnet der rohe Pfad den `..`-Umweg.
+- **#543-Ausnahme unverändert:** `_settings_plugin_change_reason` bekommt weiter den rohen Pfad und
+  lehnt unsaubere Schreibweisen ab → reine Plugin-Änderung per `.claude//settings.json` wird mit
+  „Pfad nicht eindeutig" geblockt (Issue-AC „folgt der #543-Ausnahme" = gleiche Regeln je Schreibweise).
+- **Home-Ausnahme (#48)** bleibt auf dem aufgelösten Pfad, unverändert.
+- **Bash eng halten:** keine Normalisierung für `PROTECTED_DIR_TOKEN_PATTERNS`, `PROTECTED_GLOB_PATTERNS`
+  und Secrets-Muster (Dir-Muster behandelt `.`/`..` selbst; der `worktrees`-Ausschluss bliebe sonst
+  nicht erhalten; Secrets ist eine andere Schutzklasse). Korrigiert die Annahme oben unter „Secrets".
+- **Fail-safe:** `resolve()`/`normpath` in `try`; nicht berechenbare Variante entfällt, Rohvergleich bleibt.
+
+### Dependencies
+Nur stdlib (`os.path`, `pathlib`). Keine Abhängigen außerhalb der beiden Gates.
+
+### Known Limitations (für Spec)
+- Raw-Scan-Fallback in Bash (`sh -c "…"`, `eval`, kaputte Quotes) normalisiert nicht: `normpath`
+  auf einen ganzen Befehlsstring greift nur am ersten Pfadblock. `sh -c "echo x > .claude//settings.json"`
+  bleibt offen → Folge-Issue.
+- Bash schützt `settings.local.json` und `active_workflow` gar nicht als Muster (bestehender Scope) → Folge-Issue.
+- Kein `resolve()` je Bash-Token (bestehende Symlinks auf `.claude` werden beim Anlegen per `ln` geblockt, #407).
+
+### Open Questions
+- keine (alle technisch entschieden; keine Produktfrage)
