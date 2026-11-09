@@ -2642,17 +2642,155 @@ def _de_thousands(n: int) -> str:
     return f"{n:,}".replace(",", ".")
 
 
-def context_cut_note(tokens: int, threshold: int) -> str:
-    """Hinweistext fuer Claude, wenn der Kontext die Schwelle erreicht hat."""
-    return (
+_CONTEXT_SAVING_HINT = (
+    "Nachschlagen (\"Wo wird X benutzt?\") an einen Explore-Teilagenten abgeben, "
+    "Dateien nur mit Zeilenbereich lesen, Befehle buendeln (`workflow.py batch`, "
+    "`ship.py`)."
+)
+
+
+def context_cut_note(tokens: int, threshold: int, autark: bool = False) -> str:
+    """Hinweistext fuer Claude, wenn der Kontext die Schwelle erreicht hat.
+
+    `autark=True` (#551): ein autarker Auftrag laeuft — kein Halt fuer `/clear`,
+    stattdessen die automatische Komprimierung von Claude Code.
+    """
+    head = (
         f"KONTEXT-SCHWELLE: Dieser Kontext hat ~{_de_thousands(tokens)} Token "
         f"(Schwelle {_de_thousands(threshold)}). Jeder weitere Schritt zahlt das "
-        "Wiederlesen des gesamten Kontexts. Bring den laufenden Block zu Ende (Spec "
+        "Wiederlesen des gesamten Kontexts. "
+    )
+    if autark:
+        return head + (
+            "Ein autarker Auftrag läuft (.claude/auftrag.json): die Kette wird für "
+            "`/clear` nicht angehalten, arbeite weiter; Claude Code komprimiert den "
+            "Kontext automatisch (`/compact`). Sichere den Stand laufend auf der "
+            "Platte (Workflow-State, Commit oder Issue-Kommentar). Sparen: "
+        ) + _CONTEXT_SAVING_HINT
+    return head + (
+        "Bring den laufenden Block zu Ende (Spec "
         "fertig, PR angelegt, Phasenwechsel), sichere den Stand auf der Platte "
         "(Workflow-State, Commit oder Issue-Kommentar) und beende den Turn mit "
         "Checkpoint-Block und Du-Zeile, damit `/clear` gefahrlos ist. Im Auto-Modus "
         "den naechsten Skill NICHT selbst aufrufen (`workflow.py context` -> "
-        "CONTEXT_CUT=on). Bis dahin: Nachschlagen (\"Wo wird X benutzt?\") an einen "
-        "Explore-Teilagenten abgeben, Dateien nur mit Zeilenbereich lesen, Befehle "
-        "buendeln (`workflow.py batch`, `ship.py`)."
-    )
+        "CONTEXT_CUT=on). Bis dahin: "
+    ) + _CONTEXT_SAVING_HINT
+
+
+# --- Auftragsliste auf der Platte (Issue #551) ------------------------------
+# Ein Mehr-Issue-Auftrag des PO als Datei `<Haupt-Repo>/.claude/auftrag.json`
+# (gitignoriert): ueberlebt `/clear` und Worktree-Wechsel. Genau ein Auftrag je
+# Projekt, kein Lock. Lesen nur aus echter eigener Datei (#416/#422), Schreiben
+# atomar. Alles fail-open; Kill-Switch `auftrag.enabled: false`.
+
+AUFTRAG_FILENAME = "auftrag.json"
+
+
+def auftrag_settings(config: "dict | None" = None) -> dict:
+    """`{"enabled": bool}` aus `auftrag` der Config; nur das Literal `false` schaltet ab."""
+    enabled = True
+    try:
+        if config is None:
+            from config_loader import load_config
+            config = load_config()
+        section = config.get("auftrag") if isinstance(config, dict) else None
+        if isinstance(section, dict) and section.get("enabled") is False:
+            enabled = False
+    except Exception:
+        pass
+    return {"enabled": enabled}
+
+
+def auftrag_path(root=None) -> Path:
+    """`<root>/.claude/auftrag.json`; ohne `root` das Haupt-Repo (`find_project_root`)."""
+    base = Path(root) if root is not None else find_project_root()
+    return base / ".claude" / AUFTRAG_FILENAME
+
+
+def _normalize_auftrag(raw) -> "dict | None":
+    """Rohdaten in die feste Form bringen, sonst None. Doppelte Nummern fallen weg."""
+    if not isinstance(raw, dict) or not isinstance(raw.get("issues"), list):
+        return None
+    issues, seen = [], set()
+    for entry in raw["issues"]:
+        n = entry.get("n") if isinstance(entry, dict) else None
+        if type(n) is not int or n <= 0 or n in seen:
+            continue
+        seen.add(n)
+        issues.append({"n": n, "status": "done" if entry.get("status") == "done" else "open"})
+    note = raw.get("note")
+    return {"issues": issues, "autark": raw.get("autark") is True,
+            "note": note if isinstance(note, str) else "",
+            "created": str(raw.get("created") or ""), "updated": str(raw.get("updated") or "")}
+
+
+def read_auftrag(root=None, config: "dict | None" = None) -> "dict | None":
+    """Normalisierter Auftrag oder None (fehlt, kaputt, Verweis, Kill-Switch). Wirft nie."""
+    try:
+        if not auftrag_settings(config)["enabled"]:
+            return None
+        base = Path(root) if root is not None else find_project_root()
+        return _normalize_auftrag(json.loads(read_state_text(auftrag_path(base), base)))
+    except Exception:
+        return None
+
+
+def write_auftrag(root, auftrag: dict) -> None:
+    """Auftrag atomar schreiben (`atomic_write_text` mit Wurzel, #422); setzt Zeitstempel."""
+    base = Path(root) if root is not None else find_project_root()
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    data = dict(auftrag)
+    data["created"] = data.get("created") or now
+    data["updated"] = now
+    atomic_write_text(auftrag_path(base), json.dumps(data, indent=2, ensure_ascii=False),
+                      root=base)
+
+
+def auftrag_open_issues(auftrag) -> "list[int]":
+    """Offene Nummern in Listenreihenfolge; [] ohne Auftrag."""
+    if not isinstance(auftrag, dict):
+        return []
+    return [e["n"] for e in auftrag.get("issues") or []
+            if isinstance(e, dict) and e.get("status") == "open"]
+
+
+def auftrag_autark_open(root=None) -> bool:
+    """True, wenn ein Auftrag lesbar, `autark` und mindestens ein Issue offen ist."""
+    try:
+        auftrag = read_auftrag(root)
+        return bool(auftrag and auftrag["autark"] and auftrag_open_issues(auftrag))
+    except Exception:
+        return False
+
+
+def auftrag_mark_done(root, n) -> bool:
+    """Nummer `n` abhaken und schreiben; False ohne Auftrag/ohne diese Nummer. Wirft nie."""
+    try:
+        num = int(str(n).lstrip("#"))
+        auftrag = read_auftrag(root)
+        hits = [e for e in (auftrag or {}).get("issues", []) if e["n"] == num]
+        if not hits:
+            return False
+        hits[0]["status"] = "done"
+        write_auftrag(root, auftrag)
+        return True
+    except Exception:
+        return False
+
+
+def auftrag_note_text(auftrag) -> str:
+    """Ein Satz zum offenen Auftrag fuer Statushinweis und Banner; "" ohne offenes Issue."""
+    open_issues = auftrag_open_issues(auftrag)
+    if not open_issues:
+        return ""
+    first = open_issues[0]
+    text = (f"Offener Auftrag (.claude/{AUFTRAG_FILENAME}): offen "
+            f"{', '.join(f'#{n}' for n in open_issues)}; nächstes Issue #{first} "
+            f"per /00-intake #{first}")
+    if auftrag.get("autark"):
+        text += "; autark: kein Halt für /clear, Kette selbst fortsetzen"
+    text += "."
+    note = " ".join(str(auftrag.get("note") or "").split())
+    if note:
+        text += f" Wortlaut: „{note}“."
+    return text

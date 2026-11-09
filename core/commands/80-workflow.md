@@ -48,6 +48,18 @@ python3 .claude/hooks/workflow.py waiting --clear
 (der PO muss handeln). `waiting` setzt bzw. löscht (`--clear`) den Vermerk „läuft noch";
 ein Phasenwechsel leert ihn automatisch.
 
+### Auftragsliste (#551)
+```bash
+python3 .claude/hooks/workflow.py queue add <N...> [--autark] [--note "<Wortlaut>"]
+python3 .claude/hooks/workflow.py queue            # bzw. queue list
+python3 .claude/hooks/workflow.py queue done <N>
+python3 .claude/hooks/workflow.py queue clear
+```
+Sichert einen Mehr-Issue-Auftrag in `.claude/auftrag.json` im Haupt-Repo (überlebt `/clear`).
+Ausgabe `QUEUE=`, `AUTARK=`, `NEXT=` und bei offenem Auftrag `PROMPT=/00-intake #<NEXT>`;
+`complete` hakt das Issue ab, `endstate` nennt danach das nächste Issue. Kill-Switch
+`auftrag.enabled: false` → `QUEUE=disabled`.
+
 ### Retro: Abgeschlossene Workflows analysieren
 ```bash
 # Alle archivierten Workflows auflisten

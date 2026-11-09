@@ -442,6 +442,11 @@ $WF endstate <N>
 noch auf CI, einen Agenten oder einen Server: vorher `workflow.py waiting "<worauf>" <N>`, dann
 `endstate` erneut aufrufen.
 
+Kette bei offenem Auftrag (#551): Steht nach `endstate` `ENDSTATE=waiting` und meldet
+`$WF queue` ein `NEXT=M`, gib die ⏳-Zeile aus und rufe danach
+`/00-intake #M` selbst auf (autarker Auftrag) — kein Halt für `/clear`. Bei `ENDSTATE=you`
+(Auftrag nicht autark) gib die ❗-Zeile wörtlich aus und warte auf den PO.
+
 ## On Failure
 
 If validation fails after auto-fix attempt:
