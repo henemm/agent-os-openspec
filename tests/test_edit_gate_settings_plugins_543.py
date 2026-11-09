@@ -325,8 +325,7 @@ _UNCLEAN = [
     "{p}/a/b/../../.claude/settings.json",
     "{p}/.claude/settings.json/",
     "{p}/./.claude/settings.json",
-    pytest.param("{p}/.claude//settings.json",
-                 marks=pytest.mark.xfail(reason="#545", strict=True)),
+    "{p}/.claude//settings.json",
     ".claude/settings.json",
 ]
 
