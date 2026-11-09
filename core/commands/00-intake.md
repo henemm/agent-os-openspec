@@ -49,6 +49,23 @@ python3 .claude/hooks/session_singleton_guard.py claim --issue <N>[,<M>...]
 Damit weiß jede andere Session, wer gerade an Issue #N arbeitet. Ohne Issue-Nummer
 (z.B. reiner Wartungs-Task) entfällt der Schritt.
 
+### 1a. Mehr-Issue-Auftrag sichern (#551)
+
+Erteilt der PO mehrere Issues in einem Auftrag („Setze 545, 547 und 548 um …“),
+sichere den Auftrag vor dem ersten Workflow per `workflow.py queue add` auf der
+Platte, damit er `/clear` und Worktree-Wechsel überlebt:
+
+```bash
+python3 .claude/hooks/workflow.py queue add <N...> [--autark] [--note "<Wortlaut>"]
+```
+
+`--autark` nur, wenn der PO „autark“ bzw. „melde dich nur, wenn …“ gesagt hat.
+Die Datei `.claude/auftrag.json` liegt im Haupt-Repo; `workflow.py complete` hakt
+das Issue ab, `workflow.py queue` zeigt den Stand (`NEXT=`, `PROMPT=`). Ein
+autarker Auftrag hält die Kette nicht für `/clear` an; menschliche Pflichtstopps
+(AMBIGUOUS, zweites BROKEN, Override, Deploy-Freigabe, Stop-Lock, Produktfragen)
+bleiben. Bei nur einem Issue entfällt der Schritt.
+
 ### 1c. Bugs: Vorprüfung vor dem Scoring
 
 Bei einem Fehlerbericht, noch bevor bewertet wird:

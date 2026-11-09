@@ -36,6 +36,9 @@ Usage:
 from hook_utils import setup_path, find_project_root
 from hook_utils import UnsafeStateError, atomic_write_json, read_state_json
 from hook_utils import issue_number_from_name, workflow_issue_number
+from hook_utils import (auftrag_settings, auftrag_path, read_auftrag, write_auftrag,
+                        auftrag_open_issues, auftrag_autark_open, auftrag_mark_done,
+                        auftrag_note_text)
 setup_path()
 
 import hashlib as _hashlib
@@ -441,21 +444,45 @@ def _end_state_open(data: dict) -> dict:
     return _end("you", END_YOU.format(step or "/00-intake", why))
 
 
+def _queue_number(value) -> "int | None":
+    """Positive Issue-Nummer aus `queue_next` (int oder Ziffern-String), sonst None."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, str) and _re.fullmatch(r"[0-9]+", value) and int(value) > 0:
+        return int(value)
+    return None
+
+
+def _end_state_queue(number: int, autark: bool) -> dict:
+    """Workflow fertig, Auftrag hat ein naechstes Issue (#551): ⏳ autark, sonst ❗."""
+    if autark:
+        return _end("waiting", END_WAITING.format(f"Claude startet #{number} aus deinem Auftrag"))
+    cmd = f"/00-intake #{number}"
+    return _end("you", END_YOU.format(cmd, "nächstes Issue aus deinem Auftrag"), cmd)
+
+
 def end_state(data, archived: bool = False, deploy="off",
-              autonomous: bool = False) -> dict:
+              autonomous: bool = False, queue_next=None, autark: bool = False) -> dict:
     """Genau einer von drei Endzustaenden (#550): done | waiting | you.
 
     Rueckgabe `{"kind", "line", "cmd"}`; `line` ist die ganze Zeile fuer
     Chat-Fusszeile, Plan-Schluss und Seitenleiste. Kein Config-Zugriff: Deploy-
     Modus und `autonomous` liefern die Aufrufer. Ein gesetztes `waiting_on`
     (CI, Hintergrund-Agent, Server) hat Vorrang — ausser vor einem
-    fehlgeschlagenen Deploy, der eine Handlung verlangt.
+    fehlgeschlagenen Deploy, der eine Handlung verlangt. `queue_next`/`autark`
+    (#551) aendern nur den Fall „Workflow fertig“ (Art done): naechstes Issue
+    aus dem Auftrag statt ✅.
     """
     data = data if isinstance(data, dict) else {}
     final = archived or data.get("current_phase") == "phase8_complete"
     state = _end_state_final(data, deploy, autonomous) if final else _end_state_open(data)
     waiting = _one_line(data.get("waiting_on") or "")
     failed = state["kind"] == "you" and final and data.get("deploy_status") == "failed"
+    number = _queue_number(queue_next)
+    if final and state["kind"] == "done" and number is not None:
+        state = _end_state_queue(number, autark is True)
     if waiting and not failed:
         return _end("waiting", END_WAITING.format(waiting))
     return state
@@ -472,22 +499,43 @@ def _wrap_plan_tail(line: str, width: int) -> "list[str]":
     return [(head + ":")[:width]] + (textwrap.wrap(rest, width) or [])
 
 
+def queue_end_args(data) -> dict:
+    """`{"queue_next", "autark"}` fuer `end_state` aus dem Auftrag (#551). Wirft nie.
+
+    Gemeinsame Quelle fuer `endstate` und Plan: `queue_next` ist die erste offene
+    Nummer, die nicht die des geprueften Workflows ist. Ohne Auftrag bzw. mit
+    Kill-Switch `{"queue_next": None, "autark": False}`.
+    """
+    try:
+        auftrag = read_auftrag()
+        if not auftrag:
+            return {"queue_next": None, "autark": False}
+        own = workflow_issue_number(data)
+        own_n = int(own) if own else None
+        nxt = next((n for n in auftrag_open_issues(auftrag) if n != own_n), None)
+        return {"queue_next": nxt, "autark": auftrag["autark"] is True}
+    except Exception:
+        return {"queue_next": None, "autark": False}
+
+
 def render_plan(data, archived: bool = False, width: "int | None" = None,
-                deploy=False, autonomous: bool = False) -> str:
+                deploy=False, autonomous: bool = False,
+                queue: "dict | None" = None) -> str:
     """Workflow-Plan als Text (#476): ✔ erledigt, ▶ laeuft, ○ offen. Pure.
 
     `deploy` (#478, #510, #550): nur Modus "configured" (siehe
     `_plan_deploy_mode`) fuegt nach "8 Code fertig" einen Schritt Deploy an.
     Der Deploy-Zustand kommt aus `data["deploy_status"]` (running/done/failed).
     Schlusszeile ist immer `end_state(...)["line"]` — dieselbe Zeile wie
-    `workflow.py endstate` im Chat.
+    `workflow.py endstate` im Chat. `queue` (#551) ist das Ergebnis von
+    `queue_end_args(data)`; die Aufrufer lesen den Auftrag, damit dies rein bleibt.
     """
     if not isinstance(data, dict):
         lines, tail = ["Kein aktiver Workflow"], None
     else:
         lines = _plan_lines(data, archived, deploy) + [""]
         tail = end_state(data, archived=archived, deploy=deploy,
-                         autonomous=autonomous)["line"]
+                         autonomous=autonomous, **(queue or {}))["line"]
     if isinstance(width, int) and width > 0:
         lines = [line[:width] for line in lines]
         if tail:
@@ -547,7 +595,20 @@ def status_note(data: dict) -> "str | None":
     unbrauchbar. Der Vermerk ist die einzige Stelle, die Claude auch in frei
     formulierten Nachrichten NACH dem Ende einer Phase (Loop-Aufwachen,
     Zwischenfragen) daran erinnert, dass ein Pflicht-Schritt offen ist.
+    Ein offener Auftrag (#551) haengt seinen Satz an (fail-open).
     """
+    note = _status_note_base(data)
+    if note is None:
+        return None
+    try:
+        extra = auftrag_note_text(read_auftrag())
+    except Exception:
+        extra = ""
+    return f"{note}\n{extra}" if extra else note
+
+
+def _status_note_base(data: dict) -> "str | None":
+    """Statusvermerk ohne Auftragssatz (siehe `status_note`)."""
     if not isinstance(data, dict):
         return None
     name = data.get("name")
@@ -2317,13 +2378,14 @@ def _plan_watch(target: "str | None" = None) -> None:
                 found = _plan_active()
                 if found:
                     last_name, data = found
-                    out = render_plan(data, width=width, deploy=deploy, autonomous=auto)
+                    out = render_plan(data, width=width, deploy=deploy, autonomous=auto,
+                                      queue=queue_end_args(data))
                 elif last_name and _archive_file(last_name).exists():
                     data = dict(_read_workflow(_archive_file(last_name)))
                     data.setdefault("name", last_name)
                     _with_issue_title(data)
                     out = render_plan(data, archived=True, width=width, deploy=deploy,
-                                      autonomous=auto)
+                                      autonomous=auto, queue=queue_end_args(data))
                 else:
                     out = render_plan(None, width=width)
                 if out != last_out:
@@ -2363,8 +2425,9 @@ def cmd_plan(args: list[str]) -> None:
         found = _plan_active()
     except (Exception, SystemExit):
         found = None
-    print(render_plan(found[1] if found else None, deploy=deploy_mode(),
-                      autonomous=deploy_autonomous()))
+    data = found[1] if found else None
+    print(render_plan(data, deploy=deploy_mode(), autonomous=deploy_autonomous(),
+                      queue=queue_end_args(data) if data is not None else None))
 
 
 def cmd_issue_title(args: list[str]) -> None:
@@ -2944,6 +3007,12 @@ def cmd_complete(args: list[str]) -> None:
         link.unlink()
     _persist_env(None)
     _herdr("clear")
+    try:  # #551: Issue im Auftrag abhaken; aendert weder Ausgabe noch Exit
+        issue = workflow_issue_number(data) or workflow_issue_number({"name": name})
+        if issue:
+            auftrag_mark_done(find_project_root(), issue)
+    except Exception:
+        pass
     print(f"Workflow {name} completed and archived.")
 
 
@@ -3225,7 +3294,8 @@ def cmd_endstate(args: list[str]) -> None:
     data = dict(data)
     data.setdefault("name", name)
     state = end_state(data, archived=path.parent == _archive_dir(),
-                      deploy=deploy_mode(), autonomous=deploy_autonomous())
+                      deploy=deploy_mode(), autonomous=deploy_autonomous(),
+                      **queue_end_args(data))
     print(f"ENDSTATE={state['kind']}")
     print(f"FOOTER={state['line']}")
 
@@ -3656,13 +3726,16 @@ def cmd_autoclear(args: list[str]) -> None:
 
     `on` nur in einem Herdr-Pane (`_pane()`) bei aktivem Auto-/clear. Bewusst ohne
     aktiven Workflow, Vorbild `cmd_autonomy`. Bei `on` zusaetzlich Grenz-Vermerk
-    im aktiven Workflow (#495), ohne Einfluss auf Ausgabe/Exit.
+    im aktiven Workflow (#495), ohne Einfluss auf Ausgabe/Exit. Ein offener
+    autarker Auftrag (#551) haelt die Kette nicht fuer `/clear` an: `off`.
     """
     state = "off"
     try:
         import herdr_bridge
         if herdr_bridge._pane() and herdr_bridge.auto_clear_enabled():
             state = "on"
+        if state == "on" and auftrag_autark_open():
+            state = "off"
     except Exception:
         state = "off"
     if state == "on":
@@ -3797,9 +3870,10 @@ def cmd_context(args: list[str]) -> None:
     Messung >= `clear_threshold_tokens` (Default 100000). Bewusst ohne aktiven
     Workflow (Vorbild `autonomy`): die Phasen-Befehle rufen bei `on` den
     Folge-Skill nicht mehr selbst auf, sondern beenden den Turn mit Checkpoint und
-    Du-Zeile, damit `/clear` den Kontext schneidet.
+    Du-Zeile, damit `/clear` den Kontext schneidet. Bei offenem autarkem Auftrag
+    (#551) immer `CONTEXT_CUT=off` plus `CONTEXT_REASON=AUTARK`.
     """
-    tokens, cut = None, "off"
+    tokens, cut, autark = None, "off", False
     try:
         from hook_utils import context_budget_settings, read_context_usage
         settings = context_budget_settings()
@@ -3808,13 +3882,119 @@ def cmd_context(args: list[str]) -> None:
             tokens = usage["tokens"]
         if settings["enabled"] and tokens is not None and tokens >= settings["threshold"]:
             cut = "on"
+        autark = auftrag_autark_open()
     except Exception:
+        cut = "off"
+    if autark:
         cut = "off"
     try:
         print(f"CONTEXT_TOKENS={tokens if tokens is not None else 'unknown'}")
         print(f"CONTEXT_CUT={cut}")
+        if autark:
+            print("CONTEXT_REASON=AUTARK")
     except Exception:
         pass
+
+
+QUEUE_USAGE = ('Usage: workflow.py queue [list | add <N...> [--autark] [--note "<text>"] '
+               '| done <N> | clear]')
+QUEUE_AUTARK_SUFFIX = (" (autark: Auftrag aus .claude/auftrag.json weiter abarbeiten, "
+                       "kein Halt für /clear)")
+
+
+def _queue_usage_exit() -> None:
+    print(QUEUE_USAGE, file=sys.stderr)
+    sys.exit(1)
+
+
+def _queue_num(arg: str) -> "int | None":
+    """Positive Ganzzahl aus reinen ASCII-Ziffern, sonst None."""
+    if _re.fullmatch(r"[0-9]+", arg) and int(arg) > 0:
+        return int(arg)
+    return None
+
+
+def _print_queue(auftrag) -> None:
+    """Gemeinsame Ausgabe aller `queue`-Unterbefehle (#551)."""
+    open_issues = auftrag_open_issues(auftrag)
+    autark = bool(auftrag and auftrag.get("autark"))
+    print(f"QUEUE={','.join(str(n) for n in open_issues) or 'none'}")
+    print(f"AUTARK={'on' if autark else 'off'}")
+    print(f"NEXT={open_issues[0] if open_issues else 'none'}")
+    if open_issues:
+        suffix = QUEUE_AUTARK_SUFFIX if autark else ""
+        print(f"PROMPT=/00-intake #{open_issues[0]}{suffix}")
+
+
+def _parse_queue_add(args: list[str]) -> "tuple[list[int], bool, str | None]":
+    """(Nummern, --autark, --note) aus den `queue add`-Argumenten; Fehler → Usage."""
+    numbers, autark, note, i = [], False, None, 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--autark":
+            autark = True
+        elif arg == "--note" and i + 1 < len(args):
+            note, i = args[i + 1], i + 1
+        elif _queue_num(arg) is not None:
+            numbers.append(_queue_num(arg))
+        else:
+            _queue_usage_exit()
+        i += 1
+    if not numbers:
+        _queue_usage_exit()
+    return numbers, autark, note
+
+
+def _queue_add(root: Path, args: list[str]) -> None:
+    """Nummern anhaengen; Doppelte ignoriert, erledigte wieder `open` (#551)."""
+    numbers, autark, note = _parse_queue_add(args)
+    auftrag = read_auftrag(root) or {"issues": [], "autark": False, "note": "",
+                                     "created": "", "updated": ""}
+    by_number = {e["n"]: e for e in auftrag["issues"]}
+    for n in numbers:
+        if n in by_number:
+            by_number[n]["status"] = "open"
+        else:
+            by_number[n] = {"n": n, "status": "open"}
+            auftrag["issues"].append(by_number[n])
+    if autark:
+        auftrag["autark"] = True
+    if note is not None:
+        auftrag["note"] = note
+    write_auftrag(root, auftrag)
+
+
+def cmd_queue(args: list[str]) -> None:
+    """`queue [list | add <N..> [--autark] [--note T] | done <N> | clear]` (#551).
+
+    Auftragsliste `<Haupt-Repo>/.claude/auftrag.json`, wirkt ohne aktiven
+    Workflow. Ausgabe `QUEUE=`, `AUTARK=`, `NEXT=` und bei offenem Auftrag
+    `PROMPT=/00-intake #<NEXT>`. Kill-Switch `auftrag.enabled: false`: genau
+    `QUEUE=disabled`, Exit 0, keine Schreibung.
+    """
+    if not auftrag_settings()["enabled"]:
+        print("QUEUE=disabled")
+        return
+    root = find_project_root()
+    sub, rest = (args[0], args[1:]) if args else ("list", [])
+    if sub == "add":
+        _queue_add(root, rest)
+    elif sub == "done":
+        number = _queue_num(rest[0]) if len(rest) == 1 else None
+        if number is None:
+            _queue_usage_exit()
+        if not auftrag_mark_done(root, number):
+            print(f"queue done: #{number} steht nicht im Auftrag "
+                  f"({auftrag_path(root)})", file=sys.stderr)
+            sys.exit(1)
+    elif sub == "clear":
+        try:
+            auftrag_path(root).unlink()
+        except FileNotFoundError:
+            pass
+    elif sub != "list" or rest:
+        _queue_usage_exit()
+    _print_queue(read_auftrag(root))
 
 
 def _split_batch(args: list[str]) -> list[list[str]]:
@@ -4074,6 +4254,7 @@ COMMANDS = {
     "deploy-status": cmd_deploy_status,
     "waiting": cmd_waiting,
     "endstate": cmd_endstate,
+    "queue": cmd_queue,
     "retro-list": cmd_retro_list,
     "sessions": cmd_sessions,
     "observable-surface": cmd_observable_surface,

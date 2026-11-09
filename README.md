@@ -199,6 +199,10 @@ python3 .claude/hooks/workflow.py endstate [#N|name]   # prints the final footer
 python3 .claude/hooks/workflow.py waiting "<text>"     # mark "⏳ Läuft noch" (what is still running)
 python3 .claude/hooks/workflow.py waiting --clear      # remove the marker (also cleared on phase change)
 
+# Multi-issue order (#551) — survives /clear, stored in <main repo>/.claude/auftrag.json
+python3 .claude/hooks/workflow.py queue add 547 548 --autark --note "<wording>"   # QUEUE=, AUTARK=, NEXT=, PROMPT=
+python3 .claude/hooks/workflow.py queue            # show; `queue done <N>`, `queue clear`
+
 # Context budget — several state changes per call, context size of this session
 python3 .claude/hooks/workflow.py batch add-artifact test_output logs/t.log "3 failed" phase5_tdd_red -- mark-red "3 failed" -- status
 python3 .claude/hooks/workflow.py context          # CONTEXT_TOKENS=<n|unknown>, CONTEXT_CUT=on|off

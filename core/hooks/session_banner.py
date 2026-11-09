@@ -30,6 +30,8 @@ Klartext ("Kurzbefehle aktualisiert (N)", "Projektstand aktualisiert (N
 Änderungen)"). Was der Start nicht beheben darf (Projekt-Kurzbefehle sind
 versioniert; Haupt-Ordner mit lokalen Aenderungen), geht nur als
 `additionalContext` an Claude. Bei `source == "compact"` keine Wartung.
+Ein offener Mehr-Issue-Auftrag (`.claude/auftrag.json`, #551) geht bei jeder
+Quelle als Satz in den `additionalContext`.
 
 Robust by design: jede Exception → still Exit 0. Ein Banner darf den
 Session-Start nie blockieren. Bei `framework: {enabled: false}` bzw.
@@ -486,6 +488,22 @@ def behind_lines(cwd: Path) -> "list[str]":
     return main_folder_sync(cwd)[0]
 
 
+def auftrag_context(project: Path) -> str:
+    """Satz zum offenen Auftrag (#551) aus `<Haupt-Repo>/.claude/auftrag.json`, sonst "".
+
+    Nur fuer Claude (`additionalContext`): nach `/clear` und `compact` ginge der
+    Mehr-Issue-Auftrag sonst verloren. Wirft nie.
+    """
+    try:
+        if str(_HOOK_DIR) not in sys.path:
+            sys.path.insert(0, str(_HOOK_DIR))
+        import hook_utils
+        main = hook_utils.find_main_repo_from_worktree(Path(project)) or Path(project)
+        return hook_utils.auftrag_note_text(hook_utils.read_auftrag(main))
+    except Exception:
+        return ""
+
+
 def build_output(root: Path, project: Path, cwd: "Path | None" = None,
                  source: "str | None" = None) -> "dict | None":
     """Hook-Ausgabe: sichtbare `systemMessage`, optional `additionalContext` fuer Claude."""
@@ -506,6 +524,9 @@ def build_output(root: Path, project: Path, cwd: "Path | None" = None,
             visible, hints = [], []
         lines.extend(visible)
         context.extend(hints)
+    sentence = auftrag_context(project)  # #551: bei jeder Quelle, auch clear/compact
+    if sentence:
+        context.append(sentence)
     output: dict = {"systemMessage": "\n".join(lines)}
     if context:
         output["hookSpecificOutput"] = {"hookEventName": "SessionStart",
