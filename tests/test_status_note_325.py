@@ -25,9 +25,18 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 HOOKS_DIR = REPO_ROOT / "core" / "hooks"
 sys.path.insert(0, str(HOOKS_DIR))
 
+import pytest  # noqa: E402
 import workflow  # noqa: E402
 
 LISTENER = HOOKS_DIR / "phase_listener.py"
+
+
+@pytest.fixture(autouse=True)
+def _no_real_auftrag(monkeypatch):
+    # #551/#555: status_note haengt den Auftrags-Satz aus der echten
+    # .claude/auftrag.json an; ein Entwickler-Checkout mit Auftrag darf diese
+    # Tests nicht beeinflussen.
+    monkeypatch.setattr(workflow, "read_auftrag", lambda *a, **k: None)
 
 
 # --- Helpers ---------------------------------------------------------------

@@ -214,7 +214,9 @@ def build_report(data) -> "dict | None":
             "phase": _clean(phase_nr),
             "step": _clean(step),
             "next": _clean(nxt),
-            "state": STATE_TOKENS.get(workflow.end_state(data)["kind"], "du"),
+            # #555: dieselben Auftrags-Argumente wie `endstate` und Plan
+            "state": STATE_TOKENS.get(
+                workflow.end_state(data, **workflow.queue_end_args(data))["kind"], "du"),
         },
     }
 

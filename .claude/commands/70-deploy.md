@@ -136,12 +136,16 @@ $WF endstate <N>
 
 Gib den Wert hinter `FOOTER=` **wörtlich** als Endzustand-Zeile der Nachricht aus (genau eine
 der drei Formen `✅ Erledigt: …`, `⏳ Läuft noch: …`, `❗ Du: … — …`). Keine eigene Formulierung,
-kein „Nächster: /70-deploy“ daneben. Ohne Workflow bzw. Issue-Nummer entfällt der Aufruf.
+kein „Nächster: /70-deploy“ daneben. Ohne Issue-Nummer rufe denselben Befehl mit dem
+Workflow-Namen auf (`workflow.py endstate <name>`); nur ganz ohne Workflow entfällt der Aufruf.
 
-Kette bei offenem Auftrag (#551): Steht nach `endstate` `ENDSTATE=waiting` und meldet
-`$WF queue` ein `NEXT=M`, gib die ⏳-Zeile aus und rufe danach
-`/00-intake #M` selbst auf (autarker Auftrag) — kein Halt für `/clear`. Bei `ENDSTATE=you`
-(Auftrag nicht autark) gib die ❗-Zeile wörtlich aus und warte auf den PO.
+Kette bei offenem Auftrag (#551, #555): Sie greift nur, wenn der Wert hinter `FOOTER=`
+„aus deinem Auftrag“ enthält; `M` ist die Nummer darin (dieselbe wie `NEXT=M` aus
+`$WF queue`). Bei `ENDSTATE=waiting` (`⏳ Läuft noch: Claude
+startet #M aus deinem Auftrag. …`) gib die Zeile aus und rufe danach `/00-intake #M` selbst
+auf (autarker Auftrag) — kein Halt für `/clear`. Bei `ENDSTATE=you` (`❗ Du: /00-intake #M — …`,
+Auftrag nicht autark) gib die Zeile wörtlich aus und warte auf den PO. Ein `ENDSTATE=waiting`
+ohne „aus deinem Auftrag“ (Deploy, CI, Agent) startet keine Kette.
 
 ## Versions-Marker (Pflicht)
 
