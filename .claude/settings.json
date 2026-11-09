@@ -1,0 +1,315 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash",
+      "WebSearch",
+      "WebFetch"
+    ],
+    "deny": [],
+    "ask": []
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/session_singleton_guard.py register",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/session_banner.py",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || python3 -I \"${CLAUDE_PROJECT_DIR}/.claude/cloud_bootstrap.py\" session_singleton_guard.py register",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || python3 -I \"${CLAUDE_PROJECT_DIR}/.claude/cloud_bootstrap.py\" session_banner.py",
+            "timeout": 35
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/session_singleton_guard.py guard",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/secret_egress_guard.py",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || python3 -I \"${CLAUDE_PROJECT_DIR}/.claude/cloud_bootstrap.py\" session_singleton_guard.py guard",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || python3 -I \"${CLAUDE_PROJECT_DIR}/.claude/cloud_bootstrap.py\" secret_egress_guard.py",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/worktree_write_guard.py",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/claude_md_protection.py",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/edit_gate.py",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/tdd_enforcement.py",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/post_implementation_gate.py",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || python3 -I \"${CLAUDE_PROJECT_DIR}/.claude/cloud_bootstrap.py\" worktree_write_guard.py",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || python3 -I \"${CLAUDE_PROJECT_DIR}/.claude/cloud_bootstrap.py\" claude_md_protection.py",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || python3 -I \"${CLAUDE_PROJECT_DIR}/.claude/cloud_bootstrap.py\" edit_gate.py",
+            "timeout": 35
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || python3 -I \"${CLAUDE_PROJECT_DIR}/.claude/cloud_bootstrap.py\" tdd_enforcement.py",
+            "timeout": 35
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || python3 -I \"${CLAUDE_PROJECT_DIR}/.claude/cloud_bootstrap.py\" post_implementation_gate.py",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/secrets_guard.py",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/bash_gate.py",
+            "timeout": 300
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || python3 -I \"${CLAUDE_PROJECT_DIR}/.claude/cloud_bootstrap.py\" secrets_guard.py",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || python3 -I \"${CLAUDE_PROJECT_DIR}/.claude/cloud_bootstrap.py\" bash_gate.py",
+            "timeout": 325
+          }
+        ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/secrets_guard.py",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || python3 -I \"${CLAUDE_PROJECT_DIR}/.claude/cloud_bootstrap.py\" secrets_guard.py",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/post_bash.py",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/process_watchdog.py hook",
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || python3 -I \"${CLAUDE_PROJECT_DIR}/.claude/cloud_bootstrap.py\" post_bash.py",
+            "timeout": 55
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || python3 -I \"${CLAUDE_PROJECT_DIR}/.claude/cloud_bootstrap.py\" process_watchdog.py hook",
+            "timeout": 40
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/edit_verify.py",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || python3 -I \"${CLAUDE_PROJECT_DIR}/.claude/cloud_bootstrap.py\" edit_verify.py",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/phase_listener.py",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || python3 -I \"${CLAUDE_PROJECT_DIR}/.claude/cloud_bootstrap.py\" phase_listener.py",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/footer_gate.py",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || python3 -I \"${CLAUDE_PROJECT_DIR}/.claude/cloud_bootstrap.py\" footer_gate.py",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "permission_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/herdr_bridge.py signal activity",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || python3 -I \"${CLAUDE_PROJECT_DIR}/.claude/cloud_bootstrap.py\" herdr_bridge.py signal activity",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/herdr_bridge.py signal activity",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || python3 -I \"${CLAUDE_PROJECT_DIR}/.claude/cloud_bootstrap.py\" herdr_bridge.py signal activity",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/herdr_bridge.py plan-pane-close",
+            "timeout": 2
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/herdr_bridge.py signal activity",
+            "timeout": 2
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/session_singleton_guard.py cleanup",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/process_watchdog.py end",
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || python3 -I \"${CLAUDE_PROJECT_DIR}/.claude/cloud_bootstrap.py\" herdr_bridge.py plan-pane-close",
+            "timeout": 27
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || python3 -I \"${CLAUDE_PROJECT_DIR}/.claude/cloud_bootstrap.py\" herdr_bridge.py signal activity",
+            "timeout": 27
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || python3 -I \"${CLAUDE_PROJECT_DIR}/.claude/cloud_bootstrap.py\" session_singleton_guard.py cleanup",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || python3 -I \"${CLAUDE_PROJECT_DIR}/.claude/cloud_bootstrap.py\" process_watchdog.py end",
+            "timeout": 40
+          }
+        ]
+      }
+    ]
+  }
+}

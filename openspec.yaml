@@ -1,0 +1,590 @@
+# OpenSpec Framework Configuration v3.0
+# ======================================
+# Central configuration for the 8-phase workflow enforcement system.
+# v3: Consolidated hooks, isolated workflow state.
+#
+# Copy this file to your project root as openspec.yaml and customize.
+
+# Global switch (#132). `enabled: false` turns the workflow ENFORCEMENT off for
+# this project — phases, spec requirement, TDD gate, approval gate, stop-lock.
+# The protective guards keep running: secrets, hardcoded credentials,
+# CLAUDE.md protection, the worktree write guard.
+#
+# Use this instead of Claude Code's `enabledPlugins: false`: that setting is
+# read per directory and is untracked, so a git worktree does not inherit it and
+# every gate fires again. This file is resolved through find_project_root(),
+# which maps a worktree back to the main repo, so it covers the main checkout,
+# every worktree and every fresh clone.
+#
+# Only an explicit `false` disables anything — see README, "Switching the
+# framework off for a project". Also available as OPENSPEC_FRAMEWORK=off for a
+# single session.
+framework:
+  enabled: true
+
+# Project Information
+project:
+  name: "e2e-consumer"
+  base_path: "/tmp/claude-0/-home-user-agent-os-openspec/a3bf6853-0157-5004-90ae-6e21b8403818/scratchpad/e2e-consumer"  # Will be auto-detected if not set
+
+# Workflow Configuration (v3)
+workflow:
+  # 10 phases including phase6b_adversary
+  phases:
+    - phase0_idle
+    - phase1_context
+    - phase2_analyse
+    - phase3_spec
+    - phase4_approved
+    - phase5_tdd_red
+    - phase6_implement
+    - phase6b_adversary
+    - phase7_validate
+    - phase8_complete
+
+  # Phases that allow code modification (used by edit_gate.py)
+  code_modify_phases:
+    - phase6_implement
+    - phase6b_adversary
+    - phase7_validate
+    - phase8_complete
+
+  # Phrases that trigger spec approval (case-insensitive, word-boundary matched).
+  # Wirken NUR in phase3_spec — in jeder anderen Phase warnt phase_listener und
+  # laesst den Zustand unveraendert (Issue #90).
+  #
+  # Satzbau-Regel (Issue #170) fuer approval_phrases, green_phrases UND die
+  # override_token-Keywords: Die Phrase muss die erste Zeile eroeffnen (hoechstens
+  # EIN Fuellwort davor: ja/ok/okay/yes/klar/danke/super/top), danach duerfen bis
+  # zum ersten Satz-/Klauselzeichen hoechstens 2 Zusatzwoerter folgen (override: 0).
+  # Fragezeichen, Negation/Einschraenkung (nicht, kein, aber, warte …) und eine
+  # fuehrende Ziffer ("1. …") verwerfen die Freigabe; Klammer-Einschuebe werden
+  # ignoriert. Eine blosse Erwaehnung mitten im Satz ist damit keine Freigabe mehr.
+  # Faustregel fuer eigene Listen: kurze, eindeutige Kommandowoerter waehlen.
+  approval_phrases:
+    - "approved"
+    - "freigabe"
+    - "spec ok"
+    - "lgtm"
+    - "looks good"
+    - "genehmigt"
+    - "abgenommen"
+    - "passt"
+    - "sieht gut aus"
+
+  # Phrases that trigger GREEN approval after implementation.
+  # Wirken NUR in phase6_implement und phase6b_adversary.
+  green_phrases:
+    - "go"
+    - "green ok"
+    - "tests ok"
+    - "gruen ok"
+
+# Edit Gate — Controls which code files can be edited and when
+# Used by edit_gate.py (consolidated PreToolUse Edit|Write hook)
+strict_code_gate:
+  code_extensions:
+    - ".swift"
+    - ".kt"
+    - ".java"
+    - ".py"
+    - ".js"
+    - ".ts"
+    - ".tsx"
+    - ".jsx"
+    - ".go"
+    - ".rs"
+    - ".cpp"
+    - ".c"
+    - ".h"
+    - ".hpp"
+    - ".rb"
+    - ".php"
+    - ".cs"
+  always_allowed_dirs:
+    - "Tests/"
+    - "UITests/"
+    - "Test/"
+    - "test/"
+    - "tests/"
+    - "__tests__/"
+    - "spec/"
+    - "docs/"
+    - ".claude/commands/"
+    - "scripts/"
+    - "tools/"
+  always_allowed_patterns:
+    - "\\.md$"
+    - "\\.txt$"
+    - "\\.json$"
+    - "\\.yaml$"
+    - "\\.yml$"
+    - "\\.toml$"
+    - "\\.gitignore$"
+    - "README"
+    - "CHANGELOG"
+    - "LICENSE"
+  # Zusaetzliche Infrastruktur-Verzeichnisse: Aenderungen daran verlangen einen
+  # Override-Token ("override" tippen, gilt 1 h). ERGAENZT die eingebauten
+  # Defaults (.claude/hooks/, .claude/agents/) — ersetzt sie nicht.
+  # Nur setzen, wenn ein Projekt Hooks/Agenten ausserhalb von .claude/ ablegt.
+  # infrastructure_dirs:
+  #   - "lib/gates/"
+
+# Secrets Guard — Prevents accidental exposure of sensitive files
+# Used by secrets_guard.py and bash_gate.py (shared source: core/hooks/hook_utils.py
+# ::SECRETS_SENSITIVE_PATTERNS / SECRETS_ALWAYS_BLOCKED). Muster hier MUESSEN mit dem
+# Code-Default uebereinstimmen (tests/test_config_yaml_secrets_pattern_drift_145.py
+# prueft das) — ein Feld, das hier gesetzt ist, gewinnt in _get_config() gegen den
+# Code-Default. Die alten unverankerten Formen `_key`/`_secret` (Issue #145) blockierten
+# jede Datei mit "key"/"secret" als Substring im Namen (z.B. "...keyword_guard.py").
+secrets_guard:
+  sensitive_patterns:
+    - "\\.env(rc)?\\b"
+    - "credentials\\.json"
+    - "service[_-]?account.*\\.json"
+    - "private[_.]key"
+    - "[_.]secret\\."
+    - "\\.pem$"
+    - "\\.key$"
+  always_blocked:  # Even in staging mode
+    - "credentials\\.json"
+    - "service[_-]?account.*\\.json"
+    - "private[_.]key"
+    - "[_.]secret\\."
+    - "\\.pem$"
+    - "\\.key$"
+
+# Secret Egress Guard — Prevents secret VALUES from leaving via tool output
+# Used by secret_egress_guard.py. redirect_guard_enabled/extra_allowed_write_dirs (Issue #97)
+# MUESSEN mit dem Code-Default in _get_config() uebereinstimmen (dieselbe Drift-Klasse wie
+# #145/#146: ein hier gesetztes Feld gewinnt gegen den Code-Default) — leer/true sind hier
+# UND im Code der Default, es gibt also aktuell nichts, das auseinanderlaufen koennte.
+secret_egress_guard:
+  redirect_guard_enabled: true
+  # Regex-Muster fuer zusaetzliche Schreib-Ziele ausserhalb des Projekts, z.B. ["^/var/log/meine-app/"].
+  # Geprueft wird gegen beide Pfad-Formen (aufgeloest UND unaufgeloest, Issue #239).
+  # Das eigene Sitzungs-Scratchpad braucht KEINEN Eintrag mehr — es ist seit #237
+  # automatisch erlaubt, sofern die PreToolUse-Payload das Feld scratchpad_dir
+  # mitliefert (beide Pfad-Formen). Fehlt das Feld, gibt es keinen Fallback.
+  extra_allowed_write_dirs: []
+
+# Credentials Guard — Detects hardcoded secrets in bash commands
+# Used by bash_gate.py (step 4b). Empty patterns list = use built-in defaults.
+credentials_guard:
+  patterns: []
+
+# Dependency Dir Guard (#293) — bash_gate.py Schritt 4c, gilt auch ohne Workflow.
+# Blockt rm/rmdir/rimraf/mv/find -delete gegen den Ordner selbst oder seinen ganzen
+# Inhalt (`x/*`); tiefere Pfade wie node_modules/.cache bleiben erlaubt. In Worktrees
+# ist node_modules oft ein Symlink auf den geteilten Ordner. Ausweg: Override-Token.
+# Liste MUSS mit DEFAULT_DEPENDENCY_DIRS in bash_gate.py uebereinstimmen.
+dependency_dir_guard:
+  enabled: true
+  dirs: [node_modules, .venv, venv, vendor, bower_components, .pnpm-store]
+
+# E2E Scope Detection — Classifies commits by scope for downstream E2E routing
+# Used by bash_gate.py (step 5c) — writes e2e_scope to workflow state, never blocks
+# Scope values: docs-only | frontend-only | backend | full-stack
+e2e_scope:
+  docs_patterns:
+    - '^docs/'
+    - '\.md$'
+    - '^\.claude/'
+  frontend_patterns:
+    - '^(frontend|ui|client)/'
+    - '^src/.*\.(svelte|vue|tsx|jsx|css|scss|html)$'
+  backend_patterns:
+    - '^(src|api|internal|cmd|backend|server)/'
+
+# Deploy (#81) — gelesen von /70-deploy ueber `workflow.py deploy-config`.
+# Ohne `command` UND `verify` fuehrt /70-deploy nichts aus, sondern fragt den PO
+# nach dem Ablauf und traegt ihn hier ein. Jeder Wert: ein Befehl oder eine Liste.
+#   command:  wie kommt der Stand live (z.B. "./scripts/deploy.sh")
+#   verify:   woran sieht man, dass er live ist (z.B. "./scripts/verify-live.sh /")
+#   rollback: wie geht es zurueck (optional, empfohlen)
+#   autonomous: true — /60-validate darf /70-deploy ohne Freigabe-Halt anstossen
+#   enabled: false — Projekt ohne Deploy (#510, #550): der Plan endet mit ✅,
+#            ohne Deploy-Schritt
+deploy:
+  command: ""
+  verify: ""
+  rollback: ""
+  autonomous: false
+
+# Fast Track (workflow.py start <name> --type feature-fast)
+# Alter Schluessel bug_fix.require_tdd wird ein Release lang als Rueckfall gelesen (#333).
+fast_track:
+  require_tdd: false    # true → TDD-Red-Artefakt auch bei Fast-Track-Workflows erforderlich
+
+# Pre-commit Gate — Checks before git commit is allowed
+# Used by bash_gate.py
+pre_commit:
+  required_staged_files: []  # Files that MUST be staged (e.g., ["docs/ACTIVE-todos.md"])
+
+# Stop Lock — Pause all operations on user command
+# Used by edit_gate.py, bash_gate.py, phase_listener.py
+stop_lock:
+  stop_keywords:
+    - "stop"
+    - "stopp"
+    - "anhalten"
+  resume_keywords:
+    - "resume"
+    - "weiter"
+    - "continue"
+    - "weitermachen"
+
+# Override Token — One-time gate bypass
+# Used by edit_gate.py, phase_listener.py
+override_token:
+  keywords:
+    - "override"
+    - "ueberschreiben"
+    - "ich genehmige"
+
+# TDD Enforcement
+tdd:
+  max_artifact_age_hours: 24
+  artifact_categories:
+    default:
+      min_artifacts: 1
+      types:
+        - screenshot
+        - email
+        - api_response
+        - log
+        - file
+        - test_output
+        - ui_test_output
+        - video
+        - audio
+  min_sizes:
+    screenshot: 1000
+    email: 100
+    api_response: 10
+    log: 10
+    test_output: 10
+    video: 10000
+    audio: 1000
+
+# Adversary Gate — Validate real test output
+# Used by post_bash.py
+adversary_gate:
+  test_patterns:
+    - framework: "pytest"
+      pass_pattern: "passed"
+      fail_pattern: "FAILED|ERROR"
+    - framework: "jest"
+      pass_pattern: "Tests:.*passed"
+      fail_pattern: "Tests:.*failed"
+    - framework: "xcodebuild"
+      pass_pattern: "\\*\\* TEST SUCCEEDED \\*\\*"
+      fail_pattern: "\\*\\* TEST FAILED \\*\\*"
+    - framework: "go_test"
+      pass_pattern: "^ok\\s+"
+      fail_pattern: "^FAIL\\s+"
+    - framework: "cargo_test"
+      pass_pattern: "test result: ok"
+      fail_pattern: "test result: FAILED"
+
+# ADR Reflection Gate — enforce filled "## Architektur-Entscheidung (ADR)" at spec approval
+# Used by workflow.py _check_adr (phase3→4). Set enabled: false to opt out.
+adr_gate:
+  enabled: true
+
+# PO-Briefing-Gate (Freigabe Phase 3 -> 4)
+# Die Freigabe verlangt ein unabhaengig erstelltes Briefing (po-briefer Agent),
+# registriert via `workflow.py set-briefing <pfad>`. Das Briefing ist per
+# SHA-256 an die gelesene Spec-Fassung gebunden: aendert sich die Spec danach,
+# blockiert das Gate erneut.
+po_briefing_gate:
+  enabled: true
+  # Fast-Track-Workflows (feature-fast) brauchen per Default kein Briefing.
+  skip_fast_track: true
+  # Wortgrenze für die Pflicht-Abschnitte + Freigabe-Frage. Der po-briefer zielt
+  # auf ≤ 120 Wörter; darüber blockt das Gate ("Briefing zu lang").
+  max_words: 150
+
+# CI-Spec-Gate (scripts/ci_spec_gate.py, laeuft im Pull Request)
+# Prueft serverseitig, was die lokalen Hooks nur lokal erzwingen: Spec zum
+# Code-Change vorhanden und vollstaendig, PO-Briefing vorhanden, vollstaendig
+# und aktuell. Aussteigen fuer einen einzelnen PR: Commit-Trailer
+# `Spec-Gate: skip <Grund>` — sichtbar in der Historie.
+ci_spec_gate:
+  enabled: true
+
+# Session-Banner (#185): warnt beim Start, wenn der Haupt-Ordner hinter seinem
+# Upstream liegt (git fetch mit 3 s Timeout; offline = keine Zeile).
+session_banner:
+  behind_check: true
+
+# Kontext-Haushalt: Ein Schritt mit 200k Token Kontext kostet etwa das Fuenffache
+# eines Schritts mit 40k; 70-75 % des Wiederlesens entstehen oberhalb von 100k.
+# post_bash.py misst die Kontextgroesse aus dem Transcript und weist Claude ab
+# der Schwelle (einmal je Stufe: Schwelle, danach je 50k) darauf hin, den
+# laufenden Block abzuschliessen und den Turn mit Checkpoint + Du-Zeile zu
+# beenden. `workflow.py context` meldet dann CONTEXT_CUT=on, und die Phasen-
+# Befehle rufen den Folge-Skill im Auto-Modus nicht mehr selbst auf — der PO
+# (oder Herdr) tippt /clear. Messung je Sitzung in .claude/context_usage/.
+# Auskunft, kein Gate. Nur das Literal false schaltet ab.
+context_budget:
+  enabled: true
+  clear_threshold_tokens: 100000
+
+# Auftragsliste (#551): `workflow.py queue` fuehrt mehrere Issues als Auftrag
+# (.claude/auftrag.json). Ist er autark, startet Claude nach jedem fertigen Issue
+# das naechste selbst; im Auto-Modus zeigt die Fusszeile dann ⏳ statt ❗ (#555).
+# Nur das Literal false schaltet ab.
+auftrag:
+  enabled: true
+
+# Herdr-Sidebar (#466): Laeuft Claude in einem Herdr-Pane (HERDR_ENV=1), meldet
+# core/hooks/herdr_bridge.py den Workflow-Stand display-only per
+# `herdr pane report-metadata` (Tokens workflow, issue, phase, step, next).
+# Ausserhalb von Herdr ein No-op. Nur ein ausdrueckliches `false` schaltet ab.
+# Sidebar-Beispiel fuer die Herdr-Config:
+#   [ui.sidebar.agents.rows_by_agent]
+#   claude = ["$phase $step", "next: $next"]
+herdr:
+  enabled: true
+  # Auto-/clear an Phasengrenzen (#467, Opt-in, nur Literal `true` schaltet an):
+  # meldet die Antwort "`/clear` ist jetzt gefahrlos" und nennt die ❗Du-Zeile den
+  # erwarteten Slash-Befehl, tippt ein detachter Runner `/clear` und danach
+  # `/<cmd> #N` in den Pane. Freigaben bleiben manuell. `herdr.enabled: false`
+  # schaltet auch dies ab. Abbrueche: .claude/herdr_auto_clear.log
+  # Fuer alle Projekte (#480): "env": {"OPENSPEC_HERDR_AUTO_CLEAR": "1"} in
+  # ~/.claude/settings.json; ein Projektwert true/false hat Vorrang.
+  auto_clear:
+    # enabled: false   # true = an, false = aus (auch gegen den benutzerweiten Schalter); weglassen = Benutzer-Schalter entscheidet
+    grace_s: 10         # Wartezeit nach dem Stop vor /clear (Sekunden); laenger als eigene Stop-Hooks laufen (#506)
+    idle_timeout_s: 120 # Hoechstwartezeit auf SessionStart(clear) nach dem /clear (Sekunden)
+    announce: true      # Vorankuendigung per `notification show`
+  # Workflow-Plan rechts neben Claude (#476, Opt-out, nur Literal `false` schaltet
+  # ab): `workflow.py start` oeffnet per `pane split --direction right` einen Pane
+  # "Workflow", der den Plan live zeigt (✔ erledigt, ▶ laeuft, ○ offen). Manuell:
+  # `workflow.py plan --open`. Log: .claude/herdr_plan_pane.log
+  plan_pane:
+    enabled: true
+    ratio: 0.75         # Breitenanteil, der Claude bleibt (0.1–0.9)
+
+# Autonomie-Schalter (#469, Teil A von #468): `manual` | `auto`. Nur der exakte
+# Literal `auto` schaltet an; alles andere (auch Tippfehler) gilt als `manual`.
+# Auskunft: `workflow.py autonomy`. In diesem Schritt ohne Wirkung auf Gates.
+# Fuer alle Projekte (#481): "env": {"OPENSPEC_AUTONOMY": "auto"} in
+# ~/.claude/settings.json; ein Projekteintrag `mode: manual|auto` hat Vorrang.
+autonomy:
+  # mode: manual   # manual|auto; weglassen = Benutzer-Schalter entscheidet
+
+# Abdeckungspruefung des Adversary-Nachweises (Issue #259)
+# Commit-Gate und Phase 8 verlangen, dass das Dialog-Protokoll jede Code-Datei
+# der Aenderungsmenge zitiert und hasht (`adversary_dialog.py required-files`).
+# Nur ein ausdrueckliches `false` schaltet ab — und nur Abdeckung und
+# Teilstaging-Pruefung, nicht die #253-Nachweispruefung und nicht F002–F004.
+adversary_coverage_gate:
+  enabled: true
+
+# Evidence-Gate (Issue #447, opt-in): phase8_complete (auch complete/finish und
+# Fast Track) nur mit maschinell erzeugtem Beleg unter docs/artifacts/<workflow>/.
+# Default: aus (Abschnitt auskommentiert = keine Wirkung, kein Git-/xcrun-Aufruf).
+# Kaputte Config weist ab statt abzuschalten. Verifier `xcresult_proof`: Beleg von
+# scripts/sim.sh test-proof; das Gate leitet das Testergebnis per
+# `xcrun xcresulttool` neu aus run.xcresult ab (nur macOS mit Xcode).
+# `file`: reiner Dateiname ohne `/` und `..`. `exempt_paths`: fnmatch-Muster auf
+# repo-relative Pfade, die keinen Beleg brauchen. Ausweg: "override" des Workflows.
+# evidence_checks:
+#   phase8_complete:
+#     - verifier: xcresult_proof
+#       file: simulator-run.txt
+#   exempt_paths:
+#     - "scripts/*"
+
+# qa_gate --run (#345): fuehrt test_command selbst aus (nie von der Kommandozeile),
+# z.B. "python3 -m pytest tests/ -q"; leer = Abbruch. `--timeout <s>` > run_timeout.
+qa_gate:
+  test_command: ""
+  run_timeout: 540
+
+# Aufwandsbremse je Stufe (Issue #250, Teil B)
+# Ueberschreitet ein Workflow Fix-Loops oder Phasen-Wiedereintritte seiner Stufe,
+# gibt `workflow.py phase` eine RUECKFRAGE AN DEN PO aus und protokolliert sie
+# (Gate-Event-Log, hook=effort_budget). Ein Phasenwechsel wird nie verweigert.
+# batch_window_min: Batch-Fenster des post_implementation_gate je Stufe.
+# Nur ein ausdrueckliches `false` schaltet ab (dann 15 min fuer alle Stufen).
+# Unbekannte Typen (Altbestand bug, express) nutzen die Werte von `feature`.
+effort_budget:
+  enabled: true
+  feature-fast: {max_fix_loops: 1, max_phase_reentries: 1, batch_window_min: 30}
+  feature:      {max_fix_loops: 2, max_phase_reentries: 2, batch_window_min: 15}
+
+# Pflichtsektion "## Herkunft der Vorbedingungen" im Adversary-Pruefprotokoll (Issue #286).
+precondition_section_gate:
+  enabled: true
+  # warn: Sektion fehlt/unvollstaendig -> Warnung (stderr), Gate blockt NICHT.
+  # block: wie jede andere Format-/Content-Pruefung -> blockt Commit/Phase 8.
+  # Ungueltige Werte gelten als warn.
+  mode: warn
+  skip_fast_track: true   # Fast Track (feature-fast) wird nicht geprueft
+
+# Beobachtbare Oberflaeche (Issue #260) — steuert NUR, ob `/60-validate` die
+# Schlussfrage "Soll ich den Code committen?" stellt. Kein Gate: die Pruefung
+# unterdrueckt eine Rueckfrage, sie erlaubt nichts. Gelesen von
+# `hook_utils.has_observable_surface()`, ausgegeben von
+# `workflow.py observable-surface`. Fail-closed: nur wenn JEDE geaenderte Datei
+# nachweislich keine Oberflaeche beruehrt, entfaellt die Frage.
+#
+# ACHTUNG Modulprojekte (ios-swiftui, home-assistant): `config_loader` merged
+# Modul-Configs NICHT. Eigene Oberflaechen-Muster (weitere Dashboard-Pfade,
+# Storyboards, Asset-Ordner) muessen HIER in die Projekt-config.yaml — ein
+# Eintrag in `modules/<name>/config.yaml` wirkt fuer diese Pruefung nicht.
+observable_surface:
+  # false → die Pruefung ist aus und die Schlussfrage wird IMMER gestellt
+  # (streng, nicht locker): abgeschaltet heisst hier "im Zweifel fragen".
+  enabled: true
+  # Was der PO unmittelbar sehen und beurteilen kann. Ein Treffer genuegt,
+  # damit die Frage bleibt. Zu breit ist unkritisch — es macht nur strenger.
+  surface_patterns:
+    - '(^|/)core/commands/.*\.md$'
+    - '(^|/)\.claude/commands/.*\.md$'
+    - '(^|/)skills/[^/]+/SKILL\.md$'
+    - '(^|/)CLAUDE\.md$'
+    - '(^|/)lovelace/.*\.ya?ml$'
+    - '\.(strings|xcstrings)$'
+    - '\.xcassets/'
+  # Was der PO nachweislich nicht beurteilen kann. Die Frage entfaellt nur,
+  # wenn JEDE geaenderte Datei hier trifft. Bewusst kein pauschales `\.md$`
+  # und kein pauschales `^\.claude/`: was keine der beiden Listen trifft,
+  # gilt als unbekannt und damit als Oberflaeche.
+  non_surface_patterns:
+    - '^docs/'
+    - '^tests?/'
+    - '(^|/)test_[^/]+\.py$'
+    - '(^|/)[^/]+_test\.(py|go|js|ts)$'
+    - '(^|/)[^/]+Tests?\.swift$'
+    - '^core/hooks/'
+    - '^scripts/'
+    - '^\.github/'
+    - '(^|/)(CHANGELOG|README|CONTRIBUTING)\.md$'
+    - '(^|/)\.gitignore$'
+    - '(^|/)\.editorconfig$'
+  # Basis-Stand fuer den Vergleich. Leer = aus `origin/HEAD` ableiten; laesst
+  # sich der Stand so nicht ermitteln, lautet die Antwort "no-base" und die
+  # Frage bleibt. Es gibt KEINEN geratenen Rueckfall wie "origin/main".
+  base_branch: ""
+
+# Gegenpruefung nach Risiko (#342). Das Risiko ergibt sich mechanisch aus der
+# Dateiliste der Aenderung (Vergleich mit dem Basis-Stand), nicht aus
+# Selbsteinstufung und nicht aus der Zeilenzahl. Hohes Risiko: mindestens 2
+# Dialog-Runden (`MIN_ROUNDS`); niedriges Risiko: `low_risk_min_rounds`.
+# Gelesen von `hook_utils.adversary_risk_report()` und
+# `adversary_dialog.required_rounds()`, ausgegeben von `adversary_dialog.py risk`.
+# Fail-closed: Fehler, abgeschaltet, leere Liste, unbekannte Datei, ungueltiger
+# Wert → hoch / 2 Runden. Nur ein ausdrueckliches `true` laesst die Staffelung zu.
+adversary_risk:
+  enabled: true
+  # Ein Treffer genuegt fuer hohes Risiko.
+  high_risk_patterns:
+    - '^core/hooks/'
+    - '^hooks/'
+    - '^core/agents/'
+    - '^scripts/'
+    - '^modules/'
+    - '^setup\.py$'
+    - '^config\.yaml$'
+    - '^\.github/'
+    - '^\.claude-plugin/'
+    - '(^|/)\.env'
+    - 'secret'
+  # Niedriges Risiko nur, wenn JEDE geaenderte Datei hier trifft.
+  low_risk_patterns:
+    - '^docs/'
+    - '^tests?/'
+    - '(^|/)test_[^/]+\.py$'
+    - '^core/commands/[^/]+\.md$'
+    - '^skills/[^/]+/SKILL\.md$'
+    - '(^|/)(CHANGELOG|README|CONTRIBUTING)\.md$'
+    - '(^|/)CLAUDE\.md$'
+    - '(^|/)\.gitignore$'
+  # Nur der ganzzahlige Wert 1 oder 2 gilt; alles andere (auch true/false) → 2.
+  low_risk_min_rounds: 1
+  # Basis-Stand. Leer = aus `origin/HEAD` ableiten; sonst "no-base" → hoch.
+  base_branch: ""
+
+# Specs Configuration
+specs:
+  base_path: "docs/specs"
+  template_file: "docs/specs/_template.md"
+  categories:
+    modules:
+      pattern: "^class\\s+(\\w+)"
+      path: "modules"
+    functions:
+      pattern: "^def\\s+(\\w+)"
+      path: "functions"
+    tests:
+      pattern: "^def\\s+test_(\\w+)"
+      path: "tests"
+
+# Agent Configuration
+# Model Strategy: Haiku (mechanical) / Sonnet (creative) / Opus (core, main context)
+agents:
+  default_model: "sonnet"
+  spec_writer:
+    model: "sonnet"
+    enabled: true
+  spec_validator:
+    model: "haiku"
+    enabled: true
+  docs_updater:
+    model: "sonnet"
+    enabled: true
+  bug_intake:
+    model: "haiku"
+    enabled: true
+  bug_investigator:
+    model: "sonnet"
+    enabled: true
+  test_runner:
+    model: "haiku"
+    enabled: true
+  feature_planner:
+    model: "sonnet"
+    enabled: true
+  user_story_planner:
+    model: "opus"
+    enabled: true
+  implementation_validator:
+    model: "sonnet"
+    enabled: true
+
+# Herkunft von Testvorbedingungen (core/hooks/precondition_origins.py, Issue #285)
+# Sprachprofile fuer den Regelweg: welche Dateien Modelle/Tests/Produktivcode sind
+# und mit welchen Mustern Feldnamen bzw. Punkt-Zuweisungen erkannt werden.
+# Ein drittes Profil ist ein weiterer Eintrag hier — ohne Codeaenderung.
+precondition_origins:
+  # default_lang (optional, Issue #286): Sprachprofil, mit dem /50-implement Step 8a
+  # precondition_origins.py fuer den Adversary-Auftrag aufruft. Fehlt es, entfaellt der
+  # Aufruf und das Pruefprotokoll traegt den Hinweistext statt der Tabelle.
+  # default_lang: swift
+  profiles:
+    swift:
+      model_globs: ["**/Models/*.swift", "**/Shared/Models/*.swift"]
+      field_pattern: '(?:var|let)\s+(\w+)\s*:'
+      test_globs: ["**/*Tests/**/*.swift", "**/*Tests.swift"]
+      production_globs: ["**/*.swift"]
+      production_exclude_globs: ["**/*Tests/**", "**/*Tests.swift"]
+      assignment_pattern: '\.{field}\s*=\s*(?!=)'
+    python:
+      model_globs: ["**/models/*.py", "**/models.py"]
+      field_pattern: '^\s*(\w+)\s*:\s*[A-Za-z_].*$'
+      test_globs: ["tests/**/*.py", "**/test_*.py", "**/*_test.py"]
+      production_globs: ["**/*.py"]
+      production_exclude_globs: ["tests/**", "**/test_*.py", "**/*_test.py"]
+      assignment_pattern: '\.{field}\s*=\s*(?!=)'
+
+# Domain-specific modules (installed via setup.py --module)
+modules:
+  ios_swiftui:
+    enabled: false
+  home_assistant:
+    enabled: false

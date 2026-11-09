@@ -1,0 +1,10 @@
+{
+  "framework_version": null,
+  "version_source": "plugin",
+  "note": "Im Plugin-Modus pinnt diese Datei keine Version \u2014 Updates laufen ueber `claude plugin update` und aendern sie nicht. Massgeblich ist das geladene Plugin: `claude plugin list`, oder der Marker am Ende jeder Phase (\u2699 /<befehl> \u00b7 agent-os-openspec <version>).",
+  "installed": "2026-11-09T20:27:16.848876",
+  "installed_modules": [],
+  "plugin_mode": true,
+  "cloud_ref": "agent-os-openspec--v4.9.0",
+  "cloud_sha": "98ac6f966c603a63d95e6a77ef92aeb99405458c"
+}
