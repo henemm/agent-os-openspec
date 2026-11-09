@@ -190,13 +190,22 @@ def _transcript(path: Path, tokens: int) -> Path:
     return path
 
 
-def _post_bash_note(root: Path, tokens: int = 122_040, session: str = "s1") -> str:
+def _post_bash_run(root: Path, tokens: int, session: str) -> subprocess.CompletedProcess:
     tr = _transcript(root / "t.jsonl", tokens)
     payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": "ls"},
                           "tool_response": {"stdout": "", "stderr": ""},
                           "session_id": session, "transcript_path": str(tr)})
     res = _ctx_run(root, "post_bash.py", stdin=payload)
     assert res.returncode == 0, res.stderr
+    return res
+
+
+def _post_bash_note(root: Path, tokens: int = 122_040, session: str = "s1") -> str:
+    # #557: der erste Messwert einer Sitzung ist der Grundkontext (Baseline). Ein
+    # kleiner Erstwert (20k) laesst die wirksame Schwelle bei 100k, wie vor #557.
+    if not (root / ".claude" / "context_usage" / f"{session}.json").exists():
+        assert _post_bash_run(root, 20_000, session).stdout.strip() == ""
+    res = _post_bash_run(root, tokens, session)
     assert res.stdout.strip(), f"kein Kontext-Hinweis, stderr={res.stderr!r}"
     return json.loads(res.stdout)["hookSpecificOutput"]["additionalContext"]
 
@@ -611,7 +620,8 @@ def test_without_autark_queue_behaviour_unchanged(tmp_path):
         hint = _post_bash_note(root)
         assert "beende den Turn" in hint, (label, hint)
         lines = _context_lines(root)
-        assert lines == ["CONTEXT_TOKENS=122040", "CONTEXT_CUT=on"], (label, lines)
+        assert lines == ["CONTEXT_TOKENS=122040", "CONTEXT_CUT=on",
+                         "CONTEXT_THRESHOLD=100000"], (label, lines)
 
         proj, env = _autoclear_case(tmp_path / f"ac-{label}")
         if auftrag is not None:
@@ -736,7 +746,8 @@ def test_kill_switch_disables_everything(tmp_path):
     _write_auftrag(root, queue_items, autark=True)
     hint = _post_bash_note(root)
     assert "beende den Turn" in hint, hint
-    assert _context_lines(root) == ["CONTEXT_TOKENS=122040", "CONTEXT_CUT=on"]
+    assert _context_lines(root) == ["CONTEXT_TOKENS=122040", "CONTEXT_CUT=on",
+                                    "CONTEXT_THRESHOLD=100000"]
 
     # autoclear: on wie ohne Auftrag
     proj, env = _autoclear_case(tmp_path / "ac", extra_config=KILL_CFG)

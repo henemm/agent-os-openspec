@@ -180,7 +180,7 @@ Erst sichern, dann ist `/clear` gefahrlos.
 
 ---
 
-Vor dem Selbstaufruf zusätzlich `python3 .claude/hooks/workflow.py context` ausführen (Kontext-Haushalt): Bei `CONTEXT_CUT=on` (Kontext über der Schwelle aus `context_budget`, Default 100.000 Token) den Skill `50-implement` NICHT selbst aufrufen, sondern die Antwort mit dem Checkpoint und der ❗Du-Zeile `/50-implement #<N>` beenden — der Stand liegt auf der Platte, der PO (oder Herdr) tippt `/clear`. Ein Schritt mit 200k Token Kontext kostet etwa das Fünffache eines Schritts mit 40k. Bei `CONTEXT_CUT=off` oder `CONTEXT_TOKENS=unknown`: unverändert.
+Vor dem Selbstaufruf zusätzlich `python3 .claude/hooks/workflow.py context` ausführen (Kontext-Haushalt): Bei `CONTEXT_CUT=on` (Kontext über der wirksamen Schwelle `CONTEXT_THRESHOLD` aus `context_budget`: Grundkontext der Sitzung + `growth_tokens`, mindestens `clear_threshold_tokens`, Default 100.000 Token) den Skill `50-implement` NICHT selbst aufrufen, sondern die Antwort mit dem Checkpoint und der ❗Du-Zeile `/50-implement #<N>` beenden — der Stand liegt auf der Platte, der PO (oder Herdr) tippt `/clear`. Ein Schritt mit 200k Token Kontext kostet etwa das Fünffache eines Schritts mit 40k. Bei `CONTEXT_CUT=off` oder `CONTEXT_TOKENS=unknown`: unverändert.
 
 Zuerst `python3 .claude/hooks/workflow.py autoclear` ausführen (#489): Bei `AUTO_CLEAR=on` den Skill
 `50-implement` NICHT selbst aufrufen, sondern die Antwort mit dem Checkpoint (Positiv-Block, bei

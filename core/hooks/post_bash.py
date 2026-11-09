@@ -17,9 +17,9 @@ Exit Codes: 0 always (never blocks)
 """
 
 from hook_utils import setup_path, find_project_root, get_tool_result, get_active_workflow_name, framework_disabled, strip_ansi, read_state_json, UnsafeStateError
-from hook_utils import (context_budget_settings, context_tokens_from_transcript, read_context_usage,
+from hook_utils import (context_budget_settings, context_tokens_from_transcript,
                         record_context_usage, context_bucket, context_cut_note,
-                        auftrag_autark_open)
+                        effective_context_threshold, auftrag_autark_open)
 setup_path()
 
 import json
@@ -151,11 +151,11 @@ def _record_test_run(result: str, runner: str) -> None:
 def _track_context(payload: dict) -> None:
     """Kontextgroesse messen, ab der Schwelle einmal je Stufe hinweisen (Kontext-Haushalt).
 
-    Liest das Transcript (`transcript_path`), merkt den Wert je Sitzung unter
-    `.claude/context_usage/<session_id>.json` und gibt beim Erreichen der
-    Schwelle (`context_budget.clear_threshold_tokens`, Default 100k; danach je
-    50k erneut) `additionalContext` fuer Claude aus. Beobachtung, kein Gate:
-    fail-open, jeder Fehler ist still, Exit bleibt 0.
+    Liest das Transcript (`transcript_path`), merkt den Wert samt Grundkontext
+    (`baseline_tokens`, #557) je Sitzung unter `.claude/context_usage/<session_id>.json`
+    und gibt beim Erreichen der wirksamen Schwelle (`max(clear_threshold_tokens,
+    Baseline + growth_tokens)`; danach je 50k erneut) `additionalContext` fuer
+    Claude aus. Beobachtung, kein Gate: fail-open, jeder Fehler ist still, Exit bleibt 0.
     """
     try:
         settings = context_budget_settings()
@@ -168,20 +168,19 @@ def _track_context(payload: dict) -> None:
         tokens = context_tokens_from_transcript(transcript)
         if tokens is None:
             return
-        previous = read_context_usage(str(session_id), _root, fallback_newest=False) or {}
-        last_bucket = previous.get("announced_bucket", 0)
+        usage = record_context_usage(str(session_id), tokens, _root) or {}
+        last_bucket = usage.get("announced_bucket", 0)
         last_bucket = last_bucket if type(last_bucket) is int else 0
-        bucket = context_bucket(tokens, settings["threshold"])
+        threshold = effective_context_threshold(settings, usage.get("baseline_tokens"))
+        bucket = context_bucket(tokens, threshold)
         if bucket > last_bucket:
             record_context_usage(str(session_id), tokens, _root, announced_bucket=bucket)
-            note = context_cut_note(tokens, settings["threshold"],
+            note = context_cut_note(tokens, threshold,
                                     autark=auftrag_autark_open(_root))  # #551
             print(json.dumps({"hookSpecificOutput": {
                 "hookEventName": "PostToolUse",
                 "additionalContext": note,
             }}, ensure_ascii=False))
-        else:
-            record_context_usage(str(session_id), tokens, _root)
     except Exception:
         pass
 

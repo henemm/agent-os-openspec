@@ -3889,20 +3889,25 @@ def cmd_context(args: list[str]) -> None:
     Quelle ist die Messung von `post_bash.py` unter
     `.claude/context_usage/<session_id>.json` (Sitzung aus `CLAUDE_CODE_SESSION_ID`,
     sonst die juengste Messung). `on` nur bei eingeschaltetem `context_budget` und
-    Messung >= `clear_threshold_tokens` (Default 100000). Bewusst ohne aktiven
+    Messung >= wirksamer Schwelle `max(clear_threshold_tokens, baseline_tokens +
+    growth_tokens)` (#557; ohne Baseline nur `clear_threshold_tokens`, Default
+    100000); die Zeile `CONTEXT_THRESHOLD=` nennt sie. Bewusst ohne aktiven
     Workflow (Vorbild `autonomy`): die Phasen-Befehle rufen bei `on` den
     Folge-Skill nicht mehr selbst auf, sondern beenden den Turn mit Checkpoint und
     Du-Zeile, damit `/clear` den Kontext schneidet. Bei offenem autarkem Auftrag
-    (#551) immer `CONTEXT_CUT=off` plus `CONTEXT_REASON=AUTARK`.
+    (#551) immer `CONTEXT_CUT=off` plus `CONTEXT_REASON=AUTARK` (ohne Schwellen-Zeile).
     """
-    tokens, cut, autark = None, "off", False
+    tokens, cut, autark, threshold = None, "off", False, None
     try:
-        from hook_utils import context_budget_settings, read_context_usage
+        from hook_utils import (context_budget_settings, effective_context_threshold,
+                                read_context_usage)
         settings = context_budget_settings()
         usage = read_context_usage(None, find_project_root())
+        baseline = None
         if isinstance(usage, dict) and type(usage.get("tokens")) is int:
-            tokens = usage["tokens"]
-        if settings["enabled"] and tokens is not None and tokens >= settings["threshold"]:
+            tokens, baseline = usage["tokens"], usage.get("baseline_tokens")
+        threshold = effective_context_threshold(settings, baseline)
+        if settings["enabled"] and tokens is not None and tokens >= threshold:
             cut = "on"
         autark = auftrag_autark_open()
     except Exception:
@@ -3914,6 +3919,8 @@ def cmd_context(args: list[str]) -> None:
         print(f"CONTEXT_CUT={cut}")
         if autark:
             print("CONTEXT_REASON=AUTARK")
+        elif threshold is not None:
+            print(f"CONTEXT_THRESHOLD={threshold}")
     except Exception:
         pass
 
