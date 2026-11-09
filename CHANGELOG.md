@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Gates in Cloud-Sitzungen für Plugin-Konsumenten (#522):** `setup.py <projekt> --cloud-gates` kopiert den Startbaustein `.claude/cloud_bootstrap.py` ins Projekt, trägt alle Hooks aus `hooks/hooks.json` nur für Cloud-Sitzungen (`CLAUDE_CODE_REMOTE=true`) in `.claude/settings.json` ein und pinnt Release-Tag plus Commit in `.claude/framework_version.json`. Der Baustein holt den Tag beim ersten Hook-Aufruf in `~/.cache/agent-os-openspec/` und startet die Hooks von dort; scheitert der Abruf, sind nur lesende Werkzeuge erlaubt (Abhilfe `python3 .claude/cloud_bootstrap.py --retry`, PO-Ausnahme `override` für 1 h). `--update` hält Pin, Baustein und Einträge aktuell; `scripts/sync_cloud_hooks.py --consumer` zeigt den Block. `edit_gate.py`/`bash_gate.py` schützen Baustein und Pin vor Schreibzugriffen (Ausweg: Override). Migration: keine; Plugin-Konsumenten führen `--cloud-gates` einmal aus und committen die drei Dateien.
+
 ## [4.9.0] - 2026-11-09
 
 Jede Meldung endet in genau einem von drei Zuständen – ✅ erledigt, ⏳ läuft noch oder ❗ du bist dran –, gleich in Chat, Plan und Seitenleiste; die erfundene „fachliche Abnahme“ entfällt, und Schritte, die Claude im Auto-Modus selbst ausführt, erscheinen als ⏳ statt als PO-Aufgabe (#550, #547, #555). Ein Auftrag über mehrere Issues liegt als Auftragsliste auf der Platte und übersteht `/clear`; ist er autark, setzt Claude die Kette ohne Halt für `/clear` fort (#551). In Cloud-Sitzungen misst die Kontext-Schwelle das Wachstum seit dem Grundkontext statt eines festen Werts (#557). Migration: keine; Konsumenten erhalten die Fassung per `claude plugin update agent-os-openspec@henemm-private`.

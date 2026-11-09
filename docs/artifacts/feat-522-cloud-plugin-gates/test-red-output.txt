@@ -1,0 +1,598 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.18, pytest-9.2.0, pluggy-1.7.0 -- /tmp/claude-0/-home-user-agent-os-openspec/b9782b71-a04e-589a-b5f8-28655a64400d/scratchpad/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/user/agent-os-openspec
+collecting ... collected 24 items
+
+tests/test_cloud_gates_522.py::test_bootstrap_fetches_tag_and_forwards_stdin_and_exit_code FAILED [  4%]
+tests/test_cloud_gates_522.py::test_command_runs_only_in_cloud FAILED    [  8%]
+tests/test_cloud_gates_522.py::test_sha_mismatch_fails_closed_and_leaves_no_cache FAILED [ 12%]
+tests/test_cloud_gates_522.py::test_fetch_failure_blocks_write_tools[bad-url] FAILED [ 16%]
+tests/test_cloud_gates_522.py::test_fetch_failure_blocks_write_tools[missing-tag] FAILED [ 20%]
+tests/test_cloud_gates_522.py::test_fetch_failure_blocks_write_tools[missing-pin] FAILED [ 25%]
+tests/test_cloud_gates_522.py::test_fetch_failure_blocks_write_tools[missing-script] FAILED [ 29%]
+tests/test_cloud_gates_522.py::test_bash_whitelist_and_retry_when_fetch_failed FAILED [ 33%]
+tests/test_cloud_gates_522.py::test_non_write_events_never_blocked FAILED [ 37%]
+tests/test_cloud_gates_522.py::test_session_start_warns_on_failure_and_forwards_on_success FAILED [ 41%]
+tests/test_cloud_gates_522.py::test_concurrent_calls_fetch_once_and_leave_valid_cache FAILED [ 45%]
+tests/test_cloud_gates_522.py::test_cache_reuse_and_retry_and_current_pointer FAILED [ 50%]
+tests/test_cloud_gates_522.py::test_cloud_gates_merges_and_is_idempotent FAILED [ 54%]
+tests/test_cloud_gates_522.py::test_cloud_gates_creates_missing_settings_and_rejects_copy_mode FAILED [ 58%]
+tests/test_cloud_gates_522.py::test_consumer_hooks_mirror_hooks_json_completely FAILED [ 62%]
+tests/test_cloud_gates_522.py::test_pin_resolution_falls_back_to_ls_remote FAILED [ 66%]
+tests/test_cloud_gates_522.py::test_unresolvable_pin_writes_nothing FAILED [ 70%]
+tests/test_cloud_gates_522.py::test_update_in_plugin_mode_keeps_and_refreshes_pin FAILED [ 75%]
+tests/test_cloud_gates_522.py::test_gates_protect_bootstrap_and_pin_files FAILED [ 79%]
+tests/test_cloud_gates_522.py::test_cloud_session_proof_artifact_present FAILED [ 83%]
+tests/test_cloud_gates_522.py::test_readme_and_changelog_document_cloud_gates FAILED [ 87%]
+tests/test_cloud_gates_522.py::test_override_prompt_sets_session_exception_and_logs FAILED [ 91%]
+tests/test_cloud_gates_522.py::test_exception_allows_writes_only_for_same_session_within_one_hour FAILED [ 95%]
+tests/test_cloud_gates_522.py::test_override_never_set_when_cache_loadable_or_prompt_not_exact FAILED [100%]
+
+=================================== FAILURES ===================================
+_________ test_bootstrap_fetches_tag_and_forwards_stdin_and_exit_code __________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-206/test_bootstrap_fetches_tag_and0')
+
+    def test_bootstrap_fetches_tag_and_forwards_stdin_and_exit_code(tmp_path):
+>       ctx = _ctx(tmp_path)
+              ^^^^^^^^^^^^^^
+
+tests/test_cloud_gates_522.py:267: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_cloud_gates_522.py:176: in _ctx
+    ctx.install()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_cloud_gates_522.Ctx object at 0x7f8b9aadb620>
+
+    def install(self):
+>       assert BOOT_SRC.exists(), "core/cloud_bootstrap.py fehlt (Baustein #522 nicht implementiert)"
+E       AssertionError: core/cloud_bootstrap.py fehlt (Baustein #522 nicht implementiert)
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/home/user/agent-os-openspec/core/cloud_bootstrap.py').exists
+
+tests/test_cloud_gates_522.py:150: AssertionError
+_______________________ test_command_runs_only_in_cloud ________________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-206/test_command_runs_only_in_clou0')
+
+    def test_command_runs_only_in_cloud(tmp_path):
+        mod = _load_sync()
+        ctx = Ctx(tmp_path)
+        ctx.pin()
+>       cmd = mod.consumer_command("${CLAUDE_PLUGIN_ROOT}/core/hooks/probe.py")
+              ^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'sync_cloud_hooks' has no attribute 'consumer_command'
+
+tests/test_cloud_gates_522.py:288: AttributeError
+______________ test_sha_mismatch_fails_closed_and_leaves_no_cache ______________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-206/test_sha_mismatch_fails_closed0')
+
+    def test_sha_mismatch_fails_closed_and_leaves_no_cache(tmp_path):
+>       ctx = _ctx(tmp_path, sha="0123456789abcdef0123456789abcdef01234567")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_cloud_gates_522.py:321: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_cloud_gates_522.py:176: in _ctx
+    ctx.install()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_cloud_gates_522.Ctx object at 0x7f8b9a95afd0>
+
+    def install(self):
+>       assert BOOT_SRC.exists(), "core/cloud_bootstrap.py fehlt (Baustein #522 nicht implementiert)"
+E       AssertionError: core/cloud_bootstrap.py fehlt (Baustein #522 nicht implementiert)
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/home/user/agent-os-openspec/core/cloud_bootstrap.py').exists
+
+tests/test_cloud_gates_522.py:150: AssertionError
+________________ test_fetch_failure_blocks_write_tools[bad-url] ________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-206/test_fetch_failure_blocks_writ0')
+case = 'bad-url'
+
+    @pytest.mark.parametrize("case", ["bad-url", "missing-tag", "missing-pin", "missing-script"])
+    def test_fetch_failure_blocks_write_tools(tmp_path, case):
+        if case == "missing-tag":
+            ctx = _ctx(tmp_path, ref="agent-os-openspec--v0.0.0")
+        elif case == "missing-pin":
+            ctx = _ctx(tmp_path, pin=False)
+        else:
+>           ctx = _ctx(tmp_path)
+                  ^^^^^^^^^^^^^^
+
+tests/test_cloud_gates_522.py:339: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_cloud_gates_522.py:176: in _ctx
+    ctx.install()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_cloud_gates_522.Ctx object at 0x7f8b9a97dcd0>
+
+    def install(self):
+>       assert BOOT_SRC.exists(), "core/cloud_bootstrap.py fehlt (Baustein #522 nicht implementiert)"
+E       AssertionError: core/cloud_bootstrap.py fehlt (Baustein #522 nicht implementiert)
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/home/user/agent-os-openspec/core/cloud_bootstrap.py').exists
+
+tests/test_cloud_gates_522.py:150: AssertionError
+______________ test_fetch_failure_blocks_write_tools[missing-tag] ______________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-206/test_fetch_failure_blocks_writ1')
+case = 'missing-tag'
+
+    @pytest.mark.parametrize("case", ["bad-url", "missing-tag", "missing-pin", "missing-script"])
+    def test_fetch_failure_blocks_write_tools(tmp_path, case):
+        if case == "missing-tag":
+>           ctx = _ctx(tmp_path, ref="agent-os-openspec--v0.0.0")
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_cloud_gates_522.py:335: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_cloud_gates_522.py:176: in _ctx
+    ctx.install()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_cloud_gates_522.Ctx object at 0x7f8b9a97efd0>
+
+    def install(self):
+>       assert BOOT_SRC.exists(), "core/cloud_bootstrap.py fehlt (Baustein #522 nicht implementiert)"
+E       AssertionError: core/cloud_bootstrap.py fehlt (Baustein #522 nicht implementiert)
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/home/user/agent-os-openspec/core/cloud_bootstrap.py').exists
+
+tests/test_cloud_gates_522.py:150: AssertionError
+______________ test_fetch_failure_blocks_write_tools[missing-pin] ______________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-206/test_fetch_failure_blocks_writ2')
+case = 'missing-pin'
+
+    @pytest.mark.parametrize("case", ["bad-url", "missing-tag", "missing-pin", "missing-script"])
+    def test_fetch_failure_blocks_write_tools(tmp_path, case):
+        if case == "missing-tag":
+            ctx = _ctx(tmp_path, ref="agent-os-openspec--v0.0.0")
+        elif case == "missing-pin":
+>           ctx = _ctx(tmp_path, pin=False)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_cloud_gates_522.py:337: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_cloud_gates_522.py:176: in _ctx
+    ctx.install()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_cloud_gates_522.Ctx object at 0x7f8b9a8156d0>
+
+    def install(self):
+>       assert BOOT_SRC.exists(), "core/cloud_bootstrap.py fehlt (Baustein #522 nicht implementiert)"
+E       AssertionError: core/cloud_bootstrap.py fehlt (Baustein #522 nicht implementiert)
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/home/user/agent-os-openspec/core/cloud_bootstrap.py').exists
+
+tests/test_cloud_gates_522.py:150: AssertionError
+____________ test_fetch_failure_blocks_write_tools[missing-script] _____________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-206/test_fetch_failure_blocks_writ3')
+case = 'missing-script'
+
+    @pytest.mark.parametrize("case", ["bad-url", "missing-tag", "missing-pin", "missing-script"])
+    def test_fetch_failure_blocks_write_tools(tmp_path, case):
+        if case == "missing-tag":
+            ctx = _ctx(tmp_path, ref="agent-os-openspec--v0.0.0")
+        elif case == "missing-pin":
+            ctx = _ctx(tmp_path, pin=False)
+        else:
+>           ctx = _ctx(tmp_path)
+                  ^^^^^^^^^^^^^^
+
+tests/test_cloud_gates_522.py:339: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_cloud_gates_522.py:176: in _ctx
+    ctx.install()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_cloud_gates_522.Ctx object at 0x7f8b9a95ff00>
+
+    def install(self):
+>       assert BOOT_SRC.exists(), "core/cloud_bootstrap.py fehlt (Baustein #522 nicht implementiert)"
+E       AssertionError: core/cloud_bootstrap.py fehlt (Baustein #522 nicht implementiert)
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/home/user/agent-os-openspec/core/cloud_bootstrap.py').exists
+
+tests/test_cloud_gates_522.py:150: AssertionError
+_______________ test_bash_whitelist_and_retry_when_fetch_failed ________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-206/test_bash_whitelist_and_retry_0')
+
+    def test_bash_whitelist_and_retry_when_fetch_failed(tmp_path):
+>       ctx = _ctx(tmp_path)
+              ^^^^^^^^^^^^^^
+
+tests/test_cloud_gates_522.py:356: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_cloud_gates_522.py:176: in _ctx
+    ctx.install()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_cloud_gates_522.Ctx object at 0x7f8b9a8c4270>
+
+    def install(self):
+>       assert BOOT_SRC.exists(), "core/cloud_bootstrap.py fehlt (Baustein #522 nicht implementiert)"
+E       AssertionError: core/cloud_bootstrap.py fehlt (Baustein #522 nicht implementiert)
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/home/user/agent-os-openspec/core/cloud_bootstrap.py').exists
+
+tests/test_cloud_gates_522.py:150: AssertionError
+_____________________ test_non_write_events_never_blocked ______________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-206/test_non_write_events_never_bl0')
+
+    def test_non_write_events_never_blocked(tmp_path):
+>       ctx = _ctx(tmp_path)
+              ^^^^^^^^^^^^^^
+
+tests/test_cloud_gates_522.py:369: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_cloud_gates_522.py:176: in _ctx
+    ctx.install()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_cloud_gates_522.Ctx object at 0x7f8b9a837150>
+
+    def install(self):
+>       assert BOOT_SRC.exists(), "core/cloud_bootstrap.py fehlt (Baustein #522 nicht implementiert)"
+E       AssertionError: core/cloud_bootstrap.py fehlt (Baustein #522 nicht implementiert)
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/home/user/agent-os-openspec/core/cloud_bootstrap.py').exists
+
+tests/test_cloud_gates_522.py:150: AssertionError
+_________ test_session_start_warns_on_failure_and_forwards_on_success __________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-206/test_session_start_warns_on_fa0')
+
+    def test_session_start_warns_on_failure_and_forwards_on_success(tmp_path):
+>       ctx = _ctx(tmp_path)
+              ^^^^^^^^^^^^^^
+
+tests/test_cloud_gates_522.py:388: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_cloud_gates_522.py:176: in _ctx
+    ctx.install()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_cloud_gates_522.Ctx object at 0x7f8b9a837850>
+
+    def install(self):
+>       assert BOOT_SRC.exists(), "core/cloud_bootstrap.py fehlt (Baustein #522 nicht implementiert)"
+E       AssertionError: core/cloud_bootstrap.py fehlt (Baustein #522 nicht implementiert)
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/home/user/agent-os-openspec/core/cloud_bootstrap.py').exists
+
+tests/test_cloud_gates_522.py:150: AssertionError
+____________ test_concurrent_calls_fetch_once_and_leave_valid_cache ____________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-206/test_concurrent_calls_fetch_on0')
+
+    def test_concurrent_calls_fetch_once_and_leave_valid_cache(tmp_path):
+>       ctx = _ctx(tmp_path)
+              ^^^^^^^^^^^^^^
+
+tests/test_cloud_gates_522.py:409: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_cloud_gates_522.py:176: in _ctx
+    ctx.install()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_cloud_gates_522.Ctx object at 0x7f8b9a9e2c60>
+
+    def install(self):
+>       assert BOOT_SRC.exists(), "core/cloud_bootstrap.py fehlt (Baustein #522 nicht implementiert)"
+E       AssertionError: core/cloud_bootstrap.py fehlt (Baustein #522 nicht implementiert)
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/home/user/agent-os-openspec/core/cloud_bootstrap.py').exists
+
+tests/test_cloud_gates_522.py:150: AssertionError
+________________ test_cache_reuse_and_retry_and_current_pointer ________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-206/test_cache_reuse_and_retry_and0')
+
+    def test_cache_reuse_and_retry_and_current_pointer(tmp_path):
+>       ctx = _ctx(tmp_path)
+              ^^^^^^^^^^^^^^
+
+tests/test_cloud_gates_522.py:429: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_cloud_gates_522.py:176: in _ctx
+    ctx.install()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_cloud_gates_522.Ctx object at 0x7f8b9a9e36b0>
+
+    def install(self):
+>       assert BOOT_SRC.exists(), "core/cloud_bootstrap.py fehlt (Baustein #522 nicht implementiert)"
+E       AssertionError: core/cloud_bootstrap.py fehlt (Baustein #522 nicht implementiert)
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/home/user/agent-os-openspec/core/cloud_bootstrap.py').exists
+
+tests/test_cloud_gates_522.py:150: AssertionError
+__________________ test_cloud_gates_merges_and_is_idempotent ___________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-206/test_cloud_gates_merges_and_is0')
+fw_copy = PosixPath('/tmp/pytest-of-root/pytest-206/fwcopy0/agent-os-openspec')
+
+    def test_cloud_gates_merges_and_is_idempotent(tmp_path, fw_copy):
+        url, commit, _ = _remote(tmp_path)
+        proj = _plugin_project(tmp_path, settings={**OWN_KEYS, "hooks": json.loads(json.dumps(OWN_HOOKS))})
+        r = _setup(fw_copy, proj, "--cloud-gates", url=url, tmp_path=tmp_path)
+>       assert r.returncode == 0, r.stdout + r.stderr
+E       AssertionError: usage: setup.py [-h] [--module MODULES] [--update] [--force] [--skip-hooks]
+E                         [--plugin-mode] [--command-aliases] [--refresh-aliases]
+E                         [--remove-aliases] [--global] [--version]
+E                         project_path
+E         setup.py: error: unrecognized arguments: --cloud-gates
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['/tmp/claude-0/-home-user-agent-os-openspec/b9782b71-a04e-589a-b5f8-28655a64400d/scratchpad/venv/bin/python', '/tmp/pytest-of-root/pytest-206/fwcopy0/agent-os-openspec/setup.py', '/tmp/pytest-of-root/pytest-206/test_cloud_gates_merges_and_is0/consumer', '--cloud-gates'], returncode=2, stdout='', stderr='usage: setup.py [-h] [--module MODULES] [--update] [--force] [--skip-hooks]\n                [--plugin-mode] [--command-aliases] [--refresh-aliases]\n                [--remove-aliases] [--global] [--version]\n                project_path\nsetup.py: error: unrecognized arguments: --cloud-gates\n').returncode
+
+tests/test_cloud_gates_522.py:534: AssertionError
+_______ test_cloud_gates_creates_missing_settings_and_rejects_copy_mode ________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-206/test_cloud_gates_creates_missi0')
+fw_copy = PosixPath('/tmp/pytest-of-root/pytest-206/fwcopy0/agent-os-openspec')
+
+    def test_cloud_gates_creates_missing_settings_and_rejects_copy_mode(tmp_path, fw_copy):
+        url, commit, _ = _remote(tmp_path)
+        proj = _plugin_project(tmp_path)
+        r = _setup(fw_copy, proj, "--cloud-gates", url=url, tmp_path=tmp_path)
+>       assert r.returncode == 0, r.stdout + r.stderr
+E       AssertionError: usage: setup.py [-h] [--module MODULES] [--update] [--force] [--skip-hooks]
+E                         [--plugin-mode] [--command-aliases] [--refresh-aliases]
+E                         [--remove-aliases] [--global] [--version]
+E                         project_path
+E         setup.py: error: unrecognized arguments: --cloud-gates
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['/tmp/claude-0/-home-user-agent-os-openspec/b9782b71-a04e-589a-b5f8-28655a64400d/scratchpad/venv/bin/python', '/tmp/pytest-of-root/pytest-206/fwcopy0/agent-os-openspec/setup.py', '/tmp/pytest-of-root/pytest-206/test_cloud_gates_creates_missi0/consumer', '--cloud-gates'], returncode=2, stdout='', stderr='usage: setup.py [-h] [--module MODULES] [--update] [--force] [--skip-hooks]\n                [--plugin-mode] [--command-aliases] [--refresh-aliases]\n                [--remove-aliases] [--global] [--version]\n                project_path\nsetup.py: error: unrecognized arguments: --cloud-gates\n').returncode
+
+tests/test_cloud_gates_522.py:565: AssertionError
+_______________ test_consumer_hooks_mirror_hooks_json_completely _______________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-206/test_consumer_hooks_mirror_hoo0')
+
+    def test_consumer_hooks_mirror_hooks_json_completely(tmp_path):
+        mod = _load_sync()
+        src = json.loads((REPO_ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+>       out = mod.consumer_hooks(src)
+              ^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'sync_cloud_hooks' has no attribute 'consumer_hooks'
+
+tests/test_cloud_gates_522.py:588: AttributeError
+_________________ test_pin_resolution_falls_back_to_ls_remote __________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-206/test_pin_resolution_falls_back0')
+fw_copy = PosixPath('/tmp/pytest-of-root/pytest-206/fwcopy0/agent-os-openspec')
+
+    def test_pin_resolution_falls_back_to_ls_remote(tmp_path, fw_copy):
+        assert subprocess.run(["git", "-C", str(fw_copy), "rev-parse", f"{TAG}^{{commit}}"],
+                              capture_output=True, env=_clean_env() | {
+                                  "GIT_CEILING_DIRECTORIES": str(fw_copy.parent)}).returncode != 0, \
+            "Tag darf im Framework-Checkout nicht lokal aufloesbar sein"
+        url, commit, tag_obj = _remote(tmp_path)
+        proj = _plugin_project(tmp_path)
+        r = _setup(fw_copy, proj, "--cloud-gates", url=url, tmp_path=tmp_path)
+>       assert r.returncode == 0, r.stdout + r.stderr
+E       AssertionError: usage: setup.py [-h] [--module MODULES] [--update] [--force] [--skip-hooks]
+E                         [--plugin-mode] [--command-aliases] [--refresh-aliases]
+E                         [--remove-aliases] [--global] [--version]
+E                         project_path
+E         setup.py: error: unrecognized arguments: --cloud-gates
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['/tmp/claude-0/-home-user-agent-os-openspec/b9782b71-a04e-589a-b5f8-28655a64400d/scratchpad/venv/bin/python', '/tmp/pytest-of-root/pytest-206/fwcopy0/agent-os-openspec/setup.py', '/tmp/pytest-of-root/pytest-206/test_pin_resolution_falls_back0/consumer', '--cloud-gates'], returncode=2, stdout='', stderr='usage: setup.py [-h] [--module MODULES] [--update] [--force] [--skip-hooks]\n                [--plugin-mode] [--command-aliases] [--refresh-aliases]\n                [--remove-aliases] [--global] [--version]\n                project_path\nsetup.py: error: unrecognized arguments: --cloud-gates\n').returncode
+
+tests/test_cloud_gates_522.py:633: AssertionError
+_____________________ test_unresolvable_pin_writes_nothing _____________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-206/test_unresolvable_pin_writes_n0')
+fw_copy = PosixPath('/tmp/pytest-of-root/pytest-206/fwcopy0/agent-os-openspec')
+
+    def test_unresolvable_pin_writes_nothing(tmp_path, fw_copy):
+        url, _, _ = _remote(tmp_path, tag="agent-os-openspec--v1.0.0")
+        proj = _plugin_project(tmp_path, settings={**OWN_KEYS, "hooks": OWN_HOOKS})
+        before = _snapshot(proj)
+        r = _setup(fw_copy, proj, "--cloud-gates", url=url, tmp_path=tmp_path)
+>       assert r.returncode == 1, r.stdout + r.stderr
+E       AssertionError: usage: setup.py [-h] [--module MODULES] [--update] [--force] [--skip-hooks]
+E                         [--plugin-mode] [--command-aliases] [--refresh-aliases]
+E                         [--remove-aliases] [--global] [--version]
+E                         project_path
+E         setup.py: error: unrecognized arguments: --cloud-gates
+E         
+E       assert 2 == 1
+E        +  where 2 = CompletedProcess(args=['/tmp/claude-0/-home-user-agent-os-openspec/b9782b71-a04e-589a-b5f8-28655a64400d/scratchpad/venv/bin/python', '/tmp/pytest-of-root/pytest-206/fwcopy0/agent-os-openspec/setup.py', '/tmp/pytest-of-root/pytest-206/test_unresolvable_pin_writes_n0/consumer', '--cloud-gates'], returncode=2, stdout='', stderr='usage: setup.py [-h] [--module MODULES] [--update] [--force] [--skip-hooks]\n                [--plugin-mode] [--command-aliases] [--refresh-aliases]\n                [--remove-aliases] [--global] [--version]\n                project_path\nsetup.py: error: unrecognized arguments: --cloud-gates\n').returncode
+
+tests/test_cloud_gates_522.py:645: AssertionError
+______________ test_update_in_plugin_mode_keeps_and_refreshes_pin ______________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-206/test_update_in_plugin_mode_kee0')
+fw_copy = PosixPath('/tmp/pytest-of-root/pytest-206/fwcopy0/agent-os-openspec')
+
+    def test_update_in_plugin_mode_keeps_and_refreshes_pin(tmp_path, fw_copy):
+        url, commit, _ = _remote(tmp_path)
+        stale = {"PreToolUse": [{"matcher": "Edit|Write|MultiEdit", "hooks": [
+            {"type": "command", "command": CONSUMER_PREFIX + "edit_gate.py", "timeout": 1}]}]}
+        hooks = json.loads(json.dumps(OWN_HOOKS))
+        hooks["PreToolUse"] += stale["PreToolUse"]
+        proj = _plugin_project(tmp_path, settings={**OWN_KEYS, "hooks": hooks},
+                               cloud_ref="agent-os-openspec--v0.0.1", cloud_sha="a" * 40)
+        (proj / ".claude" / "cloud_bootstrap.py").write_text("# veralteter Baustein\n", encoding="utf-8")
+    
+        r = _setup(fw_copy, proj, "--update", url=url, tmp_path=tmp_path)
+        assert r.returncode == 0, r.stdout + r.stderr
+        fv = json.loads((proj / ".claude" / "framework_version.json").read_text(encoding="utf-8"))
+        assert fv.get("plugin_mode") is True
+>       assert fv.get("cloud_ref") == TAG, fv
+E       AssertionError: {'framework_version': None, 'version_source': 'plugin', 'note': 'Im Plugin-Modus pinnt diese Datei keine Version — Updates laufen ueber `claude plugin update` und aendern sie nicht. Massgeblich ist das geladene Plugin: `claude plugin list`, oder der Marker am Ende jeder Phase (⚙ /<befehl> · agent-os-openspec <version>).', 'installed': '2026-01-01T00:00:00', ...}
+E       assert None == 'agent-os-openspec--v9.9.9'
+E        +  where None = <built-in method get of dict object at 0x7f8b9a691f80>('cloud_ref')
+E        +    where <built-in method get of dict object at 0x7f8b9a691f80> = {'framework_version': None, 'version_source': 'plugin', 'note': 'Im Plugin-Modus pinnt diese Datei keine Version — Updates laufen ueber `claude plugin update` und aendern sie nicht. Massgeblich ist das geladene Plugin: `claude plugin list`, oder der Marker am Ende jeder Phase (⚙ /<befehl> · agent-os-openspec <version>).', 'installed': '2026-01-01T00:00:00', ...}.get
+
+tests/test_cloud_gates_522.py:665: AssertionError
+__________________ test_gates_protect_bootstrap_and_pin_files __________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-206/test_gates_protect_bootstrap_a0')
+
+    def test_gates_protect_bootstrap_and_pin_files(tmp_path):
+        root = _gate_sandbox(tmp_path)
+    
+        # edit_gate: ohne Override geblockt (Orchestrator-Domaene), mit Override frei
+        for rel in PROTECTED:
+            for tool in ("Write", "Edit"):
+                for path in (rel, str(root / rel)):
+                    _token(root, present=False)
+                    r = _edit(root, tool, path)
+>                   assert r.returncode == 2 and "Orchestrator" in r.stderr, \
+                        f"edit_gate {tool} {path}: rc={r.returncode} {r.stderr.strip()[:200]!r}"
+E                   AssertionError: edit_gate Write .claude/cloud_bootstrap.py: rc=0 ''
+E                   assert (0 == 2)
+E                    +  where 0 = CompletedProcess(args=['/tmp/claude-0/-home-user-agent-os-openspec/b9782b71-a04e-589a-b5f8-28655a64400d/scratchpad/venv/bin/python', '/home/user/agent-os-openspec/core/hooks/edit_gate.py'], returncode=0, stdout='', stderr='').returncode
+
+tests/test_cloud_gates_522.py:741: AssertionError
+__________________ test_cloud_session_proof_artifact_present ___________________
+
+    def test_cloud_session_proof_artifact_present():
+>       assert ARTIFACT.exists(), f"Nachweis-Artefakt fehlt: {ARTIFACT.relative_to(REPO_ROOT)}"
+E       AssertionError: Nachweis-Artefakt fehlt: docs/artifacts/feat-522-cloud-plugin-gates/cloud-session-events.json
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/home/user/agent-os-openspec/docs/artifacts/feat-522-cloud-plugin-gates/cloud-session-events.json').exists
+
+tests/test_cloud_gates_522.py:790: AssertionError
+________________ test_readme_and_changelog_document_cloud_gates ________________
+
+    def test_readme_and_changelog_document_cloud_gates():
+        readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        m = re.search(r"^(#+) .*Cloud sessions.*$", readme, re.M | re.I)
+        assert m, "README: Abschnitt Cloud sessions fehlt"
+        level = len(m.group(1))
+        rest = readme[m.end():]
+        end = re.search(rf"^#{{1,{level}}} ", rest, re.M)
+        section = rest[:end.start()] if end else rest
+        for needle in ("--cloud-gates", "cloud_bootstrap.py", "--retry", "github.com"):
+>           assert needle in section, f"README-Abschnitt nennt {needle!r} nicht"
+E           AssertionError: README-Abschnitt nennt '--cloud-gates' nicht
+E           assert '--cloud-gates' in '\n\nCloud sessions do not load plugins — not even through `enabledPlugins` in the project\'s `settings.json`. The only hooks Claude Code runs there are the ones written directly into the repository\'s `.claude/settings.json`.\n\n- **Copy-mode projects** (Option B) already have their hooks in `.claude/settings.json`, so their gates run in the cloud as well.\n- **This repository** registers every hook from `hooks/hooks.json` in its own `.claude/settings.json`, generated by `scripts/sync_cloud_hooks.py` (#520). Each entry only starts when `CLAUDE_CODE_REMOTE` is exactly `true`; locally the command exits 0 immediately, so the plugin\'s hooks never run twice. In the cloud, `session_singleton_guard.py` skips the worktree requirement — the container is the isolation.\n- After every change to `hooks/hooks.json`, run `python3 scripts/sync_cloud_hooks.py` and commit the result. `python3 scripts/sync_cloud_hooks.py --check` reports drift, and `scripts/release_check.py` (line "Cloud-Hooks") blocks a release on drift.\n- **Short aliases** in this repository deliver the command text in the cloud through the inline-bash fallback of the redirect aliases (local `skills/<name>/SKILL.md`); plugin-mode consumers only get its stop text `BEFEHLSTEXT FEHLT` (#522).\n- **Plugin-mode consumers** have no gates in cloud sessions yet: the hook scripts are not part of their repository. Follow-up: #522.\n\n---\n\n'
+
+tests/test_cloud_gates_522.py:816: AssertionError
+_____________ test_override_prompt_sets_session_exception_and_logs _____________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-206/test_override_prompt_sets_sess0')
+
+    def test_override_prompt_sets_session_exception_and_logs(tmp_path):
+>       ctx = _ctx(tmp_path)
+              ^^^^^^^^^^^^^^
+
+tests/test_cloud_gates_522.py:867: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_cloud_gates_522.py:176: in _ctx
+    ctx.install()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_cloud_gates_522.Ctx object at 0x7f8b9a9a8bb0>
+
+    def install(self):
+>       assert BOOT_SRC.exists(), "core/cloud_bootstrap.py fehlt (Baustein #522 nicht implementiert)"
+E       AssertionError: core/cloud_bootstrap.py fehlt (Baustein #522 nicht implementiert)
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/home/user/agent-os-openspec/core/cloud_bootstrap.py').exists
+
+tests/test_cloud_gates_522.py:150: AssertionError
+______ test_exception_allows_writes_only_for_same_session_within_one_hour ______
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-206/test_exception_allows_writes_o0')
+
+    def test_exception_allows_writes_only_for_same_session_within_one_hour(tmp_path):
+>       ctx = _ctx(tmp_path)
+              ^^^^^^^^^^^^^^
+
+tests/test_cloud_gates_522.py:890: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_cloud_gates_522.py:176: in _ctx
+    ctx.install()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_cloud_gates_522.Ctx object at 0x7f8b9a9a91d0>
+
+    def install(self):
+>       assert BOOT_SRC.exists(), "core/cloud_bootstrap.py fehlt (Baustein #522 nicht implementiert)"
+E       AssertionError: core/cloud_bootstrap.py fehlt (Baustein #522 nicht implementiert)
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/home/user/agent-os-openspec/core/cloud_bootstrap.py').exists
+
+tests/test_cloud_gates_522.py:150: AssertionError
+_______ test_override_never_set_when_cache_loadable_or_prompt_not_exact ________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-206/test_override_never_set_when_c0')
+
+    def test_override_never_set_when_cache_loadable_or_prompt_not_exact(tmp_path):
+>       ctx = _ctx(tmp_path)
+              ^^^^^^^^^^^^^^
+
+tests/test_cloud_gates_522.py:919: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_cloud_gates_522.py:176: in _ctx
+    ctx.install()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_cloud_gates_522.Ctx object at 0x7f8b9a96df30>
+
+    def install(self):
+>       assert BOOT_SRC.exists(), "core/cloud_bootstrap.py fehlt (Baustein #522 nicht implementiert)"
+E       AssertionError: core/cloud_bootstrap.py fehlt (Baustein #522 nicht implementiert)
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/home/user/agent-os-openspec/core/cloud_bootstrap.py').exists
+
+tests/test_cloud_gates_522.py:150: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_cloud_gates_522.py::test_bootstrap_fetches_tag_and_forwards_stdin_and_exit_code
+FAILED tests/test_cloud_gates_522.py::test_command_runs_only_in_cloud - Attri...
+FAILED tests/test_cloud_gates_522.py::test_sha_mismatch_fails_closed_and_leaves_no_cache
+FAILED tests/test_cloud_gates_522.py::test_fetch_failure_blocks_write_tools[bad-url]
+FAILED tests/test_cloud_gates_522.py::test_fetch_failure_blocks_write_tools[missing-tag]
+FAILED tests/test_cloud_gates_522.py::test_fetch_failure_blocks_write_tools[missing-pin]
+FAILED tests/test_cloud_gates_522.py::test_fetch_failure_blocks_write_tools[missing-script]
+FAILED tests/test_cloud_gates_522.py::test_bash_whitelist_and_retry_when_fetch_failed
+FAILED tests/test_cloud_gates_522.py::test_non_write_events_never_blocked - A...
+FAILED tests/test_cloud_gates_522.py::test_session_start_warns_on_failure_and_forwards_on_success
+FAILED tests/test_cloud_gates_522.py::test_concurrent_calls_fetch_once_and_leave_valid_cache
+FAILED tests/test_cloud_gates_522.py::test_cache_reuse_and_retry_and_current_pointer
+FAILED tests/test_cloud_gates_522.py::test_cloud_gates_merges_and_is_idempotent
+FAILED tests/test_cloud_gates_522.py::test_cloud_gates_creates_missing_settings_and_rejects_copy_mode
+FAILED tests/test_cloud_gates_522.py::test_consumer_hooks_mirror_hooks_json_completely
+FAILED tests/test_cloud_gates_522.py::test_pin_resolution_falls_back_to_ls_remote
+FAILED tests/test_cloud_gates_522.py::test_unresolvable_pin_writes_nothing - ...
+FAILED tests/test_cloud_gates_522.py::test_update_in_plugin_mode_keeps_and_refreshes_pin
+FAILED tests/test_cloud_gates_522.py::test_gates_protect_bootstrap_and_pin_files
+FAILED tests/test_cloud_gates_522.py::test_cloud_session_proof_artifact_present
+FAILED tests/test_cloud_gates_522.py::test_readme_and_changelog_document_cloud_gates
+FAILED tests/test_cloud_gates_522.py::test_override_prompt_sets_session_exception_and_logs
+FAILED tests/test_cloud_gates_522.py::test_exception_allows_writes_only_for_same_session_within_one_hour
+FAILED tests/test_cloud_gates_522.py::test_override_never_set_when_cache_loadable_or_prompt_not_exact
+============================== 24 failed in 1.80s ==============================

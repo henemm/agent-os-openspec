@@ -58,6 +58,9 @@ ORCHESTRATOR_FILES = [
     ".claude/settings.json",
     ".claude/settings.local.json",
     ".claude/active_workflow",
+    # #522: Cloud-Startbaustein und Pin — sonst schreibt sich das Modell das Gate weg
+    ".claude/cloud_bootstrap.py",
+    ".claude/framework_version.json",
 ]
 
 # Ausnahme von Schritt 1b (#543): nur diese Schluessel der projektlokalen
