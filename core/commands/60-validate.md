@@ -426,10 +426,13 @@ python3 .claude/hooks/workflow.py endstate <N>
 noch auf CI, einen Agenten oder einen Server: vorher `workflow.py waiting "<worauf>" <N>`, dann
 `endstate` erneut aufrufen.
 
-Kette bei offenem Auftrag (#551): Steht nach `endstate` `ENDSTATE=waiting` und meldet
-`python3 .claude/hooks/workflow.py queue` ein `NEXT=M`, gib die ⏳-Zeile aus und rufe danach
-`/00-intake #M` selbst auf (autarker Auftrag) — kein Halt für `/clear`. Bei `ENDSTATE=you`
-(Auftrag nicht autark) gib die ❗-Zeile wörtlich aus und warte auf den PO.
+Kette bei offenem Auftrag (#551, #555): Sie greift nur, wenn der Wert hinter `FOOTER=`
+„aus deinem Auftrag“ enthält; `M` ist die Nummer darin (dieselbe wie `NEXT=M` aus
+`python3 .claude/hooks/workflow.py queue`). Bei `ENDSTATE=waiting` (`⏳ Läuft noch: Claude
+startet #M aus deinem Auftrag. …`) gib die Zeile aus und rufe danach `/00-intake #M` selbst
+auf (autarker Auftrag) — kein Halt für `/clear`. Bei `ENDSTATE=you` (`❗ Du: /00-intake #M — …`,
+Auftrag nicht autark) gib die Zeile wörtlich aus und warte auf den PO. Ein `ENDSTATE=waiting`
+ohne „aus deinem Auftrag“ (CI, Deploy, Agent) startet keine Kette.
 
 ## On Failure
 

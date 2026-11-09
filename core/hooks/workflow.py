@@ -423,7 +423,8 @@ def _end_state_final(data: dict, deploy, autonomous: bool) -> dict:
     if status == "running":
         return _end("waiting", END_WAITING.format(f"das Deploy von {head}"))
     if status == "failed":
-        note = _one_line(data.get("deploy_note") or "")
+        raw = data.get("deploy_note")  # #555: nur ein String zaehlt, kein Repr
+        note = _one_line(raw) if isinstance(raw, str) else ""
         why = f"Deploy fehlgeschlagen ({note}), bitte neu anstoßen" if note else \
             "Deploy fehlgeschlagen, bitte neu anstoßen"
         return _end("you", END_YOU.format(cmd, why), cmd)
@@ -432,14 +433,21 @@ def _end_state_final(data: dict, deploy, autonomous: bool) -> dict:
     return _end("you", END_YOU.format(cmd, NEXT_WHY["/70-deploy"]), cmd)
 
 
-def _end_state_open(data: dict) -> dict:
-    """Endzustand fuer Phasen vor 8: Schritt aus next_step(), Warum aus NEXT_WHY."""
+def _end_state_open(data: dict, self_driven: bool = False) -> dict:
+    """Endzustand fuer Phasen vor 8: Schritt aus next_step(), Warum aus NEXT_WHY.
+
+    `self_driven` (#555): Auto-Modus mit offenem autarkem Auftrag — einen
+    Slash-Schritt fuehrt Claude selbst aus, also ⏳ statt einer erfundenen
+    PO-Aufgabe. Freigabe-Woerter und Freitext-Schritte bleiben ❗.
+    """
     step = next_step(data)
     if step == AUTO_APPROVAL_STEP:
         return _end("waiting", END_WAITING.format("Auto-Freigabe der Spec läuft"))
     why = NEXT_WHY.get(step or "", NEXT_WHY[""])
     if step and step.startswith("/"):
         cmd = expected_footer_command(data)
+        if self_driven:
+            return _end("waiting", END_WAITING.format(f"Claude führt {cmd} selbst aus"), cmd)
         return _end("you", END_YOU.format(cmd, why), cmd)
     return _end("you", END_YOU.format(step or "/00-intake", why))
 
@@ -464,7 +472,8 @@ def _end_state_queue(number: int, autark: bool) -> dict:
 
 
 def end_state(data, archived: bool = False, deploy="off",
-              autonomous: bool = False, queue_next=None, autark: bool = False) -> dict:
+              autonomous: bool = False, queue_next=None, autark: bool = False,
+              self_driven: bool = False) -> dict:
     """Genau einer von drei Endzustaenden (#550): done | waiting | you.
 
     Rueckgabe `{"kind", "line", "cmd"}`; `line` ist die ganze Zeile fuer
@@ -473,14 +482,19 @@ def end_state(data, archived: bool = False, deploy="off",
     (CI, Hintergrund-Agent, Server) hat Vorrang — ausser vor einem
     fehlgeschlagenen Deploy, der eine Handlung verlangt. `queue_next`/`autark`
     (#551) aendern nur den Fall „Workflow fertig“ (Art done): naechstes Issue
-    aus dem Auftrag statt ✅.
+    aus dem Auftrag statt ✅; die eigene Issue-Nummer zaehlt dabei nie (#555).
+    `self_driven` (#555, aus `queue_end_args`) gilt nur fuer Phasen vor 8.
     """
     data = data if isinstance(data, dict) else {}
     final = archived or data.get("current_phase") == "phase8_complete"
-    state = _end_state_final(data, deploy, autonomous) if final else _end_state_open(data)
+    state = _end_state_final(data, deploy, autonomous) if final else \
+        _end_state_open(data, self_driven is True)
     waiting = _one_line(data.get("waiting_on") or "")
     failed = state["kind"] == "you" and final and data.get("deploy_status") == "failed"
     number = _queue_number(queue_next)
+    own = _queue_number(workflow_issue_number(data))
+    if number is not None and number == own:
+        number = None  # eigenes, fertiges Issue ist kein "naechstes" (#555)
     if final and state["kind"] == "done" and number is not None:
         state = _end_state_queue(number, autark is True)
     if waiting and not failed:
@@ -500,22 +514,27 @@ def _wrap_plan_tail(line: str, width: int) -> "list[str]":
 
 
 def queue_end_args(data) -> dict:
-    """`{"queue_next", "autark"}` fuer `end_state` aus dem Auftrag (#551). Wirft nie.
+    """`{"queue_next", "autark", "self_driven"}` fuer `end_state` (#551, #555). Wirft nie.
 
-    Gemeinsame Quelle fuer `endstate` und Plan: `queue_next` ist die erste offene
-    Nummer, die nicht die des geprueften Workflows ist. Ohne Auftrag bzw. mit
-    Kill-Switch `{"queue_next": None, "autark": False}`.
+    Gemeinsame Quelle fuer `endstate`, Plan und Seitenleiste: `queue_next` ist
+    die erste offene Nummer, die nicht die des geprueften Workflows ist;
+    `self_driven` ist Autonomie `auto` UND ein offener autarker Auftrag. Ohne
+    Auftrag, mit Kill-Switch oder bei Fehlern alles leer bzw. False.
     """
+    empty = {"queue_next": None, "autark": False, "self_driven": False}
     try:
         auftrag = read_auftrag()
         if not auftrag:
-            return {"queue_next": None, "autark": False}
+            return empty
         own = workflow_issue_number(data)
         own_n = int(own) if own else None
-        nxt = next((n for n in auftrag_open_issues(auftrag) if n != own_n), None)
-        return {"queue_next": nxt, "autark": auftrag["autark"] is True}
+        open_issues = auftrag_open_issues(auftrag)
+        nxt = next((n for n in open_issues if n != own_n), None)
+        autark = auftrag["autark"] is True
+        driven = bool(autark and open_issues) and autonomy_mode() == "auto"
+        return {"queue_next": nxt, "autark": autark, "self_driven": driven}
     except Exception:
-        return {"queue_next": None, "autark": False}
+        return empty
 
 
 def render_plan(data, archived: bool = False, width: "int | None" = None,
@@ -3275,12 +3294,14 @@ def cmd_waiting(args: list[str]) -> None:
     path, data, name = _status_target(args[1] if len(args) > 1 else None)
     if args[0] == "--clear":
         data.pop("waiting_on", None)
-        _atomic_write(path, data)
-        print(f"WAITING_ON= ({name})")
-        return
-    data["waiting_on"] = _one_line(args[0])
+    else:
+        data["waiting_on"] = _one_line(args[0])
     _atomic_write(path, data)
-    print(f"WAITING_ON={data['waiting_on']} ({name})")
+    try:  # #555: Seitenleiste zeigt den neuen Stand, fail-open
+        _herdr("report", {"name": name, **data})
+    except Exception:
+        pass
+    print(f"WAITING_ON={data.get('waiting_on', '')} ({name})")
 
 
 def cmd_endstate(args: list[str]) -> None:
@@ -3384,7 +3405,7 @@ def cmd_approvals(args: list[str]) -> None:
             and ("--auto" not in args or e.get("by") == "auto")]
     print(f"APPROVALS={len(rows)}")
     for e in rows:
-        print("- " + " | ".join(_one_line(e.get(k) or "-")
+        print("- " + " | ".join(_flat_line(e.get(k) or "-")
                                 for k in ("gate", "by", "at", "reason")))
 
 
@@ -3655,8 +3676,9 @@ def _read_session_entries() -> list:
     return entries
 
 
-def _one_line(value) -> str:
-    """Zeilenumbrueche platt machen — die Auskunft hat genau fuenf Zeilen."""
+def _flat_line(value) -> str:
+    """Zeilenumbrueche platt machen, Schlusspunkt bleibt (#555: eigener Name statt
+    zweiter `_one_line`, die die Endzeilen-Variante ueberschrieb)."""
     return " ".join(str(value).split())
 
 
@@ -3673,15 +3695,15 @@ def cmd_observable_surface(args: list[str]) -> None:
         from hook_utils import observable_surface_report
         report = observable_surface_report()
         surface = "no" if report.get("surface") is False else "yes"
-        reason = _one_line(report.get("reason") or "") or "unbekannt"
+        reason = _flat_line(report.get("reason") or "") or "unbekannt"
         files = int(report.get("files") or 0)
-        root = _one_line(report.get("root") or "")
+        root = _flat_line(report.get("root") or "")
     except Exception as exc:
         # Ein Absturz darf keine Rueckfrage unterdruecken: yes + sprechender Grund.
         surface, reason, files, root = "yes", f"internal-error {type(exc).__name__}", 0, ""
     try:
         from config_loader import config_source_note
-        note = _one_line(config_source_note() or "")
+        note = _flat_line(config_source_note() or "")
     except Exception:
         note = ""
     print(f"OBSERVABLE_SURFACE={surface}\nREASON={reason}\nFILES={files}\n"
@@ -4056,7 +4078,7 @@ def cmd_auto_approve(args: list[str]) -> None:
     except BaseException as exc:  # noqa: BLE001 — fail-closed, auch SystemExit
         verdict, reason = "human", f"Fehler ({type(exc).__name__})"
     try:
-        print(f"AUTO_APPROVE={verdict}\nREASON={_one_line(reason) or '-'}")
+        print(f"AUTO_APPROVE={verdict}\nREASON={_flat_line(reason) or '-'}")
     except Exception:
         pass
     if verdict == "done":
@@ -4169,7 +4191,7 @@ def cmd_auto_green(args: list[str]) -> None:
     except BaseException as exc:  # noqa: BLE001 — fail-closed, auch SystemExit
         verdict, reason = "human", f"Fehler ({type(exc).__name__})"
     try:
-        print(f"AUTO_GREEN={verdict}\nREASON={_one_line(reason) or '-'}")
+        print(f"AUTO_GREEN={verdict}\nREASON={_flat_line(reason) or '-'}")
     except Exception:
         pass
 
