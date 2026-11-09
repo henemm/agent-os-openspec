@@ -2496,10 +2496,14 @@ def has_observable_surface() -> "tuple[bool, str]":
 # Kontextgroesse aus dem Transcript (letzte assistant-Zeile: input + cache_create +
 # cache_read = Prompt-Groesse der letzten Anfrage) und merken sie je Sitzung unter
 # `.claude/context_usage/<session_id>.json`. `workflow.py context` liest den Wert
-# und meldet `CONTEXT_CUT=on`, sobald die Schwelle (`context_budget.
-# clear_threshold_tokens`, Default 100000) erreicht ist. Alles fail-open: ein
-# Fehler bei der Messung aendert nie eine Gate-Entscheidung.
+# und meldet `CONTEXT_CUT=on`, sobald die wirksame Schwelle erreicht ist:
+# `max(clear_threshold_tokens, baseline_tokens + growth_tokens)` (#557). Die
+# Baseline ist der erste Messwert der Sitzung (Grundkontext; in Cloud-Sitzungen
+# ~100k) und wird bei einem Abfall um mehr als 30 % (`/clear`, `/compact`) neu
+# gesetzt. Alles fail-open: ein Fehler bei der Messung aendert nie eine
+# Gate-Entscheidung.
 CONTEXT_BUDGET_DEFAULT_THRESHOLD = 100_000
+CONTEXT_BUDGET_DEFAULT_GROWTH = 75_000     # Wachstumsbudget ueber dem Grundkontext (#557)
 CONTEXT_BUDGET_REPEAT_EVERY = 50_000       # Hinweis erneut je 50k ueber der Schwelle
 CONTEXT_USAGE_DIRNAME = "context_usage"
 CONTEXT_USAGE_MAX_AGE_S = 12 * 3600        # aeltere Messungen gelten als fremd/veraltet
@@ -2507,12 +2511,14 @@ _TRANSCRIPT_TAIL_BYTES = 512 * 1024
 
 
 def context_budget_settings(config: "dict | None" = None) -> dict:
-    """`{"enabled": bool, "threshold": int}` aus `context_budget` der Config.
+    """`{"enabled": bool, "threshold": int, "growth": int}` aus `context_budget`.
 
-    Nur das Literal `false` schaltet ab; die Schwelle muss ein int >= 1000 sein,
-    sonst gilt der Default. Fail-open: jeder Fehler ergibt Default-Werte.
+    Nur das Literal `false` schaltet ab; Schwelle (`clear_threshold_tokens`) und
+    Wachstumsbudget (`growth_tokens`, #557) muessen ein int >= 1000 sein, sonst
+    gilt der Default. Fail-open: jeder Fehler ergibt Default-Werte.
     """
     enabled, threshold = True, CONTEXT_BUDGET_DEFAULT_THRESHOLD
+    growth = CONTEXT_BUDGET_DEFAULT_GROWTH
     try:
         if config is None:
             from config_loader import load_config
@@ -2524,9 +2530,24 @@ def context_budget_settings(config: "dict | None" = None) -> dict:
             value = section.get("clear_threshold_tokens")
             if type(value) is int and value >= 1000:
                 threshold = value
+            value = section.get("growth_tokens")
+            if type(value) is int and value >= 1000:
+                growth = value
     except Exception:
         pass
-    return {"enabled": enabled, "threshold": threshold}
+    return {"enabled": enabled, "threshold": threshold, "growth": growth}
+
+
+def effective_context_threshold(settings: dict, baseline) -> int:
+    """Wirksame Schwelle (#557): `max(threshold, baseline + growth)`.
+
+    Ohne brauchbare Baseline (None, kein int, alte Messdatei) gilt nur `threshold`.
+    """
+    threshold = settings.get("threshold", CONTEXT_BUDGET_DEFAULT_THRESHOLD)
+    growth = settings.get("growth", CONTEXT_BUDGET_DEFAULT_GROWTH)
+    if type(baseline) is not int:
+        return threshold
+    return max(threshold, baseline + growth)
 
 
 def context_tokens_from_transcript(path) -> "int | None":
@@ -2583,17 +2604,29 @@ def _context_usage_file(session_id: str, root=None) -> "Path | None":
 
 def record_context_usage(session_id: str, tokens: int, root=None,
                          announced_bucket: "int | None" = None) -> "dict | None":
-    """Messung je Sitzung speichern; `announced_bucket` nur ueberschreiben, wenn gegeben."""
+    """Messung je Sitzung speichern; `announced_bucket` nur ueberschreiben, wenn gegeben.
+
+    `baseline_tokens` (#557): fehlt sie in der vorigen Messung, ist der aktuelle
+    Wert die Baseline. Liegt der Wert mehr als 30 % unter dem vorigen (`/clear`,
+    `/compact`), wird die Baseline neu gesetzt und `announced_bucket` auf 0
+    zurueckgesetzt (ein ausdruecklich gegebener `announced_bucket` gewinnt).
+    """
     path = _context_usage_file(session_id, root)
     if path is None or type(tokens) is not int:
         return None
     previous = read_context_usage(session_id, root, fallback_newest=False) or {}
+    baseline, bucket = previous.get("baseline_tokens"), previous.get("announced_bucket", 0)
+    prev_tokens = previous.get("tokens")
+    if type(baseline) is not int:
+        baseline = tokens
+    elif type(prev_tokens) is int and tokens * 10 < prev_tokens * 7:
+        baseline, bucket = tokens, 0
     data = {
         "session_id": str(session_id),
         "tokens": tokens,
         "at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        "announced_bucket": (announced_bucket if announced_bucket is not None
-                             else previous.get("announced_bucket", 0)),
+        "announced_bucket": announced_bucket if announced_bucket is not None else bucket,
+        "baseline_tokens": baseline,
     }
     try:
         path.parent.mkdir(parents=True, exist_ok=True)

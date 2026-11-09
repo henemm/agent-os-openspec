@@ -71,6 +71,17 @@ def _payload(transcript: Path, session: str = "s1") -> str:
                        "session_id": session, "transcript_path": str(transcript)})
 
 
+BASELINE_TOKENS = 20_000  # kleiner Grundkontext: wirksame Schwelle bleibt 100k (#557)
+
+
+def _prime(root: Path, session: str = "s1") -> None:
+    """Erster Messwert der Sitzung = Grundkontext (#557); klein, damit die absolute
+    Schwelle (100k) wirksam bleibt und die Tests ihre urspruengliche Absicht pruefen."""
+    tr = _transcript(root / f"prime-{session}.jsonl", BASELINE_TOKENS)
+    res = _run(root, "post_bash.py", stdin=_payload(tr, session))
+    assert res.returncode == 0 and res.stdout.strip() == "", res.stdout
+
+
 # --- Messung -----------------------------------------------------------------
 
 def test_transcript_tokens_sum_last_main_assistant(tmp_path):
@@ -101,7 +112,8 @@ def test_context_bucket(tokens, bucket):
 
 
 def test_settings_default_literal_false_and_bad_threshold():
-    assert hook_utils.context_budget_settings({}) == {"enabled": True, "threshold": 100_000}
+    assert hook_utils.context_budget_settings({}) == {"enabled": True, "threshold": 100_000,
+                                                      "growth": 75_000}
     assert hook_utils.context_budget_settings({"context_budget": {"enabled": False}})["enabled"] is False
     assert hook_utils.context_budget_settings({"context_budget": {"enabled": "no"}})["enabled"] is True
     assert hook_utils.context_budget_settings({"context_budget": {"clear_threshold_tokens": 120_000}})["threshold"] == 120_000
@@ -120,6 +132,7 @@ def test_cut_note_keeps_sentence_commas_and_formats_numbers():
 
 def test_post_bash_announces_once_per_bucket(tmp_path):
     root = _project(tmp_path)
+    _prime(root)
     tr = _transcript(root / "t.jsonl", 122_040)
     first = _run(root, "post_bash.py", stdin=_payload(tr))
     assert first.returncode == 0, first.stderr
@@ -158,6 +171,8 @@ def test_post_bash_disabled_by_literal_false(tmp_path):
 
 def test_post_bash_other_session_not_confused_by_newest_file(tmp_path):
     root = _project(tmp_path)
+    _prime(root, "s1")
+    _prime(root, "s2")
     tr = _transcript(root / "t.jsonl", 122_040)
     _run(root, "post_bash.py", stdin=_payload(tr, "s1"))
     res = _run(root, "post_bash.py", stdin=_payload(tr, "s2"))
@@ -170,25 +185,30 @@ def test_workflow_context_unknown_without_measurement(tmp_path):
     root = _project(tmp_path)
     res = _run(root, "workflow.py", "context")
     assert res.returncode == 0
-    assert res.stdout.splitlines() == ["CONTEXT_TOKENS=unknown", "CONTEXT_CUT=off"]
+    assert res.stdout.splitlines() == ["CONTEXT_TOKENS=unknown", "CONTEXT_CUT=off",
+                                       "CONTEXT_THRESHOLD=100000"]
 
 
 def test_workflow_context_on_for_session_and_newest_fallback(tmp_path):
     root = _project(tmp_path)
+    _prime(root, "s1")
     tr = _transcript(root / "t.jsonl", 122_040)
     _run(root, "post_bash.py", stdin=_payload(tr, "s1"))
+    expected = ["CONTEXT_TOKENS=122040", "CONTEXT_CUT=on", "CONTEXT_THRESHOLD=100000"]
     res = _run(root, "workflow.py", "context", env=_env(CLAUDE_CODE_SESSION_ID="s1"))
-    assert res.stdout.splitlines() == ["CONTEXT_TOKENS=122040", "CONTEXT_CUT=on"]
+    assert res.stdout.splitlines() == expected
     res = _run(root, "workflow.py", "context")  # ohne Sitzungs-Id: juengste Messung
-    assert res.stdout.splitlines() == ["CONTEXT_TOKENS=122040", "CONTEXT_CUT=on"]
+    assert res.stdout.splitlines() == expected
 
 
 def test_workflow_context_off_below_threshold_from_config(tmp_path):
     root = _project(tmp_path, "context_budget:\n  clear_threshold_tokens: 200000\n")
+    _prime(root, "s1")
     tr = _transcript(root / "t.jsonl", 122_040)
     _run(root, "post_bash.py", stdin=_payload(tr, "s1"))
     res = _run(root, "workflow.py", "context", env=_env(CLAUDE_CODE_SESSION_ID="s1"))
-    assert res.stdout.splitlines() == ["CONTEXT_TOKENS=122040", "CONTEXT_CUT=off"]
+    assert res.stdout.splitlines() == ["CONTEXT_TOKENS=122040", "CONTEXT_CUT=off",
+                                       "CONTEXT_THRESHOLD=200000"]
 
 
 # --- workflow.py batch ---------------------------------------------------------
