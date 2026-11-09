@@ -5,7 +5,9 @@ Spec: docs/specs/feat-478-plan-deploy-sessionstart.md (AC-1 bis AC-9).
 Vertraege, die diese Tests festlegen (zusaetzlich zur Spec):
 - Schrittzeilen des Renderers exakt `▶ Deploy  (offen)` / `✔ Deploy` / `○ Deploy`
   (zwei Leerzeichen vor `(offen)`), direkt nach der Zeile `<✔|▶|○> 8 Fertig`.
-- Letzte Renderer-Zeile in Phase 8 mit Deploy: `Nächster: /70-deploy #<N>`.
+- Letzte Renderer-Zeile in Phase 8 mit offenem Deploy: `❗ Du: /70-deploy #<N> — …`
+  (seit #550 einer der drei Endzustaende statt `Nächster: /70-deploy #<N>`; ohne
+  vollstaendige `deploy:`-Config kein Deploy-Schritt mehr, Endzustand `✅ Erledigt`).
 - `workflow.deploy_configured() -> bool` (Config aus CLAUDE_PROJECT_DIR/config.yaml);
   eine Root-config.yaml nur mit `deploy:` gilt als App-Config (#372), die Test-Configs
   enthalten deshalb zusaetzlich `herdr:`.
@@ -198,7 +200,7 @@ def test_render_phase8_with_deploy_shows_open_deploy():
     assert "✔ 8 Code fertig" in steps, steps
     assert steps.index("✔ 8 Code fertig") + 1 == steps.index("▶ Deploy  (offen)"), steps
     assert steps[-1] == "▶ Deploy  (offen)", steps
-    assert lines[-1] == "Nächster: /70-deploy #478", lines
+    assert lines[-1].startswith("❗ Du: /70-deploy #478 — "), lines  # #550
     assert "abgeschlossen" not in out, out
 
 
@@ -209,13 +211,13 @@ def test_render_deploy_archived_and_early_phase():
     out = _render(_wf_data(), archived=True, deploy=True)
     steps = _step_lines(out)
     assert steps.index("✔ 8 Code fertig") + 1 == steps.index("▶ Deploy  (offen)"), steps
-    assert out.splitlines()[-1] == "Nächster: /70-deploy #478", out
+    assert out.splitlines()[-1].startswith("❗ Du: /70-deploy #478 — "), out  # #550
 
     out = _render(_wf_data(deploy_status="done"), archived=True, deploy=True)
     steps = _step_lines(out)
     assert steps.index("✔ 8 Code fertig") + 1 == steps.index("✔ Deploy"), steps
     assert "▶" not in out, out
-    assert out.splitlines()[-1] == "abgeschlossen", out
+    assert out.splitlines()[-1].startswith("✅ Erledigt: "), out  # #550
 
     early = _render(_wf_data(phase="phase5_tdd_red"), deploy=True)
     esteps = _step_lines(early)
@@ -233,7 +235,7 @@ def test_render_without_deploy_unchanged():
         assert "Deploy" not in base, base
         assert _render(data, deploy=False, **kwargs) == base
     out = _render(_wf_data())
-    assert out.splitlines()[-1] == "abgeschlossen", out
+    assert out.splitlines()[-1].startswith("✅ Erledigt: "), out  # #550
     assert _step_lines(out)[-1] == "✔ 8 Fertig", out
 
 
@@ -244,7 +246,7 @@ def test_cli_plan_uses_deploy_config(tmp_path):
     res = _run([sys.executable, str(WORKFLOW_PY), "plan"], env, proj)
     assert res.returncode == 0, res.stderr
     assert "▶ Deploy  (offen)" in res.stdout, res.stdout
-    assert "Nächster: /70-deploy #478" in res.stdout, res.stdout
+    assert "❗ Du: /70-deploy #478 — " in res.stdout, res.stdout  # #550
 
     for label, cfg in (("only-command",
                         "herdr:\n  enabled: true\ndeploy:\n  command: \"echo x\"\n"),
@@ -252,10 +254,12 @@ def test_cli_plan_uses_deploy_config(tmp_path):
         proj, log, env = _case(tmp_path, label, cfg, _wf_data(), herdr=False)
         res = _run([sys.executable, str(WORKFLOW_PY), "plan"], env, proj)
         assert res.returncode == 0, (label, res.stderr)
-        # #510: ohne vollstaendige deploy:-Config "nicht eingerichtet" statt keine Zeile
-        assert "▶ Deploy  (nicht eingerichtet)" in res.stdout, (label, res.stdout)
-        assert "Nächster: /70-deploy #478" in res.stdout, (label, res.stdout)
-        assert "abgeschlossen" not in res.stdout, (label, res.stdout)
+        # #550 (loest #510 ab): ohne vollstaendige deploy:-Config kein Deploy-Schritt,
+        # kein „nicht eingerichtet“, kein „Nächster: /70-deploy“, Endzustand ✅
+        assert "Deploy" not in res.stdout, (label, res.stdout)
+        assert "Nächster: /70-deploy" not in res.stdout, (label, res.stdout)
+        assert res.stdout.rstrip("\n").splitlines()[-1].startswith("✅ Erledigt: "), \
+            (label, res.stdout)
 
     # deploy_configured() folgt derselben Regel (command UND verify)
     code = ("import sys; sys.path.insert(0, %r); import workflow; "

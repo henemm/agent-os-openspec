@@ -394,21 +394,37 @@ Bei `AUTO_SHIP=on` (Claude hat ausgeliefert, siehe Punkt 5):
 **Ergebnis:** <PR-Link> · gemergt ja/nein · <Merge-Commit>   (sonst in Alltagssprache, warum nicht)
 **Automatisch freigegeben:**
 - <Gate> · <Zeit> · <Grund>     (je Zeile aus `workflow.py approvals --auto`)
-**Offen beim PO:** [fachliche Abnahme][, Deploy]   (nie Merge, PR, CI oder Vorspulen)
 ```
 
-Die ❗Du-Zeile nennt nie einen Git-Schritt (PR, Merge, Push, Branch, Commit); ist für den PO
-nichts zu tun, gilt die vorgeschriebene ℹ️-Variante bzw. der nächste fachliche Schritt.
+Die ❗Du-Zeile nennt nie einen Git-Schritt (PR, Merge, Push, Branch, Commit); die
+Endzustand-Zeile kommt ausschließlich aus `workflow.py endstate` (siehe „Abschluss:
+Endzustand melden“).
 
 Bei `AUTO_SHIP=off` (Ergebnis: Commit-Hash, gepushter Branch):
 
 ```
 **Automatisch freigegeben:**
 - <Gate> · <Zeit> · <Grund>     (je Zeile aus `workflow.py approvals --auto`)
-**Offen beim PO:** [fachliche Abnahme][, Deploy]   (NIE Merge, PR, CI oder Vorspulen nennen — das erledigt Claude, siehe Punkt 5.)
 ```
 
-Die ❗Du-Zeile nennt auch hier nie einen Git-Schritt (PR, Merge, Push, Branch, Commit).
+Die Endzustand-Zeile nennt auch hier nie einen Git-Schritt (PR, Merge, Push, Branch, Commit) —
+das erledigt Claude, siehe Punkt 5.
+
+### Abschluss: Endzustand melden (Pflicht, #550)
+
+Nach `complete` ist der Workflow archiviert; die Endzustand-Zeile kommt trotzdem aus derselben
+Quelle wie Plan und Seitenleiste:
+
+```bash
+python3 .claude/hooks/workflow.py endstate <N>
+```
+
+`ENDSTATE=done|waiting|you` nennt die Art, `FOOTER=` die fertige Zeile. Gib den Wert hinter
+`FOOTER=` **wörtlich** als Endzustand-Zeile aus — genau eine der drei Formen `✅ Erledigt: …`,
+`⏳ Läuft noch: …` oder `❗ Du: … — …`. Erfinde keine Aufgabe für den PO (keine „Abnahme“, kein
+„Deploy“, wenn `endstate` es nicht nennt) und keine zweite Abschlusszeile. Wartest du danach
+noch auf CI, einen Agenten oder einen Server: vorher `workflow.py waiting "<worauf>" <N>`, dann
+`endstate` erneut aufrufen.
 
 ## On Failure
 

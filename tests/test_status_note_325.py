@@ -85,11 +85,14 @@ def test_note_forbids_optional_wording_and_premature_done(tmp_path):
 
 
 def test_note_tells_claude_to_mark_who_is_on_turn(tmp_path):
-    """#174: ❗ = der PO muss etwas tun, ℹ️ = Claude arbeitet, nichts zu tun."""
+    """#174, #550: ❗ = der PO muss etwas tun, ⏳ = Claude wartet auf CI/Agent/Server,
+    ✅ = erledigt. „ℹ️ Nichts zu tun“ gibt es seit #550 nicht mehr."""
     project = _project(tmp_path)
     out = _run(project, "fix-1761-statusvermerk", "Wie ist der Stand?").stdout
     assert "❗ Du:" in out
-    assert "ℹ️ Nichts zu tun:" in out
+    assert "⏳ Läuft noch:" in out
+    assert "✅ Erledigt:" in out
+    assert "Nichts zu tun" not in out
 
 
 def test_note_also_appears_on_harness_injected_turns(tmp_path):

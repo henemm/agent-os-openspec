@@ -1,12 +1,16 @@
 """Plan-Pane: Deploy erst abgehakt, wenn wirklich deployt (Issue #510).
 
 Spec: docs/specs/feat-510-plan-deploy-status.md (AC-1 bis AC-9).
+Teilweise abgeloest durch docs/specs/fix-550-endzustand.md (#550): AC-1..4 und AC-7
+pruefen jetzt die Schlusszeile als einen der drei Endzustaende (✅/⏳/❗) statt
+„Nächster: /70-deploy“/„abgeschlossen“, und "unconfigured" gilt wie "off" (kein
+Deploy-Schritt, kein „nicht eingerichtet“). AC-5, 6, 8, 9 gelten weiter.
 
 Vertraege, die diese Tests festlegen:
 - `render_plan(data, archived=False, width=None, deploy=...)`; `deploy` akzeptiert
   True/False und "configured"/"unconfigured"/"off".
 - Schrittzeilen exakt `✔ 8 Code fertig`, `▶ Deploy  (offen)`, `▶ Deploy  (läuft)`,
-  `✘ Deploy  (fehlgeschlagen)`, `▶ Deploy  (nicht eingerichtet)`, `✔ Deploy`, `○ Deploy`
+  `✘ Deploy  (fehlgeschlagen)`, `✔ Deploy`, `○ Deploy`
   (zwei Leerzeichen vor der Klammer).
 - CLI `workflow.py deploy-status <running|done|failed> [<issue-nr|name>]` -> stdout
   `DEPLOY_STATUS=<wert> (...)`, schreibt `deploy_status`/`deploy_at`; Exit 1 bei
@@ -36,6 +40,14 @@ NO_DEPLOY_CFG = "herdr:\n  enabled: true\n"
 DEPLOY_OFF_CFG = "herdr:\n  enabled: true\ndeploy:\n  enabled: false\n"
 
 STEP_MARKS = ("✔", "▶", "○", "✘")
+
+# Endzustaende (#550)
+DONE_TAIL = ". Du kannst /clear ausführen und das nächste Issue starten."
+OPEN_DEPLOY = "❗ Du: /70-deploy #510 — "
+
+
+def _assert_done(line: str):
+    assert line.startswith("✅ Erledigt: ") and line.endswith(DONE_TAIL), line
 
 
 # --- Helpers ---------------------------------------------------------------
@@ -101,7 +113,7 @@ def test_phase8_deploy_open():
     assert "✔ 8 Code fertig" in steps, steps
     assert steps.index("✔ 8 Code fertig") + 1 == steps.index("▶ Deploy  (offen)"), steps
     assert steps[-1] == "▶ Deploy  (offen)", steps
-    assert _last(out) == "Nächster: /70-deploy #510", out
+    assert _last(out).startswith(OPEN_DEPLOY), out  # #550: ❗ statt „Nächster:“
     assert "abgeschlossen" not in out, out
     assert "8 Fertig" not in out, out
     # True ist gleichbedeutend mit "configured"
@@ -115,14 +127,14 @@ def test_archived_needs_done_marker():
     steps = _step_lines(out)
     assert steps[-1] == "▶ Deploy  (offen)", steps
     assert "✔ 8 Code fertig" in steps, steps
-    assert _last(out) == "Nächster: /70-deploy #510", out
+    assert _last(out).startswith(OPEN_DEPLOY), out
     assert "abgeschlossen" not in out, out
 
     done = _render(_wf_data(deploy_status="done"), archived=True, deploy="configured")
     dsteps = _step_lines(done)
     assert dsteps[-1] == "✔ Deploy", dsteps
     assert dsteps.index("✔ 8 Code fertig") + 1 == dsteps.index("✔ Deploy"), dsteps
-    assert _last(done) == "abgeschlossen", done
+    _assert_done(_last(done))
     assert "Nächster" not in done, done
 
 
@@ -133,31 +145,29 @@ def test_running_and_failed():
         run = _render(_wf_data(deploy_status="running"), archived=archived,
                       deploy="configured")
         assert _step_lines(run)[-1] == "▶ Deploy  (läuft)", (archived, run)
-        assert _last(run) == "Nächster: /70-deploy #510", (archived, run)
+        # #550: laufender Deploy ist ⏳, nie „Nächster: /70-deploy“
+        assert _last(run).startswith("⏳ Läuft noch: "), (archived, run)
+        assert "Nächster: /70-deploy" not in run, (archived, run)
         assert "abgeschlossen" not in run, (archived, run)
 
         fail = _render(_wf_data(deploy_status="failed"), archived=archived,
                        deploy="configured")
         assert _step_lines(fail)[-1] == "✘ Deploy  (fehlgeschlagen)", (archived, fail)
-        assert _last(fail) == "Nächster: /70-deploy #510", (archived, fail)
+        assert _last(fail).startswith(OPEN_DEPLOY + "Deploy fehlgeschlagen"), (archived, fail)
         assert "abgeschlossen" not in fail, (archived, fail)
 
 
 # --- AC-4 -------------------------------------------------------------------
 
 def test_unconfigured_and_off():
-    out = _render(_wf_data(), deploy="unconfigured")
-    steps = _step_lines(out)
-    assert steps[-1] == "▶ Deploy  (nicht eingerichtet)", steps
-    assert "✔ 8 Code fertig" in steps, steps
-    assert _last(out) == "Nächster: /70-deploy #510", out
-
-    for value in ("off", False):
+    # #550: "unconfigured" gilt wie "off" — kein Deploy-Schritt, Endzustand ✅
+    for value in ("unconfigured", "off", False):
         for archived in (False, True):
             off = _render(_wf_data(), archived=archived, deploy=value)
             assert "Deploy" not in off, (value, archived, off)
+            assert "nicht eingerichtet" not in off, (value, archived, off)
             assert _step_lines(off)[-1] == "✔ 8 Fertig", (value, archived, off)
-            assert _last(off) == "abgeschlossen", (value, archived, off)
+            _assert_done(_last(off))
 
 
 # --- AC-5 -------------------------------------------------------------------
@@ -167,7 +177,7 @@ def test_abandoned_has_no_deploy():
                  _wf_data(no_build_reason="nur Doku, kein Build")):
         out = _render(data, archived=True, deploy="configured")
         assert "Deploy" not in out, (data, out)
-        assert _last(out) == "abgeschlossen", (data, out)
+        _assert_done(_last(out))
 
 
 # --- AC-6 -------------------------------------------------------------------
@@ -213,8 +223,10 @@ def test_cli_plan_deploy_mode(tmp_path):
     proj = _project(root, NO_DEPLOY_CFG, active=_wf_data())
     res = _cli(proj, "plan")
     assert res.returncode == 0, res.stderr
-    assert "▶ Deploy  (nicht eingerichtet)" in res.stdout, res.stdout
-    assert "Nächster: /70-deploy #510" in res.stdout, res.stdout
+    # #550: ohne `deploy:`-Block kein Deploy-Schritt und kein „Nächster: /70-deploy“
+    assert "Deploy" not in res.stdout, res.stdout
+    assert "Nächster: /70-deploy" not in res.stdout, res.stdout
+    _assert_done(_last(res.stdout.rstrip("\n")))
 
     root = tmp_path / "off"
     root.mkdir()
@@ -222,7 +234,7 @@ def test_cli_plan_deploy_mode(tmp_path):
     res = _cli(proj, "plan")
     assert res.returncode == 0, res.stderr
     assert "Deploy" not in res.stdout, res.stdout
-    assert "abgeschlossen" in res.stdout, res.stdout
+    _assert_done(_last(res.stdout.rstrip("\n")))
 
     # deploy_mode() als Funktion
     code = ("import sys; sys.path.insert(0, %r); import workflow; "
@@ -252,7 +264,7 @@ def test_early_phase():
     import workflow  # noqa: PLC0415
     nxt = workflow.expected_footer_command(data)
     assert nxt, nxt
-    assert _last(out) == f"Nächster: {nxt}", out
+    assert _last(out).startswith(f"❗ Du: {nxt} — "), out  # #550
 
 
 # --- AC-9 -------------------------------------------------------------------

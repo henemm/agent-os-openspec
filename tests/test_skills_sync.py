@@ -317,14 +317,17 @@ def test_marker_block_demands_a_status_line_above_the_version_marker():
     assert "Phase `<x>` von 8" in block
 
 
-def test_marker_block_says_who_is_on_turn_with_one_of_two_lines():
-    """#174: Die Fußzeile darf nicht wie eine Aufgabe wirken, wenn Claude
-    selbst arbeitet. Die erste Zeile ist entweder ❗ (PO ist dran) oder
-    ℹ️ (nichts zu tun) — und nennt trotzdem den nächsten Schritt."""
+def test_marker_block_says_who_is_on_turn_with_one_of_three_lines():
+    """#174, #550: Die Fußzeile darf nicht wie eine Aufgabe wirken, wenn Claude
+    selbst arbeitet. Die erste Zeile ist genau eine von drei Formen: ✅ (erledigt),
+    ⏳ (Claude wartet auf CI/Agent/Server) oder ❗ (PO ist dran, mit Warum).
+    „ℹ️ Nichts zu tun“ ist seit #550 entfallen."""
     block = sync_skills.marker_block("60-validate", "9.9.9")
     assert "`❗ Du: …`" in block
-    assert "ℹ️ Nichts zu tun:" in block
-    assert "danach: /<befehl> #<N>" in block
+    assert "`✅ Erledigt: <was>." in block
+    assert "`⏳ Läuft noch: <worauf gewartet wird>." in block
+    assert "Nichts zu tun" not in block
+    assert "workflow.py waiting" in block and "workflow.py endstate" in block
     assert "‼️" in block
     # Das Wort „Pflicht-Schritt“ ist nur noch der Name im Hook-Hinweis,
     # keine Zeile mehr, die der PO als Aufforderung liest.
@@ -344,7 +347,8 @@ def test_status_line_rule_is_in_every_non_exempt_skill():
             continue
         text = (REPO_ROOT / "skills" / name / "SKILL.md").read_text()
         assert "❗ Du:" in text, name
-        assert "ℹ️ Nichts zu tun:" in text, name
+        assert "⏳ Läuft noch:" in text, name  # #550 statt „ℹ️ Nichts zu tun:“
+        assert "✅ Erledigt:" in text, name
         assert "ℹ️ Status: Workflow" in text, name
 
 
@@ -358,8 +362,8 @@ def test_status_line_wording_matches_the_hook_note():
     # darauf, damit die Quelle der Fußzeile eindeutig bleibt.
     assert "Nächster Pflicht-Schritt: /60-validate" in note
     assert "„Nächster Pflicht-Schritt“" in sync_skills.marker_block("60-validate", "9.9.9")
-    # Beide Seiten kennen dieselben zwei Kennzeichnungen.
-    for label in ("❗ Du:", "ℹ️ Nichts zu tun:"):
+    # Beide Seiten kennen dieselben drei Kennzeichnungen (#550).
+    for label in ("❗ Du:", "⏳ Läuft noch:", "✅ Erledigt:", "workflow.py waiting"):
         assert label in note
         assert label in sync_skills.marker_block("60-validate", "9.9.9")
 

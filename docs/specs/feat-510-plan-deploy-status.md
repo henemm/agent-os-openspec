@@ -146,3 +146,4 @@ Fertig ist diese Änderung, wenn:
 ## Changelog
 
 - 2026-11-02: Initial spec created
+- 2026-11-09: teilweise abgelöst durch fix-550-endzustand (AC-1..4, AC-7)
