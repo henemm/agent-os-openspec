@@ -204,8 +204,8 @@ e2e_scope:
 #   verify:   woran sieht man, dass er live ist (z.B. "./scripts/verify-live.sh /")
 #   rollback: wie geht es zurueck (optional, empfohlen)
 #   autonomous: true — /60-validate darf /70-deploy ohne Freigabe-Halt anstossen
-#   enabled: false — Projekt ohne Deploy (#510): der Workflow-Plan zeigt dann keinen
-#            Deploy-Schritt statt „Deploy (nicht eingerichtet)“
+#   enabled: false — Projekt ohne Deploy (#510, #550): der Plan endet mit ✅,
+#            ohne Deploy-Schritt
 deploy:
   command: ""
   verify: ""
@@ -331,6 +331,13 @@ session_banner:
 context_budget:
   enabled: true
   clear_threshold_tokens: 100000
+
+# Auftragsliste (#551): `workflow.py queue` fuehrt mehrere Issues als Auftrag
+# (.claude/auftrag.json). Ist er autark, startet Claude nach jedem fertigen Issue
+# das naechste selbst; im Auto-Modus zeigt die Fusszeile dann ⏳ statt ❗ (#555).
+# Nur das Literal false schaltet ab.
+auftrag:
+  enabled: true
 
 # Herdr-Sidebar (#466): Laeuft Claude in einem Herdr-Pane (HERDR_ENV=1), meldet
 # core/hooks/herdr_bridge.py den Workflow-Stand display-only per
