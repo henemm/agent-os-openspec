@@ -1,15 +1,2 @@
-.........................F....                                           [100%]
-=================================== FAILURES ===================================
-__________________ test_cloud_session_proof_artifact_present ___________________
-
-    def test_cloud_session_proof_artifact_present():
->       assert ARTIFACT.exists(), f"Nachweis-Artefakt fehlt: {ARTIFACT.relative_to(REPO_ROOT)}"
-E       AssertionError: Nachweis-Artefakt fehlt: docs/artifacts/feat-522-cloud-plugin-gates/cloud-session-events.json
-E       assert False
-E        +  where False = exists()
-E        +    where exists = PosixPath('/home/user/agent-os-openspec/docs/artifacts/feat-522-cloud-plugin-gates/cloud-session-events.json').exists
-
-tests/test_cloud_gates_522.py:924: AssertionError
-=========================== short test summary info ============================
-FAILED tests/test_cloud_gates_522.py::test_cloud_session_proof_artifact_present
-1 failed, 29 passed in 8.68s
+..............................                                           [100%]
+30 passed in 10.20s

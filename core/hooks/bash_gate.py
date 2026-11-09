@@ -69,6 +69,10 @@ PROTECTED_FILE_PATTERNS = [
 # >> notes.md`). Geprueft werden nur echte Schreibziele. Parallelkopie in edit_gate.py.
 PROOF_FILE_PATTERNS = [r"(?:^|/)docs/artifacts/[^/]+/simulator-run(?:\.txt|/.*)?$"]
 
+# Cloud-Startbaustein und Pin (#522): wie PROOF_FILE_PATTERNS nur echte Schreibziele —
+# Lesen und `python3 .claude/cloud_bootstrap.py --retry` bleiben frei. Ausweg: Override.
+CLOUD_GATE_FILE_PATTERNS = [r"(?:^|/)\.claude/(?:cloud_bootstrap\.py|framework_version\.json)$"]
+
 # Zustandsordner als ganzes Token (#407): `.claude`, `.claude/workflows`
 # (optional ./, Praefixpfad, abschliessender Slash). Nur fuer 3b. Bewusst
 # NICHT `.claude/worktrees/…` und `.claude/hooks` (wie _cd_into_claude).
@@ -1162,6 +1166,16 @@ def _proof_text_hit(text: str, raw: str, cwd: Path, bases: list, depth: int) -> 
     return False
 
 
+def _writes_cloud_gate_file(segments: list, cwd: Path) -> bool:
+    """Schreibt ein Segment Cloud-Baustein oder Pin (#522)? Fehler: fail-open wie 1b."""
+    try:
+        return any(_proof_path_hit_one(t, bases, CLOUD_GATE_FILE_PATTERNS)
+                   for bases, targets, _seg in _segment_write_targets(segments, cwd)
+                   for t in targets)
+    except Exception:
+        return False
+
+
 def _writes_proof_file(scan_cmd: str, cwd: Path, raw: str = "") -> bool:
     """Schreibt, verlinkt oder verschiebt der Befehl den Simulator-Beleg (#447, #448)?
 
@@ -1866,6 +1880,16 @@ def main():
         block(
             "BLOCKED: Zuweisung an OPENSPEC_AUTONOMY (Autonomie-Schalter, #481).\n"
             "  Den Schalter setzt der User in ~/.claude/settings.json unter env.\n"
+            "  Bewusst gewollt? User tippt 'override'."
+        )
+
+    # 1b''. Cloud-Baustein und Pin (#522): Schutz, kein Workflow-Zwang.
+    if _writes_cloud_gate_file(_git_segments(scan_cmd) or [], Path.cwd()) \
+            and not _any_override_token():
+        block(
+            "BLOCKED: Schreibzugriff auf .claude/cloud_bootstrap.py oder "
+            ".claude/framework_version.json (Cloud-Gates, #522).\n"
+            "  Pin und Baustein aendert nur `setup.py <projekt> --cloud-gates|--update`.\n"
             "  Bewusst gewollt? User tippt 'override'."
         )
 

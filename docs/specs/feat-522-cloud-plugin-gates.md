@@ -69,6 +69,8 @@ Projekte, die das Framework als Plugin nutzen (etwa gregor_zwanzig, loose-ends),
 [ "$CLAUDE_CODE_REMOTE" != "true" ] || python3 "${CLAUDE_PROJECT_DIR}/.claude/cloud_bootstrap.py" <datei>.py<args>
 ```
 
+Nachtrag nach Adversary-Befund F008 (Lauf 3): Das Kommando startet den Baustein isoliert mit `python3 -I "${CLAUDE_PROJECT_DIR}/.claude/cloud_bootstrap.py" …`. Sonst stünde `.claude/` vorn im Importpfad, und eine Datei wie `.claude/json.py` könnte den Baustein vor jeder Prüfung kapern. Die Form in AC-12 gilt mit dieser Härtung. Der Baustein entfernt zusätzlich sein eigenes Verzeichnis aus `sys.path`; das schützt Alt-Einträge ohne `-I`, die `--update` ersetzt. Die Hooks aus dem Cache starten mit `-E -s -B`.
+
 Event, Matcher, Reihenfolge und `type` wie im Original, `timeout` = Original + 25 s (erster Abruf; fehlt er im Original, fehlt er auch hier). Lokal endet der Befehl vor dem Lesen von stdin mit Exit 0, also läuft neben dem Plugin nichts doppelt (Verfahren wie #520). Ein Kommando, das nicht zu `_PLUGIN_HOOK_CMD_RE` passt, bricht die Erzeugung ab (kein halber Schutz).
 
 **`core/cloud_bootstrap.py`** (Aufruf `python3 "${CLAUDE_PROJECT_DIR}/.claude/cloud_bootstrap.py" <script>.py [args]`, stdin = Hook-JSON):

@@ -1,6 +1,6 @@
 ---
 spec_file: docs/specs/feat-522-cloud-plugin-gates.md
-spec_sha256: 38f7bbb8d40dd97d03cd0385235f9e5f60c416179af49968b994ea02a80c51b7
+spec_sha256: e00f053239597a2e9a1866e24f38dca62f5da2a79802fb88151bbb7395f6b765
 spec_frozen_sha256: 983e3cba25389218e40e11b3b459b56bc8228626bf9118acdc6fabe31675e01f
 ---
 

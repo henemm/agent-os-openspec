@@ -25,6 +25,14 @@ Erzeugung ab (Exit 1) — lieber kein Block als ein halber Schutz.
 
     python3 scripts/sync_cloud_hooks.py          # hooks-Block neu schreiben
     python3 scripts/sync_cloud_hooks.py --check  # nur pruefen, Exit 1 bei Drift
+    python3 scripts/sync_cloud_hooks.py --consumer  # Block fuer Plugin-Konsumenten (#522), stdout
+
+Zweite Erzeugungsart `consumer_hooks` (#522): fuer Plugin-Konsumenten, deren Repo
+die Hook-Skripte nicht enthaelt. Kommando ueber den Startbaustein
+`python3 -I "${CLAUDE_PROJECT_DIR}/.claude/cloud_bootstrap.py" <datei>.py<args>`,
+Timeout + 25 s; `setup.py --cloud-gates` mergt den Block in die settings.json.
+`-I` (isoliert): ohne Skriptverzeichnis, PYTHONPATH und User-site in `sys.path`,
+sonst ersetzte z. B. `.claude/json.py` ein Stdlib-Modul des Bausteins (Adversary F008).
 
 Nach jeder Aenderung an hooks/hooks.json ausfuehren; `release_check.py`
 (Zeile "Cloud-Hooks") blockt das Release bei Drift.
@@ -35,6 +43,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -60,6 +69,16 @@ CLOUD_COMMAND = ('[ "$CLAUDE_CODE_REMOTE" != "true" ] || '
 
 SYNC_HINT = "python3 scripts/sync_cloud_hooks.py"
 
+# Plugin-Konsumenten (#522): Hook-Skripte liegen nicht im Repo, der Startbaustein
+# `.claude/cloud_bootstrap.py` holt den gepinnten Framework-Stand und startet sie.
+# `-I`: kein `.claude/` in sys.path, kein PYTHONPATH (Adversary F008).
+CONSUMER_COMMAND = ('[ "$CLAUDE_CODE_REMOTE" != "true" ] || '
+                    'python3 -I "${{CLAUDE_PROJECT_DIR}}/.claude/cloud_bootstrap.py" {script}{args}')
+# Erster Abruf des Tags (Klon) braucht Zeit zusaetzlich zum Original-Timeout.
+CONSUMER_TIMEOUT_EXTRA = 25
+# Dieselbe Regel wie im Baustein (`SCRIPT_RE`) — sonst blockte der Baustein zur Laufzeit.
+_CONSUMER_SCRIPT_RE = re.compile(r"^[A-Za-z0-9_]+\.py$")
+
 
 def cloud_command(plugin_command: str) -> str:
     """Plugin-Kommando → Cloud-Kommando; ValueError, wenn es nicht passt."""
@@ -81,6 +100,35 @@ def cloud_hooks(hooks_json: dict) -> dict:
             out_group = copy.deepcopy(group)
             for hook in out_group.get("hooks", []):
                 hook["command"] = cloud_command(hook["command"])
+            out_groups.append(out_group)
+        result[event] = out_groups
+    return result
+
+
+def consumer_command(plugin_command: str) -> str:
+    """Plugin-Kommando → Konsumenten-Kommando ueber den Baustein; ValueError, wenn es nicht passt."""
+    match = _PLUGIN_HOOK_CMD_RE.match(plugin_command)
+    if not match or not _CONSUMER_SCRIPT_RE.match(match.group(1)):
+        raise ValueError(f"Hook-Kommando nicht umsetzbar: {plugin_command!r}")
+    return CONSUMER_COMMAND.format(script=match.group(1), args=match.group(2))
+
+
+def consumer_hooks(hooks_json: dict) -> dict:
+    """Reine Funktion: `hooks`-Block fuer Plugin-Konsumenten (#522).
+
+    Event, Gruppen, Matcher, Reihenfolge und `type` wie in hooks/hooks.json;
+    `command` laeuft ueber `.claude/cloud_bootstrap.py`, `timeout` = Original + 25
+    (fehlt er im Original, fehlt er auch hier).
+    """
+    result: dict = {}
+    for event, groups in hooks_json.get("hooks", {}).items():
+        out_groups = []
+        for group in groups:
+            out_group = copy.deepcopy(group)
+            for hook in out_group.get("hooks", []):
+                hook["command"] = consumer_command(hook["command"])
+                if "timeout" in hook:
+                    hook["timeout"] = hook["timeout"] + CONSUMER_TIMEOUT_EXTRA
             out_groups.append(out_group)
         result[event] = out_groups
     return result
@@ -140,8 +188,21 @@ def main() -> int:
     parser.add_argument("--root", type=Path, default=REPO_ROOT,
                         help="Repo-Wurzel mit hooks/hooks.json und .claude/settings.json "
                              "(Default: dieses Repo)")
+    parser.add_argument("--consumer", action="store_true",
+                        help="hooks-Block fuer Plugin-Konsumenten (#522) als JSON ausgeben; "
+                             "schreibt nichts")
     args = parser.parse_args()
     root = args.root.resolve()
+
+    if args.consumer:
+        hooks_path, _ = _paths(root)
+        try:
+            block = consumer_hooks(json.loads(hooks_path.read_text(encoding="utf-8")))
+        except (OSError, ValueError) as exc:
+            print(f"Konsumenten-Block nicht erzeugt: {exc}", file=sys.stderr)
+            return 1
+        print(json.dumps(block, indent=2, ensure_ascii=False))
+        return 0
 
     if args.check:
         ok, msg = check(root)

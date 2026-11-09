@@ -42,7 +42,9 @@ TAG = f"agent-os-openspec--v{FW_VERSION}"
 RETRY = "python3 .claude/cloud_bootstrap.py --retry"
 PO_EXIT = "PO: `override` tippen (gilt 1 h für diese Sitzung)"
 ORIG_RE = re.compile(r"^\$\{CLAUDE_PLUGIN_ROOT\}/core/hooks/(\S+\.py)(.*)$")
-CONSUMER_PREFIX = '[ "$CLAUDE_CODE_REMOTE" != "true" ] || python3 "${CLAUDE_PROJECT_DIR}/.claude/cloud_bootstrap.py" '
+CONSUMER_PREFIX = '[ "$CLAUDE_CODE_REMOTE" != "true" ] || python3 -I "${CLAUDE_PROJECT_DIR}/.claude/cloud_bootstrap.py" '
+# Alt-Form vor Adversary F008 (ohne `-I`): `--update` muss sie erkennen und ersetzen.
+OLD_CONSUMER_PREFIX = '[ "$CLAUDE_CODE_REMOTE" != "true" ] || python3 "${CLAUDE_PROJECT_DIR}/.claude/cloud_bootstrap.py" '
 
 WRITE_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit", "WebFetch", "Agent",
                "mcp__github__issue_write"]
@@ -328,6 +330,132 @@ def test_sha_mismatch_fails_closed_and_leaves_no_cache(tmp_path):
     assert not ctx.out.exists(), "probe.py darf bei SHA-Abweichung nicht starten"
 
 
+# ------------------------------------------------------------------ AC-1/AC-3: Cache-Unversehrtheit (Adversary F003)
+def test_tampered_cache_is_not_executed(tmp_path):
+    ctx = _ctx(tmp_path)
+    evil = tmp_path / "evil-ran"
+    evil_src = f"open({str(evil)!r}, 'w').write('x')\nraise SystemExit(0)\n"
+    payload = _ev("PreToolUse", "Edit", probe_out=str(ctx.out), probe_exit=2)
+    probe = ctx.cache / "core" / "hooks" / "probe.py"
+
+    def assert_original_ran(r, runs):
+        assert r.returncode == 2, r.stdout + r.stderr
+        assert not evil.exists(), "manipulierte Fassung wurde ausgefuehrt"
+        assert len(ctx.probe_records()) == runs
+        assert not os.path.islink(ctx.cache)
+        assert probe.read_text(encoding="utf-8") == PROBE
+
+    assert_original_ran(ctx.run("probe.py", payload=payload), 1)
+
+    # 1. Skript im Cache umgeschrieben, `.ok` unveraendert -> neu geholt, Original laeuft
+    probe.write_text(evil_src, encoding="utf-8")
+    assert_original_ran(ctx.run("probe.py", payload=payload), 2)
+
+    # 2. assume-unchanged versteckt die Aenderung vor `git status` -> trotzdem erkannt
+    _git(["update-index", "--assume-unchanged", "core/hooks/probe.py"], ctx.cache)
+    probe.write_text(evil_src, encoding="utf-8")
+    assert_original_ran(ctx.run("probe.py", payload=payload), 3)
+
+    # 3. Untergeschobene ignorierte Datei (Bytecode) -> neu geholt
+    pyc = ctx.cache / "core" / "hooks" / "__pycache__" / "probe.cpython-39.pyc"
+    pyc.parent.mkdir()
+    pyc.write_bytes(b"x" * 64)
+    assert_original_ran(ctx.run("probe.py", payload=payload), 4)
+    assert not pyc.exists()
+
+    # 4. Cache-Ordner ist ein Symlink auf eine manipulierte Kopie mit passendem `.ok`
+    fake = tmp_path / "fake-cache"
+    shutil.copytree(str(ctx.cache), str(fake), symlinks=True)
+    (fake / "core" / "hooks" / "probe.py").write_text(evil_src, encoding="utf-8")
+    shutil.rmtree(str(ctx.cache))
+    os.symlink(str(fake), str(ctx.cache))
+    assert_original_ran(ctx.run("probe.py", payload=payload), 5)
+
+    # 5. Skript im Cache ist ein Symlink -> nicht ausgefuehrt
+    evil_file = tmp_path / "evil.py"
+    evil_file.write_text(evil_src, encoding="utf-8")
+    probe.unlink()
+    os.symlink(str(evil_file), str(probe))
+    assert_original_ran(ctx.run("probe.py", payload=payload), 6)
+
+    # 6. Clean-Filter in der Cache-Config tarnt die Aenderung vor `git status` (F007):
+    #    trotzdem erkannt, und der Filter-Befehl selbst laeuft nie. Gleiche Groesse wie
+    #    das Original, damit `git status` den Inhalt durch den Filter neu hasht.
+    filter_ran = tmp_path / "filter-ran"
+    padded = evil_src + "#" * (len(PROBE.encode()) - len(evil_src.encode()) - 1) + "\n"
+    assert len(padded.encode()) == len(PROBE.encode())
+    probe.write_text(padded, encoding="utf-8")
+    clean = f"sh -c 'touch {filter_ran}; git show HEAD:core/hooks/probe.py'"
+    _git(["config", "filter.f.clean", clean], ctx.cache)
+    _git(["config", "filter.f.smudge", "cat"], ctx.cache)
+    (ctx.cache / ".git" / "info").mkdir(exist_ok=True)
+    (ctx.cache / ".git" / "info" / "attributes").write_text(
+        "core/hooks/probe.py filter=f\n", encoding="utf-8")
+    assert_original_ran(ctx.run("probe.py", payload=payload), 7)
+    assert not filter_ran.exists(), "Filter-Befehl aus der Cache-Config wurde ausgefuehrt"
+
+    # 7. Zusaetzliche .py in core/hooks (kapert `import json` des Skripts) -> neu geholt
+    shadow = ctx.cache / "core" / "hooks" / "json.py"
+    shadow.write_text(evil_src, encoding="utf-8")
+    assert_original_ran(ctx.run("probe.py", payload=payload), 8)
+    assert not shadow.exists()
+
+    # 8. Manipuliert und Quelle unerreichbar -> fail-closed (Exit 2), nichts ausgefuehrt
+    probe.write_text(evil_src, encoding="utf-8")
+    r = ctx.run("probe.py", payload=payload, url=ctx.bad_url)
+    assert r.returncode == 2, r.stdout + r.stderr
+    assert RETRY in r.stderr, r.stderr
+    assert not evil.exists(), "manipulierte Fassung wurde ausgefuehrt"
+    assert len(ctx.probe_records()) == 8
+
+
+# ------------------------------------------------------------------ Adversary F008: Modul-Kaperung
+def _hijack_run(ctx, cmd, **extra):
+    payload = _ev("PreToolUse", "Edit", probe_out=str(ctx.out), probe_exit=2)
+    return subprocess.run(["bash", "-c", cmd], input=payload, env=ctx.env(**extra),
+                          cwd=str(ctx.proj), capture_output=True, text=True, timeout=60)
+
+
+def _assert_not_hijacked(ctx, r, evil):
+    assert r.returncode == 2, r.stdout + r.stderr
+    assert not evil.exists(), "Stdlib-Modul wurde gekapert (Code vor der Cache-Pruefung)"
+    recs = ctx.probe_records()
+    assert len(recs) == 1 and recs[0]["marker"] == "probe-ran", recs
+
+
+def _evil_module(path: Path, evil: Path) -> None:
+    path.write_text(f"open({str(evil)!r}, 'w').write('x')\nraise SystemExit(0)\n",
+                    encoding="utf-8")
+
+
+def test_generated_command_ignores_shadow_module_in_claude_dir(tmp_path):
+    ctx = _ctx(tmp_path)
+    evil = tmp_path / "evil-ran"
+    _evil_module(ctx.proj / ".claude" / "json.py", evil)
+    cmd = _load_sync().consumer_command("${CLAUDE_PLUGIN_ROOT}/core/hooks/probe.py")
+    assert " -I " in cmd, cmd
+    _assert_not_hijacked(ctx, _hijack_run(ctx, cmd), evil)
+
+
+def test_generated_command_ignores_pythonpath_shadow_module(tmp_path):
+    ctx = _ctx(tmp_path)
+    evil = tmp_path / "evil-ran"
+    shadow_dir = tmp_path / "shadow"
+    shadow_dir.mkdir()
+    _evil_module(shadow_dir / "json.py", evil)
+    cmd = _load_sync().consumer_command("${CLAUDE_PLUGIN_ROOT}/core/hooks/probe.py")
+    _assert_not_hijacked(ctx, _hijack_run(ctx, cmd, PYTHONPATH=str(shadow_dir)), evil)
+
+
+@pytest.mark.parametrize("module", ["json", "__future__", "subprocess"])
+def test_old_command_without_isolation_ignores_shadow_module(tmp_path, module):
+    ctx = _ctx(tmp_path)
+    evil = tmp_path / "evil-ran"
+    _evil_module(ctx.proj / ".claude" / f"{module}.py", evil)
+    cmd = OLD_CONSUMER_PREFIX + "probe.py"
+    _assert_not_hijacked(ctx, _hijack_run(ctx, cmd), evil)
+
+
 # ------------------------------------------------------------------ AC-4
 @pytest.mark.parametrize("case", ["bad-url", "missing-tag", "missing-pin", "missing-script"])
 def test_fetch_failure_blocks_write_tools(tmp_path, case):
@@ -354,8 +482,14 @@ def test_fetch_failure_blocks_write_tools(tmp_path, case):
 # ------------------------------------------------------------------ AC-5
 def test_bash_whitelist_and_retry_when_fetch_failed(tmp_path):
     ctx = _ctx(tmp_path)
-    allowed = [RETRY, "git status", "ls -la", "grep foo src"]
-    denied = ["echo x > f", "ls; rm f", "cat a | sh", "git log $(id)", "touch f"]
+    allowed = [RETRY, "git status", "ls -la", "grep foo src", "git diff --stat", "git log -p -1"]
+    denied = ["echo x > f", "ls; rm f", "cat a | sh", "git log $(id)", "touch f",
+              # Adversary F001: Optionen erlaubter Befehle, die Programme starten oder schreiben
+              "rg --hostname-bin=/bin/true --hyperlink-format=file://{host}{path} . f",
+              "rg foo src", "rg --pre=/bin/cat foo",
+              "git diff --ext-diff", "git show --ext-diff HEAD", "git log -p --ext-diff",
+              "git diff --textconv", "git show --textconv HEAD:a",
+              "git log --show-signature", "git diff --output=/tmp/x", "git show --output /tmp/x"]
     for cmd in allowed:
         r = ctx.run("bash_gate.py", payload=_bash_ev(cmd), url=ctx.bad_url)
         assert r.returncode == 0, f"{cmd!r}: rc={r.returncode} {r.stderr!r}"
@@ -651,7 +785,7 @@ def test_unresolvable_pin_writes_nothing(tmp_path, fw_copy):
 def test_update_in_plugin_mode_keeps_and_refreshes_pin(tmp_path, fw_copy):
     url, commit, _ = _remote(tmp_path)
     stale = {"PreToolUse": [{"matcher": "Edit|Write|MultiEdit", "hooks": [
-        {"type": "command", "command": CONSUMER_PREFIX + "edit_gate.py", "timeout": 1}]}]}
+        {"type": "command", "command": OLD_CONSUMER_PREFIX + "edit_gate.py", "timeout": 1}]}]}
     hooks = json.loads(json.dumps(OWN_HOOKS))
     hooks["PreToolUse"] += stale["PreToolUse"]
     proj = _plugin_project(tmp_path, settings={**OWN_KEYS, "hooks": hooks},

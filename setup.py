@@ -19,10 +19,12 @@ This tool:
 """
 
 import argparse
+import copy
 import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from datetime import datetime
@@ -814,6 +816,209 @@ Next steps:
 """)
 
 
+# --- Cloud-Gates fuer Plugin-Konsumenten (#522) ---------------------------
+# Die Cloud laedt keine Plugins. `--cloud-gates` kopiert den Startbaustein
+# core/cloud_bootstrap.py nach .claude/, traegt alle Hooks aus hooks/hooks.json
+# (nur fuer CLAUDE_CODE_REMOTE=true) in .claude/settings.json ein und pinnt
+# Release-Tag + Commit in .claude/framework_version.json.
+CLOUD_REPO_DEFAULT = "https://github.com/henemm/agent-os-openspec"
+CLOUD_TAG_PREFIX = "agent-os-openspec--v"
+# Erkennt neue (`python3 -I ...`) und Alt-Eintraege ohne `-I` (vor Adversary F008)
+# gleichermassen; `--update` ersetzt beide durch die aktuelle Form.
+_CLOUD_BOOT_KEY_RE = re.compile(r'\.claude/cloud_bootstrap\.py"?\s+(\S+\.py)(.*)$')
+_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+def _cloud_repo_url() -> str:
+    # Dieselbe Variable wie der Baustein; `file://` nur fuer Tests.
+    return os.environ.get("AGENT_OS_CLOUD_REPO") or CLOUD_REPO_DEFAULT
+
+
+def _git_stdout(args: list, timeout: int = 30) -> "str | None":
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
+    try:
+        r = subprocess.run(["git", *args], capture_output=True, text=True,
+                           timeout=timeout, env=env)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return r.stdout if r.returncode == 0 else None
+
+
+def resolve_cloud_pin(version: str = FRAMEWORK_VERSION) -> "tuple[str, str] | None":
+    """(Tag, Commit-SHA) des Releases; lokal per rev-parse, sonst per ls-remote. None = nicht aufloesbar."""
+    tag = f"{CLOUD_TAG_PREFIX}{version}"
+    local = (_git_stdout(["-C", str(FRAMEWORK_ROOT), "rev-parse", "--verify", "--quiet",
+                          f"{tag}^{{commit}}"]) or "").strip()
+    if _SHA_RE.match(local):
+        return tag, local
+    url = _cloud_repo_url()
+    if url.startswith("-"):
+        return None
+    out = _git_stdout(["ls-remote", url, f"refs/tags/{tag}", f"refs/tags/{tag}^{{}}"])
+    refs = {}
+    for line in (out or "").splitlines():
+        sha, _, ref = line.partition("\t")
+        refs[ref.strip()] = sha.strip()
+    # Annotierter Tag: die `^{}`-Zeile nennt den Commit; leichtgewichtiger: der Tag selbst.
+    sha = refs.get(f"refs/tags/{tag}^{{}}") or refs.get(f"refs/tags/{tag}") or ""
+    return (tag, sha) if _SHA_RE.match(sha) else None
+
+
+def _consumer_hooks() -> dict:
+    """Konsumenten-Block aus hooks/hooks.json — eine Quelle: scripts/sync_cloud_hooks.py."""
+    saved = list(sys.path)
+    try:
+        sys.path.insert(0, str(SCRIPTS_DIR))
+        from sync_cloud_hooks import consumer_hooks
+    finally:
+        sys.path[:] = saved
+    return consumer_hooks(json.loads((FRAMEWORK_ROOT / "hooks" / "hooks.json").read_text()))
+
+
+def _cloud_boot_key(hook) -> "tuple[str, str] | None":
+    command = hook.get("command", "") if isinstance(hook, dict) else ""
+    m = _CLOUD_BOOT_KEY_RE.search(command or "")
+    return (m.group(1), m.group(2).strip()) if m else None
+
+
+def _splice_boot_entries(existing: list, new: list) -> list:
+    """Baustein-Eintraege einer Gruppe an der Stelle des ersten bisherigen ersetzen."""
+    pos = next((i for i, h in enumerate(existing) if _cloud_boot_key(h)), None)
+    own = [h for h in existing if not _cloud_boot_key(h)]
+    if pos is None:
+        return own + new
+    return own[:pos] + new + own[pos:]
+
+
+def _validated_hooks(settings: dict) -> dict:
+    if not isinstance(settings, dict):
+        raise ValueError("settings.json ist kein JSON-Objekt")
+    hooks = settings.setdefault("hooks", {})
+    if not isinstance(hooks, dict):
+        raise ValueError("'hooks' ist kein JSON-Objekt")
+    for event, groups in hooks.items():
+        if not isinstance(groups, list) or any(
+                not isinstance(g, dict) or not isinstance(g.get("hooks", []), list)
+                for g in groups):
+            raise ValueError(f"'hooks.{event}' enthaelt eine ungueltige Gruppe")
+    return hooks
+
+
+def merge_cloud_gate_entries(settings: dict, wanted: dict) -> None:
+    """Baustein-Eintraege idempotent in `settings` mergen (#522).
+
+    Erkannt am Skriptnamen hinter `cloud_bootstrap.py`. Projekteigene Hooks und
+    alle anderen Schluessel bleiben unangetastet. In der ersten Gruppe mit dem
+    gewuenschten Matcher werden die Baustein-Eintraege an ihrer Stelle erneuert
+    (fehlen sie, angehaengt); veraltete Baustein-Eintraege anderswo fallen weg.
+    """
+    hooks = _validated_hooks(settings)
+    for event in list(hooks):
+        wanted_groups = wanted.get(event, [])
+        matchers = [g.get("matcher") for g in wanted_groups]
+        kept, seen = [], []
+        for g in hooks[event]:
+            m = g.get("matcher")
+            if m in matchers and m not in seen:
+                seen.append(m)
+                new = copy.deepcopy(wanted_groups[matchers.index(m)]["hooks"])
+                g["hooks"] = _splice_boot_entries(g.get("hooks", []), new)
+                kept.append(g)
+                continue
+            own = [h for h in g.get("hooks", []) if not _cloud_boot_key(h)]
+            if len(own) != len(g.get("hooks", [])):
+                if not own:
+                    continue
+                g["hooks"] = own
+            kept.append(g)
+        kept += [copy.deepcopy(g) for g in wanted_groups if g.get("matcher") not in seen]
+        if kept or not hooks[event]:
+            hooks[event] = kept
+        else:
+            del hooks[event]
+    for event, groups in wanted.items():
+        if event not in hooks:
+            hooks[event] = copy.deepcopy(groups)
+
+
+def _cloud_gate_plan(project_path: Path) -> list:
+    """(Pfad, Bytes) fuer Baustein und settings.json — berechnet, schreibt nichts."""
+    settings_path = project_path / ".claude" / "settings.json"
+    settings = json.loads(settings_path.read_text(encoding="utf-8")) if settings_path.exists() else {}
+    merge_cloud_gate_entries(settings, _consumer_hooks())
+    text = json.dumps(settings, indent=2, ensure_ascii=False) + "\n"
+    return [(project_path / ".claude" / "cloud_bootstrap.py",
+             (CORE_DIR / "cloud_bootstrap.py").read_bytes()),
+            (settings_path, text.encode("utf-8"))]
+
+
+def _write_changed(plan: list) -> list:
+    """Nur abweichende Dateien schreiben; Rueckgabe: geschriebene Pfade."""
+    changed = []
+    for path, data in plan:
+        if path.exists() and path.read_bytes() == data:
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        changed.append(path)
+    return changed
+
+
+def apply_cloud_gates(project_path: Path) -> int:
+    """`--cloud-gates`: Baustein, Eintraege und Pin; Exit-Code (0 = ok, 1 = nichts geschrieben)."""
+    version_file = project_path / ".claude" / "framework_version.json"
+    try:
+        fv = json.loads(version_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        fv = {}
+    if not isinstance(fv, dict) or not fv.get("plugin_mode"):
+        print("ERROR: --cloud-gates gilt nur fuer Plugin-Modus-Projekte (plugin_mode in "
+              ".claude/framework_version.json). Copy-Modus-Projekte haben ihre Hooks bereits "
+              "in .claude/settings.json und laufen in der Cloud ohne Baustein.", file=sys.stderr)
+        return 1
+    pin = resolve_cloud_pin()
+    if pin is None:
+        print(f"ERROR: Release-Tag {CLOUD_TAG_PREFIX}{FRAMEWORK_VERSION} weder im Framework-"
+              f"Checkout noch auf {_cloud_repo_url()} aufloesbar — nichts geschrieben.",
+              file=sys.stderr)
+        return 1
+    try:
+        plan = _cloud_gate_plan(project_path)
+    except (OSError, ValueError) as e:
+        print(f"ERROR: Cloud-Gates nicht eingerichtet ({e}) — nichts geschrieben.", file=sys.stderr)
+        return 1
+    fv.update(cloud_ref=pin[0], cloud_sha=pin[1])
+    plan.append((version_file, json.dumps(fv, indent=2).encode("utf-8")))
+    changed = _write_changed(plan)
+    print(f"Cloud-Gates (#522): Pin {pin[0]} ({pin[1][:12]})")
+    for path in changed:
+        print(f"  Geschrieben: {path.relative_to(project_path)}")
+    if not changed:
+        print("  Alles aktuell, nichts geaendert.")
+    else:
+        print("Diese Dateien committen: .claude/cloud_bootstrap.py, .claude/settings.json, "
+              ".claude/framework_version.json")
+    return 0
+
+
+def refresh_cloud_gates(project_path: Path, existing: dict, version_info: dict) -> list:
+    """`--update` im Plugin-Modus mit Pin: Pin, Baustein und Eintraege erneuern (#522)."""
+    version_info["cloud_ref"] = existing.get("cloud_ref")
+    version_info["cloud_sha"] = existing.get("cloud_sha")
+    pin = resolve_cloud_pin()
+    if pin is None:
+        print(f"  WARNING: Release-Tag {CLOUD_TAG_PREFIX}{FRAMEWORK_VERSION} nicht aufloesbar — "
+              "Cloud-Gates bleiben auf dem bisherigen Pin.")
+        return []
+    try:
+        plan = _cloud_gate_plan(project_path)
+    except (OSError, ValueError) as e:
+        print(f"  WARNING: Cloud-Gates nicht erneuert ({e}) — bisheriger Pin bleibt.")
+        return []
+    version_info.update(cloud_ref=pin[0], cloud_sha=pin[1])
+    return [str(p.relative_to(project_path)) for p in _write_changed(plan)]
+
+
 def generate_config_yaml(project_path: Path, modules: list):
     """Generate project-level config.yaml."""
     config_src = FRAMEWORK_ROOT / "config.yaml"
@@ -1158,6 +1363,10 @@ def update_project(project_path: Path, modules: list, force: bool = False):
             "installed_modules": modules,
             "plugin_mode": True,
         }
+        # #522: gesetzter Cloud-Pin bleibt erhalten und wird erneuert; ohne Pin: nichts.
+        if existing.get("cloud_ref") or existing.get("cloud_sha"):
+            new_files += [f"cloud gates: {e}"
+                          for e in refresh_cloud_gates(project_path, existing, version_info)]
     else:
         version_info = {
             "framework_version": FRAMEWORK_VERSION,
@@ -1415,6 +1624,11 @@ Available modules:
     )
 
     parser.add_argument(
+        "--cloud-gates", action="store_true",
+        help="Plugin-mode only: register all hooks for cloud sessions via "
+             ".claude/cloud_bootstrap.py and pin the release tag (#522)")
+
+    parser.add_argument(
         "--command-aliases",
         action="store_true",
         help=(
@@ -1479,6 +1693,12 @@ Available modules:
     if args.command_aliases:
         generate_command_aliases(project_path)
         return
+
+    # Cloud-Gates (#522); mit --update danach weiter
+    if args.cloud_gates:
+        rc = apply_cloud_gates(project_path)
+        if rc or not args.update:
+            sys.exit(rc)
 
     # Update mode
     if args.update:
