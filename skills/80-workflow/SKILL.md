@@ -53,6 +53,17 @@ Liest das Session-Register (`.claude/session-locks/*.json`), das `session_single
 fuehrt: Agent-Name, Worktree, Branch, Workflow, Issue und Phase pro aktiver Session dieses
 Projekts. Fehlende optionale Felder erscheinen in der Tabelle als `–`.
 
+### Endzustand der Fußzeile (#550)
+```bash
+$WF endstate [#N|name]
+$WF waiting "<text>"
+$WF waiting --clear
+```
+`endstate` gibt die Schlusszeile des Workflows aus — immer eine von drei Formen:
+`✅ Erledigt` (nichts offen), `⏳ Läuft noch` (z. B. Deploy/CI läuft, was wartet), `❗ Du`
+(der PO muss handeln). `waiting` setzt bzw. löscht (`--clear`) den Vermerk „läuft noch";
+ein Phasenwechsel leert ihn automatisch.
+
 ### Retro: Abgeschlossene Workflows analysieren
 ```bash
 # Alle archivierten Workflows auflisten

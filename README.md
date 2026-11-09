@@ -194,6 +194,11 @@ python3 .claude/hooks/workflow.py list
 python3 .claude/hooks/workflow.py sessions
 python3 .claude/hooks/workflow.py sessions --json
 
+# End state of the footer (#550) — one of three forms: ✅ Erledigt / ⏳ Läuft noch / ❗ Du
+python3 .claude/hooks/workflow.py endstate [#N|name]   # prints the final footer line for the workflow
+python3 .claude/hooks/workflow.py waiting "<text>"     # mark "⏳ Läuft noch" (what is still running)
+python3 .claude/hooks/workflow.py waiting --clear      # remove the marker (also cleared on phase change)
+
 # Context budget — several state changes per call, context size of this session
 python3 .claude/hooks/workflow.py batch add-artifact test_output logs/t.log "3 failed" phase5_tdd_red -- mark-red "3 failed" -- status
 python3 .claude/hooks/workflow.py context          # CONTEXT_TOKENS=<n|unknown>, CONTEXT_CUT=on|off
