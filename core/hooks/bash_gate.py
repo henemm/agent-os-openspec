@@ -311,7 +311,8 @@ def _redirects_to_protected(scan_cmd: str) -> bool:
             continue
         if target == "/dev/null" or target == "-" or target.isdigit():
             continue
-        if any(re.search(p, target) for p in patterns):
+        # #545: Ziel roh UND normalisiert (`.claude//settings.json`)
+        if any(re.search(p, t) for p in patterns for t in (target, _norm_token(target))):
             return True
     return False
 
@@ -327,11 +328,13 @@ def _cd_into_claude(segment: list) -> bool:
     args = [a for a in segment[1:] if not a.startswith("-")]
     if not args:
         return False
-    parts = [p for p in args[0].split("/") if p]
-    return any(
-        p == ".claude" and (i == len(parts) - 1 or parts[i + 1] == "workflows")
-        for i, p in enumerate(parts)
-    )
+    # #545: cd-Ziel roh UND normalisiert (`.claude/./workflows` == `.claude/workflows`)
+    for target in (args[0], _norm_token(args[0])):
+        parts = [p for p in target.split("/") if p]
+        if any(p == ".claude" and (i == len(parts) - 1 or parts[i + 1] == "workflows")
+               for i, p in enumerate(parts)):
+            return True
+    return False
 
 
 def _cd_context_protected(scan_cmd: str) -> bool:
@@ -1277,9 +1280,10 @@ def _references_protected(command: str) -> bool:
     (Issue #64): ein Protected-Pfad, der nur in einem -m/--body/--title/-F-
     Freitext ZITIERT wird (Issue-Body, Doku), ist keine Datei-Referenz.
     Nested Shell/eval und shlex-Fehler fallen konservativ auf den Roh-Scan
-    zurueck (kein Gate-Bypass ueber quoted Code).
+    zurueck (kein Gate-Bypass ueber quoted Code). #545: Datei-Token zusaetzlich
+    normalisiert (`.claude//settings.json`, `./.claude/./…`).
     """
-    return _matches_file_token(command, PROTECTED_FILE_PATTERNS)
+    return _matches_file_token(command, PROTECTED_FILE_PATTERNS, normalize=True)
 
 
 def _references_filename_marker(command: str) -> bool:
@@ -1364,11 +1368,21 @@ def _has_write_indicator(command: str, links: bool = False) -> bool:
     return _has_real_redirect(command)
 
 
-def _is_sensitive(path: str, patterns: list) -> bool:
-    return any(re.search(p, path, re.IGNORECASE) for p in patterns)
+def _norm_token(token: str) -> str:
+    """#545: lexikalisch normalisiert (`//`, `./`, `..`, `~`), kein resolve(); Fehler → roh."""
+    try:
+        return os.path.normpath(os.path.expanduser(token)).replace(os.sep, "/")
+    except (OSError, RuntimeError, ValueError):
+        return token
 
 
-def _matches_file_token(command: str, patterns: list) -> bool:
+def _is_sensitive(path: str, patterns: list, normalize: bool = False) -> bool:
+    """`normalize` (#545): zusaetzlich die normalisierte Schreibweise pruefen, roh bleibt."""
+    candidates = (path, _norm_token(path)) if normalize else (path,)
+    return any(re.search(p, c, re.IGNORECASE) for p in patterns for c in candidates)
+
+
+def _matches_file_token(command: str, patterns: list, normalize: bool = False) -> bool:
     """True, wenn eines der Muster auf ein echtes DATEI-Token des Befehls passt.
 
     Freitext-Argumente von -m/--body/--title/-F (Commit-Messages, PR-/Issue-
@@ -1397,7 +1411,7 @@ def _matches_file_token(command: str, patterns: list) -> bool:
             continue
         if tok.startswith("-"):
             continue  # Flag (auch --body=… Attached-Form) — kein Datei-Token
-        if _is_sensitive(tok, patterns):
+        if _is_sensitive(tok, patterns, normalize):
             return True
     return False
 
