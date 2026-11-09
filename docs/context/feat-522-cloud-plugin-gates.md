@@ -76,3 +76,52 @@ Cloud-Sitzung eines Plugin-Konsumenten greift ein Gate nachweislich, lokal läuf
 - **Projekt-Threads** der Cloud ignorieren Repo-Hooks — nicht lösbar im Repo, nur dokumentieren.
 - Netzwerkrichtlinie „kein Internet“ einer Umgebung würde den Fetch verhindern → Meldung nötig.
 - Schreibsperren: Konsumenten-settings.json wird von edit_gate/bash_gate geschützt (#543 enge Ausnahme nur für Plugin-Einträge) — setup.py schreibt außerhalb von Sitzungs-Gates, unkritisch.
+
+## Analysis
+
+### Type
+Feature (Sicherheitslücke schließen: Konsumenten ohne Gates in der Cloud)
+
+### Entscheidung Lösungsweg (Tech Lead)
+**A: gepinnter Abruf in einen Cache + kleiner, committeter Startbaustein** (`.claude/cloud_bootstrap.py`)
+statt Vendoring. Vergleich (Plan-Agent, Zahlen gemessen bzw. aus `du`):
+
+| | A: Abruf in Cache | B: Vendoring `.claude/framework/` |
+|---|---|---|
+| Zusatz im Konsumenten-Repo | ~0,1 MB (Baustein ~120 LoC + ~25 Hook-Einträge) | ~2,5 MB, bei jedem Update neu committet |
+| Netz | einmal je Container ~1,5 s (`git clone --depth 1`), danach Cache | keins |
+| Veralten | Tag + Commit-SHA gepinnt, `setup.py --update` hebt an | gleich, plus Diff-Lärm |
+| Fehlerbilder | Netz/Tag fehlt → fail-closed mit Meldung | veraltete/lokal veränderte Kopie |
+
+### Affected Files (Scheibe 1 = dieser Workflow)
+| File | Change Type | Description |
+|------|-------------|-------------|
+| `core/cloud_bootstrap.py` (Quelle, wird nach `.claude/cloud_bootstrap.py` kopiert) | CREATE | Cloud-Startbaustein: Pin lesen, Cache prüfen, bei Bedarf Tag klonen + SHA prüfen (atomar, flock), Skript mit `CLAUDE_PLUGIN_ROOT=<cache>` und durchgereichtem stdin starten, Exit-Code weitergeben; Fehlschlag: PreToolUse Edit/Write/MultiEdit/NotebookEdit und Bash (außer Lese-Whitelist und `--retry`) blocken, übrige Events Exit 0; SessionStart warnt per additionalContext |
+| `scripts/sync_cloud_hooks.py` | MODIFY | Generator um Modus „consumer“ erweitern (Kommando → `python3 "${CLAUDE_PROJECT_DIR}/.claude/cloud_bootstrap.py" <script> [args]`), eine Quelle `hooks.json` |
+| `setup.py` | MODIFY | Option `--cloud-gates` (und bei `--update` im Plugin-Modus): Baustein kopieren, Einträge mergen (Merge-Schlüssel für Baustein-Einträge), `cloud_ref`/`cloud_sha` in `.claude/framework_version.json`, plugin_mode-Zweig von `update_project` erhält die Schlüssel |
+| `core/hooks/edit_gate.py`, `core/hooks/bash_gate.py` | MODIFY | `.claude/cloud_bootstrap.py` und `.claude/framework_version.json` als geschützte Pfade (sonst schreibt sich das Modell das Gate weg) |
+| `tests/test_cloud_gates_522.py` | CREATE | Einheiten- und Ende-zu-Ende-Tests mit lokalem `file://`-Fake-Tag-Repo |
+| `README.md`, `CHANGELOG.md` | MODIFY | Weg beschreiben, #522 |
+
+### Scope Assessment
+- Dateien: 7 (1 neu Code, 1 neu Test), ~+280 LoC Code, ~+350 LoC Tests
+- Risk Level: HIGH (Hook-Ausführung in allen Konsumenten, Gate-Code)
+
+### Technical Approach
+1. Kommando je Hook in der Konsumenten-settings.json:
+   `[ "$CLAUDE_CODE_REMOTE" != "true" ] || python3 "${CLAUDE_PROJECT_DIR}/.claude/cloud_bootstrap.py" <script>.py [args]`
+   — lokal Exit 0 vor stdin, also nie doppelt (wie #520). Timeout je Eintrag = Original + 25 s (erster Abruf).
+2. Pin in `.claude/framework_version.json` (`cloud_ref` = `agent-os-openspec--v<X.Y.Z>`, `cloud_sha` = Commit),
+   nicht im Kommandotext → ein Update ändert die settings.json nicht.
+3. Abruf lazy im ersten Hook-Aufruf (nicht nur SessionStart), Klon in Temp-Ordner neben dem Ziel, SHA-Abgleich, atomares Umbenennen unter flock, Marker `.ok`; Zeiger `~/.cache/agent-os-openspec/current` für Scheibe 2.
+4. Fail-closed nur für schreibende Werkzeuge; Lesen bleibt möglich; Stop/PostToolUse/SessionEnd nie blockieren.
+5. Nachweis DoD (a): Wegwerf-Zweig eines Konsumenten-artigen Repos, frische Cloud-Sitzung, geblockter Edit im Transkript.
+
+### Dependencies
+`hooks/hooks.json`, `setup._PLUGIN_HOOK_CMD_RE`, `setup._merge_hook_entries`, Release-Tags aus `release.yml`, Cloud-Git-Proxy.
+
+### Scheibe 2 (eigenes Issue)
+Shims (`hook_utils`/`config_loader`) und Redirect-Aliase finden den Cache über den Zeiger; Drift-Hinweis im Banner (Pin hinter Plugin-Version).
+
+### Open Questions
+- keine Produktfragen; alle Punkte technisch entschieden (Tech Lead).
