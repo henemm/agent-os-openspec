@@ -1,0 +1,245 @@
+{
+  "name": "feat-522-cloud-plugin-gates",
+  "workflow_type": "feature",
+  "current_phase": "phase6b_adversary",
+  "created": "2026-11-09T16:37:56.195762",
+  "last_updated": "2026-11-09T19:29:38.679086",
+  "spec_file": "docs/specs/feat-522-cloud-plugin-gates.md",
+  "spec_approved": true,
+  "context_file": "docs/context/feat-522-cloud-plugin-gates.md",
+  "affected_files": [
+    "/home/user/agent-os-openspec/core/cloud_bootstrap.py",
+    "/home/user/agent-os-openspec/core/hooks/bash_gate.py",
+    "/home/user/agent-os-openspec/core/hooks/edit_gate.py",
+    "/home/user/agent-os-openspec/setup.py"
+  ],
+  "test_artifacts": [
+    {
+      "type": "test_output",
+      "path": "docs/artifacts/feat-522-cloud-plugin-gates/test-red-output.txt",
+      "description": "24 failed: cloud_bootstrap.py fehlt, setup --cloud-gates unbekannt, consumer_hooks fehlt, Schutzpfade offen",
+      "phase": "phase5_tdd_red",
+      "created": "2026-11-09T17:00:14.633948"
+    },
+    {
+      "type": "test_output",
+      "path": "docs/artifacts/feat-522-cloud-plugin-gates/test-green-output.txt",
+      "description": "23 passed, 1 failed (AC-16 Live-Nachweis folgt nach Verdict); Gesamtsuite 3611 passed",
+      "phase": "phase6_implement",
+      "created": "2026-11-09T17:23:57.445100"
+    }
+  ],
+  "is_new_ui": false,
+  "red_test_done": true,
+  "ui_test_red_done": false,
+  "green_approved": true,
+  "adversary_verdict": null,
+  "phase_transitions": [
+    {
+      "from": "phase1_context",
+      "to": "phase2_analyse",
+      "at": "2026-11-09T16:40:38.039033",
+      "trigger": "command"
+    },
+    {
+      "from": "phase2_analyse",
+      "to": "phase3_spec",
+      "at": "2026-11-09T16:43:12.209026",
+      "trigger": "command"
+    },
+    {
+      "from": "phase3_spec",
+      "to": "phase4_approved",
+      "at": "2026-11-09T16:51:13.329402",
+      "trigger": "auto"
+    },
+    {
+      "from": "phase4_approved",
+      "to": "phase5_tdd_red",
+      "at": "2026-11-09T16:51:33.885463",
+      "trigger": "command"
+    },
+    {
+      "from": "phase5_tdd_red",
+      "to": "phase6_implement",
+      "at": "2026-11-09T17:00:22.676196",
+      "trigger": "command"
+    },
+    {
+      "from": "phase6_implement",
+      "to": "phase6b_adversary",
+      "at": "2026-11-09T17:39:59.362022",
+      "trigger": "command"
+    },
+    {
+      "from": "phase6b_adversary",
+      "to": "phase6_implement",
+      "at": "2026-11-09T17:46:50.236399",
+      "trigger": "command"
+    },
+    {
+      "from": "phase6_implement",
+      "to": "phase6b_adversary",
+      "at": "2026-11-09T18:00:54.070303",
+      "trigger": "command"
+    },
+    {
+      "from": "phase6b_adversary",
+      "to": "phase6_implement",
+      "at": "2026-11-09T18:06:59.484472",
+      "trigger": "command"
+    },
+    {
+      "from": "phase6_implement",
+      "to": "phase6b_adversary",
+      "at": "2026-11-09T18:19:51.428336",
+      "trigger": "command"
+    },
+    {
+      "from": "phase6b_adversary",
+      "to": "phase6_implement",
+      "at": "2026-11-09T19:05:17.314324",
+      "trigger": "command"
+    },
+    {
+      "from": "phase6_implement",
+      "to": "phase6b_adversary",
+      "at": "2026-11-09T19:29:38.679001",
+      "trigger": "command"
+    }
+  ],
+  "fix_loop_iterations": 3,
+  "phase_log": [
+    {
+      "phase": "phase1_context",
+      "entered_at": "2026-11-09T16:37:56.201586",
+      "exited_at": "2026-11-09T16:40:38.039041",
+      "duration_min": 2.7
+    },
+    {
+      "phase": "phase2_analyse",
+      "entered_at": "2026-11-09T16:40:38.039041",
+      "exited_at": "2026-11-09T16:43:12.209036",
+      "duration_min": 2.6
+    },
+    {
+      "phase": "phase3_spec",
+      "entered_at": "2026-11-09T16:43:12.209036",
+      "exited_at": "2026-11-09T16:51:13.329414",
+      "duration_min": 8.0
+    },
+    {
+      "phase": "phase4_approved",
+      "entered_at": "2026-11-09T16:51:13.329414",
+      "exited_at": "2026-11-09T16:51:33.885475",
+      "duration_min": 0.3
+    },
+    {
+      "phase": "phase5_tdd_red",
+      "entered_at": "2026-11-09T16:51:33.885475",
+      "exited_at": "2026-11-09T17:00:22.676210",
+      "duration_min": 8.8
+    },
+    {
+      "phase": "phase6_implement",
+      "entered_at": "2026-11-09T17:00:22.676210",
+      "exited_at": "2026-11-09T17:39:59.362034",
+      "duration_min": 39.6
+    },
+    {
+      "phase": "phase6b_adversary",
+      "entered_at": "2026-11-09T17:39:59.362034",
+      "exited_at": "2026-11-09T17:46:50.236407",
+      "duration_min": 6.8
+    },
+    {
+      "phase": "phase6_implement",
+      "entered_at": "2026-11-09T17:46:50.236407",
+      "exited_at": "2026-11-09T18:00:54.070351",
+      "duration_min": 14.1
+    },
+    {
+      "phase": "phase6b_adversary",
+      "entered_at": "2026-11-09T18:00:54.070351",
+      "exited_at": "2026-11-09T18:06:59.484479",
+      "duration_min": 6.1
+    },
+    {
+      "phase": "phase6_implement",
+      "entered_at": "2026-11-09T18:06:59.484479",
+      "exited_at": "2026-11-09T18:19:51.428348",
+      "duration_min": 12.9
+    },
+    {
+      "phase": "phase6b_adversary",
+      "entered_at": "2026-11-09T18:19:51.428348",
+      "exited_at": "2026-11-09T19:05:17.314335",
+      "duration_min": 45.4
+    },
+    {
+      "phase": "phase6_implement",
+      "entered_at": "2026-11-09T19:05:17.314335",
+      "exited_at": "2026-11-09T19:29:38.679018",
+      "duration_min": 24.4
+    },
+    {
+      "phase": "phase6b_adversary",
+      "entered_at": "2026-11-09T19:29:38.679018",
+      "exited_at": null,
+      "duration_min": null
+    }
+  ],
+  "approvals": [
+    {
+      "gate": "spec",
+      "by": "auto",
+      "mode": "auto",
+      "at": "2026-11-09T16:51:13.419084",
+      "reason": "Ampel gruen im PO-Briefing",
+      "evidence": {
+        "briefing": "docs/briefings/feat-522-cloud-plugin-gates.md",
+        "briefing_sha256": "3b7dfa74f34c23336618c5cda21b66be6416eb9fe9d160d9e85ef479057d085f",
+        "spec_sha256": "38f7bbb8d40dd97d03cd0385235f9e5f60c416179af49968b994ea02a80c51b7",
+        "ampel": "green"
+      }
+    }
+  ],
+  "issue_number": "522",
+  "base_commit": "98ac6f966c603a63d95e6a77ef92aeb99405458c",
+  "e2e_scope": "docs-only",
+  "po_briefing": {
+    "file": "docs/briefings/feat-522-cloud-plugin-gates.md",
+    "spec_sha256": "38f7bbb8d40dd97d03cd0385235f9e5f60c416179af49968b994ea02a80c51b7",
+    "spec_frozen_sha256": "983e3cba25389218e40e11b3b459b56bc8228626bf9118acdc6fabe31675e01f",
+    "created": "2026-11-09T16:51:13",
+    "ampel": "green",
+    "briefing_sha256": "3b7dfa74f34c23336618c5cda21b66be6416eb9fe9d160d9e85ef479057d085f"
+  },
+  "last_test_run": {
+    "result": "failed",
+    "runner": "pytest",
+    "at": "2026-11-09T17:22:12"
+  },
+  "red_test_result": "24 tests failed (tests/test_cloud_gates_522.py)",
+  "loc_delta_current": "+321",
+  "loc_delta_test_current": "+0",
+  "loc_limit_override": "330",
+  "adversary_findings_total": 0,
+  "budget_events": [
+    {
+      "metric": "fix_loops",
+      "value": 3,
+      "limit": 2,
+      "stage": "feature",
+      "at": "2026-11-09T19:05:17.397875"
+    },
+    {
+      "metric": "phase_reentries",
+      "value": 3,
+      "limit": 2,
+      "stage": "feature",
+      "at": "2026-11-09T19:05:17.399256"
+    }
+  ],
+  "waiting_on": "Kurz-Pr\u00fcfung des F008-Fixes"
+}
