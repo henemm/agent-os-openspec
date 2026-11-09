@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.8.0] - 2026-11-09
+
+Plugin-Einträge (`enabledPlugins`, `extraKnownMarketplaces`) in der projektlokalen `.claude/settings.json` lassen sich per Write/Edit setzen, ohne Override (#543); die Pfad-Sperren in `edit_gate.py` und `bash_gate.py` sind gegen Schreibweisen wie `.claude//settings.json` abgedichtet, damit die neue Ausnahme nicht breiter wird als gedacht (#545). Schreiben per Bash (`printf >`, `cp`, `sed -i`) bleibt für diese Datei bewusst gesperrt: nur der Write/Edit-Weg kann den Inhalt prüfen; bloße Erwähnungen in `gh issue`/`gh pr`-Texten blocken nicht (#548). Migration: keine; Konsumenten erhalten die Fassung per `claude plugin update agent-os-openspec@henemm-private`.
+
 ### Added
 - `edit_gate.py` Schritt 1b: enge Ausnahme für die projektlokale `.claude/settings.json` — ändert eine Bearbeitung (Write/Edit/MultiEdit, auch Neuanlage per Write) nachweislich nur `enabledPlugins` und `extraKnownMarketplaces`, entfällt die Orchestrator-Sperre, ohne einen Override-Token zu verbrauchen. Neue Fassungen werden wie beim Spec-Freeze simuliert, streng geparst (doppelte Schlüssel, kaputtes JSON, falsche Form der Plugin-Werte, Symlink, jeder Fehler = Sperre) und kanonisch gegen die alte verglichen; alles andere (`hooks`, `permissions`, `env`, `disableAllHooks` …) bleibt gesperrt, `settings.local.json` und `active_workflow` unverändert. Die Sperrmeldung nennt die Ausnahme und den Grund; der wirkungslose Hinweis auf den update-config-Skill ist durch den Override-Ausweg ersetzt. Migration: keine. Tests: `tests/test_edit_gate_settings_plugins_543.py` (#543).
 
