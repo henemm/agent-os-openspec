@@ -381,7 +381,7 @@ def test_early_phase_you_line_has_command_and_why(monkeypatch):
 # --- AC-11 ------------------------------------------------------------------
 
 def _footer_project(tmp_path: Path) -> Path:
-    (tmp_path / ".git").mkdir(exist_ok=True)
+    (tmp_path / ".git").mkdir(parents=True, exist_ok=True)
     wf_dir = tmp_path / ".claude" / "workflows"
     wf_dir.mkdir(parents=True, exist_ok=True)
     (wf_dir / f"{WF}.json").write_text(json.dumps(_data(phase="phase6_implement")))
