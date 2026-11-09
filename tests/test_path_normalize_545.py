@@ -145,6 +145,9 @@ def test_dotdot_via_allowed_dir_not_allowed(tmp_path):
     paths = [
         f"{proj}/tests/../.claude/hooks/x.py",
         f"{proj}/docs/../.claude/hooks/x.py",
+        # F003: Schritt 2b (Muster README/CHANGELOG) rechnet ebenso normalisiert
+        f"{proj}/README/../.claude/hooks/x.py",
+        f"{proj}/CHANGELOG/../.claude/hooks/x.py",
     ]
     wrong = _collect(env, proj, paths, 2, content="print(1)\n")
     assert not wrong, "`..`-Umweg über always-allowed Ordner offen:\n" + "\n".join(wrong)
@@ -193,6 +196,29 @@ def test_variant_failure_keeps_raw_check(tmp_path):
         r = _edit(env, proj, fp, EVIL)
         assert "Traceback" not in r.stderr, r.stderr
         assert r.returncode == 2, (fp, r.returncode, r.stderr)
+
+
+def test_null_byte_infra_not_released(tmp_path):
+    """F002: Null-Byte verfaelscht das Suffix (`.py\x00`) — Schritt 3 gibt nicht frei."""
+    proj, _, env = _setup(tmp_path)
+    paths = [f"{proj}/.claude/hooks/x.py\x00", f"{proj}/.claude//hooks/x.py\x00"]
+    wrong = _collect(env, proj, paths, 2, content="print(1)\n", needle="Infrastruktur-Datei")
+    assert not wrong, "Null-Byte-Pfad auf Infrastruktur kam durch:\n" + "\n".join(wrong)
+
+
+def test_symlink_into_infra_via_allowed_dir_blocked(tmp_path):
+    """F001: Symlink unter einem always-allowed Ordner bzw. mit .md-Namen auf Infrastruktur."""
+    proj, _, env = _setup(tmp_path)
+    (proj / "docs").mkdir()
+    (proj / "docs" / "h").symlink_to(Path("..") / ".claude" / "hooks")
+    (proj / ".claude" / "hooks" / "x.py").write_text("print(0)\n")
+    (proj / "notes.md").symlink_to(Path(".claude") / "hooks" / "x.py")
+    wrong = _collect(env, proj, [f"{proj}/docs/h/x.py", f"{proj}/notes.md"], 2,
+                     content="print(1)\n", needle="Infrastruktur-Datei")
+    # Gegenprobe: normale Dateien unter docs/ bleiben frei wie bisher
+    wrong += _collect(env, proj, [f"{proj}/docs/x.md", f"{proj}/docs/x.py"], 0,
+                      content="print(1)\n")
+    assert not wrong, "Symlink-Umweg auf Infrastruktur offen:\n" + "\n".join(wrong)
 
 
 # --------------------------------------------------------------------- #

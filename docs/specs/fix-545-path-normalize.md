@@ -131,8 +131,12 @@ Bash (`sh -c`, `eval`). Siehe Known Limitations.
   bleibt offen (Folge-Issue).
 - `bash_gate.py` schützt `settings.local.json` und `active_workflow` gar nicht als Muster
   (bestehender Scope, Folge-Issue); die Pfad-Normalisierung ändert daran nichts.
-- Kein `resolve()` je Bash-Token. Bestehende Symlinks auf `.claude` werden beim Anlegen per `ln`
-  geblockt (#407); ein bereits vorhandener Symlink wird in Bash nicht aufgelöst.
+- Kein `resolve()` je Bash-Token. Korrektur einer früheren Annahme: `bash_gate` blockt `ln -s`
+  auf `.claude/hooks` NICHT (`PROTECTED_DIR_TOKEN_PATTERNS` lässt `.claude/hooks` bewusst aus, #407
+  deckt nur `.claude` und `.claude/workflows`). Ein Symlink auf die Infrastruktur kann also per
+  Bash entstehen. `edit_gate` löst ihn auf (Schritte 2/2b/3 geben einen Pfad, der per Symlink auf
+  Infrastruktur-Code zeigt, nicht frei, Schritt 4 entscheidet); in Bash wird ein vorhandener
+  Symlink nicht aufgelöst (Folge-Issue).
 - Normalisierung in Bash gilt nur für `PROTECTED_FILE_PATTERNS`, nicht für Ordner-, Glob- und
   Secrets-Muster.
 
@@ -218,6 +222,14 @@ Hermetische Subprozess-Tests nach Vorlage `tests/test_edit_gate_orchestrator_fil
 - [ ] Test 9: GIVEN `cd .claude/./workflows && echo x > w.json` WHEN bash_gate THEN Exit 2 (AC-10)
 - [ ] Test 10: GIVEN eine fehlschlagende Variantenberechnung WHEN Gate läuft THEN kein Absturz,
       roher Pfad entscheidet (AC-11)
+- [ ] Test 11 (Adversary F001): GIVEN Ordner-Symlink `docs/h -> ../.claude/hooks` bzw.
+      Datei-Symlink `notes.md -> .claude/hooks/x.py` WHEN Write THEN Exit 2; normales
+      `docs/x.md`/`docs/x.py` Exit 0
+      (`test_symlink_into_infra_via_allowed_dir_blocked`)
+- [ ] Test 12 (Adversary F002): GIVEN `.claude/hooks/x.py\x00` bzw. `.claude//hooks/x.py\x00`
+      WHEN Write THEN Exit 2 (`test_null_byte_infra_not_released`)
+- [ ] Test 13 (Adversary F003): GIVEN `README/../.claude/hooks/x.py`, `CHANGELOG/../.claude/hooks/x.py`
+      WHEN Write THEN Exit 2 (erweitert `test_dotdot_via_allowed_dir_not_allowed`)
 
 Regression:
 
@@ -250,3 +262,5 @@ Regression:
 ## Changelog
 
 - 2026-11-09: Initial spec created
+- 2026-11-09: Adversary F001–F003 behoben (Symlink auf Infrastruktur über Freigabe-Schritte,
+  Null-Byte im Suffix, Test für Schritt 2b); Known Limitations zu `ln -s` korrigiert

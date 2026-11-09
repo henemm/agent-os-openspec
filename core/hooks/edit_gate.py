@@ -115,6 +115,47 @@ def _measurement_root() -> Path:
     return worktree_root if worktree_root is not None else _root
 
 
+def _normalized_path(file_path: str) -> str:
+    """#545: lexikalisch normalisiert (`//`, `./`, `..`, `~`), `/` als Trenner; Fehler → roh."""
+    try:
+        return os.path.normpath(os.path.expanduser(file_path)).replace(os.sep, "/")
+    except (OSError, RuntimeError, ValueError):
+        return file_path
+
+
+def _path_variants(file_path: str) -> "list[str]":
+    """#545: Vergleichsvarianten fuer die Sperren — roh, normalisiert, aufgeloest.
+
+    Sperren treffen bei IRGENDEINER Variante (vergroessert nur die Treffermenge).
+    Eine nicht berechenbare Variante entfaellt; die rohe bleibt immer enthalten.
+    """
+    variants = [file_path, _normalized_path(file_path)]
+    try:
+        variants.append(str(Path(file_path).expanduser().resolve()).replace(os.sep, "/"))
+    except (OSError, RuntimeError, ValueError):
+        pass
+    return variants
+
+
+def _skip_release_steps(file_path: str, infra_dirs: list, code_ext: set) -> bool:
+    """#545 F001/F002: Freigabe-Schritte 2/2b/3 ueberspringen → Schritt 4 entscheidet.
+
+    True bei Null-Byte im Pfad (Suffix nicht verlaesslich, fail-closed) oder wenn
+    ein Symlink den Pfad auf eine Infrastruktur-Code-Datei umlenkt
+    (`docs/h -> ../.claude/hooks`, `notes.md -> .claude/hooks/x.py`). Saubere
+    Pfade ohne Symlink: False, Verhalten wie bisher. Jeder Fehler: False.
+    """
+    if "\x00" in file_path:
+        return True
+    try:
+        norm = os.path.abspath(_normalized_path(file_path)).replace(os.sep, "/")
+        real = str(Path(file_path).expanduser().resolve()).replace(os.sep, "/")
+    except (OSError, RuntimeError, ValueError):
+        return False
+    return (real != norm and any(d in real for d in infra_dirs)
+            and Path(real).suffix.lower() in code_ext)
+
+
 def _is_outside_project(file_path: str) -> bool:
     """True wenn der aufgelöste Zielpfad weder unter dem Hauptrepo (`_root`)
     noch unter dem aktuellen Worktree liegt (#80).
@@ -915,9 +956,12 @@ def main():
     allowed_dirs = _get_config_list(config, "strict_code_gate", "always_allowed_dirs", ALWAYS_ALLOWED_DIRS)
     allowed_patterns = _get_config_list(config, "strict_code_gate", "always_allowed_patterns", ALWAYS_ALLOWED_PATTERNS)
 
+    # #545: Sperren (1, 1b, 4) vergleichen jede Schreibweise (roh/normpath/resolve).
+    _variants = _path_variants(file_path)
+
     # 1. Protected state files
     for pf in PROTECTED_STATE_FILES:
-        if pf in file_path:
+        if any(pf in v for v in _variants):
             block(f"BLOCKED: Protected state file: {pf}")
     # Beleg (#447): normpath ODER aufgeloester Pfad (#448, Symlink-Ordner); nie nur einer,
     # sonst verliert ein Projekt mit Symlink-`docs/artifacts` den Schutz.
@@ -945,7 +989,7 @@ def main():
         _under_home_claude = str(_resolved_fp).startswith(str(_home_claude) + os.sep)
     if not _under_home_claude:
         for of in ORCHESTRATOR_FILES:
-            if of not in file_path:
+            if not any(of in v for v in _variants):
                 continue
             # #543: reine Plugin-Einrichtung in settings.json → Block auslassen
             # (Schritt 2 erlaubt .json). Vor dem Token, damit er nicht verbraucht wird.
@@ -998,24 +1042,28 @@ def main():
 
     # 2. Always-allowed directories (component match — avoids false positives
     # when project folder names happen to contain "test/" etc.)
-    _file_parts = set(Path(file_path).parts)
+    # #545: nur die normalisierte Variante — sonst gibt `tests/../.claude/hooks/x.py`
+    # den Pfad ueber die Komponente `tests` frei, bevor Schritt 4 laeuft.
+    # F001/F002: Symlink auf Infrastruktur-Code oder Null-Byte → 2/2b/3 auslassen.
+    _release = not _skip_release_steps(file_path, _infrastructure_dirs(config), code_ext)
+    _file_parts = set(Path(_normalized_path(file_path)).parts)
     for d in allowed_dirs:
-        if d.rstrip("/") in _file_parts:
+        if _release and d.rstrip("/") in _file_parts:
             allow()
 
-    # 2b. Always-allowed patterns
+    # 2b. Always-allowed patterns (#545: ebenso normalisiert — `README/../x.py`)
     for p in allowed_patterns:
-        if re.search(p, file_path, re.IGNORECASE):
+        if _release and re.search(p, _normalized_path(file_path), re.IGNORECASE):
             allow()
 
     # 3. Not a code file
     ext = Path(file_path).suffix.lower()
-    if ext not in code_ext:
+    if _release and ext not in code_ext:
         allow()
 
     # 4. Infrastructure file
     for infra in _infrastructure_dirs(config):
-        if infra in file_path:
+        if any(infra in v for v in _variants):
             if _has_override_token("__infra__") or _has_override_token():
                 allow()
             if infra in FRAMEWORK_SOURCE_DIRS and _framework_impl_workflow_active():
