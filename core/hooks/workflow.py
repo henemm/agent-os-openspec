@@ -174,6 +174,8 @@ _NO_BUILD_PHASES = ("phase1_context", "phase2_analyse")
 # Freitext-Schritt (kein "/"), den Claude selbst ausfuehrt (#470). Beginnt mit
 # "Auto-": daran erkennt herdr_bridge den Schritt (next=auto).
 AUTO_APPROVAL_STEP = "Auto-Freigabe der Spec (workflow.py auto-approve)"
+# Freitext-Schritt, wenn die Spec auf das Freigabe-Wort des PO wartet.
+APPROVAL_STEP = "Freigabe der Spec (Stichwort: approved)"
 
 
 def _auto_approval_pending(data: dict) -> bool:
@@ -293,7 +295,7 @@ def next_step(data: dict) -> "str | None":
     if phase == "phase3_spec" and data.get("spec_file"):
         if _auto_approval_pending(data):
             return AUTO_APPROVAL_STEP  # Ampel gruen im Auto-Modus (#470)
-        return "Freigabe der Spec (Stichwort: approved)"
+        return APPROVAL_STEP
     if phase == "phase5_tdd_red" and (
         data.get("red_test_done") or data.get("ui_test_red_done")
     ):
@@ -342,88 +344,200 @@ _FAST_PLAN_PHASES = ("phase3_spec", "phase4_approved", "phase6_implement",
 PLAN_STEPS_FAST = tuple(s for s in PLAN_STEPS if s[2] in _FAST_PLAN_PHASES)
 
 
-def _plan_deploy_mode(deploy) -> "str | None":
-    """`deploy` von render_plan normalisieren (#510): "configured"/"unconfigured" oder None."""
+def _plan_deploy_mode(deploy) -> str:
+    """Deploy-Modus fuer Plan und Endzustand normalisieren (#510, #550).
+
+    True/"configured" -> "configured"; alles andere (False, None, "off",
+    "unconfigured") -> "off": ein Projekt ohne `deploy:`-Block gilt als ohne
+    Deploy. Plan und `endstate` gehen beide hierueber, damit sie nie auseinanderlaufen.
+    """
     if deploy is True or deploy == "configured":
         return "configured"
-    if deploy == "unconfigured":
-        return "unconfigured"
-    return None  # False, "off", alles andere: kein Deploy-Schritt
+    return "off"
+
+
+# Warum-Text der ❗-Zeile je Schritt (#550). Schluessel = Wert aus next_step();
+# "/70-deploy" fuer den offenen Deploy, "" als Rueckfall fuer Unbekanntes.
+NEXT_WHY = {
+    "/00-intake": "die Aufgabe muss zuerst eingeordnet werden",
+    "/10-context": "als Nächstes wird der Kontext gesammelt",
+    "/20-analyse": "als Nächstes werden die Anforderungen analysiert",
+    "/30-write-spec": "als Nächstes wird die Spec geschrieben",
+    APPROVAL_STEP: "die Spec wartet auf deine Freigabe",
+    "/40-tdd-red": "als Nächstes entstehen die fehlschlagenden Tests",
+    "/50-implement": "als Nächstes wird umgesetzt",
+    "/60-validate": "als Nächstes wird die Umsetzung geprüft",
+    "/99-reset": "es wird nichts gebaut, der Workflow wird geschlossen",
+    "/70-deploy": "der Code ist fertig, das Deploy steht noch aus",
+    "": "der nächste Schritt liegt bei dir",
+}
+
+END_DONE = "✅ Erledigt: {}. Du kannst /clear ausführen und das nächste Issue starten."
+END_WAITING = "⏳ Läuft noch: {}. Du musst nichts tun, ich melde mich."
+END_YOU = "❗ Du: {} — {}"
+
+# Fusszeilen-Regel fuer status_note (#550); gleicher Inhalt wie
+# scripts/sync_skills.py::marker_block — beide nennen nur die drei Formen.
+END_STATE_RULE = (
+    "Kennzeichne für den PO, wer am Zug ist, mit GENAU EINER Zeile ganz am Ende "
+    "der Nachricht — nie zusätzlich mitten im Fließtext — in genau einer von drei "
+    "Formen: „✅ Erledigt: <was>. Du kannst /clear ausführen und das nächste Issue "
+    "starten.“ (nur wenn der Workflow wirklich abgeschlossen ist), „⏳ Läuft noch: "
+    "<worauf gewartet wird>. Du musst nichts tun, ich melde mich.“ (du wartest auf "
+    "CI, einen Hintergrund-Agenten oder einen Server) oder „❗ Du: <Schritt> — "
+    "<warum>“, wenn der PO tippen oder entscheiden muss. Wartest du nur auf den "
+    "nächsten Befehl des PO, ist das immer ❗, nie ⏳. Beendest du einen Turn, "
+    "während du auf CI, Agent oder Server wartest, setze vorher "
+    "`workflow.py waiting \"<worauf>\"` und gib die ⏳-Zeile aus; ist das Ergebnis "
+    "da, `workflow.py waiting --clear`. Die passende Zeile liefert "
+    "`workflow.py endstate` als FOOTER."
+)
+
+
+def _one_line(value) -> str:
+    """Freitext auf eine Zeile ohne Schlusspunkt bringen (fuer die Endzeilen)."""
+    return " ".join(str(value).split()).rstrip(".")
+
+
+def _end(kind: str, line: str, cmd: "str | None" = None) -> dict:
+    return {"kind": kind, "line": line, "cmd": cmd}
+
+
+def _end_state_final(data: dict, deploy, autonomous: bool) -> dict:
+    """Endzustand fuer Phase 8 bzw. archiviert (#550, Tabelle der Spec)."""
+    issue = workflow_issue_number(data)
+    head = f"#{issue}" if issue else (str(data.get("name") or "") or "der Workflow")
+    if data.get("status") == "abandoned":
+        return _end("done", END_DONE.format(f"{head} ist abgebrochen"))
+    if data.get("no_build_reason"):
+        return _end("done", END_DONE.format(f"{head} ist ohne Code-Änderung beendet"))
+    if _plan_deploy_mode(deploy) != "configured":
+        return _end("done", END_DONE.format(f"{head} ist fertig"))
+    status = data.get("deploy_status")
+    cmd = f"/70-deploy #{issue}" if issue else "/70-deploy"
+    if status == "done":
+        return _end("done", END_DONE.format(f"{head} ist fertig und deployt"))
+    if status == "running":
+        return _end("waiting", END_WAITING.format(f"das Deploy von {head}"))
+    if status == "failed":
+        note = _one_line(data.get("deploy_note") or "")
+        why = f"Deploy fehlgeschlagen ({note}), bitte neu anstoßen" if note else \
+            "Deploy fehlgeschlagen, bitte neu anstoßen"
+        return _end("you", END_YOU.format(cmd, why), cmd)
+    if autonomous:
+        return _end("waiting", END_WAITING.format(f"Claude deployt {head}"))
+    return _end("you", END_YOU.format(cmd, NEXT_WHY["/70-deploy"]), cmd)
+
+
+def _end_state_open(data: dict) -> dict:
+    """Endzustand fuer Phasen vor 8: Schritt aus next_step(), Warum aus NEXT_WHY."""
+    step = next_step(data)
+    if step == AUTO_APPROVAL_STEP:
+        return _end("waiting", END_WAITING.format("Auto-Freigabe der Spec läuft"))
+    why = NEXT_WHY.get(step or "", NEXT_WHY[""])
+    if step and step.startswith("/"):
+        cmd = expected_footer_command(data)
+        return _end("you", END_YOU.format(cmd, why), cmd)
+    return _end("you", END_YOU.format(step or "/00-intake", why))
+
+
+def end_state(data, archived: bool = False, deploy="off",
+              autonomous: bool = False) -> dict:
+    """Genau einer von drei Endzustaenden (#550): done | waiting | you.
+
+    Rueckgabe `{"kind", "line", "cmd"}`; `line` ist die ganze Zeile fuer
+    Chat-Fusszeile, Plan-Schluss und Seitenleiste. Kein Config-Zugriff: Deploy-
+    Modus und `autonomous` liefern die Aufrufer. Ein gesetztes `waiting_on`
+    (CI, Hintergrund-Agent, Server) hat Vorrang — ausser vor einem
+    fehlgeschlagenen Deploy, der eine Handlung verlangt.
+    """
+    data = data if isinstance(data, dict) else {}
+    final = archived or data.get("current_phase") == "phase8_complete"
+    state = _end_state_final(data, deploy, autonomous) if final else _end_state_open(data)
+    waiting = _one_line(data.get("waiting_on") or "")
+    failed = state["kind"] == "you" and final and data.get("deploy_status") == "failed"
+    if waiting and not failed:
+        return _end("waiting", END_WAITING.format(waiting))
+    return state
+
+
+def _wrap_plan_tail(line: str, width: int) -> "list[str]":
+    """Schlusszeile umbrechen statt kappen (#550): Emoji+Art, dann der Rest."""
+    if len(line) <= width:
+        return [line]
+    import textwrap
+    head, sep, rest = line.partition(": ")
+    if not sep:
+        return textwrap.wrap(line, width) or [line[:width]]
+    return [(head + ":")[:width]] + (textwrap.wrap(rest, width) or [])
 
 
 def render_plan(data, archived: bool = False, width: "int | None" = None,
-                deploy=False) -> str:
+                deploy=False, autonomous: bool = False) -> str:
     """Workflow-Plan als Text (#476): ✔ erledigt, ▶ laeuft, ○ offen. Pure.
 
-    `deploy` (#478, #510): True/"configured"/"unconfigured" fuegt nach
-    "8 Code fertig" einen Schritt Deploy an; False/"off" laesst ihn weg. Der
-    Deploy-Zustand kommt aus `data["deploy_status"]` (running/done/failed),
-    gesetzt von `/70-deploy` per `deploy-status` — Archivierung allein hakt nicht ab.
+    `deploy` (#478, #510, #550): nur Modus "configured" (siehe
+    `_plan_deploy_mode`) fuegt nach "8 Code fertig" einen Schritt Deploy an.
+    Der Deploy-Zustand kommt aus `data["deploy_status"]` (running/done/failed).
+    Schlusszeile ist immer `end_state(...)["line"]` — dieselbe Zeile wie
+    `workflow.py endstate` im Chat.
     """
     if not isinstance(data, dict):
-        lines = ["Kein aktiver Workflow"]
+        lines, tail = ["Kein aktiver Workflow"], None
     else:
-        fast = data.get("workflow_type") == "feature-fast"
-        steps = PLAN_STEPS_FAST if fast else PLAN_STEPS
-        phase = data.get("current_phase")
-        done_all = archived or phase == "phase8_complete"
-        mode = _plan_deploy_mode(deploy)
-        if data.get("status") == "abandoned" or data.get("no_build_reason"):
-            mode = None  # #510: ohne Build/abgebrochen kein Deploy
-        running = None
-        if not done_all and phase in PHASES and phase != "phase0_idle":
-            # Phase nicht in der Liste (Fast Track): letzter Schritt davor laeuft
-            pos = PHASES.index(phase)
-            for i, (_, _, step_phase) in enumerate(steps):
-                if PHASES.index(step_phase) <= pos:
-                    running = i
-        name = str(data.get("name") or "")
-        issue = workflow_issue_number(data)
-        lines = [f"Workflow #{issue}" if issue else "Workflow", name]
-        title = data.get("issue_title")
-        if isinstance(title, str) and title.strip():
-            lines.append(title)  # #490: Kurztitel des Issues unter dem Namen
-        lines.append("")
-        for i, (nr, label, step_phase) in enumerate(steps):
-            if mode and step_phase == "phase8_complete":
-                label = "Code fertig"  # #510: fertig ist erst das Deploy
-            if done_all or (running is not None and i < running):
-                lines.append(f"✔ {nr} {label}")
-            elif i == running:
-                lines.append(f"▶ {nr} {label}  (läuft)")
-            else:
-                lines.append(f"○ {nr} {label}")
-        deploy_pending = False
-        if mode:
-            status = data.get("deploy_status")
-            if not done_all:
-                lines.append("○ Deploy")
-            elif status == "done":
-                lines.append("✔ Deploy")
-            else:
-                deploy_pending = True
-                if status == "running":
-                    lines.append("▶ Deploy  (läuft)")
-                elif status == "failed":
-                    lines.append("✘ Deploy  (fehlgeschlagen)")
-                elif mode == "unconfigured":
-                    lines.append("▶ Deploy  (nicht eingerichtet)")
-                else:
-                    lines.append("▶ Deploy  (offen)")
-        if deploy_pending:
-            lines += ["", f"Nächster: /70-deploy #{issue}" if issue else "Nächster: /70-deploy"]
-        elif done_all:
-            lines += ["", "abgeschlossen"]
-        else:
-            try:
-                nxt = expected_footer_command(data)
-            except Exception:
-                nxt = None
-            if nxt:
-                lines += ["", f"Nächster: {nxt}"]
+        lines = _plan_lines(data, archived, deploy) + [""]
+        tail = end_state(data, archived=archived, deploy=deploy,
+                         autonomous=autonomous)["line"]
     if isinstance(width, int) and width > 0:
         lines = [line[:width] for line in lines]
+        if tail:
+            lines += _wrap_plan_tail(tail, width)
+    elif tail:
+        lines.append(tail)
     return "\n".join(lines)
+
+
+def _plan_lines(data: dict, archived: bool, deploy) -> "list[str]":
+    """Kopf und Schrittliste des Plans ohne Schlusszeile (#476, #490, #510)."""
+    fast = data.get("workflow_type") == "feature-fast"
+    steps = PLAN_STEPS_FAST if fast else PLAN_STEPS
+    phase = data.get("current_phase")
+    done_all = archived or phase == "phase8_complete"
+    with_deploy = _plan_deploy_mode(deploy) == "configured" and not (
+        data.get("status") == "abandoned" or data.get("no_build_reason"))
+    running = None
+    if not done_all and phase in PHASES and phase != "phase0_idle":
+        # Phase nicht in der Liste (Fast Track): letzter Schritt davor laeuft
+        pos = PHASES.index(phase)
+        for i, (_, _, step_phase) in enumerate(steps):
+            if PHASES.index(step_phase) <= pos:
+                running = i
+    issue = workflow_issue_number(data)
+    lines = [f"Workflow #{issue}" if issue else "Workflow", str(data.get("name") or "")]
+    title = data.get("issue_title")
+    if isinstance(title, str) and title.strip():
+        lines.append(title)  # #490: Kurztitel des Issues unter dem Namen
+    lines.append("")
+    for i, (nr, label, step_phase) in enumerate(steps):
+        if with_deploy and step_phase == "phase8_complete":
+            label = "Code fertig"  # #510: fertig ist erst das Deploy
+        if done_all or (running is not None and i < running):
+            lines.append(f"✔ {nr} {label}")
+        elif i == running:
+            lines.append(f"▶ {nr} {label}  (läuft)")
+        else:
+            lines.append(f"○ {nr} {label}")
+    if with_deploy:
+        lines.append(_plan_deploy_line(data.get("deploy_status"), done_all))
+    return lines
+
+
+def _plan_deploy_line(status, done_all: bool) -> str:
+    """Deploy-Zeile des Plans bei Modus "configured" (#510, #550)."""
+    if not done_all:
+        return "○ Deploy"
+    return {"done": "✔ Deploy", "running": "▶ Deploy  (läuft)",
+            "failed": "✘ Deploy  (fehlgeschlagen)"}.get(status, "▶ Deploy  (offen)")
 
 
 def status_note(data: dict) -> "str | None":
@@ -458,7 +572,9 @@ def status_note(data: dict) -> "str | None":
             f"Phase {PHASE_NUMBERS[phase]} von {TOTAL_PHASES} ({phase}) · "
             f"Nächster Pflicht-Schritt: {step}\n"
             "Diesen Schritt führst du selbst aus (Auto-Modus, Ampel im PO-Briefing "
-            "grün) — der PO muss dafür nichts tippen, es gibt dafür KEINE Du-Zeile. "
+            "grün) — der PO muss dafür nichts tippen, es gibt dafür KEINE Du-Zeile; "
+            "die Fußzeile lautet „⏳ Läuft noch: Auto-Freigabe der Spec läuft. Du "
+            "musst nichts tun, ich melde mich.“ "
             "Meldet `workflow.py auto-approve` AUTO_APPROVE=human, entscheidet der PO "
             "wie bisher per Freigabe-Stichwort.\n"
             "„fertig“/„abgeschlossen“/„erledigt“ gilt für den Workflow erst ab "
@@ -471,20 +587,13 @@ def status_note(data: dict) -> "str | None":
         "Nenne diesen Schritt in jeder Arbeitsstandsmeldung als Pflicht — nie als "
         "„bei Bedarf“ oder „optional“; Empfehlungen zu /clear oder Token-Kosten "
         "stehen nie darüber.\n"
-        "Kennzeichne für den PO, wer am Zug ist, mit GENAU EINER Zeile ganz am Ende "
-        "der Nachricht — nie zusätzlich mitten im Fließtext: „❗ Du: <Schritt>“, "
-        "wenn der PO ihn tippen oder entscheiden muss. Das gilt AUCH, wenn du "
-        "selbst gerade nichts mehr zu tun hast und nur auf den nächsten Befehl "
-        "des PO wartest — das ist niemals „nichts zu tun“. „ℹ️ Nichts zu tun: "
-        "<du arbeitest gerade selbst / wartest auf ein Ergebnis, z. B. einen "
-        "Hintergrund-Agenten> — danach: <Schritt>“ gilt ausschließlich, wenn du "
-        "auf etwas ANDERES als den PO wartest.\n"
+        f"{END_STATE_RULE}\n"
         "Hast DU SELBST in dieser Nachricht per `workflow.py phase <x>` (oder "
         "`complete`) die Phase gewechselt, ist dieser Hinweis hier noch der ALTE "
         "Stand von Turn-Beginn — nutze für Schritt und Phase in der Fußzeile "
         "trotzdem den NEUEN, von dir selbst herbeigeführten Stand. Die "
         "Marker-Zeilen entfallen NIE aus diesem Grund.\n"
-        "❗/ℹ️/⚙ erscheinen AUSSCHLIESSLICH in den hier und in den "
+        "✅/⏳/❗/ℹ️/⚙ erscheinen AUSSCHLIESSLICH in den hier und in den "
         "Command-Vorlagen fest vorgeschriebenen Zeilen. Erfinde keine "
         "weiteren Zeilen mit diesen oder anderen Emojis (z. B. eine eigene "
         "„ℹ️ Status: ...“-Zusammenfassung) — Statusrekaps im Fließtext bleiben "
@@ -1135,6 +1244,7 @@ def record_transition(data: dict, target: str, trigger: str = "command") -> list
         "trigger": trigger,
     })
     _log_phase_transition(data, target)
+    data.pop("waiting_on", None)  # #550: kein veralteter Wartezustand nach dem Wechsel
     events = _record_budget_events(data)
     _note_transition_boundary(data, target)
     return events
@@ -2203,15 +2313,17 @@ def _plan_watch(target: "str | None" = None) -> None:
             try:
                 width = shutil.get_terminal_size().columns
                 deploy = deploy_mode()  # je Runde neu (#478, #510)
+                auto = deploy_autonomous()  # #550: wie `endstate`
                 found = _plan_active()
                 if found:
                     last_name, data = found
-                    out = render_plan(data, width=width, deploy=deploy)
+                    out = render_plan(data, width=width, deploy=deploy, autonomous=auto)
                 elif last_name and _archive_file(last_name).exists():
                     data = dict(_read_workflow(_archive_file(last_name)))
                     data.setdefault("name", last_name)
                     _with_issue_title(data)
-                    out = render_plan(data, archived=True, width=width, deploy=deploy)
+                    out = render_plan(data, archived=True, width=width, deploy=deploy,
+                                      autonomous=auto)
                 else:
                     out = render_plan(None, width=width)
                 if out != last_out:
@@ -2251,7 +2363,8 @@ def cmd_plan(args: list[str]) -> None:
         found = _plan_active()
     except (Exception, SystemExit):
         found = None
-    print(render_plan(found[1] if found else None, deploy=deploy_mode()))
+    print(render_plan(found[1] if found else None, deploy=deploy_mode(),
+                      autonomous=deploy_autonomous()))
 
 
 def cmd_issue_title(args: list[str]) -> None:
@@ -2813,6 +2926,7 @@ def cmd_complete(args: list[str]) -> None:
         print(f"BLOCKED: {error}", file=sys.stderr)
         sys.exit(1)
     data["current_phase"] = "phase8_complete"
+    data.pop("waiting_on", None)  # #550: Phasenwechsel leert den Wartezustand
     try:  # #250 B: Messung blockiert den Abschluss nie
         final = _final_loc(data)
         if final is not None:
@@ -3048,22 +3162,72 @@ def cmd_deploy_status(args: list[str]) -> None:
               file=sys.stderr)
         sys.exit(1)
     value = args[0]
-    if len(args) > 1:
-        path = _deploy_status_target(args[1])
-        if path is None:
-            print(f"KEIN Workflow fuer '{args[1]}' (laufend oder im Archiv).",
-                  file=sys.stderr)
-            sys.exit(1)
-        data = _read_workflow(path)
-        name = data.get("name") or path.stem
-    else:
-        data, name = _read_active()
-        path = _workflow_file(name)
+    path, data, name = _status_target(args[1] if len(args) > 1 else None)
     from datetime import timezone
     data["deploy_status"] = value
     data["deploy_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     _atomic_write(path, data)
     print(f"DEPLOY_STATUS={value} ({name})")
+
+
+def _status_target(ref: "str | None") -> "tuple[Path, dict, str]":
+    """Ziel fuer deploy-status/waiting/endstate (#510, #550): ohne `ref` der aktive
+    Workflow, sonst laufend oder (juengster) archivierter Treffer; kein Treffer -> Exit 1."""
+    if ref is None:
+        data, name = _read_active()
+        return _workflow_file(name), data, name
+    path = _deploy_status_target(ref)
+    if path is None:
+        print(f"KEIN Workflow fuer '{ref}' (laufend oder im Archiv).", file=sys.stderr)
+        sys.exit(1)
+    data = _read_workflow(path)
+    return path, data, data.get("name") or path.stem
+
+
+def deploy_autonomous() -> bool:
+    """`deploy.autonomous: true` in der Projekt-Config (#550); jede Ausnahme -> False."""
+    try:
+        return _deploy_block().get("autonomous") is True
+    except Exception:
+        return False
+
+
+def cmd_waiting(args: list[str]) -> None:
+    """`waiting "<worauf>" [<issue-nr|name>]` / `waiting --clear [...]` (#550).
+
+    Setzt bzw. loescht `waiting_on` (CI, Hintergrund-Agent, Server). Solange es
+    gesetzt ist, liefert `end_state` den Zustand ⏳; jeder Phasenwechsel leert es.
+    Rein informativ, keine Gate-Wirkung.
+    """
+    if not args or not args[0].strip():
+        print('Usage: workflow.py waiting "<worauf>" | --clear [<issue-nr|name>]',
+              file=sys.stderr)
+        sys.exit(1)
+    path, data, name = _status_target(args[1] if len(args) > 1 else None)
+    if args[0] == "--clear":
+        data.pop("waiting_on", None)
+        _atomic_write(path, data)
+        print(f"WAITING_ON= ({name})")
+        return
+    data["waiting_on"] = _one_line(args[0])
+    _atomic_write(path, data)
+    print(f"WAITING_ON={data['waiting_on']} ({name})")
+
+
+def cmd_endstate(args: list[str]) -> None:
+    """`endstate [#N|name]` (#550): Endzustand fuer Chat-Fusszeile, wie im Plan.
+
+    Ohne Argument der aktive Workflow, sonst laufend oder archiviert (der
+    Abschluss-Turn laeuft nach `complete`). Ausgabe `ENDSTATE=<kind>` und
+    `FOOTER=<line>`; kein Treffer -> Meldung auf stderr, Exit 1.
+    """
+    path, data, name = _status_target(args[0] if args else None)
+    data = dict(data)
+    data.setdefault("name", name)
+    state = end_state(data, archived=path.parent == _archive_dir(),
+                      deploy=deploy_mode(), autonomous=deploy_autonomous())
+    print(f"ENDSTATE={state['kind']}")
+    print(f"FOOTER={state['line']}")
 
 
 def cmd_deploy_config(args: list[str]) -> None:
@@ -3908,6 +4072,8 @@ COMMANDS = {
     "approvals": cmd_approvals,
     "deploy-config": cmd_deploy_config,
     "deploy-status": cmd_deploy_status,
+    "waiting": cmd_waiting,
+    "endstate": cmd_endstate,
     "retro-list": cmd_retro_list,
     "sessions": cmd_sessions,
     "observable-surface": cmd_observable_surface,

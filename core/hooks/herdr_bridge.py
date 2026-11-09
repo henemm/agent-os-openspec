@@ -77,7 +77,9 @@ _HOOK_DIR = Path(__file__).resolve().parent
 
 SOURCE = "user:openspec"
 AGENT = "claude"
-TOKEN_NAMES = ("workflow", "issue", "phase", "step", "next")
+TOKEN_NAMES = ("workflow", "issue", "phase", "step", "next", "state")
+# Endzustand (#550) als Seitenleisten-Token: dieselbe Quelle wie Chat und Plan.
+STATE_TOKENS = {"done": "erledigt", "waiting": "läuft", "you": "du"}
 MAX_LEN = 80  # Herdr kappt Titel/Token-Werte ohnehin bei 80 Zeichen
 
 # Kurzlabels der Sidebar. phase0_idle, phase8_complete und Unbekanntes fehlen
@@ -212,6 +214,7 @@ def build_report(data) -> "dict | None":
             "phase": _clean(phase_nr),
             "step": _clean(step),
             "next": _clean(nxt),
+            "state": STATE_TOKENS.get(workflow.end_state(data)["kind"], "du"),
         },
     }
 
@@ -222,7 +225,7 @@ def _base_args(pane: str) -> list:
 
 
 def clear() -> None:
-    """Titel und alle fuenf Tokens raeumen (complete/abandon/phase8/kein Workflow)."""
+    """Titel und alle Tokens raeumen (complete/abandon/phase8/kein Workflow)."""
     try:
         pane = _pane()
         if pane is None:

@@ -198,7 +198,8 @@ Die Ausgabe besteht aus genau diesen Teilen, in dieser Reihenfolge:
    `❗ Du: \`approved\` — Freigabe der Spec, danach beginnt die Umsetzung`
    `⚙ PO-Briefing unabhängig erstellt · agent-os-openspec {{OPENSPEC_VERSION}}`
    Diese Freigabe verlangt *immer* eine PO-Entscheidung — anders als bei den generischen
-   Pflicht-Markern in anderen Befehlen gibt es hier keine `ℹ️ Nichts-zu-tun`-Variante.
+   Pflicht-Markern in anderen Befehlen gibt es hier keine `⏳ Läuft noch`- und keine
+   `✅ Erledigt`-Variante.
 
 Vorlage:
 

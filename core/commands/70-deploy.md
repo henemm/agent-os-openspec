@@ -45,7 +45,10 @@ git log HEAD..origin/main --oneline
 python3 .claude/hooks/workflow.py deploy-config
 ```
 
-**`DEPLOY_CONFIGURED=no`:** Nichts deployen und nichts raten — auch nicht aus Beispielen
+**`DEPLOY_CONFIGURED=no`:** Diesen Fall erreicht nur noch, wer `/70-deploy` von Hand aufruft
+(#550): Ein Projekt ohne `deploy:`-Block gilt als ohne Deploy, sein Workflow endet schon mit
+`✅ Erledigt`, und kein Plan und keine Fußzeile schlägt `/70-deploy` vor.
+Nichts deployen und nichts raten — auch nicht aus Beispielen
 oder aus dem, was „üblich“ ist. Stattdessen:
 
 1. Prüfe, ob das Projekt seinen Ablauf schon beschreibt (`CLAUDE.md`, `docs/`, Skripte wie
@@ -105,3 +108,15 @@ Der Guard lässt in dieser Session genau diesen Befehl durch. Er zieht per `git 
 `git merge --ff-only` nach und bricht mit klarer Meldung ab (nichts geändert), wenn der Ordner
 Änderungen an versionierten Dateien hat, die Historie abweicht oder kein Upstream existiert.
 
+
+## Abschluss: Endzustand melden (Pflicht, #550)
+
+Beende jeden Lauf dieses Befehls — erfolgreich, fehlgeschlagen oder abgebrochen — mit:
+
+```bash
+python3 .claude/hooks/workflow.py endstate <N>
+```
+
+Gib den Wert hinter `FOOTER=` **wörtlich** als Endzustand-Zeile der Nachricht aus (genau eine
+der drei Formen `✅ Erledigt: …`, `⏳ Läuft noch: …`, `❗ Du: … — …`). Keine eigene Formulierung,
+kein „Nächster: /70-deploy“ daneben. Ohne Workflow bzw. Issue-Nummer entfällt der Aufruf.

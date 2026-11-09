@@ -209,7 +209,9 @@ def test_render_full_workflow_marks_done_running_open():
         "▶ 5 TDD-RED  (läuft)",
         "○ 6 Implement", "○ 6b Adversary", "○ 7 Validierung", "○ 8 Fertig",
     ]
-    assert lines[-1] == "Nächster: " + workflow.expected_footer_command(data)
+    # #550: Schlusszeile ist der Endzustand (❗ mit Befehl) statt „Nächster: …“
+    assert lines[-1] == workflow.end_state(data)["line"], lines
+    assert lines[-1].startswith("❗ Du: " + workflow.expected_footer_command(data) + " — ")
 
 
 # --- AC-2 -------------------------------------------------------------------
@@ -246,7 +248,7 @@ def test_render_complete_and_archived():
         assert len(steps) == 9, steps
         assert all(s.startswith("✔") for s in steps), steps
         assert "▶" not in out
-        assert out.splitlines()[-1] == "abgeschlossen", out
+        assert out.splitlines()[-1].startswith("✅ Erledigt: "), out  # #550
 
 
 # --- AC-5 -------------------------------------------------------------------
@@ -310,7 +312,7 @@ def test_watch_follows_archive(tmp_path):
     assert proc.returncode == 0, err.decode()
     text = (first + rest).decode("utf-8", "replace")
     last_frame = text.split(CLEAR)[-1]
-    assert "abgeschlossen" in last_frame, repr(last_frame)
+    assert "✅ Erledigt:" in last_frame, repr(last_frame)  # #550 statt „abgeschlossen“
     assert "▶" not in last_frame, repr(last_frame)
 
 

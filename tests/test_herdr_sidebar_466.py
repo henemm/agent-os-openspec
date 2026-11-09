@@ -32,7 +32,8 @@ WORKFLOW_PY = HOOKS_DIR / "workflow.py"
 PHASE_LISTENER = HOOKS_DIR / "phase_listener.py"
 SESSION_BANNER = HOOKS_DIR / "session_banner.py"
 
-TOKEN_NAMES = ["workflow", "issue", "phase", "step", "next"]
+# #550: Token `state` (erledigt/läuft/du) aus workflow.end_state ergaenzt
+TOKEN_NAMES = ["workflow", "issue", "phase", "step", "next", "state"]
 PANE = "pane-466"
 
 STUB_SCRIPT = r"""#!/bin/bash
