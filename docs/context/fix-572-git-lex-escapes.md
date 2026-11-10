@@ -54,3 +54,54 @@ ohne Schreibbefehl da.
 - bash-Semantik der Fortsetzung: außerhalb von Quotes und in `"…"` wird `\`+Umbruch entfernt, in `'…'` nie; `\\` ist ein Paar (wörtlicher Backslash). `\`+CRLF analog.
 - Nicht im Scope: Kommandosubstitution in `"…"` (eigenes Issue #573), `\r` als Leerraum.
 - Tests müssen gegen echtes bash belegt werden (Issue-Vorgabe).
+
+## Analysis
+
+### Type
+Bug (Schutzlücke im Kern-Gate, Epic #429)
+
+### bash-Semantik (real mit bash 5 geprüft)
+| Eingabe | bash-Wörter |
+|---|---|
+| `a\\<LF>x` (ungequotet) | `a\` · neuer Befehl `x` |
+| `"a\<LF>b"` | `ab` (Fortsetzung auch in `"…"`) |
+| `'a\<LF>b'`, `$'a\<LF>b'` | unverändert `a\<LF>b` (keine Fortsetzung) |
+| `a\\\<LF>b` | `a\b` |
+| `"a\;b"` / `a\;b` | `a\;b` / `a;b` — kein Trenner |
+| `x #c \<LF>y` | Kommentar setzt nicht fort: zwei Befehle |
+
+### Affected Files (with changes)
+| File | Change Type | Description |
+|------|-------------|-------------|
+| core/hooks/hook_utils.py | MODIFY | Vorstufe `_lex_prepare` (Fortsetzungen bash-gerecht entfernen, gequotete/maskierte Operator- und Trennwort-Zeichen durch Platzhalter ersetzen), `_QuotedWord`, Rückabbildung in `_git_lex`; `_is_git_separator`/`_is_git_redirect` ignorieren `_QuotedWord`; blindes `replace` entfällt |
+| core/hooks/bash_gate.py | MODIFY | `_strip_leading_separators`: `_QuotedWord` unverändert zurückgeben (sonst geht die Markierung bei `lstrip` immer verloren) |
+| tests/test_git_lex_escapes_572.py | CREATE | RED-Tests, jeweils gegen echtes bash belegt |
+| CHANGELOG.md | MODIFY | Eintrag unter [Unreleased] |
+
+### Scope Assessment
+- Files: 4
+- Estimated LoC: +~90 Code / +~150 Tests / -~5
+- Risk Level: HIGH (Kern-Gate, alle Konsumenten)
+
+### Technical Approach
+Plan/Sonnet-Bewertung: Vorstufe + Markierung (shlex bleibt), statt eigenem Tokenizer (≈150 LoC, neue shlex-Abweichungen, Aufrufer vergleichen ohnehin Strings).
+- Scanner nach `_strip_shell_comments` (dessen Vertrag bleibt), Quote-Zustände `'`, `"`, `$'` (`$'` nur außerhalb Quotes):
+  - außerhalb: `\`+LF / `\`+CRLF entfernen; `\\` als Paar kopieren; `\`+Sonderzeichen → `\`+Platzhalter
+  - `"…"`: `\`+LF entfernen; `\X` als Paar kopieren (Sonderzeichen → Platzhalter); Sonderzeichen → Platzhalter
+  - `'…'` / `$'…'`: keine Fortsetzung; Sonderzeichen → Platzhalter
+  - Sonderzeichen = `_GIT_PUNCTUATION` (`();<>|&`, LF, Backtick) plus Trennwort-Zeichen `{ } !`
+  - offenes Quote am Ende oder Platzhalterzeichen schon in der Eingabe → `_git_lex` = None (Fall 3)
+- Token mit Platzhalter: zurückabbilden, als `_QuotedWord(str)` markieren.
+- Positions-Suche fängt `eval git status ';' git commit`, `xargs …`, `find -exec … \; -exec git commit` weiterhin (geprüft: `git_subcommands` findet `commit` auch ohne Trenner) — trotzdem Regressionstests.
+
+### Dependencies
+- `_git_lex` → `_git_segments` → alle Segment-Prüfungen in bash_gate.py; `_redirects_to_protected` direkt.
+- `shlex.join(seg)` in bash_gate quotet `;` selbst — unkritisch.
+
+### Bewusst offen
+- Ziffern-Präfix `'2'>x` gilt weiter als fd-Präfix (harmlos, Über-Erkennung).
+- Kommentar vor Fortsetzung (vorbestehend, keine Umgehung bekannt).
+- Kommandosubstitution in `"…"` → #573. `\r` als Leerraum.
+
+### Open Questions
+- keine (technische Entscheidungen beim Tech Lead)
