@@ -1,0 +1,28 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______________ test_placeholder_chars_do_not_open_write_checks ________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-188/test_placeholder_chars_do_not_0')
+
+    def test_placeholder_chars_do_not_open_write_checks(tmp_path):
+        """Ein (auch gequotetes) Platzhalterzeichen darf die Segment-Prüfungen nicht abschalten.
+    
+        `_git_lex` bleibt dabei None (AC-7, Fall 3); `_git_segments` und die
+        Umleitungsprüfung zerlegen mit einem freien Platzhalterblock.
+        """
+        from test_bash_gate_erkennung_299 import _gate, _sandbox
+    
+        state = ".claude/" + "workflows/x.json"
+        for ph in sorted(_placeholders()):
+            cmd = f"echo '{ph}|{ph}'; echo x > .claude/cloud_bootstrap.py"
+            assert hook_utils._git_lex(cmd) is None, repr(ph)
+            segments = hook_utils._git_segments(cmd)
+>           assert segments == [["echo", f"{ph}|{ph}"],
+                                ["echo", "x", ">", ".claude/cloud_bootstrap.py"]], repr(ph)
+E           AssertionError: '\ue000'
+E           assert None == [['echo', '\ue000|\ue000'], ['echo', 'x', '>', '.claude/cloud_bootstrap.py']]
+
+tests/test_git_lex_escapes_572.py:255: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_git_lex_escapes_572.py::test_placeholder_chars_do_not_open_write_checks
+1 failed in 0.05s

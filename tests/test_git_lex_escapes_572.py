@@ -235,3 +235,34 @@ def test_ansi_c_quote_opener_inside_double_quotes_is_literal():
     cmd = "echo \"$'x\" ; git commit -m y"
     assert hook_utils._git_segments(cmd) == [["echo", "$'x"], ["git", "commit", "-m", "y"]]
     assert hook_utils.is_git_subcommand(cmd, "commit")
+
+
+# --- F001: Platzhalterzeichen in der Eingabe öffnen keine Schreibprüfung --------
+
+def test_placeholder_chars_do_not_open_write_checks(tmp_path):
+    """Ein (auch gequotetes) Platzhalterzeichen darf die Segment-Prüfungen nicht abschalten.
+
+    `_git_lex` bleibt dabei None (AC-7, Fall 3); `_git_segments` und die
+    Umleitungsprüfung zerlegen mit einem freien Platzhalterblock.
+    """
+    from test_bash_gate_erkennung_299 import _gate, _sandbox
+
+    state = ".claude/" + "workflows/x.json"
+    for ph in sorted(_placeholders()):
+        cmd = f"echo '{ph}|{ph}'; echo x > .claude/cloud_bootstrap.py"
+        assert hook_utils._git_lex(cmd) is None, repr(ph)
+        segments = hook_utils._git_segments(cmd)
+        assert segments == [["echo", f"{ph}|{ph}"],
+                            ["echo", "x", ">", ".claude/cloud_bootstrap.py"]], repr(ph)
+        assert isinstance(segments[0][1], hook_utils._QuotedWord), repr(ph)
+        assert hook_utils._git_segments(f"echo {ph}{ph} ; ls") == [["echo", ph + ph], ["ls"]]
+        assert bash_gate._redirects_to_protected(f"echo '{ph}'; git status > {state}"), repr(ph)
+
+    ph = sorted(_placeholders())[0]
+    project = _sandbox(tmp_path)
+    for tail in ("echo x > .claude/cloud_bootstrap.py", "export OPENSPEC_AUTONOMY=1"):
+        plain = _gate(f"echo ''; {tail}", project)
+        with_ph = _gate(f"echo '{ph}'; {tail}", project)
+        assert plain.returncode == 2, (tail, plain.stderr)
+        assert with_ph.returncode == 2, (tail, with_ph.stderr)
+        assert with_ph.stderr == plain.stderr, tail

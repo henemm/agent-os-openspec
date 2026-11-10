@@ -66,7 +66,9 @@ tags: [hooks, hook_utils, bash_gate, lexer, commit-gate, epic-429]
    - In `"…"`: `\`+LF wird entfernt; `\X` wird als Paar kopiert (Sonderzeichen wird Platzhalter); ungemaskierte Sonderzeichen werden Platzhalter.
    - In `'…'` und `$'…'`: keine Fortsetzung (Backslash und Umbruch bleiben Inhalt); Sonderzeichen werden Platzhalter.
    - Sonderzeichen sind `_GIT_PUNCTUATION` plus die Trennwort-Zeichen `{`, `}`, `!`. Jedes bekommt ein eigenes Platzhalterzeichen aus einem Bereich, der in echten Befehlen nicht vorkommt.
-2. Endet der Scanner in einem offenen Quote, oder kommt ein Platzhalterzeichen schon in der Eingabe vor, liefert `_git_lex` `None`. Damit greift die Grundhaltung des Moduls (nicht zerlegbar → Fall 3, im Zweifel prüfen).
+2. Endet der Scanner in einem offenen Quote, liefert jede Zerlegung `None`. Kommt ein Zeichen des Standard-Platzhalterblocks (ab U+E000) schon in der Eingabe vor, liefert `_git_lex` (strikt) `None`; damit greift für die Commit-Erkennung die Grundhaltung des Moduls (nicht zerlegbar → Fall 3, im Zweifel prüfen).
+   - Gemeinsamer Kern ist `_lex_tokens(command, base)`. `_git_lex` nutzt den Standardblock. `_git_lex_robust` wählt per `_lex_free_base` den ersten 12-Zeichen-Block, dessen Zeichen nicht in der Eingabe stehen (Standardblock, sonst Supplementary PUA ab U+F0000), und bildet die Token exakt auf die Originalzeichen zurück.
+   - `_git_segments` und `bash_gate._redirects_to_protected` nutzen `_git_lex_robust` (Adversary-Befund F001): ein auch gequotetes Platzhalterzeichen darf die Schreibprüfungen (Gate-Config, `OPENSPEC_AUTONOMY`, Cloud-Gate-Dateien, Haupt-Repo, `cd`-Kontext, Umleitungen) nicht abschalten, die bei `None` fail-open nichts sehen würden.
 3. `_git_lex` tokenisiert den aufbereiteten Text mit `shlex`, bildet Platzhalter in jedem Token auf die Originalzeichen zurück und liefert Token, die ein Platzhalterzeichen enthielten, als `_QuotedWord(str)`.
 4. `_is_git_separator` und `_is_git_redirect` behandeln ein `_QuotedWord` nie als Trenner oder Umleitung. Echte Operatoren bleiben normale `str` und verhalten sich wie bisher.
 5. `bash_gate._strip_leading_separators` lässt ein `_QuotedWord` unverändert (`str.lstrip` würde die Unterklasse verlieren).
@@ -91,6 +93,9 @@ tags: [hooks, hook_utils, bash_gate, lexer, commit-gate, epic-429]
 - Kommentar vor einer Fortsetzung (`x #c \`+Umbruch+`y`): bash setzt dort nicht fort, der Scanner kopiert Fortsetzungen im Kommentar wie bisher; vorbestehend, keine Umgehung bekannt.
 - Kommandosubstitution in `"…"` (`"$(git commit)"`) bleibt unberührt und ist Issue #573.
 - `\r` als Leerraum wird nicht behandelt; nur `\`+CRLF gilt als Fortsetzung.
+- Platzhalterzeichen des Standardblocks (U+E000–U+E00B) in der Eingabe: `_git_lex` liefert `None`, die Commit-Erkennung prüft dann im Zweifel per Teilstring (Fall 3, AC-7). Die Segment- und Umleitungsprüfungen zerlegen mit einem freien Ersatzblock weiter (F001).
+- Enthält eine Eingabe Zeichen aus jedem 12er-Block ab U+F0000 (rund 11.000 Zeichen) plus ein Standard-Platzhalterzeichen, findet `_lex_free_base` keinen freien Block; die Segmentprüfungen sehen dann nichts (Adversary-Befund F003, LOW, praktisch nicht erreichbar).
+- `$'…'` wird von `shlex` nicht dekodiert: `git $'commit'` gilt als Wort `$commit`, nicht als `commit`. Vorbestehend, Issue #574.
 
 ## Definition of Done
 
@@ -145,6 +150,7 @@ Automatische Tests (jeweils an eine AC oben gebunden):
 - Test: GIVEN echte Trenner, Umleitungen, Heredoc, mehrzeilige Message WHEN Zerlegung THEN unverändert (AC-5)
 - Test: GIVEN `eval`/`find -exec` mit gequotetem Trenner WHEN `is_git_subcommand` THEN commit erkannt (AC-6)
 - Test: GIVEN offenes Quote oder Platzhalterzeichen WHEN `_git_lex` THEN None, Fall 3 (AC-7)
+- Test: GIVEN gequotetes Platzhalterzeichen vor einem geschützten Schreibzugriff WHEN `_git_segments`, `_redirects_to_protected` und bash_gate THEN Segmente mit Originalzeichen, Schreibzugriff geblockt wie ohne das Zeichen (AC-7, Befund F001; `test_placeholder_chars_do_not_open_write_checks`)
 - Test: GIVEN `$'` in `"…"` WHEN `_git_lex` THEN kein Quote geöffnet (AC-8)
 
 Ausführung:
@@ -162,3 +168,4 @@ Ausführung:
 ## Changelog
 
 - 2026-11-10: Initial spec created
+- 2026-11-10: Implementation Details/Known Limitations/Test Plan nach Adversary-Befund F001 ergänzt (`_git_lex_robust`)

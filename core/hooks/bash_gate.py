@@ -23,7 +23,7 @@ from hook_utils import (
     SECRETS_SENSITIVE_PATTERNS, SECRETS_ALWAYS_BLOCKED, SECRETS_FREETEXT_FLAGS as _SHARED_FREETEXT_FLAGS,
     git_subcommands, git_head_subcommands, is_git_subcommand, is_pure_git_command,
     framework_disabled, _git_segments, git_runs_foreign_code,
-    _git_lex, _is_git_redirect, read_state_json, UnsafeStateError,
+    _git_lex_robust, _is_git_redirect, _QuotedWord, read_state_json, UnsafeStateError,
     is_stop_locked, stop_lock_state,
 )
 setup_path()
@@ -291,7 +291,11 @@ def _strip_leading_separators(token: str) -> str:
 
     Der Lexer verschmilzt `git status;>x` zu `;>`. `&>`, `&>>` und `>|`
     bleiben erhalten; nur `&&` vorne ist ein Trenner, ein einzelnes `&` nicht.
+    Ein gequotetes Token (`_QuotedWord`) bleibt unveraendert: `lstrip` wuerde
+    die Markierung verlieren (#572).
     """
+    if isinstance(token, _QuotedWord):
+        return token
     tok = token.lstrip(";()|\n")
     while tok.startswith("&&"):
         tok = tok[2:].lstrip(";()|\n")
@@ -305,7 +309,7 @@ def _redirects_to_protected(scan_cmd: str) -> bool:
     erlaubten Befehl. `>&N`, `>&-` und `/dev/null` sind kein Datei-Write.
     Nicht zerlegbar -> False (fail-open, wie bisher).
     """
-    tokens = _git_lex(scan_cmd)
+    tokens = _git_lex_robust(scan_cmd)
     if tokens is None:
         return False
     patterns = PROTECTED_FILE_PATTERNS + APPROVAL_MARKER_PATTERNS_FILENAME
