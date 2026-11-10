@@ -964,6 +964,34 @@ def _write_changed(plan: list) -> list:
     return changed
 
 
+def refresh_pinned_rollout(project_path: Path) -> list:
+    """#562: vorhandene veraltete Shims und Projekt-Kurzbefehle erneuern (nie anlegen).
+
+    Rueckgabe: geaenderte Dateien relativ zum Projekt. `migrate_to_plugin` wird erst
+    hier importiert; fehlt es in der Framework-Kopie, entfallen nur die Shims.
+    """
+    changed = []
+    if (FRAMEWORK_ROOT / "migrate_to_plugin.py").is_file():
+        if str(FRAMEWORK_ROOT) not in sys.path:
+            sys.path.insert(0, str(FRAMEWORK_ROOT))
+        try:
+            from migrate_to_plugin import refresh_shims
+            changed += [p.relative_to(project_path).as_posix()
+                        for p in refresh_shims(project_path)]
+        except Exception as e:  # Rollout darf --update/--cloud-gates nie abbrechen
+            print(f"  WARNING: Shims nicht erneuert ({e})")
+    from alias_sync import refresh_aliases
+    skipped: list = []
+    refreshed, removed = refresh_aliases(FRAMEWORK_ROOT / "skills",
+                                         project_path / ".claude" / "commands",
+                                         FRAMEWORK_VERSION, skipped=skipped)
+    changed += [f".claude/commands/{name}.md" for name in refreshed]
+    changed += [f".claude/commands/{name}" for name in removed]
+    for entry in skipped:
+        print(f"  Skipped: {entry}")
+    return changed
+
+
 def apply_cloud_gates(project_path: Path) -> int:
     """`--cloud-gates`: Baustein, Eintraege und Pin; Exit-Code (0 = ok, 1 = nichts geschrieben)."""
     version_file = project_path / ".claude" / "framework_version.json"
@@ -989,15 +1017,15 @@ def apply_cloud_gates(project_path: Path) -> int:
         return 1
     fv.update(cloud_ref=pin[0], cloud_sha=pin[1])
     plan.append((version_file, json.dumps(fv, indent=2).encode("utf-8")))
-    changed = _write_changed(plan)
+    changed = [p.relative_to(project_path).as_posix() for p in _write_changed(plan)]
+    changed += refresh_pinned_rollout(project_path)
     print(f"Cloud-Gates (#522): Pin {pin[0]} ({pin[1][:12]})")
-    for path in changed:
-        print(f"  Geschrieben: {path.relative_to(project_path)}")
+    for rel in changed:
+        print(f"  Geschrieben: {rel}")
     if not changed:
         print("  Alles aktuell, nichts geaendert.")
     else:
-        print("Diese Dateien committen: .claude/cloud_bootstrap.py, .claude/settings.json, "
-              ".claude/framework_version.json")
+        print(f"Diese Dateien committen: {', '.join(changed)}")
     return 0
 
 
@@ -1300,15 +1328,32 @@ def update_project(project_path: Path, modules: list, force: bool = False):
             sync_file(project_path, dst_dir / src.name, content, manifest, report, force,
                       mode=src.stat().st_mode)
 
+    # Vor den Sync-Laeufen gelesen (#562): im gepinnten Plugin-Modus erneuern
+    # allein refresh_pinned_rollout Shims und Kurzbefehle; ein Spiegeln von
+    # core/hooks und core/commands machte sie zu Vollkopien.
+    version_file = project_path / ".claude" / "framework_version.json"
+    existing = {}
+    if version_file.exists():
+        try:
+            existing = json.loads(version_file.read_text())
+        except (json.JSONDecodeError, OSError):
+            # Unlesbare Datei wird neu aufgebaut — aber nicht stillschweigend.
+            print("  WARNING: .claude/framework_version.json unlesbar, wird neu geschrieben")
+            existing = {}
+    if not isinstance(existing, dict):
+        existing = {}
+    pinned = bool(existing.get("plugin_mode")
+                  and (existing.get("cloud_ref") or existing.get("cloud_sha")))
+
     hooks_dst = project_path / ".claude" / "hooks"
-    if hooks_dst.exists():
+    if hooks_dst.exists() and not pinned:
         sync_dir(CORE_DIR / "hooks", "*.py", hooks_dst)
 
     # CI-Gate mitziehen (Script immer, Action-Vorlage nur falls fehlend)
     install_ci_gate(project_path)
 
     commands_dst = project_path / ".claude" / "commands"
-    if commands_dst.exists():
+    if commands_dst.exists() and not pinned:
         sync_dir(CORE_DIR / "commands", "*.md", commands_dst,
                  render=lambda src: copy_command_text(src.read_text()))
 
@@ -1342,16 +1387,7 @@ def update_project(project_path: Path, modules: list, force: bool = False):
     # galt nach jedem `--update` als Copy-Modus-Projekt, und die in 3.26.0
     # entfernte Falschauskunft ("framework_version" im Plugin-Modus) kehrte
     # zurueck. Ein Update ist kein Moduswechsel (Issue #159).
-    version_file = project_path / ".claude" / "framework_version.json"
-    existing = {}
-    if version_file.exists():
-        try:
-            existing = json.loads(version_file.read_text())
-        except (json.JSONDecodeError, OSError):
-            # Unlesbare Datei wird neu aufgebaut — aber nicht stillschweigend.
-            print("  WARNING: .claude/framework_version.json unlesbar, wird neu geschrieben")
-            existing = {}
-
+    # `existing` wurde vor den Sync-Laeufen gelesen (#562).
     if existing.get("plugin_mode"):
         version_info = {
             # Bewusst None — siehe PLUGIN_MODE_VERSION_NOTE.
@@ -1364,9 +1400,10 @@ def update_project(project_path: Path, modules: list, force: bool = False):
             "plugin_mode": True,
         }
         # #522: gesetzter Cloud-Pin bleibt erhalten und wird erneuert; ohne Pin: nichts.
-        if existing.get("cloud_ref") or existing.get("cloud_sha"):
+        if pinned:
             new_files += [f"cloud gates: {e}"
                           for e in refresh_cloud_gates(project_path, existing, version_info)]
+            new_files += [f"cloud refresh: {e}" for e in refresh_pinned_rollout(project_path)]
     else:
         version_info = {
             "framework_version": FRAMEWORK_VERSION,
