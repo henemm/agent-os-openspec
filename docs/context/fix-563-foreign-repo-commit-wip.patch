@@ -1,0 +1,491 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index b685fe3..f599722 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
+ 
+ ### Fixed
+ 
++- **Commit in ein fremdes Repo wird nicht mehr geblockt (#563):** Die Commit-Gates von `bash_gate.py` (Schritt 5: Pflichtdateien, Rebase-Pflicht, Adversary-Verdict samt Dialog-Nachweis und Abdeckung, E2E-Scope) gehören zum aktiven Workflow des Sitzungsprojekts, blockten aber auch `cd <anderes-repo> && git commit` und `git -C <anderes-repo> commit`. Neu prüft `_commit_in_foreign_repo`, wohin jeder Commit des Befehls geht; nur wenn alle sicher in einem Repo mit anderem `git rev-parse --git-common-dir` entstehen, entfällt Schritt 5. Verglichen wird per Datei-Identität (Gerät und Inode), nicht per Pfadtext, damit das eigene Repo auch auf Dateisystemen ohne Groß-/Kleinschreibung und über Bind-Mounts als eigen zählt. Hauptrepo und alle seine Worktrees zählen als eigen. Erkannt werden nur `&&`-Ketten aus `cd`/`pushd`, `git add`, `git status`, `git commit` und `git merge --continue`, geprüft per strenger Positivliste: global nur `-C <pfad>` (kein `-c`, dessen Config-Schlüssel wie `trailer.*.command` oder `filter.*.clean` Programme starten), je Unterbefehl nur freigegebene Optionen (`commit`: u. a. `-m`, `-a`, `--allow-empty`, `--amend`, `--no-verify`; `add`: `-A`, `-u`, Pfade; `status`: `-s`, `-b`, `--porcelain`), kein `$`, kein Backtick, kein Backslash und kein Zeilenumbruch irgendwo im Befehl (auch nicht in Anführungszeichen; bei `\\` plus Zeilenumbruch verklebt der Lexer die Zeilen, für bash bleibt der Zeilenumbruch ein Befehlstrenner, Lexer-Korrektur als Folge-Issue #572), keine ungequoteten Glob-/Klammerzeichen, keine Umleitungen; `--trailer`, `-F`, `--template`, `-S`, `add -p` u. a. bleiben gegated. Was den Arbeitsbaum, die Repo-Zuordnung oder die Config ändern kann (`checkout`, `switch`, `reset`, `init`, `config`, `merge <branch>` …), lässt den Befehl gegated. Fail-closed: `;` und Zeilenumbruch als Trenner (nach gescheitertem `cd` liefe der Commit im eigenen Repo), Steuerzeichen wie `\r`, Env-Präfixe (`GIT_DIR=…`), `--git-dir`/`--work-tree`, Wrapper (`xargs`, `timeout`), verschachtelte Shells, `$`-Expansion, `||`/Pipes/Klammern, nackte relative oder `..`-Ziele bei `cd`, Nicht-Repos und gemischte Befehle (eigenes und fremdes Repo) bleiben gegated. Stop-Lock, Secrets- und State-Schutz gelten unverändert auch für fremde Repos. Migration: keine. Tests: `tests/test_bash_gate_foreign_repo_563.py`.
+ - **`--update` spiegelt im Plugin-Modus nichts mehr (#566):** `setup.py <projekt> --update` kopierte in Plugin-Modus-Projekten ohne Cloud-Pin weiter alle Hooks und Befehle nach `.claude/hooks` und `.claude/commands` und machte so Shims und Kurzbefehle zu Vollkopien. Jetzt spiegelt `--update` im ganzen Plugin-Modus, mit und ohne Pin, keine Hooks und Befehle mehr; ohne Pin erneuert es nur vorhandene veraltete Shims und markierte Kurzbefehle (Ausgabe `plugin refresh:`), legt nichts an und setzt keinen Pin. Eigene Dateien und echte Kopien bleiben unberührt. `refresh_pinned_rollout` heißt jetzt `refresh_plugin_rollout`. Migration: keine. Tests: `tests/test_plugin_update_sync_566.py`.
+ - **Fachlicher Befund nach Phase 8 = BROKEN-Pfad (#561):** Fand die Prüfung nach der Auslieferung (Staging/live) einen fachlichen Fehler, entstand bisher ein Korrektur-PR am Workflow vorbei, und Plan und Seitenleiste blieben bei „8 Code fertig / Deploy“ stehen. `/70-deploy` Step 4 trennt jetzt den technischen Fehlschlag (wie bisher: `deploy-status failed --note`, Rollback vorschlagen) vom fachlichen Befund (eine AC ist ausgeliefert nicht erfüllt): Der geht als BROKEN-Pfad zurück nach `phase6_implement`, Fix per `/50-implement`, eine Adversary-Runde aus demselben Kontingent, `/60-validate`, erneut ausliefern; bei archiviertem Workflow ein neuer Workflow mit derselben Issue-Nummer. `/60-validate` verweist darauf. Ein Rücksprung vor `phase8_complete` verwirft `deploy_status`, `deploy_at` und `deploy_note`, sodass der Plan nach erneutem Phase 8 „▶ Deploy (offen)“ statt „✘ Deploy (fehlgeschlagen)“ zeigt. `workflow.py deploy-status <wert> --note <Grund>` schreibt den Grund als Einzeiler in `deploy_note`; ohne `--note` entfällt eine alte Notiz. Migration: keine. Tests: `tests/test_nachpruefung_broken_561.py`.
+ 
+diff --git a/core/hooks/bash_gate.py b/core/hooks/bash_gate.py
+index e34706b..ba95ac8 100755
+--- a/core/hooks/bash_gate.py
++++ b/core/hooks/bash_gate.py
+@@ -24,7 +24,7 @@ from hook_utils import (
+     git_subcommands, git_head_subcommands, is_git_subcommand, is_pure_git_command,
+     framework_disabled, _git_segments, git_runs_foreign_code,
+     _git_lex, _is_git_redirect, read_state_json, UnsafeStateError,
+-    is_stop_locked, stop_lock_state,
++    is_stop_locked, stop_lock_state, _is_git_separator,
+ )
+ setup_path()
+ 
+@@ -33,6 +33,7 @@ import os
+ import re
+ import shlex
+ import sys
++import unicodedata
+ from pathlib import Path
+ 
+ # --- Defaults (overridable via config.yaml) ---
+@@ -1488,6 +1489,220 @@ def _creates_commit(command: str) -> bool:
+             and re.search(r"(?<![^\s\"'])--con(?:t(?:i(?:n(?:u(?:e)?)?)?)?)?(?![^\s;&|)\"'])", command) is not None)
+ 
+ 
++# --- Commit in fremdem Repo (#563) -------------------------------------------
++# STRENGE POSITIVLISTE (Adversary F007/F008): global nur `-C <pfad>`, kein `-c`
++# (Config-Schluessel wie `trailer.*.command`, `interactive.diffFilter`,
++# `filter.*.clean`, `include.path` starten Programme). Je Unterbefehl nur die
++# genannten Optionen: `flags` ohne Wert, `valued` mit Wert im naechsten Token,
++# `joined` als zusammengeschriebene Form (`-mText`, `--message=Text`), `paths`:
++# weitere Nicht-Options-Tokens (und alles nach `--`) sind Pfade. Eingebaute
++# Unterbefehle (kein Alias kann sie ueberdecken), die weder Arbeitsbaum,
++# Repo-Zuordnung noch Config aendern; `checkout`, `switch`, `reset`, `init`,
++# `config` u. a. koennten das Ziel vor dem Commit umbiegen (F002/F003/F006).
++_FOREIGN_SUB_ARGS = {
++    "add": {"flags": frozenset({"-A", "--all", "-u", "--update", "-v", "--verbose"}),
++            "valued": frozenset(), "joined": (), "paths": True},
++    "status": {"flags": frozenset({"-s", "--short", "-b", "--branch", "--porcelain"}),
++               "valued": frozenset(), "joined": (), "paths": False},
++    "commit": {"flags": frozenset({
++                   "-a", "--all", "--allow-empty", "--allow-empty-message", "-q",
++                   "--quiet", "-s", "--signoff", "-n", "--no-verify", "--amend",
++                   "--no-edit", "-v", "--verbose"}),
++               "valued": frozenset({"-m", "--message", "-am"}),
++               "joined": ("--message=", "-m"), "paths": True},
++}
++# `merge` nur als `merge --continue`; git nimmt eindeutige Praefixe ab `--con`.
++_MERGE_CONTINUE_RE = re.compile(r"--con(?:t(?:i(?:n(?:u(?:e)?)?)?)?)?")
++# Zeichen, die bash ungequotet zu weiteren Woertern expandiert (Glob, Klammer, `~`).
++_SHELL_EXPANSION_CHARS = "*?[]{}~"
++
++
++def _plain_path_token(tok: str) -> bool:
++    """Pfad ohne Shell-Expansion (`$`, Backtick, Glob, Klammer, `~`, Backslash)."""
++    return bool(tok) and not any(ch in tok for ch in "$`*?[]{}~\\")
++
++
++def _foreign_cd(seg: list, base: str) -> "str | None":
++    """Neue Basis nach `cd <ziel>`/`pushd <ziel>`; None, wenn nicht sicher bestimmbar.
++
++    Nur genau ein literales Ziel: absolut, `.` oder `./…` (ein nacktes relatives
++    Ziel liefe ueber CDPATH), ohne `..` (logisches `cd` vs. physischer Pfad).
++    Das Ziel muss ein betretbares Verzeichnis sein, sonst scheitert das `cd`.
++    """
++    if len(seg) != 2 or not _plain_path_token(seg[1]):
++        return None
++    target = seg[1]
++    if not (target.startswith("/") or target == "." or target.startswith("./")):
++        return None
++    if ".." in target.split("/"):
++        return None
++    new = os.path.realpath(os.path.join(base, target))
++    return new if os.path.isdir(new) and os.access(new, os.X_OK) else None
++
++
++def _foreign_args_ok(sub: str, args: list) -> bool:
++    """Stehen nach dem Unterbefehl nur Tokens aus `_FOREIGN_SUB_ARGS`?
++
++    Ein Token ist eine erlaubte Option, der Wert einer vorangehenden
++    wertnehmenden Option (beliebiger Inhalt) oder - wo `paths` gilt - ein
++    schlichter Pfad. `merge` nur als `merge --continue`. Sonst False.
++    """
++    if sub == "merge":  # `merge <branch>` u. a. aendern den Arbeitsbaum
++        return len(args) == 1 and _MERGE_CONTINUE_RE.fullmatch(args[0]) is not None
++    spec = _FOREIGN_SUB_ARGS.get(sub)
++    if spec is None:
++        return False
++    i, only_paths = 0, False
++    while i < len(args):
++        tok = args[i]
++        if only_paths or not tok.startswith("-"):
++            if not (spec["paths"] and _plain_path_token(tok)):
++                return False
++        elif tok == "--" and spec["paths"]:
++            only_paths = True
++        elif tok in spec["valued"]:
++            i += 1
++            if i >= len(args):
++                return False
++        elif tok not in spec["flags"] and not tok.startswith(spec["joined"]):
++            return False
++        i += 1
++    return True
++
++
++def _foreign_git_call(seg: list, base: str) -> "tuple[str, str] | None":
++    """(Unterbefehl, Zielverzeichnis) eines direkten `git`-Aufrufs; None bei Zweifel.
++
++    Einzige globale Option ist `-C <pfad>` (kumulativ, physisch wie git selbst);
++    `-c`, `--git-dir`, `--work-tree`, `--no-pager` u. a. ergeben None. Die
++    Argumente des Unterbefehls prueft `_foreign_args_ok`.
++    """
++    target, i = base, 1
++    while i < len(seg) and seg[i] == "-C":
++        if i + 1 >= len(seg) or not _plain_path_token(seg[i + 1]):
++            return None
++        target = os.path.realpath(os.path.join(target, seg[i + 1]))
++        i += 2
++    if i >= len(seg) or not _foreign_args_ok(seg[i], seg[i + 1:]):
++        return None
++    return seg[i], target
++
++
++def _git_common_dir(path: str) -> "str | None":
++    """`git rev-parse --git-common-dir` als realpath; None ohne Repo oder bei Fehler."""
++    import subprocess
++    if not os.path.isdir(path):
++        return None
++    out = subprocess.run(["git", "rev-parse", "--git-common-dir"], cwd=path,
++                         capture_output=True, text=True, timeout=5)
++    common = out.stdout.strip()
++    if out.returncode != 0 or not common:
++        return None
++    return os.path.realpath(os.path.join(path, common))
++
++
++def _is_foreign_common_dir(common: "str | None", own: str) -> bool:
++    """Anderes Repo als `own`? Vergleich per Datei-Identitaet (st_dev/st_ino),
++    nicht per Pfadstring: case-insensitive Dateisysteme und Bind-Mounts (F004).
++    Kein Repo oder jeder Fehler beim Vergleich -> nicht fremd."""
++    if common is None:
++        return False
++    try:
++        return not os.path.samefile(common, own)
++    except OSError:
++        return False
++
++
++def _has_unquoted_expansion(command: str) -> bool:
++    """Steht ein Glob-/Klammer-/`~`-Zeichen ausserhalb von Quotes und Escapes?
++
++    bash expandiert es zu weiteren Woertern (`-m {x,--trailer=a}` ergibt die
++    Option `--trailer`); der Lexer liefert die Tokens schon entquotet, deshalb
++    die Pruefung am Rohtext. Konservativ: auch Kommentare zaehlen mit.
++    """
++    quote, escaped = None, False
++    for ch in command:
++        if escaped:
++            escaped = False
++        elif quote:
++            if ch == quote:
++                quote = None
++            elif ch == "\\" and quote == '"':
++                escaped = True
++        elif ch == "\\":
++            escaped = True
++        elif ch in "'\"":
++            quote = ch
++        elif ch in _SHELL_EXPANSION_CHARS:
++            return True
++    return False
++
++
++def _is_and_chain(command: str, tokens: list) -> bool:
++    """Nur `&&`-verkettete, einfache Kommandos ohne Expansion und Steuerzeichen.
++
++    Am Rohtext: jedes `$` und jeder Backtick, auch in doppelten Quotes (F007),
++    ungequotete Glob-/Klammer-/`~`-Zeichen, jeder Backslash und jedes
++    Steuerzeichen ausser Tab -> Zweifel. Backslash und Zeilenumbruch auch in
++    Quotes (F010): der Lexer entfernt `\\<LF>` naiv, bei `\\\\<LF>` bleibt der
++    Zeilenumbruch fuer bash aber ein Befehlstrenner (#572); `\\r` trennt der
++    Lexer anders als bash. Bei den Tokens: `;` und Zeilenumbruch laufen nach
++    einem gescheiterten `cd` weiter (F001); `||`, `|`, `&`, Klammern und
++    Umleitungen -> Zweifel.
++    """
++    if "$" in command or "`" in command or "\\" in command:
++        return False
++    if _has_unquoted_expansion(command):
++        return False
++    if any(unicodedata.category(ch) == "Cc" and ch != "\t" for ch in command):
++        return False
++    return not any(_is_git_redirect(t) or (_is_git_separator(t) and t != "&&")
++                   for t in tokens)
++
++
++def _all_commits_foreign(command: str, cwd: Path) -> bool:
++    """Kern von `_commit_in_foreign_repo`; jeder Zweifel ergibt False."""
++    tokens, segments = _git_lex(command), _git_segments(command)
++    if not tokens or not segments or git_runs_foreign_code(command):
++        return False
++    if not _is_and_chain(command, tokens):
++        return False
++    base, targets = os.path.realpath(cwd), []
++    for seg in segments:
++        if seg[0] in ("cd", "pushd"):
++            base = _foreign_cd(seg, base)
++            if base is None:
++                return False
++        elif seg[0] == "git":
++            call = _foreign_git_call(seg, base)
++            if call is None:
++                return False
++            if call[0] in ("commit", "merge"):
++                targets.append(call[1])
++        else:
++            return False  # Env-Praefix, Wrapper, Shell, Schluesselwort, eval, ...
++    own = _git_common_dir(str(_root))
++    if not targets or own is None:
++        return False
++    return all(_is_foreign_common_dir(_git_common_dir(t), own) for t in targets)
++
++
++def _commit_in_foreign_repo(command: str, cwd: Path) -> bool:
++    """Entsteht JEDER Commit des Befehls sicher in einem fremden Repo? (#563)
++
++    Fremd = anderes `git rev-parse --git-common-dir` (Datei-Identitaet) als das
++    Sitzungsprojekt `_root`; Hauptrepo und Worktrees teilen es und zaehlen als
++    eigen. Nur `&&`-Ketten aus `cd`/`pushd` und `git [-C <pfad>] add|status|
++    commit|merge --continue` mit Optionen aus der Positivliste `_FOREIGN_SUB_ARGS`,
++    ohne `$`, Backtick und Umleitung. Fail-closed: nur ein belegter Weg fuehrt zu True, jede Unklarheit und
++    jede Ausnahme ergibt False, also das bisherige Verhalten (Gates greifen).
++    """
++    try:
++        return _all_commits_foreign(command, cwd)
++    except Exception:
++        return False
++
++
+ def _commit_content_files(staged_list: list, measure_root: Path, command: str) -> list:
+     """Dateien, die der ENTSTEHENDE Commit enthaelt.
+ 
+@@ -2055,7 +2270,10 @@ def main():
+         )
+ 
+     # 5. Git commit gates (tokenbasiert, Issue #1431 — Erwaehnung ist kein Aufruf)
+-    if workflow_enforced and _creates_commit(command):
++    #    Commit in ein fremdes Repo (anderes git-common-dir): Gates 5a-5d
++    #    gehoeren zum Workflow dieses Projekts, nicht zu jenem Repo (#563).
++    if workflow_enforced and _creates_commit(command) \
++            and not _commit_in_foreign_repo(command, Path.cwd()):
+         import subprocess
+ 
+         # Gemessen wird im Arbeitsbaum, nicht im Hauptrepo (Issue #155).
+diff --git a/docs/specs/fix-563-foreign-repo-commit.md b/docs/specs/fix-563-foreign-repo-commit.md
+index 2e2459c..e82a912 100644
+--- a/docs/specs/fix-563-foreign-repo-commit.md
++++ b/docs/specs/fix-563-foreign-repo-commit.md
+@@ -87,6 +87,11 @@ True ergibt sich nur, wenn mindestens ein Commit-Aufruf erkannt wurde und alle e
+ - Ein `cd` in ein per Symlink erreichbares Verzeichnis wird über `realpath` aufgelöst; maßgeblich ist das echte Zielrepo.
+ - Commits über Wrapper oder Env-Präfix in fremde Repos (`GIT_DIR=… git commit`, `xargs git commit`, `timeout 5 git commit`, `bash -c "cd fremd && git commit"`) bleiben konservativ geblockt. Ausweg: den Commit-Befehl direkt schreiben (`git -C <fremd> commit` bzw. `cd <fremd> && git commit`).
+ - `git rev-parse --git-common-dir` verlangt ein Repo; ein Zielverzeichnis ohne Git-Repo gilt als nicht belegt und bleibt gegated.
++- Nur `&&`-Ketten werden als fremd erkannt: `;`, Zeilenumbruch (auch `&&` gefolgt von Zeilenumbruch) und Steuerzeichen außer Tab (z. B. `\r`, auch ein Zeilenumbruch in Quotes) bleiben gegated, weil nach einem gescheiterten `cd` sonst der Commit im eigenen Repo landen kann.
++- Vor dem Commit sind in der Kette nur `cd`/`pushd`, `git add` und `git status` erlaubt; `merge` nur als `merge --continue`. Jeder andere git-Unterbefehl (`checkout`, `switch`, `reset`, `init`, `config`, `stash`, `pull`, …) könnte das geprüfte Ziel vor dem Commit umbiegen und lässt den Befehl gegated.
++- Das eigene und das Ziel-`git-common-dir` werden per Datei-Identität (Gerät und Inode) verglichen, nicht per Pfadtext; so zählt das eigene Repo auch auf Dateisystemen ohne Groß-/Kleinschreibung oder über Bind-Mounts als eigen.
++- Strenge Positivliste: als globale git-Option ist nur `-C <pfad>` erlaubt (kein `-c`, kein `--no-pager` u. a.); nach dem Unterbefehl nur `add` mit `-A`/`--all`/`-u`/`--update`/`-v`/`--verbose`/`--` und Pfaden, `status` mit `-s`/`--short`/`-b`/`--branch`/`--porcelain` ohne weitere Argumente, `commit` mit `-a`/`--all`/`--allow-empty`/`--allow-empty-message`/`-q`/`--quiet`/`-s`/`--signoff`/`-n`/`--no-verify`/`--amend`/`--no-edit`/`-v`/`--verbose`, `-m`/`--message`/`-am` (mit Wert, auch `-m<Text>`/`--message=<Text>`) und Pfaden. Jedes `$` und jeder Backtick im Befehl (auch in Anführungszeichen), ungequotete Glob-/Klammer-/`~`-Zeichen und Umleitungen lassen den Befehl gegated; erlaubt ist kein Backslash, kein Zeilenumbruch (auch nicht in Quotes; Adversary F010: der Lexer entfernt `\<Zeilenumbruch>` anders als bash, Folge-Issue #572); ein Commit mit `$` in der Nachricht (`-m 'kostet $5'`), mit Backslash oder mehrzeiliger Nachricht oder mit `--trailer`, `-F`, `--template`, `-S`, `add -p` u. a. bleibt also gegated, auch im fremden Repo.
++- Hooks, Config und `.gitattributes` des fremden Repos laufen beim Commit wie gewohnt; ein dort vorher abgelegtes Programm kann beliebig handeln (auch im eigenen Repo). Das ist gleichwertig zu jedem Skript, das git aufruft, und nicht Aufgabe dieses Gates (Adversary F009).
+ 
+ ## Definition of Done
+ 
+@@ -107,6 +112,7 @@ Testaufbau: echte Repos in `tmp_path`, Hook als Subprozess, Workflow-State `phas
+ 
+ - **AC-1:** Given ein Sitzungsrepo mit Workflow in phase6 ohne Verdict und ein unabhängiges fremdes Repo / When der Befehl `cd <fremd> && git commit -m x` geprüft wird / Then endet der Hook mit Exit 0
+   - Test: tests/test_bash_gate_foreign_repo_563.py::test_cd_into_foreign_repo_then_commit_is_allowed
++  - Test: tests/test_bash_gate_foreign_repo_563.py::test_add_then_commit_in_foreign_repo_is_allowed
+ 
+ - **AC-2:** Given dieselbe Ausgangslage / When `git -C <fremd> commit -m x` geprüft wird / Then endet der Hook mit Exit 0
+   - Test: tests/test_bash_gate_foreign_repo_563.py::test_git_dash_c_foreign_repo_commit_is_allowed
+@@ -119,9 +125,12 @@ Testaufbau: echte Repos in `tmp_path`, Hook als Subprozess, Workflow-State `phas
+ 
+ - **AC-5:** Given dieselbe Ausgangslage / When ein gemischter Befehl wie `git commit -m x && git -C <fremd> commit -m y` (und in umgekehrter Reihenfolge) geprüft wird / Then endet der Hook mit Exit 2, weil nicht jeder Commit fremd ist
+   - Test: tests/test_bash_gate_foreign_repo_563.py::test_mixed_own_and_foreign_commit_stays_blocked
++  - Test: tests/test_bash_gate_foreign_repo_563.py::test_backslash_newline_bypasses_stay_blocked
+ 
+ - **AC-6:** Given dieselbe Ausgangslage / When eine unsichere Form geprüft wird (`GIT_DIR=<fremd>/.git git commit`, `git --git-dir=<fremd>/.git commit`, `git --work-tree=<fremd> commit`, `bash -c "cd <fremd> && git commit"`, `cd $X && git commit`, `cd <fremd> && xargs git commit`, `git -C <nicht existierend> commit`, `git -C <Verzeichnis ohne Repo> commit`, nicht zerlegbarer Befehl mit offenem Anführungszeichen) / Then endet der Hook jeweils mit Exit 2 (fail-closed)
+   - Test: tests/test_bash_gate_foreign_repo_563.py::test_unsafe_forms_stay_blocked_fail_closed
++  - Test: tests/test_bash_gate_foreign_repo_563.py::test_adversary_bypasses_stay_blocked
++  - Test: tests/test_bash_gate_foreign_repo_563.py::test_allowlist_bypasses_stay_blocked
+ 
+ - **AC-7:** Given Stop-Lock gesetzt bzw. ein Befehl, der ein Secret liest oder ausgibt / When der Commit in ein fremdes Repo geprüft wird (`git -C <fremd> commit`) / Then blockt der Hook weiter mit Exit 2 (Stop-Lock-Meldung bzw. Secrets-Prüfung), die Ausnahme gilt nur für Schritt 5
+   - Test: tests/test_bash_gate_foreign_repo_563.py::test_stop_lock_and_secrets_still_block_in_foreign_repo
+diff --git a/tests/test_bash_gate_foreign_repo_563.py b/tests/test_bash_gate_foreign_repo_563.py
+index ad81cc2..de13922 100644
+--- a/tests/test_bash_gate_foreign_repo_563.py
++++ b/tests/test_bash_gate_foreign_repo_563.py
+@@ -60,13 +60,18 @@ def env563(tmp_path):
+             "nonrepo": nonrepo, "tmp": tmp_path}
+ 
+ 
+-def _run_gate(cwd: Path, command: str, project_dir: Path = None):
++def _run_gate(cwd: Path, command: str, project_dir: Path = None,
++              ceiling: Path = None):
+     env = dict(os.environ)
+     for var in ("CLAUDE_PROJECT_DIR", "CLAUDE_TOOL_INPUT",
+                 "OPENSPEC_ACTIVE_WORKFLOW", "OPENSPEC_FRAMEWORK"):
+         env.pop(var, None)
+     if project_dir is not None:
+         env["CLAUDE_PROJECT_DIR"] = str(project_dir)
++    if ceiling is not None:
++        # git sucht nicht oberhalb von `ceiling`: ein tmp-Verzeichnis, das
++        # selbst in einem Git-Repo liegt, macht ein Nicht-Repo nicht zum Repo.
++        env["GIT_CEILING_DIRECTORIES"] = str(ceiling)
+     payload = json.dumps({"tool_input": {"command": command}})
+     proc = subprocess.run(
+         [sys.executable, str(BASH_GATE)], cwd=str(cwd), input=payload,
+@@ -134,7 +139,7 @@ def _unsafe_commands(e):
+ @pytest.mark.parametrize("idx", range(9))
+ def test_unsafe_forms_stay_blocked_fail_closed(env563, idx):
+     cmd = _unsafe_commands(env563)[idx]
+-    rc, stderr = _run_gate(env563["main"], cmd)
++    rc, stderr = _run_gate(env563["main"], cmd, ceiling=env563["tmp"])
+     assert rc == 2, f"{cmd!r}: rc={rc}, stderr={stderr!r}"
+ 
+ 
+@@ -161,3 +166,154 @@ def test_bare_commit_with_cwd_in_foreign_repo_is_allowed(env563):
+     rc, stderr = _run_gate(env563["foreign"], "git commit -m x",
+                            project_dir=env563["main"])
+     assert rc == 0, f"rc={rc}, stderr={stderr!r}"
++
++
++def _evil_branch(e):
++    """Fremdes Repo: auf `main` ist `sub` ein Verzeichnis, auf Branch `evil`
++    ein Symlink aufs eigene Sitzungsrepo (Adversary-Befund F002)."""
++    f = e["foreign"]
++    (f / "sub").mkdir()
++    (f / "sub" / "x").write_text("x")
++    _git(["add", "-A"], f)
++    _git(["commit", "-m", "sub dir"], f)
++    _git(["checkout", "-q", "-b", "evil"], f)
++    _git(["rm", "-rq", "sub"], f)
++    os.symlink(str(e["main"]), str(f / "sub"))
++    _git(["add", "-A"], f)
++    _git(["commit", "-m", "sub symlink"], f)
++    _git(["checkout", "-q", "main"], f)
++    assert (f / "sub").is_dir() and not (f / "sub").is_symlink()
++    return f
++
++
++def _bypass_commands(e):
++    f, m, n = e["foreign"], e["main"], e["tmp"] / "does_not_exist"
++    pwn = "git commit --allow-empty -m pwn"
++    return [
++        # F001: `;`/Zeilenumbruch nach einem `cd`, das zur Laufzeit scheitert
++        f"cd {f}\r; {pwn}",
++        f"cd {f}\r\n{pwn}",
++        f"cd {f}\r && {pwn}",
++        f"cd {n}; {pwn}",
++        f"cd {n}\n{pwn}",
++        f"cd {f}; git commit -m x",
++        f"cd {f}\ngit commit -m x",
++        # F002: vorherige Segmente aendern den Arbeitsbaum (Symlink aufs eigene)
++        f"git -C {f} checkout -q evil && git -C {f}/sub commit --allow-empty -m pwn",
++        f"git -C {f} switch -q evil && git -C {f}/sub commit --allow-empty -m pwn",
++        f"git -C {f} reset -q --hard evil && cd {f}/sub && {pwn}",
++        # F003: init --separate-git-dir aufs eigene .git
++        f"git -C {f}/sub init -q --separate-git-dir={m}/.git"
++        f" && git -C {f}/sub commit --allow-empty -m pwn",
++        f"cd {f}/sub && git init -q --separate-git-dir {m}/.git && {pwn}",
++        # F006: Config-Aenderung vor dem Commit
++        f"git -C {f} config core.hooksPath /x && git -C {f} commit -m x",
++        # merge nur als `merge --continue`
++        f"git -C {f} merge evil && git -C {f} merge --continue",
++    ]
++
++
++@pytest.mark.parametrize("idx", range(14))
++def test_adversary_bypasses_stay_blocked(env563, idx):
++    _evil_branch(env563)
++    cmd = _bypass_commands(env563)[idx]
++    rc, stderr = _run_gate(env563["main"], cmd, ceiling=env563["tmp"])
++    assert rc == 2, f"{cmd!r}: rc={rc}, stderr={stderr!r}"
++    assert "Adversary verdict" in stderr, f"{cmd!r}: stderr={stderr!r}"
++
++
++def _allowed_commands(e):
++    f = e["foreign"]
++    return [
++        f"cd {f} && git add -A && git commit -m x",
++        f"git -C {f} status && git -C {f} add a.txt && git -C {f} commit -m x",
++        f"git -C {f} merge --continue",
++        f"cd {f} && git merge --con",
++        f'git -C {f} commit -am "msg mit leerzeichen && text"',
++        f"cd {f} && git add datei.txt && git commit -q -m x",
++        f"git -C {f} commit --allow-empty -m 'x' --no-verify",
++        f'git -C {f} commit --allow-empty -m "fix [#563] {{x}} *?~"',
++    ]
++
++
++@pytest.mark.parametrize("idx", range(8))
++def test_add_then_commit_in_foreign_repo_is_allowed(env563, idx):
++    cmd = _allowed_commands(env563)[idx]
++    rc, stderr = _run_gate(env563["main"], cmd, ceiling=env563["tmp"])
++    assert rc == 0, f"{cmd!r}: rc={rc}, stderr={stderr!r}"
++
++
++def _allowlist_bypass_commands(e):
++    """Adversary-Runde 2b (F007/F008): Positivliste statt Sperrliste."""
++    f, m, t = e["foreign"], e["main"], e["tmp"]
++    pwn = f"git -C {m} commit --allow-empty -m pwn"
++    ok = f"git -C {f} commit --allow-empty -m ok"
++    return [
++        # F007: Kommandosubstitution, auch in doppelten Anfuehrungszeichen
++        f'git -C {f} commit --allow-empty -m "`{pwn}`"',
++        f'git -C {f} status "`{pwn}`" && {ok}',
++        f'git -C {f} commit --allow-empty -m "$({pwn})"',
++        # F008: `-c` mit Config-Schluesseln, die Programme starten
++        f'git -C {f} -c "trailer.pwn.command={pwn}" commit --allow-empty'
++        f' -m ok --trailer "x: y"',
++        f'git -C {f} -c "interactive.diffFilter={pwn}" add -p && {ok}',
++        f'git -C {f} -c "filter.pwn.clean={pwn}; cat" add a.txt && {ok}',
++        f"git -C {f} -c include.path={t}/evil.cfg commit --allow-empty -m ok",
++        f"git -C {f} -c core.attributesFile={t}/attrs add a.txt && {ok}",
++        f"git -C {f} -c user.name=x commit --allow-empty -m ok",
++        f"git --no-pager -C {f} commit --allow-empty -m ok",
++        # commit: nicht freigegebene Optionen
++        f'{ok} --trailer "x: y"',
++        f"git -C {f} commit -F {t}/msg.txt",
++        f"git -C {f} commit --allow-empty --template {t}/tpl -m ok",
++        f"git -C {f} commit --allow-empty -S -m ok",
++        # add/status: nicht freigegebene Optionen bzw. Argumente
++        f"git -C {f} add -p && {ok}",
++        f"git -C {f} add -i && {ok}",
++        f"git -C {f} add --chmod=+x a.txt && {ok}",
++        f"git -C {f} status a.txt && {ok}",
++        # ungequotete Klammer-Expansion erzeugt Optionen; Umleitungen
++        f"{ok} -m {{x,--trailer=a:b}}",
++        f"{ok} > {m}/out.txt",
++    ]
++
++
++@pytest.mark.parametrize("idx", range(20))
++def test_allowlist_bypasses_stay_blocked(env563, idx):
++    cmd = _allowlist_bypass_commands(env563)[idx]
++    rc, stderr = _run_gate(env563["main"], cmd, ceiling=env563["tmp"])
++    assert rc == 2, f"{cmd!r}: rc={rc}, stderr={stderr!r}"
++    assert "Adversary verdict" in stderr, f"{cmd!r}: stderr={stderr!r}"
++
++
++def _backslash_newline_commands(e):
++    """Adversary-Runde 3 (F010): `\\\\<LF>` ist fuer bash Literal-Backslash plus
++    Befehlstrenner, der Lexer verklebt die Zeilen. Jeder Backslash und jeder
++    Zeilenumbruch (auch in Quotes) sperrt die Ausnahme."""
++    f = e["foreign"]
++    pwn = "git commit --allow-empty -m pwn"
++    return [
++        # F1: Doppel-Backslash + Zeilenumbruch nach einem Argument
++        f"git -C {f} commit --allow-empty -m x \\\\\n{pwn}",
++        # F1b: dasselbe ohne Leerzeichen
++        f"git -C {f} commit --allow-empty -m x\\\\\n{pwn}",
++        # F2: in doppelten Quotes verschluckt der Lexer das eigene Commit
++        f'git -C {f} commit --allow-empty -m "a\\\\\n" && {pwn}'
++        f' && git -C {f} commit --allow-empty -m "b\\\\\n"',
++        # F2b: Backslash+Zeilenumbruch in Einfach-Quotes (Symlink aufs eigene)
++        f"cd '{f}/x\\\n' && {pwn}",
++        # Zeilenumbruch in Quotes: bewusst gesperrt
++        f"git -C {f} commit -m 'zeile1\nzeile2'",
++        # Backslash in Quotes: bewusst gesperrt
++        f"git -C {f} commit -m 'a\\b'",
++    ]
++
++
++@pytest.mark.parametrize("idx", range(6))
++def test_backslash_newline_bypasses_stay_blocked(env563, idx):
++    f = env563["foreign"]
++    os.symlink(str(env563["main"]), str(f / "x\\\n"))  # Ziel fuer F2b
++    cmd = _backslash_newline_commands(env563)[idx]
++    rc, stderr = _run_gate(env563["main"], cmd, ceiling=env563["tmp"])
++    assert rc == 2, f"{cmd!r}: rc={rc}, stderr={stderr!r}"
++    assert "Adversary verdict" in stderr, f"{cmd!r}: stderr={stderr!r}"
