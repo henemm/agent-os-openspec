@@ -85,6 +85,8 @@ In Projekten im Plugin-Modus liefert das Plugin Hooks und Befehle selbst aus; da
 - Vorhandene Alt-Vollkopien von Hooks und Befehlen in Plugin-Projekten werden nicht gelöscht und nicht mehr aktualisiert; sie veralten still, werden vom Plugin-Modus aber nicht benutzt (Registrierung über `${CLAUDE_PLUGIN_ROOT}`), außer `hook_utils.py` und `config_loader.py` als Import-Ziel projekteigener Hooks.
 - `.claude/agents`, `core/tools` nach `.claude/tools` und Modul-Dateien werden im Plugin-Modus weiterhin gespiegelt (siehe Implementation Details, Begründung dort).
 - Shims und markierte Kurzbefehle werden nie neu angelegt, nur erneuert; fehlende bleiben fehlend (Schutz vor Überschatten, #87/#163/#400).
+- AC-5 („kein Byte“) gilt ohne den Zeitstempel `last_updated` in `.claude/framework_version.json`, den jeder `--update` neu schreibt (Verhalten vor #566, Adversary F003).
+- Ist `.claude/framework_version.json` unlesbar, behandelt `--update` das Projekt wie ein Copy-Modus-Projekt (vorbestehend, Adversary F001); ein als Symlink abgelegter Shim wird still übersprungen (aus #562, F002). Beides ist als Folge-Issue #570 erfasst.
 
 ## Definition of Done
 
