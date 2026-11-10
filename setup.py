@@ -964,8 +964,10 @@ def _write_changed(plan: list) -> list:
     return changed
 
 
-def refresh_pinned_rollout(project_path: Path) -> list:
-    """#562: vorhandene veraltete Shims und Projekt-Kurzbefehle erneuern (nie anlegen).
+def refresh_plugin_rollout(project_path: Path) -> list:
+    """#562/#566: vorhandene veraltete Shims und Projekt-Kurzbefehle erneuern (nie anlegen).
+
+    Gilt im ganzen Plugin-Modus, nicht nur mit Cloud-Pin (#566).
 
     Rueckgabe: geaenderte Dateien relativ zum Projekt. `migrate_to_plugin` wird erst
     hier importiert; fehlt es in der Framework-Kopie, entfallen nur die Shims.
@@ -1018,7 +1020,7 @@ def apply_cloud_gates(project_path: Path) -> int:
     fv.update(cloud_ref=pin[0], cloud_sha=pin[1])
     plan.append((version_file, json.dumps(fv, indent=2).encode("utf-8")))
     changed = [p.relative_to(project_path).as_posix() for p in _write_changed(plan)]
-    changed += refresh_pinned_rollout(project_path)
+    changed += refresh_plugin_rollout(project_path)
     print(f"Cloud-Gates (#522): Pin {pin[0]} ({pin[1][:12]})")
     for rel in changed:
         print(f"  Geschrieben: {rel}")
@@ -1328,9 +1330,9 @@ def update_project(project_path: Path, modules: list, force: bool = False):
             sync_file(project_path, dst_dir / src.name, content, manifest, report, force,
                       mode=src.stat().st_mode)
 
-    # Vor den Sync-Laeufen gelesen (#562): im gepinnten Plugin-Modus erneuern
-    # allein refresh_pinned_rollout Shims und Kurzbefehle; ein Spiegeln von
-    # core/hooks und core/commands machte sie zu Vollkopien.
+    # Vor den Sync-Laeufen gelesen (#562/#566): im Plugin-Modus (mit und ohne
+    # Cloud-Pin) erneuert allein refresh_plugin_rollout Shims und Kurzbefehle;
+    # ein Spiegeln von core/hooks und core/commands machte sie zu Vollkopien.
     version_file = project_path / ".claude" / "framework_version.json"
     existing = {}
     if version_file.exists():
@@ -1344,16 +1346,17 @@ def update_project(project_path: Path, modules: list, force: bool = False):
         existing = {}
     pinned = bool(existing.get("plugin_mode")
                   and (existing.get("cloud_ref") or existing.get("cloud_sha")))
+    plugin = bool(existing.get("plugin_mode"))
 
     hooks_dst = project_path / ".claude" / "hooks"
-    if hooks_dst.exists() and not pinned:
+    if hooks_dst.exists() and not plugin:
         sync_dir(CORE_DIR / "hooks", "*.py", hooks_dst)
 
     # CI-Gate mitziehen (Script immer, Action-Vorlage nur falls fehlend)
     install_ci_gate(project_path)
 
     commands_dst = project_path / ".claude" / "commands"
-    if commands_dst.exists() and not pinned:
+    if commands_dst.exists() and not plugin:
         sync_dir(CORE_DIR / "commands", "*.md", commands_dst,
                  render=lambda src: copy_command_text(src.read_text()))
 
@@ -1399,11 +1402,14 @@ def update_project(project_path: Path, modules: list, force: bool = False):
             "installed_modules": modules,
             "plugin_mode": True,
         }
-        # #522: gesetzter Cloud-Pin bleibt erhalten und wird erneuert; ohne Pin: nichts.
+        # #522: gesetzter Cloud-Pin bleibt erhalten und wird erneuert.
+        # #566: ohne Pin nur Shims und markierte Kurzbefehle erneuern, kein Pin.
         if pinned:
             new_files += [f"cloud gates: {e}"
                           for e in refresh_cloud_gates(project_path, existing, version_info)]
-            new_files += [f"cloud refresh: {e}" for e in refresh_pinned_rollout(project_path)]
+            new_files += [f"cloud refresh: {e}" for e in refresh_plugin_rollout(project_path)]
+        else:
+            new_files += [f"plugin refresh: {e}" for e in refresh_plugin_rollout(project_path)]
     else:
         version_info = {
             "framework_version": FRAMEWORK_VERSION,
