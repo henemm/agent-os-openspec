@@ -110,7 +110,7 @@ _FALLBACK_NOTE = (
 )
 
 _FALLBACK_SOURCE = "\n".join([
-    "import json, os, sys",
+    "import json, os, re, sys",
     "n = sys.argv[1]",
     "try:",
     "    d = json.load(open(os.path.expanduser(\"~/.claude/plugins/installed_plugins.json\")))",
@@ -120,7 +120,24 @@ _FALLBACK_SOURCE = "\n".join([
     "c = [os.environ.get(\"CLAUDE_PROJECT_DIR\") or \"\", os.getcwd()]",
     "c += [a for a in sys.argv[2:] if a and not a.startswith(\"${\")]",
     "s = lambda x: os.path.join(x, \"skills\", n, \"SKILL.md\")",
+    # Pin-Cache (#562): <cache_base>/<cloud_ref> nur ohne Symlink und mit .ok == cloud_sha.
+    "def p(q):",
+    "    try:",
+    "        f = json.load(open(os.path.join(q, \".claude\", \"framework_version.json\"),"
+    " encoding=\"utf-8\"))",
+    "        b = os.environ.get(\"AGENT_OS_CLOUD_CACHE\") or"
+    " os.path.expanduser(\"~/.cache/agent-os-openspec\")",
+    "        x = os.path.join(b, f[\"cloud_ref\"])",
+    "        k = os.path.join(x, \".ok\")",
+    "        w = (x, k, os.path.join(x, \"skills\"), os.path.dirname(s(x)), s(x))",
+    "        v = re.fullmatch(\"agent-os-openspec--v[0-9]+[.][0-9]+[.][0-9]+\", f[\"cloud_ref\"])",
+    "        v = v and re.fullmatch(\"[0-9a-f]{40}\", f[\"cloud_sha\"]) and os.path.isfile(s(x))",
+    "        v = v and not any(os.path.islink(y) for y in w)",
+    "        return x if v and open(k, encoding=\"utf-8\").read().strip() == f[\"cloud_sha\"] else None",
+    "    except Exception:",
+    "        return None",
     "r = next((x for x in c if x and os.path.isfile(s(x))), None)",
+    "r = r or p(next((x for x in [c[0]] + c[2:] + [c[1]] if x), \"\"))",
     "if ok:",
     "    pass",
     "elif r:",
@@ -134,7 +151,9 @@ _FALLBACK_SOURCE = "\n".join([
     "else:",
     "    print(\"BEFEHLSTEXT FEHLT: Plugin agent-os-openspec ist nicht geladen und unter \""
     " + s(c[0] or c[1]) + \" liegt keine Kopie. Beginne die Phase NICHT und rate nicht — "
-    "informiere den PO, dass der Befehlstext in dieser Sitzung fehlt.\")",
+    "informiere den PO, dass der Befehlstext in dieser Sitzung fehlt."
+    " Cache noch nicht bereit (Cloud-Pin): python3 .claude/cloud_bootstrap.py --retry"
+    " ausführen, die Umgebung muss github.com erreichen.\")",
 ])
 
 

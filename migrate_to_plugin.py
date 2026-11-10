@@ -95,6 +95,54 @@ import os
 import sys
 
 
+def _load_from_pin_cache():
+    """Fallback ohne Plugin-Registry (Cloud, #562): Pin-Cache des Projekts.
+
+    Projektordner = drei Ebenen ueber diesem Shim (.claude/hooks/), ersatzweise
+    CLAUDE_PROJECT_DIR. Pin, Pruefung und Abruf liefert .claude/cloud_bootstrap.py
+    (#522); genutzt wird nur ``cache_base()/<cloud_ref>`` nach ``cache_valid``,
+    nie der Zeiger ``current``. Jeder Fehler liefert None (-> ImportError).
+    """
+    _here = os.path.dirname(os.path.abspath(__file__))
+    _boot_path = ""
+    for _proj in (os.path.dirname(os.path.dirname(_here)),
+                  os.environ.get("CLAUDE_PROJECT_DIR", "")):
+        _candidate = os.path.join(_proj, ".claude", "cloud_bootstrap.py") if _proj else ""
+        if _candidate and os.path.isfile(_candidate):
+            _boot_path = _candidate
+            break
+    if not _boot_path:
+        return None
+    _saved_path = list(sys.path)
+    _saved_flag = sys.dont_write_bytecode
+    # Bewusst dauerhaft: `__pycache__` im Cache hiesse fuer cache_valid
+    # "manipuliert", und Geschwister-Module koennen auch spaeter noch lazy
+    # aus dem Cache importiert werden. Nur bei Fehlschlag zurueckgesetzt.
+    sys.dont_write_bytecode = True
+    try:
+        _spec = importlib.util.spec_from_file_location(
+            "_openspec_shim_cloud_bootstrap", _boot_path
+        )
+        _boot = importlib.util.module_from_spec(_spec)
+        _spec.loader.exec_module(_boot)
+        _ref, _sha = _boot.read_pin()
+        _cache = _boot.cache_base() / _ref
+        if not _boot.cache_valid(_cache, _sha, "__MODULE__.py"):
+            _cache = _boot.fetch(_ref, _sha, script="__MODULE__.py")
+        _module_path = _boot.resolve_script(_cache, "__MODULE__.py")
+        _hooks_dir = str(_module_path.parent)
+        if _hooks_dir not in sys.path:
+            sys.path.insert(0, _hooks_dir)  # Geschwister-Importe (#165)
+        _spec = importlib.util.spec_from_file_location("__MODULE__", str(_module_path))
+        _module = importlib.util.module_from_spec(_spec)
+        _spec.loader.exec_module(_module)
+        return _module
+    except Exception:
+        sys.path[:] = _saved_path
+        sys.dont_write_bytecode = _saved_flag
+        return None
+
+
 def _resolve_plugin_module():
     registry = os.path.expanduser("~/.claude/plugins/installed_plugins.json")
     install_path = ""
@@ -129,6 +177,10 @@ def _resolve_plugin_module():
             _module = importlib.util.module_from_spec(_spec)
             _spec.loader.exec_module(_module)
             return _module
+
+    _module = _load_from_pin_cache()
+    if _module is not None:
+        return _module
 
     raise ImportError(
         "agent-os-openspec plugin not installed "
@@ -191,6 +243,30 @@ def _find_shim_candidates(project_path: Path) -> tuple[list[Path], list[Path]]:
             is_current = False
         (already_shimmed if is_current else to_replace).append(f)
     return to_replace, already_shimmed
+
+
+def refresh_shims(project: Path) -> list[Path]:
+    """Vorhandene, veraltete Shims neu schreiben (#562); Rueckgabe: geschriebene Pfade.
+
+    Nur Dateien aus SHIM_HOOKS mit Shim-Marker, deren Inhalt von `_render_shim`
+    abweicht. Echte Kopien (ohne Marker), fehlende Dateien und Symlinks bleiben
+    unberuehrt: es wird nie ein Shim neu angelegt.
+    """
+    hooks_dir = project / ".claude" / "hooks"
+    changed: list[Path] = []
+    for name in sorted(SHIM_HOOKS):
+        f = hooks_dir / name
+        if f.is_symlink() or not f.is_file() or not _is_shim(f):
+            continue
+        current = _render_shim(name.removesuffix(".py"))
+        try:
+            if f.read_text(encoding="utf-8") == current:
+                continue
+        except (OSError, UnicodeDecodeError):
+            continue
+        f.write_text(current, encoding="utf-8")
+        changed.append(f)
+    return changed
 
 # .py filename regex — matches "foo_bar.py" or "foo-bar.py"
 _PY_RE = re.compile(r'([\w][\w\-]*\.py)')

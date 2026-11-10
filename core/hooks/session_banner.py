@@ -42,6 +42,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -504,6 +506,41 @@ def auftrag_context(project: Path) -> str:
         return ""
 
 
+_CLOUD_REF_RE = re.compile(r"^agent-os-openspec--v([0-9]+\.[0-9]+\.[0-9]+)$")
+
+
+def cloud_pin_drift(root: Path, project: Path) -> "tuple[list[str], list[str]]":
+    """(PO-Zeilen, Claude-Kontext), wenn der Cloud-Pin hinter dem lokalen Plugin liegt (#562).
+
+    Nur lokal (`CLAUDE_CODE_REMOTE` != "true": in der Cloud IST der Pin das
+    Framework). Die PO-Zeile nennt keinen Befehl (Regel aus #399); den Befehl
+    bekommt nur Claude. Jeder Fehler ergibt keinen Hinweis (fail-open).
+    """
+    try:
+        if os.environ.get("CLAUDE_CODE_REMOTE") == "true":
+            return [], []
+        data = json.loads((project / ".claude" / "framework_version.json")
+                          .read_text(encoding="utf-8"))
+        ref = data.get("cloud_ref") if isinstance(data, dict) else None
+        match = _CLOUD_REF_RE.match(ref) if isinstance(ref, str) else None
+        if not match:
+            return [], []
+        if str(_HOOK_DIR) not in sys.path:
+            sys.path.insert(0, str(_HOOK_DIR))
+        from alias_sync import version_tuple
+        local, pinned = version_tuple(plugin_version(root)), version_tuple(match.group(1))
+        if local is None or pinned is None or local <= pinned:
+            return [], []
+        cmd = (f"python3 {shlex.quote(str(root / 'setup.py'))} "
+               f"{shlex.quote(str(project))} --update")
+    except Exception:
+        return [], []
+    return (["Cloud-Sitzungen nutzen noch einen älteren Stand des Frameworks; "
+             "Claude bringt ihn auf den Stand dieses Geräts."],
+            [f"Cloud-Pin {ref} liegt hinter dem lokalen Plugin (#562): im Projekt "
+             f"`{cmd}` ausführen und die geänderten Dateien committen."])
+
+
 def build_output(root: Path, project: Path, cwd: "Path | None" = None,
                  source: "str | None" = None) -> "dict | None":
     """Hook-Ausgabe: sichtbare `systemMessage`, optional `additionalContext` fuer Claude."""
@@ -524,6 +561,9 @@ def build_output(root: Path, project: Path, cwd: "Path | None" = None,
             visible, hints = [], []
         lines.extend(visible)
         context.extend(hints)
+        drift_lines, drift_context = cloud_pin_drift(root, project)
+        lines.extend(drift_lines)
+        context.extend(drift_context)
     sentence = auftrag_context(project)  # #551: bei jeder Quelle, auch clear/compact
     if sentence:
         context.append(sentence)

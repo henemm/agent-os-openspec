@@ -431,7 +431,7 @@ python3 /path/to/agent-os-openspec/setup.py /path/to/project --update --force
 python3 /path/to/agent-os-openspec/setup.py /path/to/project --module ios-swiftui
 
 # Kurze Slash-Command-Aliase generieren (z.B. /50-implement statt /agent-os-openspec:50-implement)
-python3 /path/to/agent-os-openspec/setup.py /path/to/project --command-aliases   # empfohlen: pro Projekt; Redirect-Aliase liefern ohne geladenes Plugin (Cloud-Sitzung) den Befehlstext aus skills/<name>/SKILL.md selbst nach oder stoppen mit BEFEHLSTEXT FEHLT
+python3 /path/to/agent-os-openspec/setup.py /path/to/project --command-aliases   # empfohlen: pro Projekt; Redirect-Aliase liefern ohne geladenes Plugin (Cloud-Sitzung) den Befehlstext aus skills/<name>/SKILL.md bzw. bei Konsumenten aus dem Pin-Cache selbst nach oder stoppen mit BEFEHLSTEXT FEHLT (#562: Konsumenten einmal --update bzw. --cloud-gates laufen lassen, geänderte Dateien committen)
 # Global (~) NUR falls kein Projekt eine eigene Version von 40-tdd-red/50-implement/
 # 60-validate/70-deploy/80-workflow/81-add-artifact/99-reset pflegt — sonst shadowed
 # der globale Alias die Projekt-Datei (Issue #87, Claude-Code-Scope-Präzedenz-Bug)
