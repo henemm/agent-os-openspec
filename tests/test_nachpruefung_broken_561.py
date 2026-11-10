@@ -98,9 +98,12 @@ def test_forward_and_same_phase_keep_deploy_fields():
         assert data["deploy_status"] == "failed", (current, target)
         assert data["deploy_at"] == "2026-11-10T10:00:00+00:00", (current, target)
         assert data["deploy_note"] == "AC-3 verletzt", (current, target)
-    # Rueckwaertswechsel, der nicht vor phase8_complete endet: nichts verwerfen
+    # Rueckwaertswechsel, der nicht vor phase8_complete endet: nichts verwerfen.
+    # Heute ist phase8_complete die letzte Phase; dieser Fall ist dann genau
+    # "gleiche Phase" (oben abgedeckt). Kommt eine spaetere Phase hinzu, prueft
+    # die Schleife sie automatisch mit.
     phases = wf.PHASES
-    assert phases.index("phase8_complete") < len(phases) or True
+    assert "phase8_complete" in phases
     later = [p for p in phases if phases.index(p) > phases.index("phase8_complete")]
     for current in later:
         data = _failed_data()

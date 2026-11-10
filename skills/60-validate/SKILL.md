@@ -156,7 +156,7 @@ Datei (Hash) oder eine nicht zitierte (Abdeckung).
 **Nachprüfung nach Phase 8 (Staging/live, #561):** Ein fachlicher Befund (eine AC ist ausgeliefert
 nicht erfuellt, nicht die Infrastruktur) zaehlt genauso wie BROKEN: `deploy-status failed --note`,
 zurueck zu `phase6_implement`, Fix per `/50-implement`, eine Adversary-Runde aus demselben
-Kontingent, danach erneut `/60-validate` und `/70-deploy` (Ablauf in `/70-deploy` Step 4b). Kein
+Kontingent, danach erneut `/60-validate` und `/70-deploy` (Ablauf in `/70-deploy` Step 4, Teil b). Kein
 Korrektur-PR am Workflow vorbei.
 
 Bei Nicht-Code-Fehlern dispatche einen **general-purpose/Sonnet Subagenten**:
