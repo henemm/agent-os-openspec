@@ -640,21 +640,24 @@ def test_rollout_leaves_real_copies_alone_and_creates_nothing(tmp_path, fw_copy,
 
 
 def test_update_without_pin_is_unchanged(tmp_path, fw_copy):
-    """AC-15 — GIVEN Plugin-Projekt ohne Pin mit veralteten Shims und Kurzbefehlen
+    """AC-15, neu gefasst durch #566 (AC-8) — GIVEN Plugin-Projekt ohne Pin mit
+    veralteten Shims und Kurzbefehlen
     WHEN `setup.py <projekt> --update` laeuft
-    THEN veraendert der neue Rollout weder Shims noch Kurzbefehle, und es
-    entsteht kein Pin."""
+    THEN werden diese erneuert, es wird nichts angelegt, es entsteht kein Pin,
+    und die Ausgabe traegt das Praefix `plugin refresh:`."""
     url, _ = _remote(tmp_path)
     proj = _consumer(tmp_path, fw_copy, "consumer", pin=False)
+    hooks = proj / ".claude" / "hooks"
+    cmds = proj / ".claude" / "commands"
+    names_before = (sorted(p.name for p in hooks.iterdir()), sorted(p.name for p in cmds.iterdir()))
     r = _setup(fw_copy, proj, "--update", url=url, tmp_path=tmp_path)
     assert r.returncode == 0, r.stdout + r.stderr
-    hooks = proj / ".claude" / "hooks"
-    for name in ("hook_utils", "config_loader"):
-        assert (hooks / f"{name}.py").read_text(encoding="utf-8") != _render_shim(name), \
-            f"{name}.py ohne Pin durch den Rollout erneuert"
-    for alias in ALIASES:
-        assert (proj / ".claude" / "commands" / f"{alias}.md").read_text(encoding="utf-8") \
-            != _expected_alias(fw_copy, alias), f"{alias} ohne Pin durch den Rollout erneuert"
+    _assert_refreshed(proj, fw_copy)
+    names_after = (sorted(p.name for p in hooks.iterdir() if p.name != "__pycache__"),
+                   sorted(p.name for p in cmds.iterdir()))
+    assert names_after == names_before, f"Dateien neu angelegt: {names_after} != {names_before}"
+    assert "plugin refresh: .claude/hooks/hook_utils.py" in r.stdout, r.stdout
+    assert "cloud refresh:" not in r.stdout, r.stdout
     fv = _fv(proj)
     assert "cloud_ref" not in fv and "cloud_sha" not in fv, fv
     assert not (proj / ".claude" / "cloud_bootstrap.py").exists()
