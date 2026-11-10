@@ -81,7 +81,9 @@ _GIT_SEPARATOR_WORDS = frozenset({"{", "}", "!"})
 # kein git-Token uebrig (Adversary-Befund F009). Beide Zeilenenden, weil
 # `\`+CRLF sonst als maskiertes "\r" ueberlebt und als Unterbefehl gilt.
 # Bewusst NICHT betroffen: "\" + Leerzeichen (maskiertes Leerzeichen in einem
-# Dateinamen) und jeder andere Backslash.
+# Dateinamen) und jeder andere Backslash. Entfernt wird nur ausserhalb von
+# Quotes bzw. (LF) in "…" und nur hinter einem unmaskierten Backslash (#572,
+# `_lex_prepare`); `_strip_shell_comments` kopiert Fortsetzungen unveraendert.
 _GIT_LINE_CONTINUATIONS = ("\\\r\n", "\\\n")
 # git-Vor-Optionen (vor dem Unterbefehl), deren WERT ein eigenes Token ist.
 # `--exec-path` gehoert NICHT dazu: laut git(1) `--exec-path[=<path>]`, ein Wert
@@ -431,6 +433,117 @@ def _strip_shell_comments(command: str) -> str:
     return command if quote is not None else "".join(out)
 
 
+# Sonderzeichen, die gequotet oder maskiert bloßer Wortinhalt sind (#572):
+# Operatorzeichen plus Trennwort-Zeichen. Jedes bekommt vor shlex ein eigenes
+# Platzhalterzeichen aus der Private Use Area, danach wird es zurueckgebildet.
+# Standardblock ab U+E000; enthaelt die Eingabe eines seiner Zeichen, lehnt
+# `_git_lex` ab (AC-7), `_git_lex_robust` weicht auf einen freien Block aus.
+_LEX_SPECIALS = _GIT_PUNCTUATION + "".join(sorted(_GIT_SEPARATOR_WORDS))
+_LEX_BASE = 0xE000
+
+
+def _lex_maps(base: int) -> "tuple[dict[str, str], dict[str, str]]":
+    """(Sonderzeichen -> Platzhalter, Platzhalter -> Sonderzeichen) ab `base`."""
+    placeholder = {ch: chr(base + i) for i, ch in enumerate(_LEX_SPECIALS)}
+    return placeholder, {ph: ch for ch, ph in placeholder.items()}
+
+
+_LEX_PLACEHOLDER, _LEX_ORIGINAL = _lex_maps(_LEX_BASE)
+
+
+def _lex_free_base(command: str) -> "int | None":
+    """Ersten Platzhalterblock, dessen Zeichen in `command` nicht vorkommen (F001)."""
+    used, size = set(command), len(_LEX_SPECIALS)
+    if not used.intersection(_LEX_ORIGINAL):
+        return _LEX_BASE
+    for base in range(0xF0000, 0x10FFFE - size, size):  # Supplementary PUA
+        if not any(chr(base + i) in used for i in range(size)):
+            return base
+    return None
+
+
+class _QuotedWord(str):
+    """Token mit gequotetem/maskiertem Sonderzeichen: nie Trenner, nie Umleitung (#572)."""
+
+
+def _lex_prepare(command: str, base: int = _LEX_BASE) -> "str | None":
+    """Befehl fuer shlex aufbereiten, quote- und escape-bewusst wie bash (#572).
+
+    Ausserhalb von Quotes: `\\`+LF/CRLF faellt weg, `\\\\` bleibt ein Paar,
+    `\\`+Sonderzeichen wird `\\`+Platzhalter. In `"…"`: `\\`+LF faellt weg, `\\X`
+    bleibt ein Paar. In `'…'`/`$'…'` gibt es keine Fortsetzung. Gequotete
+    Sonderzeichen werden Platzhalter. `$'` oeffnet nur ausserhalb von Quotes.
+    None bei offenem Quote am Ende oder Zeichen des Blocks `base` in der Eingabe.
+    """
+    placeholder, original = _lex_maps(base)
+    if any(ph in command for ph in original):
+        return None
+    out: "list[str]" = []
+    quote = None  # None, "'", '"' oder "$'"
+    i, n = 0, len(command)
+    while i < n:
+        ch = command[i]
+        if ch == "\\" and quote != "'":
+            conts = {None: _GIT_LINE_CONTINUATIONS, '"': ("\\\n",)}.get(quote, ())
+            cont = next((c for c in conts if command.startswith(c, i)), "")
+            if cont:
+                i += len(cont)
+                continue
+            nxt = command[i + 1:i + 2]
+            out.append(ch + placeholder.get(nxt, nxt))
+            i += 2
+            continue
+        if quote is None:
+            if command.startswith("$'", i):
+                quote, ch = "$'", "$'"
+            elif ch in "'\"":
+                quote = ch
+        elif ch == quote[-1]:
+            quote = None
+        else:
+            ch = placeholder.get(ch, ch)
+        out.append(ch)
+        i += len(ch)
+    return None if quote is not None else "".join(out)
+
+
+def _restore_lex_token(tok: str, original: "dict[str, str] | None" = None) -> str:
+    """Platzhalter zurueckbilden; betroffene Token werden `_QuotedWord` (#572)."""
+    original = _LEX_ORIGINAL if original is None else original
+    if not any(ch in original for ch in tok):
+        return tok
+    return _QuotedWord("".join(original.get(ch, ch) for ch in tok))
+
+
+def _lex_tokens(command: str, base: int) -> "list[str] | None":
+    """Zerlegen mit Platzhalterblock `base`; Kern von `_git_lex`/`_git_lex_robust`."""
+    # Erst Kommentare (enden am Zeilenende, auch nach `\`), dann Fortsetzungen
+    # und Platzhalter fuer gequotete/maskierte Sonderzeichen (#572).
+    prepared = _lex_prepare(_strip_shell_comments(command), base)
+    if prepared is None:
+        return None
+    lexer = shlex.shlex(prepared, posix=True, punctuation_chars=_GIT_PUNCTUATION)
+    lexer.whitespace_split = True
+    lexer.whitespace = " \t\r"
+    lexer.commenters = ""
+    try:
+        tokens = list(lexer)
+    except ValueError:
+        return None
+    original = _lex_maps(base)[1]
+    return [_restore_lex_token(tok, original) for tok in tokens]
+
+
+def _git_lex_robust(command: str) -> "list[str] | None":
+    """Wie `_git_lex`, aber Platzhalterzeichen in der Eingabe sind Wortinhalt (F001).
+
+    Fuer die Schreib-/Umleitungspruefungen: ein (auch gequotetes) Zeichen aus
+    dem Standardblock darf sie nicht abschalten. Offene Quotes bleiben None.
+    """
+    base = _lex_free_base(command)
+    return None if base is None else _lex_tokens(command, base)
+
+
 def _git_lex(command: str) -> "list[str] | None":
     """Tokenisieren, mit Shell-Trennern als EIGENE Token; None bei kaputten Quotes.
 
@@ -450,19 +563,11 @@ def _git_lex(command: str) -> "list[str] | None":
     genommen, sonst greift die Whitespace-Regel vor der Punktuations-Regel.
     `commenters` wird geleert, damit `#` wie bei `shlex.split()` normaler Text
     bleibt (sonst wuerde `git log --grep=#1431` abgeschnitten).
+
+    Strikt: ein Zeichen aus dem Standard-Platzhalterblock in der Eingabe gibt
+    None (AC-7, Fall 3 in `is_git_subcommand`); `_git_lex_robust` weicht aus.
     """
-    # Erst Kommentare (enden am Zeilenende, auch nach `\`), dann Fortsetzungen.
-    command = _strip_shell_comments(command)
-    for _continuation in _GIT_LINE_CONTINUATIONS:
-        command = command.replace(_continuation, "")
-    lexer = shlex.shlex(command, posix=True, punctuation_chars=_GIT_PUNCTUATION)
-    lexer.whitespace_split = True
-    lexer.whitespace = " \t\r"
-    lexer.commenters = ""
-    try:
-        return list(lexer)
-    except ValueError:
-        return None
+    return _lex_tokens(command, _LEX_BASE)
 
 
 def _is_git_redirect(token: str) -> bool:
@@ -471,6 +576,8 @@ def _is_git_redirect(token: str) -> bool:
     Deckt `>`, `>>`, `<`, `>&`, `&>`, `&>>` und `>|` (#318). Ein einzelnes `&`
     (Hintergrund), `&&`, `|&` und `<(`/`>(` sind KEINE Umleitung.
     """
+    if isinstance(token, _QuotedWord):
+        return False  # gequotet/maskiert: Wortinhalt (#572)
     return (bool(token) and all(ch in "<>&|" for ch in token)
             and ("<" in token or ">" in token))
 
@@ -489,8 +596,8 @@ def _is_git_separator(token: str) -> bool:
         enthalten: ">" / ">>" / "<" sind Redirects und trennen NICHT, "<(" und
         ">(" (Prozess-Substitution) dagegen schon.
     """
-    if not token:
-        return False
+    if not token or isinstance(token, _QuotedWord):
+        return False  # gequotet/maskiert: Wortinhalt, kein Trenner (#572)
     if token in _GIT_SEPARATOR_WORDS:
         return True
     if _is_git_redirect(token):
@@ -516,8 +623,12 @@ def _is_confidently_decomposed(command: str) -> bool:
 
 
 def _git_segments(command: str) -> "list[list[str]] | None":
-    """Kommando in Segmente zerlegen; None, wenn nicht verlaesslich zerlegbar."""
-    tokens = _git_lex(command)
+    """Kommando in Segmente zerlegen; None, wenn nicht verlaesslich zerlegbar.
+
+    Platzhalterzeichen in der Eingabe schalten die Zerlegung nicht ab (F001):
+    sonst saehen die Schreibpruefungen in bash_gate kein Segment.
+    """
+    tokens = _git_lex_robust(command)
     if tokens is None:
         return None
     segments: "list[list[str]]" = [[]]

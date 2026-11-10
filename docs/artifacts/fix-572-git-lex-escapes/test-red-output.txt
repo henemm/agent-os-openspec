@@ -1,0 +1,112 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.18, pytest-9.2.0, pluggy-1.7.0 -- /home/user/agent-os-openspec/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/user/agent-os-openspec
+collecting ... collected 8 items
+
+tests/test_git_lex_escapes_572.py::test_escaped_backslash_before_newline_exposes_commit FAILED [ 12%]
+tests/test_git_lex_escapes_572.py::test_real_line_continuations_still_joined PASSED [ 25%]
+tests/test_git_lex_escapes_572.py::test_no_continuation_inside_single_and_ansi_c_quotes FAILED [ 37%]
+tests/test_git_lex_escapes_572.py::test_quoted_operators_are_not_separators_or_redirects FAILED [ 50%]
+tests/test_git_lex_escapes_572.py::test_real_separators_and_redirects_unchanged PASSED [ 62%]
+tests/test_git_lex_escapes_572.py::test_position_search_still_finds_commit PASSED [ 75%]
+tests/test_git_lex_escapes_572.py::test_unparseable_input_returns_none_and_falls_back FAILED [ 87%]
+tests/test_git_lex_escapes_572.py::test_ansi_c_quote_opener_inside_double_quotes_is_literal PASSED [100%]
+
+=================================== FAILURES ===================================
+_____________ test_escaped_backslash_before_newline_exposes_commit _____________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-173/test_escaped_backslash_before_0')
+
+    def test_escaped_backslash_before_newline_exposes_commit(tmp_path):
+        cases = [
+            # Folgezeile ist ein eigener Befehl: `a\\`+LF = Wort `a\`, dann Trenner
+            f"git status a{BS}{BS}{LF}git commit --allow-empty -m x",
+            # Issue-Repro: in "…" ist `\\` ein Paar, der Umbruch bloßer Inhalt
+            f'git status "a{BS}{BS}{LF}" && git commit --allow-empty -m pwn'
+            f' && git status "b{BS}{BS}{LF}"',
+        ]
+        wrong = []
+        for i, cmd in enumerate(cases):
+            assert _bash_runs_commit(cmd, tmp_path / f"c{i}"), (
+                f"Orakel: bash führt den Commit nicht aus: {cmd!r}")
+            if not hook_utils.is_git_subcommand(cmd, "commit"):
+                wrong.append(f"commit unsichtbar: {cmd!r} -> {hook_utils._git_lex(cmd)!r}")
+>       assert not wrong, "\n".join(wrong)
+E       AssertionError: commit unsichtbar: 'git status a\\\\\ngit commit --allow-empty -m x' -> ['git', 'status', 'agit', 'commit', '--allow-empty', '-m', 'x']
+E         commit unsichtbar: 'git status "a\\\\\n" && git commit --allow-empty -m pwn && git status "b\\\\\n"' -> ['git', 'status', 'a" && git commit --allow-empty -m pwn && git status b"']
+E       assert not ["commit unsichtbar: 'git status a\\\\\\\\\\ngit commit --allow-empty -m x' -> ['git', 'status', 'agit', 'commit', '--allow-empty', '-m', 'x']", 'commit unsichtbar: \'git status "a\\\\\\\\\\n" && git commit --allow-empty -m pwn && git status "b\\\\\\\\\\n"\' -> [\'git\', \'status\', \'a" && git commit --allow-empty -m pwn && git status b"\']']
+
+tests/test_git_lex_escapes_572.py:116: AssertionError
+_____________ test_no_continuation_inside_single_and_ansi_c_quotes _____________
+
+    def test_no_continuation_inside_single_and_ansi_c_quotes():
+        single = f"'a{BS}{LF}b'"
+>       assert hook_utils._git_lex("echo " + single) == ["echo", f"a{BS}{LF}b"]
+E       AssertionError: assert ['echo', 'ab'] == ['echo', 'a\\\nb']
+E         
+E         At index 1 diff: 'ab' != 'a\\\nb'
+E         
+E         Full diff: (-: missing in left side, +: extra in left side)
+E           [
+E               'echo',
+E         -     'a\\\n'...
+E         
+E         ...Full output truncated, use '-vv' to show
+
+tests/test_git_lex_escapes_572.py:144: AssertionError
+____________ test_quoted_operators_are_not_separators_or_redirects _____________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-173/test_quoted_operators_are_not_0')
+
+    def test_quoted_operators_are_not_separators_or_redirects(tmp_path):
+        wrong = []
+        for quoted, plain in QUOTED_OPS.items():
+            segs = hook_utils._git_segments(f"cp {quoted} x")
+            if segs != [["cp", plain, "x"]]:
+                wrong.append(f"cp {quoted} x -> {segs!r}")
+>       assert hook_utils._git_segments("cp ';' x") == [["cp", ";", "x"]]
+E       AssertionError: assert [['cp'], ['x']] == [['cp', ';', 'x']]
+E         
+E         At index 0 diff: ['cp'] != ['cp', ';', 'x']
+E         Left contains one more item: ['x']
+E         
+E         Full diff: (-: missing in left side, +: extra in left side)
+E           [
+E               [...
+E         
+E         ...Full output truncated, use '-vv' to show
+
+tests/test_git_lex_escapes_572.py:165: AssertionError
+______________ test_unparseable_input_returns_none_and_falls_back ______________
+
+    def test_unparseable_input_returns_none_and_falls_back():
+        assert hook_utils._git_lex("echo 'offen ; git commit -m x") is None
+        assert hook_utils.is_git_subcommand("echo 'offen ; git commit -m x", "commit")
+    
+>       placeholders = _placeholders()
+                       ^^^^^^^^^^^^^^^
+
+tests/test_git_lex_escapes_572.py:223: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _placeholders() -> "set[str]":
+        """Platzhalterzeichen der Vorstufe, ermittelt über `_lex_prepare` selbst.
+    
+        Alle Sonderzeichen (`_GIT_PUNCTUATION` plus `{ } !`) stehen in `'…'`; was
+        nach der Aufbereitung neu im Text auftaucht, sind die Platzhalter.
+        `_lex_prepare` liefert den aufbereiteten Text (oder ein Tupel mit ihm vorn).
+        """
+        specials = hook_utils._GIT_PUNCTUATION + "{}!"
+        source = "echo '" + specials + "'"
+>       prepared = hook_utils._lex_prepare(source)
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'hook_utils' has no attribute '_lex_prepare'
+
+tests/test_git_lex_escapes_572.py:94: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_git_lex_escapes_572.py::test_escaped_backslash_before_newline_exposes_commit
+FAILED tests/test_git_lex_escapes_572.py::test_no_continuation_inside_single_and_ansi_c_quotes
+FAILED tests/test_git_lex_escapes_572.py::test_quoted_operators_are_not_separators_or_redirects
+FAILED tests/test_git_lex_escapes_572.py::test_unparseable_input_returns_none_and_falls_back
+========================= 4 failed, 4 passed in 0.76s ==========================
