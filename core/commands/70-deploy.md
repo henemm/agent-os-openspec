@@ -76,8 +76,8 @@ python3 .claude/hooks/workflow.py deploy-status running <N>
 ```
 
 Führe die `command`-Zeilen aus der Ausgabe von Step 2 **wörtlich und in dieser Reihenfolge**
-aus. Bricht ein Befehl ab: `python3 .claude/hooks/workflow.py deploy-status failed <N>`, dann
-STOPP, Fehlermeldung an den PO, nicht improvisieren.
+aus. Bricht ein Befehl ab: `python3 .claude/hooks/workflow.py deploy-status failed <N> --note "<Grund>"`,
+dann STOPP, Fehlermeldung an den PO, nicht improvisieren.
 
 ## Step 4: Nachprüfung
 
@@ -88,9 +88,30 @@ erst dann den Marker setzen, der den Plan auf „✔ Deploy“ springen lässt:
 python3 .claude/hooks/workflow.py deploy-status done <N>
 ```
 
-Schlägt die Nachprüfung fehl: `python3 .claude/hooks/workflow.py deploy-status failed <N>`,
-Ergebnis an den PO und die `rollback`-Zeilen **vorschlagen**
-(nicht ungefragt ausführen — außer der PO hat das für dieses Projekt ausdrücklich festgelegt).
+Schlägt die Nachprüfung fehl, unterscheide zwei Fälle (#561):
+
+**a) Technischer Fehlschlag** (Infrastruktur: Server nicht erreichbar, Deploy bricht ab,
+`verify` scheitert an der Umgebung):
+`python3 .claude/hooks/workflow.py deploy-status failed <N> --note "<Grund>"`, Ergebnis an den
+PO und die `rollback`-Zeilen **vorschlagen** (nicht ungefragt ausführen — außer der PO hat das
+für dieses Projekt ausdrücklich festgelegt).
+
+**b) Fachlicher Befund** (eine AC ist auf Staging/live nicht erfüllt, die Infrastruktur läuft):
+Das ist der **BROKEN-Pfad**, kein neuer Auftrag:
+
+```bash
+python3 .claude/hooks/workflow.py deploy-status failed <N> --note "<AC-N verletzt: Befund>"
+python3 .claude/hooks/workflow.py phase phase6_implement
+```
+
+Danach gezielter Fix per `/50-implement`, eine Adversary-Runde aus demselben Kontingent
+(Adversary-Limit in `CLAUDE.md`), `/60-validate`, dann erneut ausliefern und `/70-deploy`.
+**Kein Korrektur-PR und kein Developer-Agent am Workflow vorbei** — sonst bleiben Plan und
+Seitenleiste auf dem alten Stand stehen. Der Rücksprung verwirft den alten Deploy-Stand: Der
+Plan zeigt danach „○ Deploy“, nach erneutem Phase 8 „▶ Deploy (offen)“.
+Ist der Workflow schon archiviert (`workflow.py find <N>` meldet KEIN laufender Workflow), geht
+kein Rücksprung mehr: neuer Workflow mit derselben Issue-Nummer (`/00-intake #<N>`) bzw. ein
+Folge-Issue.
 
 ## Haupt-Ordner nachziehen (nach gemergtem PR)
 

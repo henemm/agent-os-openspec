@@ -28,7 +28,7 @@ Usage:
     python3 workflow.py finish
     python3 workflow.py abandon --reason "<warum kein Abschluss>"
     python3 workflow.py list
-    python3 workflow.py deploy-status <running|done|failed> [<issue-nr|name>]
+    python3 workflow.py deploy-status <running|done|failed> [<issue-nr|name>] [--note <Grund>]
     python3 workflow.py sessions [--json]
     python3 workflow.py observable-surface
 """
@@ -2550,6 +2550,9 @@ def _reset_approvals_on_backstep(data: dict, current: str, target: str) -> None:
     Ziel vor phase4_approved: spec_approved und green_approved zurueck;
     Ziel vor phase6_implement: nur green_approved. Vorwaertswechsel, gleiche
     Phase und Ziel ab phase6_implement aendern nichts.
+    Ziel vor phase8_complete verwirft zudem den Deploy-Zustand (`deploy_status`,
+    `deploy_at`, `deploy_note`), damit der Plan nach dem BROKEN-Pfad nicht den
+    alten Stand zeigt (#561).
     """
     if current not in PHASES or target not in PHASES:
         return
@@ -2560,6 +2563,9 @@ def _reset_approvals_on_backstep(data: dict, current: str, target: str) -> None:
         data["spec_approved"] = False
     if tgt_idx < PHASES.index("phase6_implement"):
         data["green_approved"] = False
+    if tgt_idx < PHASES.index("phase8_complete"):
+        for key in ("deploy_status", "deploy_at", "deploy_note"):
+            data.pop(key, None)
 
 
 def cmd_phase(args: list[str]) -> None:
@@ -3238,22 +3244,41 @@ def _deploy_status_target(ref: str) -> "Path | None":
     return None
 
 
+def _split_note_arg(args: list[str]) -> "tuple[list[str], str | None] | None":
+    """`--note <Grund>` aus den Argumenten loesen (#561): (Rest, Text oder None);
+    `--note` ohne folgendes Argument -> None."""
+    if "--note" not in args:
+        return list(args), None
+    idx = args.index("--note")
+    if idx + 1 >= len(args):
+        return None
+    return args[:idx] + args[idx + 2:], args[idx + 1]
+
+
 def cmd_deploy_status(args: list[str]) -> None:
-    """`deploy-status <running|done|failed> [<issue-nr|name>]` (#510).
+    """`deploy-status <running|done|failed> [<issue-nr|name>] [--note <Grund>]` (#510).
 
     Setzt `deploy_status`/`deploy_at` im Workflow-State — ohne zweites Argument
     im aktiven Workflow, sonst im laufenden oder (juengsten) archivierten Treffer.
-    Rein informativ, keine Gate-Wirkung.
+    `--note` schreibt `deploy_note` als Einzeiler; ohne `--note` (oder mit leerem
+    Text) entfaellt eine alte Notiz (#561). Rein informativ, keine Gate-Wirkung.
     """
-    if not args or args[0] not in DEPLOY_STATUS_VALUES:
-        print("Usage: workflow.py deploy-status <running|done|failed> [<issue-nr|name>]",
-              file=sys.stderr)
+    split = _split_note_arg(args)
+    rest, note = split if split is not None else ([], None)
+    if not rest or rest[0] not in DEPLOY_STATUS_VALUES:
+        print("Usage: workflow.py deploy-status <running|done|failed> [<issue-nr|name>]"
+              " [--note <Grund>]", file=sys.stderr)
         sys.exit(1)
-    value = args[0]
-    path, data, name = _status_target(args[1] if len(args) > 1 else None)
+    value = rest[0]
+    path, data, name = _status_target(rest[1] if len(rest) > 1 else None)
     from datetime import timezone
     data["deploy_status"] = value
     data["deploy_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    note = " ".join((note or "").split())
+    if note:
+        data["deploy_note"] = note
+    else:
+        data.pop("deploy_note", None)
     _atomic_write(path, data)
     print(f"DEPLOY_STATUS={value} ({name})")
 
