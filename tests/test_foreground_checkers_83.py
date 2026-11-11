@@ -12,18 +12,27 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
+# Werkzeug-Syntax seit #577 (benannte Typen ohne model, anonyme Starts mit model).
 FOREGROUND = [
-    ("30-write-spec", r"Task \(general-purpose/haiku, run_in_background: (\w+)\): \"Du bist der spec-validator"),
-    ("50-implement", r"Task \(Explore/haiku, run_in_background: (\w+)\): \"Lies folgende Dateien"),
-    ("60-validate", r"Task 1 \(general-purpose/haiku, run_in_background: (\w+)\) - TEST CHECK"),
-    ("60-validate", r"Task 2 \(general-purpose/haiku, run_in_background: (\w+)\) - SPEC COMPLIANCE"),
-    ("60-validate", r"Task 3 \(general-purpose/haiku, run_in_background: (\w+)\) - REGRESSION CHECK"),
-    ("60-validate", r"Task 4 \(general-purpose/haiku, run_in_background: (\w+)\) - SCOPE CHECK"),
+    ("30-write-spec", r'Agent\(subagent_type="spec-validator", description="[^"]*", '
+                      r'run_in_background=(\w+), prompt="\s*Validiere die Spec'),
+    ("50-implement", r'Agent\(subagent_type="Explore", model="haiku", description="[^"]*", '
+                     r'run_in_background=(\w+), prompt="\s*Lies folgende Dateien'),
+    ("60-validate", r'Agent\(subagent_type="general-purpose", model="haiku", '
+                    r'description="TEST CHECK", run_in_background=(\w+)'),
+    ("60-validate", r'Agent\(subagent_type="general-purpose", model="haiku", '
+                    r'description="SPEC COMPLIANCE", run_in_background=(\w+)'),
+    ("60-validate", r'Agent\(subagent_type="general-purpose", model="haiku", '
+                    r'description="REGRESSION CHECK", run_in_background=(\w+)'),
+    ("60-validate", r'Agent\(subagent_type="general-purpose", model="haiku", '
+                    r'description="SCOPE CHECK", run_in_background=(\w+)'),
 ]
 
 BACKGROUND = [
-    ("50-implement", r"Task \(developer-agent/opus, run_in_background: (\w+)\)"),
-    ("50-implement", r"Task \(implementation-validator, run_in_background: (\w+)\)"),
+    ("50-implement", r'Agent\(subagent_type="developer-agent", description="[^"]*", '
+                     r'run_in_background=(\w+)'),
+    ("50-implement", r'Agent\(subagent_type="implementation-validator", description="[^"]*", '
+                     r'run_in_background=(\w+)'),
 ]
 
 

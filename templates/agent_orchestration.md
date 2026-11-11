@@ -90,6 +90,32 @@
 
 ## Dispatching-Muster
 
+### Benannte Agenten-Typen und Fallback (#577)
+
+Die Framework-Agenten (`core/agents/*.md`) sind eigene Agent-Typen: lokal als
+Plugin-Agent `agent-os-openspec:<name>`, als Projekt-Agent in `.claude/agents/`
+(im Framework-Repo per `python3 scripts/sync_cloud_agents.py`, bei Plugin-Konsumenten
+per `setup.py --cloud-gates`) auch in Cloud-Sitzungen ohne Plugin.
+
+Regel: **Benannter Typ ohne `model`** — das Modell steht im Frontmatter des Agenten,
+ein `model`-Parameter wuerde es ueberstimmen; die Definition ist sein Systemprompt
+und muss nicht nachgelesen werden:
+
+```
+Agent(subagent_type="implementation-validator", run_in_background=true, prompt="...")
+```
+
+Fallback, wenn der Typ fehlt: erst `agent-os-openspec:<name>` (hier
+`agent-os-openspec:implementation-validator`), sonst `general-purpose`
+**mit** `model` gleich dem Frontmatter-Modell, und der Agent liest seine Definition zuerst:
+
+```
+Agent(subagent_type="general-purpose", model="sonnet", prompt="Lies zuerst .claude/agents/implementation-validator.md und folge ihr. ...")
+```
+
+Anonyme Starts (`general-purpose`, `Explore`, `Plan`) tragen immer ein `model` —
+ohne Parameter erben sie das Modell der Hauptsitzung (Opus).
+
 ### Nachschlage-Agent (1x Explore/Haiku) — Kontext-Haushalt
 
 Fuer jede Frage, deren Antwort kurz ist, deren Suche aber viele Dateien beruehrt
@@ -119,8 +145,8 @@ Dispatche 3 parallele Task-Aufrufe:
 Fuer Spec-Erstellung mit Qualitaetssicherung.
 
 ```
-Step 1: Task(subagent_type="general-purpose", model="sonnet", prompt="Erstelle Spec...")
-Step 2: Task(subagent_type="general-purpose", model="haiku", prompt="Validiere Spec...")
+Step 1: Agent(subagent_type="spec-writer", prompt="Erstelle Spec...")
+Step 2: Agent(subagent_type="spec-validator", prompt="Validiere Spec...")
 Step 3: Bei INVALID -> Fix + Re-Validate
 ```
 

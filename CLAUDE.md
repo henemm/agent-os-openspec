@@ -85,6 +85,7 @@ agent-os-openspec/
 │   ├── ios-swiftui/         # iOS/SwiftUI Standards, TDD, Localization
 │   └── home-assistant/      # HA Config-Validation, Dashboard-QA
 ├── templates/               # Spec-Templates
+├── .claude/agents/          # Generat aus core/agents (Cloud-Sitzungen ohne Plugin, #577)
 ├── setup.py                 # Installations- und Update-Tool (v3.0)
 ├── config.yaml              # Zentrale Konfiguration
 └── CHANGELOG.md             # Versionshistorie
@@ -474,6 +475,7 @@ python3 /path/to/agent-os-openspec/setup.py --version
 | `core/agents/fresh-eyes-inspector.md` | Unabhaengiger UI-Beobachter ohne Bug-Kontext |
 | `core/agents/po-briefer.md` | Unabhaengiges PO-Freigabe-Briefing (Spec vs. Ursprungsanfrage) |
 | `scripts/ci_spec_gate.py` | CI-Gate: prueft Spec + Briefing serverseitig im Pull Request |
+| `scripts/sync_cloud_agents.py` | Erzeugt markierte Kopien `.claude/agents/` aus `core/agents` (Cloud ohne Plugin, #577); `--check` blockt Drift im Release-Check |
 | `scripts/ship.py` | Eigenstaendiges Werkzeug, KEIN Hook: pushen, PR anlegen, CI abwarten, optional mergen in EINEM Aufruf (Kontext-Haushalt); `setup.py` kopiert es nach `.claude/scripts/` |
 
 ## Slash-Commands Übersicht

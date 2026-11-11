@@ -1,6 +1,6 @@
 """Tests fuer Issue #577: Framework-Agenten in Cloud-Sitzungen.
 
-Spec: docs/specs/feat-577-cloud-agents.md (AC-1 bis AC-14).
+Spec: docs/specs/feat-577-cloud-agents.md (AC-1 bis AC-16).
 
 Aufbau (Spec, "Test Plan"): echte Dateien in tmp_path, Skript per Import bzw.
 `subprocess`, `setup.py` gegen eine Framework-Kopie (ohne `.git`, Version 9.9.9)
@@ -261,6 +261,7 @@ def _git(args, cwd):
 
 
 def _fake_release_repo(tmp_path: Path) -> Path:
+    tmp_path.mkdir(parents=True, exist_ok=True)
     origin = tmp_path / "origin.git"
     _git(["init", "--bare", "-b", "main", str(origin)], tmp_path)
     work = tmp_path / "work"
@@ -560,6 +561,123 @@ def test_copy_mode_agents_unchanged(tmp_path, fw_copy):
     assert not (dst_dir / "spec-writer.md.new").exists()
 
 
+# ------------------------------------------------------------------ AC-15
+def _write_manifest(proj: Path, files: dict) -> Path:
+    path = proj / ".claude" / "framework_manifest.json"
+    path.write_text(json.dumps({"version": 1, "framework_version": "4.9.0", "files": files},
+                               indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def _manifest_files(proj: Path) -> dict:
+    path = proj / ".claude" / "framework_manifest.json"
+    return json.loads(path.read_text(encoding="utf-8")).get("files", {})
+
+
+def _without_version_file(snapshot: dict) -> dict:
+    return {k: v for k, v in snapshot.items()
+            if k != str(Path(".claude") / "framework_version.json")}
+
+
+@pytest.mark.parametrize("pinned", [True, False], ids=["mit-pin", "ohne-pin"])
+def test_update_adopts_unchanged_manifest_copies(tmp_path, fw_copy, pinned):
+    """AC-15: unmarkierte, laut Manifest unveraenderte Framework-Kopien werden uebernommen."""
+    mod = _load()
+    marker = mod.AGENT_MARKER
+    url, _ = _remote(tmp_path)
+    pin = {"cloud_ref": "agent-os-openspec--v0.0.1", "cloud_sha": "a" * 40} if pinned else {}
+    proj = _plugin_project(tmp_path, name=f"umsteiger-{'pin' if pinned else 'ohne'}", **pin)
+    dst_dir = proj / ".claude" / "agents"
+    dst_dir.mkdir()
+    fw_agents = fw_copy / "core" / "agents"
+
+    # Unveraenderte Copy-Modus-Kopien (Hash == Manifest): alte und aktuelle Fassung
+    old_copy = dst_dir / "spec-writer.md"
+    old_copy.write_bytes(b"---\nname: spec-writer\nmodel: sonnet\n---\n\nalte Framework-Fassung\n")
+    current_copy = dst_dir / "docs-updater.md"
+    current_copy.write_bytes((fw_agents / "docs-updater.md").read_bytes())
+    # Unmarkiert, lokal geaendert (Hash weicht ab)
+    changed = dst_dir / "po-briefer.md"
+    changed.write_bytes(b"---\nname: po-briefer\nmodel: opus\n---\n\nlokal angepasst\n")
+    # Unmarkiert, ohne Manifest-Eintrag
+    unlisted = dst_dir / "test-runner.md"
+    unlisted.write_bytes(b"---\nname: test-runner\nmodel: haiku\n---\n\nEigenbau\n")
+    changed_bytes, unlisted_bytes = changed.read_bytes(), unlisted.read_bytes()
+
+    _write_manifest(proj, {
+        ".claude/agents/spec-writer.md": hashlib.sha256(old_copy.read_bytes()).hexdigest(),
+        ".claude/agents/docs-updater.md": hashlib.sha256(current_copy.read_bytes()).hexdigest(),
+        ".claude/agents/po-briefer.md": hashlib.sha256(b"Framework-Fassung von damals\n").hexdigest(),
+    })
+
+    r = _setup(fw_copy, proj, "--update", url=url, tmp_path=tmp_path)
+    out = r.stdout + r.stderr
+    assert r.returncode == 0, out
+
+    # Uebernommen: markierte Kopie, Manifest-Eintrag weg, Meldung
+    for name in ("spec-writer", "docs-updater"):
+        dst = dst_dir / f"{name}.md"
+        src_text = (fw_agents / f"{name}.md").read_text(encoding="utf-8")
+        _assert_copy_of(dst.read_text(encoding="utf-8"), src_text, marker, name)
+        assert f".claude/agents/{name}.md" not in _manifest_files(proj), \
+            f"Manifest-Eintrag fuer {name} nicht entfernt"
+        assert [ln for ln in out.splitlines()
+                if f"{name}.md" in ln and "bernommen" in ln.lower()], \
+            f"Uebernahme von {name} nicht gemeldet:\n{out}"
+
+    # Nicht uebernommen: byte-gleich, "Skipped"
+    assert changed.read_bytes() == changed_bytes, "unmarkierte Datei mit abweichendem Hash veraendert"
+    assert unlisted.read_bytes() == unlisted_bytes, "unmarkierte Datei ohne Manifest-Eintrag veraendert"
+    assert _lines_with(out, "Skipped", "po-briefer"), out
+    assert _lines_with(out, "Skipped", "test-runner"), out
+    assert _new_files(proj) == [], _new_files(proj)
+
+    # Zweiter Lauf: stabil
+    before = _without_version_file(_snapshot(proj))
+    r = _setup(fw_copy, proj, "--update", url=url, tmp_path=tmp_path)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert _without_version_file(_snapshot(proj)) == before, "zweiter --update-Lauf hat Dateien geaendert"
+
+
+# ------------------------------------------------------------------ AC-16
+def test_update_without_pin_refreshes_existing_marked_only(tmp_path, fw_copy):
+    """AC-16: ohne Pin vorhandene markierte Kopien erneuern, veraltete entfernen, nie anlegen."""
+    mod = _load()
+    marker = mod.AGENT_MARKER
+    url, _ = _remote(tmp_path)
+    proj = _plugin_project(tmp_path, name="ohne-pin-markiert")
+    dst_dir = proj / ".claude" / "agents"
+    dst_dir.mkdir()
+    stale = dst_dir / "spec-writer.md"
+    stale.write_text(mod.render_agent("---\nname: spec-writer\nmodel: opus\n---\n\nveraltet\n"),
+                     encoding="utf-8")
+    ghost = dst_dir / "ghost.md"
+    ghost.write_text(mod.render_agent("---\nname: ghost\nmodel: haiku\n---\n\nalt\n"),
+                     encoding="utf-8")
+    own = dst_dir / "po-briefer.md"
+    own.write_bytes(b"---\nname: po-briefer\nmodel: opus\n---\n\nEigene Fassung\n")
+    own_bytes = own.read_bytes()
+
+    r = _setup(fw_copy, proj, "--update", url=url, tmp_path=tmp_path)
+    out = r.stdout + r.stderr
+    assert r.returncode == 0, out
+
+    src_text = (fw_copy / "core" / "agents" / "spec-writer.md").read_text(encoding="utf-8")
+    _assert_copy_of(stale.read_text(encoding="utf-8"), src_text, marker, "spec-writer")
+    assert not ghost.exists(), "veraltete markierte Kopie ohne Quelle nicht entfernt"
+    assert own.read_bytes() == own_bytes, "unmarkierte Datei veraendert"
+    assert sorted(p.name for p in dst_dir.iterdir()) == ["po-briefer.md", "spec-writer.md"], \
+        "ohne Pin duerfen fehlende Kopien nicht angelegt werden"
+    assert _new_files(proj) == [], _new_files(proj)
+    fv = json.loads((proj / ".claude" / "framework_version.json").read_text(encoding="utf-8"))
+    assert not fv.get("cloud_ref") and not fv.get("cloud_sha"), f"ohne Pin kein Pin setzen: {fv}"
+
+    before = _without_version_file(_snapshot(proj))
+    r = _setup(fw_copy, proj, "--update", url=url, tmp_path=tmp_path)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert _without_version_file(_snapshot(proj)) == before, "zweiter --update-Lauf hat Dateien geaendert"
+
+
 # ------------------------------------------------------------------ Befehlstexte (AC-10..AC-12)
 _CALL_RE = re.compile(r"\b(?:Agent|Task)\(")
 _TYPE_RE = re.compile(r"""subagent_type\s*=\s*["']([^"']+)["']""")
@@ -693,7 +811,7 @@ def test_skills_in_sync_and_template_documents_rule():
 
     if str(SCRIPTS) not in sys.path:
         sys.path.insert(0, str(SCRIPTS))
-    sys.modules.pop("sync_skills", None)
+    # Nicht aus sys.modules entfernen: test_skills_sync.py patcht das geladene Modulobjekt.
     sync_skills = importlib.import_module("sync_skills")
     assert sync_skills.check() == [], "skills/ weicht von core/commands ab"
 

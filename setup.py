@@ -941,15 +941,113 @@ def merge_cloud_gate_entries(settings: dict, wanted: dict) -> None:
             hooks[event] = copy.deepcopy(groups)
 
 
+def _sync_cloud_agents_module():
+    """scripts/sync_cloud_agents.py laden — eine Quelle fuer Marker und Plan (#577)."""
+    saved = list(sys.path)
+    try:
+        sys.path.insert(0, str(SCRIPTS_DIR))
+        import sync_cloud_agents
+    finally:
+        sys.path[:] = saved
+    return sync_cloud_agents
+
+
+def _cloud_agent_plan(project_path: Path) -> "tuple[list, list, list]":
+    """Markierte Agent-Kopien in `.claude/agents` (#577) — berechnet, schreibt nichts.
+
+    Eine Quelle fuer die Regel: scripts/sync_cloud_agents.py. Rueckgabe
+    `(writes, removals, skipped)`: Schreibauftraege, veraltete markierte Kopien,
+    Meldungen zu unmarkierten Dateien (nie angefasst).
+    """
+    plan = _sync_cloud_agents_module().plan
+    return plan(CORE_DIR / "agents", project_path / ".claude" / "agents")
+
+
+def adopt_manifest_agents(project_path: Path, manifest: dict) -> list:
+    """Unveraenderte Framework-Kopien aus dem Manifest in markierte Kopien ueberfuehren (#577).
+
+    Plugin-Modus (mit und ohne Pin): eine unmarkierte `.claude/agents/<name>.md`
+    mit Quelle in `core/agents`, deren SHA-256 dem Manifest-Eintrag entspricht
+    (z. B. nach Umstieg vom Copy-Modus), wird durch die markierte Kopie ersetzt;
+    der Manifest-Eintrag entfaellt (`manifest` wird in place geaendert, der
+    Aufrufer speichert es). Alles andere bleibt unangetastet.
+    Rueckgabe: uebernommene Dateien relativ zum Projekt.
+    """
+    try:
+        mod = _sync_cloud_agents_module()
+    except (OSError, ImportError) as e:
+        print(f"  WARNING: Agent-Kopien nicht geprueft ({e})")
+        return []
+    adopted = []
+    for src in sorted((CORE_DIR / "agents").glob("*.md")):
+        rel = f".claude/agents/{src.name}"
+        dst = project_path / rel
+        if not src.is_file() or dst.is_symlink() or not dst.is_file():
+            continue
+        try:
+            data = dst.read_bytes()
+            if manifest.get(rel) != _sha256(data) or mod.is_generated(data.decode("utf-8")):
+                continue
+            dst.write_bytes(mod.render_agent(src.read_text(encoding="utf-8")).encode("utf-8"))
+        except (OSError, UnicodeDecodeError) as e:
+            print(f"  WARNING: {rel} nicht uebernommen ({e})")
+            continue
+        manifest.pop(rel, None)
+        print(f"  Übernommen: {rel} (unveraenderte Framework-Kopie, jetzt markiert)")
+        adopted.append(rel)
+    return adopted
+
+
+def refresh_existing_cloud_agents(project_path: Path) -> list:
+    """Plugin-Modus ohne Pin (#577, AC-16): vorhandene markierte Kopien erneuern, nie anlegen.
+
+    Veraltete markierte Kopien entfallen, unmarkierte werden als "Skipped"
+    gemeldet. Rueckgabe: geschriebene bzw. entfernte Dateien relativ zum Projekt.
+    """
+    try:
+        writes, _, _ = _cloud_agent_plan(project_path)
+    except (OSError, ValueError) as e:
+        print(f"  WARNING: Agent-Kopien nicht geprueft ({e})")
+        return []
+    writes = [(path, data) for path, data in writes if path.is_file()]
+    changed = [p.relative_to(project_path).as_posix() for p in _write_changed(writes)]
+    return changed + [f"{rel} (entfernt)" for rel in _prune_cloud_agents(project_path)]
+
+
 def _cloud_gate_plan(project_path: Path) -> list:
-    """(Pfad, Bytes) fuer Baustein und settings.json — berechnet, schreibt nichts."""
+    """(Pfad, Bytes) fuer Baustein, settings.json und Agent-Kopien — berechnet, schreibt nichts."""
     settings_path = project_path / ".claude" / "settings.json"
     settings = json.loads(settings_path.read_text(encoding="utf-8")) if settings_path.exists() else {}
     merge_cloud_gate_entries(settings, _consumer_hooks())
     text = json.dumps(settings, indent=2, ensure_ascii=False) + "\n"
+    agent_writes, _, _ = _cloud_agent_plan(project_path)
     return [(project_path / ".claude" / "cloud_bootstrap.py",
              (CORE_DIR / "cloud_bootstrap.py").read_bytes()),
-            (settings_path, text.encode("utf-8"))]
+            (settings_path, text.encode("utf-8"))] + agent_writes
+
+
+def _prune_cloud_agents(project_path: Path) -> list:
+    """Veraltete markierte Agent-Kopien entfernen, unmarkierte melden (#577).
+
+    Rueckgabe: entfernte Dateien relativ zum Projekt. Fehler brechen nie ab.
+    """
+    try:
+        _, removals, skipped = _cloud_agent_plan(project_path)
+    except (OSError, ValueError) as e:
+        print(f"  WARNING: Agent-Kopien nicht geprueft ({e})")
+        return []
+    removed = []
+    for path in removals:
+        rel = path.relative_to(project_path).as_posix()
+        try:
+            path.unlink()
+        except OSError as e:
+            print(f"  WARNING: {rel} nicht entfernt ({e})")
+            continue
+        removed.append(rel)
+    for entry in skipped:
+        print(f"  Skipped: .claude/agents/{entry}")
+    return removed
 
 
 def _write_changed(plan: list) -> list:
@@ -1020,14 +1118,17 @@ def apply_cloud_gates(project_path: Path) -> int:
     fv.update(cloud_ref=pin[0], cloud_sha=pin[1])
     plan.append((version_file, json.dumps(fv, indent=2).encode("utf-8")))
     changed = [p.relative_to(project_path).as_posix() for p in _write_changed(plan)]
+    removed = _prune_cloud_agents(project_path)
     changed += refresh_plugin_rollout(project_path)
     print(f"Cloud-Gates (#522): Pin {pin[0]} ({pin[1][:12]})")
     for rel in changed:
         print(f"  Geschrieben: {rel}")
-    if not changed:
+    for rel in removed:
+        print(f"  Entfernt: {rel}")
+    if not changed and not removed:
         print("  Alles aktuell, nichts geaendert.")
     else:
-        print(f"Diese Dateien committen: {', '.join(changed)}")
+        print(f"Diese Dateien committen: {', '.join(changed + removed)}")
     return 0
 
 
@@ -1046,7 +1147,8 @@ def refresh_cloud_gates(project_path: Path, existing: dict, version_info: dict) 
         print(f"  WARNING: Cloud-Gates nicht erneuert ({e}) — bisheriger Pin bleibt.")
         return []
     version_info.update(cloud_ref=pin[0], cloud_sha=pin[1])
-    return [str(p.relative_to(project_path)) for p in _write_changed(plan)]
+    changed = [str(p.relative_to(project_path)) for p in _write_changed(plan)]
+    return changed + [f"{rel} (entfernt)" for rel in _prune_cloud_agents(project_path)]
 
 
 def generate_config_yaml(project_path: Path, modules: list):
@@ -1360,9 +1462,14 @@ def update_project(project_path: Path, modules: list, force: bool = False):
         sync_dir(CORE_DIR / "commands", "*.md", commands_dst,
                  render=lambda src: copy_command_text(src.read_text()))
 
+    # #577: im Plugin-Modus pflegt allein refresh_cloud_gates markierte Kopien;
+    # sync_dir schriebe unmarkierte Kopien (Flip-Flop, Manifest-.new-Dateien).
     agents_dst = project_path / ".claude" / "agents"
-    if agents_dst.exists():
+    if agents_dst.exists() and not plugin:
         sync_dir(CORE_DIR / "agents", "*.md", agents_dst)
+    if agents_dst.exists() and plugin:  # #577 AC-15: vor save_manifest
+        new_files += [f"cloud agents: {rel} (uebernommen)"
+                      for rel in adopt_manifest_agents(project_path, manifest)]
 
     if (CORE_DIR / "tools").exists():
         sync_dir(CORE_DIR / "tools", "*.py", project_path / ".claude" / "tools")
@@ -1410,6 +1517,7 @@ def update_project(project_path: Path, modules: list, force: bool = False):
             new_files += [f"cloud refresh: {e}" for e in refresh_plugin_rollout(project_path)]
         else:
             new_files += [f"plugin refresh: {e}" for e in refresh_plugin_rollout(project_path)]
+            new_files += [f"cloud agents: {e}" for e in refresh_existing_cloud_agents(project_path)]
     else:
         version_info = {
             "framework_version": FRAMEWORK_VERSION,
