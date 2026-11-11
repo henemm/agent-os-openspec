@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.11.0] - 2026-11-11
+
+Ein neuer Prüfschritt am Ende jedes Zuges sorgt dafür, dass Antworten an Nutzer ohne Technikprofil keine Git-Fachwörter (Branch, Commit, PR, Merge, Push, Worktree, CI) enthalten: Findet er welche außerhalb von Code-Angaben, schreibt Claude die Antwort einmal in Alltagssprache neu (#582). Migration: keine; abschalten per `OPENSPEC_KLARTEXT=0`. Konsumenten erhalten die Fassung per `claude plugin update agent-os-openspec@henemm-private`.
+
 ### Added
 
 - **Klartext-Gate (#582):** Neuer Stop-Hook `core/hooks/klartext_gate.py` (in `hooks/hooks.json` neben `footer_gate.py`) prüft die letzte Antwort an den Nutzer auf Git-Wörter (Branch, Commit, PR, Merge, Push, Worktree, CI u. a.) und lässt Claude sie bei einem Treffer einmal in Alltagssprache neu schreiben (Exit 2, neutrale Begründung: Nutzer ohne Technikprofil, siehe CLAUDE.md des Nutzers). Kein Treffer bei Code in Backticks und Codeblöcken, Adressen, Pfaden und Wortteilen (CIA, PRAXIS, Commitment); frei, wenn die letzte echte Nutzernachricht selbst solche Wörter enthält (Harness-Blöcke wie Agenten-Meldungen zählen nicht), bei `stop_hook_active` und bei `OPENSPEC_KLARTEXT=0`. Liest nur die letzten 2 MB des Transkripts; fail-open bei jedem Fehler. Der Cloud-Hooks-Block in `.claude/settings.json` ist nachgezogen. Migration: keine; abschalten per Umgebungsvariable `OPENSPEC_KLARTEXT=0`. Tests: `tests/test_klartext_gate_582.py`.
