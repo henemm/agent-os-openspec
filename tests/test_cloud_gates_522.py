@@ -954,11 +954,10 @@ def test_readme_and_changelog_document_cloud_gates():
                 f"README verweist noch auf #522 als offen: {line.strip()[:120]!r}"
 
     changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    # Ab [Unreleased] abwaerts: nach einem Release steht der Eintrag im Versionsabschnitt.
     start = changelog.index("## [Unreleased]")
-    nxt = changelog.find("\n## [", start + 1)
-    unreleased = changelog[start:nxt if nxt != -1 else None]
     assert any("#522" in line and ("--cloud-gates" in line or "cloud_bootstrap" in line)
-               for line in unreleased.splitlines()), "[Unreleased] ohne Eintrag zu #522"
+               for line in changelog[start:].splitlines()), "CHANGELOG ohne Eintrag zu #522"
 
 
 # ------------------------------------------------------------------ AC-18 bis AC-20

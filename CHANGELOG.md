@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.10.0] - 2026-11-11
+
+Die Gates greifen jetzt auch in Cloud-Sitzungen von Projekten, die das Framework als Plugin nutzen: `setup.py <projekt> --cloud-gates` richtet einen Startbaustein ein, der die gepinnte Framework-Fassung lädt, und Shims, Kurzbefehle und Banner finden diesen Cache (#522, #562). Das Commit-Gate zerlegt Befehle wie bash: Zeilenfortsetzungen hinter maskiertem Backslash und gequotete Operatoren verstecken keinen `git commit` mehr (#572). `--update` spiegelt im Plugin-Modus keine Hooks und Befehle mehr ins Projekt (#566), und ein fachlicher Befund nach Phase 8 nimmt den BROKEN-Pfad statt eines Korrektur-PRs am Workflow vorbei (#561). Migration: Plugin-Konsumenten mit Cloud-Sitzungen führen `setup.py <projekt> --cloud-gates` einmal aus und committen die drei Dateien; sonst keine. Konsumenten erhalten die Fassung per `claude plugin update agent-os-openspec@henemm-private`.
+
 ### Added
 
 - **Gates in Cloud-Sitzungen für Plugin-Konsumenten (#522):** `setup.py <projekt> --cloud-gates` kopiert den Startbaustein `.claude/cloud_bootstrap.py` ins Projekt, trägt alle Hooks aus `hooks/hooks.json` nur für Cloud-Sitzungen (`CLAUDE_CODE_REMOTE=true`) in `.claude/settings.json` ein und pinnt Release-Tag plus Commit in `.claude/framework_version.json`. Der Baustein holt den Tag beim ersten Hook-Aufruf in `~/.cache/agent-os-openspec/` und startet die Hooks von dort; scheitert der Abruf, sind nur lesende Werkzeuge erlaubt (Abhilfe `python3 .claude/cloud_bootstrap.py --retry`, PO-Ausnahme `override` für 1 h). `--update` hält Pin, Baustein und Einträge aktuell; `scripts/sync_cloud_hooks.py --consumer` zeigt den Block. `edit_gate.py`/`bash_gate.py` schützen Baustein und Pin vor Schreibzugriffen (Ausweg: Override). Migration: keine; Plugin-Konsumenten führen `--cloud-gates` einmal aus und committen die drei Dateien.
