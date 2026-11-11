@@ -56,6 +56,7 @@ agent-os-openspec/
 │   │   ├── post_bash.py                 # PostToolUse Bash (Testlauf-Hinweis last_test_run, kein Verdict)
 │   │   ├── phase_listener.py            # UserPromptSubmit (Approval/Stop-Lock/Override)
 │   │   ├── footer_gate.py               # Stop: prueft die ❗Du-Fusszeile gegen next_step()
+│   │   ├── klartext_gate.py             # Stop: blockt Git-Woerter in der Antwort an den Nutzer (aus: OPENSPEC_KLARTEXT=0)
 │   │   ├── session_singleton_guard.py   # SessionStart/PreToolUse(alle)/SessionEnd: Worktree-Pflicht + Session-Register; CLI-Modus `claim`
 │   │   ├── worktree_write_guard.py      # PreToolUse Edit|Write: blockt Schreibzugriff aufs Main-Repo bei Worktree-Split
 │   │   ├── claude_md_protection.py      # PreToolUse Edit|Write: schuetzt CLAUDE.md vor verbotenen Patterns/Aufblaehung

@@ -133,6 +133,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/footer_gate.py",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/klartext_gate.py",
+            "timeout": 5
           }
         ]
       }
