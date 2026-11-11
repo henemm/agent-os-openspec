@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Klartext-Gate (#582):** Neuer Stop-Hook `core/hooks/klartext_gate.py` (in `hooks/hooks.json` neben `footer_gate.py`) prüft die letzte Antwort an den Nutzer auf Git-Wörter (Branch, Commit, PR, Merge, Push, Worktree, CI u. a.) und lässt Claude sie bei einem Treffer einmal in Alltagssprache neu schreiben (Exit 2, neutrale Begründung: Nutzer ohne Technikprofil, siehe CLAUDE.md des Nutzers). Kein Treffer bei Code in Backticks und Codeblöcken, Adressen, Pfaden und Wortteilen (CIA, PRAXIS, Commitment); frei, wenn die letzte echte Nutzernachricht selbst solche Wörter enthält (Harness-Blöcke wie Agenten-Meldungen zählen nicht), bei `stop_hook_active` und bei `OPENSPEC_KLARTEXT=0`. Liest nur die letzten 2 MB des Transkripts; fail-open bei jedem Fehler. Der Cloud-Hooks-Block in `.claude/settings.json` ist nachgezogen. Migration: keine; abschalten per Umgebungsvariable `OPENSPEC_KLARTEXT=0`. Tests: `tests/test_klartext_gate_582.py`.
+
 ## [4.10.0] - 2026-11-11
 
 Die Gates greifen jetzt auch in Cloud-Sitzungen von Projekten, die das Framework als Plugin nutzen: `setup.py <projekt> --cloud-gates` richtet einen Startbaustein ein, der die gepinnte Framework-Fassung lädt, und Shims, Kurzbefehle und Banner finden diesen Cache (#522, #562). Das Commit-Gate zerlegt Befehle wie bash: Zeilenfortsetzungen hinter maskiertem Backslash und gequotete Operatoren verstecken keinen `git commit` mehr (#572). `--update` spiegelt im Plugin-Modus keine Hooks und Befehle mehr ins Projekt (#566), und ein fachlicher Befund nach Phase 8 nimmt den BROKEN-Pfad statt eines Korrektur-PRs am Workflow vorbei (#561). Migration: Plugin-Konsumenten mit Cloud-Sitzungen führen `setup.py <projekt> --cloud-gates` einmal aus und committen die drei Dateien; sonst keine. Konsumenten erhalten die Fassung per `claude plugin update agent-os-openspec@henemm-private`.
