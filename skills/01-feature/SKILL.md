@@ -5,7 +5,16 @@ disable-model-invocation: false
 
 # Feature planen oder aendern
 
-Starte den `feature-planner` Agenten aus `core/agents/feature-planner.md`.
+Starte nach Schritt 0 den `feature-planner` Agenten — eigener Agent-Typ (Projekt-Agent in `.claude/agents/`, lokal auch als Plugin-Agent), Start **ohne `model`**, das Modell steht im Frontmatter (#577):
+
+```
+Agent(subagent_type="feature-planner", description="Feature planen", prompt="
+  Anfrage: $ARGUMENTS
+  Gefundenes Issue: [#N oder keins, aus Schritt 0]
+  Modus: [NEU oder AENDERUNG]")
+```
+
+**Fallback, wenn der Typ in der Agent-Liste fehlt:** feature-planner → `agent-os-openspec:feature-planner`, sonst `Agent(subagent_type="general-purpose", model="sonnet", prompt="Lies zuerst .claude/agents/feature-planner.md (im Framework-Repo core/agents/feature-planner.md) und folge ihr. …")`.
 
 **Anfrage:** $ARGUMENTS
 

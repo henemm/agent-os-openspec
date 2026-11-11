@@ -101,3 +101,7 @@ einzelner Rechner standen. Stand: PO-Vorgaben Hennings bis 2026-11-08.
   `python3 scripts/sync_cloud_hooks.py` ausführen.
 - Die Kurzbefehle unter `.claude/commands/` liefern ohne geladenes Plugin den Befehlstext aus
   `skills/<name>/SKILL.md` nach.
+- Die Agenten liegen als markierte Kopien von `core/agents/` unter `.claude/agents/` (#577), damit
+  sie in der Cloud als eigene Typen mit ihrem Frontmatter-Modell starten. Nach jeder Änderung an
+  `core/agents/` `python3 scripts/sync_cloud_agents.py` ausführen; der Release-Check (Zeile
+  „Cloud-Agenten") blockt Drift.

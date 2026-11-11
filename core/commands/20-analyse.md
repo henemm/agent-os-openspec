@@ -53,32 +53,40 @@ ScheduleWakeup(1200, "Analyse-Agenten Rückfall [20-analyse], nur im /loop-Konte
 Bei Features dispatche **3 parallele Subagenten** fuer schnelle Kontextsammlung:
 
 ```
-Task 1 (Explore/haiku, run_in_background: true): "Finde alle Dateien die von [Feature-Bereich] betroffen
-  sind. Liste: Dateipfad, Typ (MODIFY/CREATE/DELETE), Begruendung."
+Agent(subagent_type="Explore", model="haiku", description="Betroffene Dateien", run_in_background=true, prompt="
+  Finde alle Dateien die von [Feature-Bereich] betroffen
+  sind. Liste: Dateipfad, Typ (MODIFY/CREATE/DELETE), Begruendung.")
 
-Task 2 (Explore/haiku, run_in_background: true): "Suche nach bestehenden Specs in docs/specs/ die
-  [Feature-Bereich] betreffen. Liste gefundene Specs mit Status."
+Agent(subagent_type="Explore", model="haiku", description="Bestehende Specs", run_in_background=true, prompt="
+  Suche nach bestehenden Specs in docs/specs/ die
+  [Feature-Bereich] betreffen. Liste gefundene Specs mit Status.")
 
-Task 3 (Explore/haiku, run_in_background: true): "Identifiziere Dependencies und Imports fuer
-  [Feature-Bereich]. Welche Module haengen davon ab? Welche werden importiert?"
+Agent(subagent_type="Explore", model="haiku", description="Dependencies", run_in_background=true, prompt="
+  Identifiziere Dependencies und Imports fuer
+  [Feature-Bereich]. Welche Module haengen davon ab? Welche werden importiert?")
 ```
+
+Anonyme Starts (`Explore`, `Plan`, `general-purpose`) tragen immer ein `model`, sonst erben sie das Modell der Hauptsitzung (#577).
 
 ### Step 2b: Bug-Analyse (bug-intake/Haiku)
 
-Bei Bugs dispatche den **bug-intake Agent**:
+Bei Bugs dispatche den **bug-intake Agent** — eigener Agent-Typ (Projekt-Agent in `.claude/agents/`, lokal auch als Plugin-Agent), Start **ohne `model`**, das Modell steht im Frontmatter (#577):
 
 ```
-Task (general-purpose/haiku, run_in_background: true): Verwende die bug-intake Instruktionen.
+Agent(subagent_type="bug-intake", description="Bug-Intake", run_in_background=true, prompt="
   Input: symptom=[Fehlerbeschreibung], context=[Wo/Wann]
-  Fuehre parallele Investigation durch und erstelle Bug Report.
+  Fuehre parallele Investigation durch und erstelle Bug Report.")
 ```
+
+**Fallback, wenn der Typ in der Agent-Liste fehlt:** bug-intake → `agent-os-openspec:bug-intake`, sonst `Agent(subagent_type="general-purpose", model="haiku", prompt="Lies zuerst .claude/agents/bug-intake.md (im Framework-Repo core/agents/bug-intake.md) und folge ihr. …")`.
 
 ### Step 3: Strategische Bewertung (Plan/Sonnet)
 
 Dispatche einen **Plan/Sonnet Subagenten** fuer die strategische Bewertung:
 
 ```
-Task (Plan/sonnet, run_in_background: true): "Basierend auf folgenden Investigation-Ergebnissen:
+Agent(subagent_type="Plan", model="sonnet", description="Strategische Bewertung", run_in_background=true, prompt="
+  Basierend auf folgenden Investigation-Ergebnissen:
   [Ergebnisse aus Step 2]
 
   Bewerte:
@@ -88,7 +96,7 @@ Task (Plan/sonnet, run_in_background: true): "Basierend auf folgenden Investigat
   4. Abhaengigkeiten und Reihenfolge
   5. Befunde, die gegen den Plan sprechen (oder „keine“ mit Begruendung); bei Mess- oder
      Variantenvergleichen alle Varianten mit Zahlen in einer Tabelle, BEVOR die Empfehlung kommt
-  6. Empfehlung (eine klare Empfehlung)"
+  6. Empfehlung (eine klare Empfehlung)")
 ```
 
 ### Step 4: Synthese praesentieren

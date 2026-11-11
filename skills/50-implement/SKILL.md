@@ -79,6 +79,14 @@ zusätzlich dieser Rückfall:
 ScheduleWakeup(1200, "Implementierung Rückfall [50-implement], nur im /loop-Kontext: TaskList → noch aktiver Explore-/Developer-/Adversary-Agent? JA → TaskStop, dann User: 'Agent hängt — bitte /50-implement neu starten.' NEIN → ignorieren, fertig.")
 ```
 
+### Agent-Typen und Fallback (#577)
+
+`developer-agent` und `implementation-validator` sind eigene Agent-Typen (Projekt-Agenten in `.claude/agents/`, lokal auch als Plugin-Agent). Starte sie mit `subagent_type="<name>"` **ohne `model`**: das Modell steht im Frontmatter des Agenten, ein `model`-Parameter würde es überstimmen. Anonyme Starts (`Explore`, `general-purpose`) tragen dagegen immer ein `model`, sonst erben sie das Modell der Hauptsitzung.
+
+**Fallback, wenn ein Typ in der Agent-Liste fehlt:** zuerst der Plugin-Name, sonst `general-purpose` mit dem Modell aus dem Frontmatter, und der Agent liest seine Definition (`.claude/agents/<name>.md`, im Framework-Repo `core/agents/<name>.md`) als Erstes:
+- developer-agent → `agent-os-openspec:developer-agent`, sonst `Agent(subagent_type="general-purpose", model="opus", prompt="Lies zuerst .claude/agents/developer-agent.md und folge ihr. …")`
+- implementation-validator → `agent-os-openspec:implementation-validator`, sonst `Agent(subagent_type="general-purpose", model="sonnet", prompt="Lies zuerst .claude/agents/implementation-validator.md und folge ihr. …")`
+
 ### Step 2: Kontext laden (Explore/Haiku)
 
 Dispatche einen **Explore/Haiku Subagenten** um den Implementierungs-Kontext zu laden:
@@ -86,14 +94,14 @@ Dispatche einen **Explore/Haiku Subagenten** um den Implementierungs-Kontext zu 
 **Im Vordergrund starten (`run_in_background: false`, #83):** Das Ergebnis wird sofort gebraucht, der Orchestrator hat währenddessen nichts zu tun. Hintergrund-Starts kurzlebiger Prüfagenten ohne Worktree-Isolation kamen wiederholt ohne Bericht zurück — Nachfordern oder Doppelstart kostete jedes Mal eine volle Runde.
 
 ```
-Task (Explore/haiku, run_in_background: false): "Lies folgende Dateien und fasse den relevanten Kontext
-  zusammen:
+Agent(subagent_type="Explore", model="haiku", description="Kontext laden", run_in_background=false, prompt="
+  Lies folgende Dateien und fasse den relevanten Kontext zusammen:
   - Spec: [spec_file_path]
   - Betroffene Dateien: [affected_files]
   - Test-Dateien: [test_files]
 
   Fasse zusammen: Welche Interfaces existieren, welche Methoden muessen
-  implementiert werden, welche Imports werden benoetigt."
+  implementiert werden, welche Imports werden benoetigt.")
 ```
 
 **Kontext-Haushalt (Nachschlagen abgeben, gezielt lesen):** Nachschlagefragen („Wo wird X benutzt?“, „Welche Dateien importieren Y?“, „Wie heißt die Funktion für Z?“) gehen an einen Explore-Teilagenten (Haiku), der mit eigenem, kleinem Kontext liest und nur die Antwort zurückgibt — Recherche ist der größte Token-Posten, und im Hauptkontext zahlt jeder Schritt das Wiederlesen aller vorher gelesenen Dateien erneut. Selbst liest du nur, was du gleich brauchst, mit Zeilenbereich (`sed -n 120,160p`, Read mit offset/limit) oder gezielter Suche statt ganzer Dateien. Mehrere `grep`/`sed -n` zur selben Frage in einen Aufruf bündeln; Workflow-Aufrufe mit `workflow.py batch a -- b -- c` zusammenfassen.
@@ -106,8 +114,8 @@ Der Hauptkontext ist ein **Orchestrator** — er koordiniert, plant, und entsche
 Code-Edits gehoeren ausschliesslich dem **Developer Agent**.
 
 ```
-Task (developer-agent/opus, run_in_background: true):
-  "Implementiere gemaess Spec.
+Agent(subagent_type="developer-agent", description="Implementieren", run_in_background=true, prompt="
+  Implementiere gemaess Spec.
 
   Spec: [spec_file_path einfuegen]
   Betroffene Dateien: [affected_files aus workflow status]
@@ -128,7 +136,7 @@ Task (developer-agent/opus, run_in_background: true):
   - Features die nicht in der Spec stehen
   - Refactoring das nicht zum Gruen benoetigt wird
   - Premature optimization
-  - Mehr als 3 Loesungsversuche ohne Rueckmeldung"
+  - Mehr als 3 Loesungsversuche ohne Rueckmeldung")
 ```
 
 **Nach Rueckmeldung des Developer Agent:**
@@ -239,7 +247,8 @@ Ist `default_lang` nicht gesetzt, entfaellt der Aufruf; der Agent traegt dann de
 Starte den `implementation-validator` Agent mit der Checkliste:
 
 ```
-Task (implementation-validator, run_in_background: true): "Pruefe den aktuellen Workflow gegen die Spec.
+Agent(subagent_type="implementation-validator", description="Adversary-Dialog", run_in_background=true, prompt="
+  Pruefe den aktuellen Workflow gegen die Spec.
   Hier ist die Checkliste der zu beweisenden Punkte:
   [Punkte aus 8a einfuegen]
 
@@ -249,7 +258,7 @@ Task (implementation-validator, run_in_background: true): "Pruefe den aktuellen 
   - Akzeptiere NICHT die erste Antwort — bohre nach, frage nach Edge Cases
   - Mindestens 2 Runden Dialog bei hohem Risiko, 1 Runde bei niedrigem Risiko (Stufe: `python3 ${_H}/adversary_dialog.py risk`); auch eine einzige Runde belegt jeden Punkt
   - Fuehre Tests aus und speichere Output
-  - Nutze das Structured Findings Schema (python3 ${_H}/adversary_dialog.py schema)"
+  - Nutze das Structured Findings Schema (python3 ${_H}/adversary_dialog.py schema)")
 ```
 
 Der Dialog laeuft als Hin-und-Her. **Du als Orchestrator koordinierst:**

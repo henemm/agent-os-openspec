@@ -1,6 +1,15 @@
 # Tests ausfuehren
 
-Starte den `test-runner` Agenten aus `core/agents/test-runner.md`.
+Starte den `test-runner` Agenten — eigener Agent-Typ (Projekt-Agent in `.claude/agents/`, lokal auch als Plugin-Agent), Start **ohne `model`**, das Modell steht im Frontmatter (#577):
+
+```
+Agent(subagent_type="test-runner", description="Tests ausfuehren", prompt="
+  Fuehre die Tests des Projekts aus und fasse das Ergebnis zusammen
+  (passed/failed/uebersprungen, bei Failures Fehlermeldungen und betroffene Dateien).
+  Kontext (falls Wiedereinstieg): affected_files und test_files aus dem Workflow-State.")
+```
+
+**Fallback, wenn der Typ in der Agent-Liste fehlt:** test-runner → `agent-os-openspec:test-runner`, sonst `Agent(subagent_type="general-purpose", model="haiku", prompt="Lies zuerst .claude/agents/test-runner.md (im Framework-Repo core/agents/test-runner.md) und folge ihr. …")`.
 
 ---
 

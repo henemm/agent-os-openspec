@@ -73,13 +73,21 @@ zusätzlich dieser Rückfall:
 ScheduleWakeup(1200, "Spec-Schreiben Rückfall [30-write-spec], nur im /loop-Kontext: TaskList → noch aktiver Spec-Writer-/Validator-/PO-Briefer-Agent? JA → TaskStop, dann User: 'Agent hängt — bitte /30-write-spec neu starten.' NEIN → ignorieren, fertig.")
 ```
 
-### Step 2: Spec erstellen (general-purpose/Sonnet)
+### Agent-Typen und Fallback (#577)
 
-Dispatche einen **general-purpose/Sonnet Subagenten** mit den spec-writer Instruktionen:
+Die Agenten dieses Befehls sind eigene Agent-Typen (Projekt-Agenten in `.claude/agents/`, lokal auch als Plugin-Agent). Starte sie mit `subagent_type="<name>"` **ohne `model`**: das Modell steht im Frontmatter des Agenten, ein `model`-Parameter würde es überstimmen. Die Definition liest der Agent nicht nach, sie ist sein Systemprompt.
+
+**Fallback, wenn ein Typ in der Agent-Liste fehlt:** zuerst der Plugin-Name, sonst `general-purpose` mit dem Modell aus dem Frontmatter, und der Agent liest seine Definition (`.claude/agents/<name>.md`, im Framework-Repo `core/agents/<name>.md`) als Erstes:
+- spec-writer → `agent-os-openspec:spec-writer`, sonst `Agent(subagent_type="general-purpose", model="sonnet", prompt="Lies zuerst .claude/agents/spec-writer.md und folge ihr. …")`
+- spec-validator → `agent-os-openspec:spec-validator`, sonst `Agent(subagent_type="general-purpose", model="haiku", prompt="Lies zuerst .claude/agents/spec-validator.md und folge ihr. …")`
+- po-briefer → `agent-os-openspec:po-briefer`, sonst `Agent(subagent_type="general-purpose", model="sonnet", prompt="Lies zuerst .claude/agents/po-briefer.md und folge ihr. …")`
+
+### Step 2: Spec erstellen (spec-writer/Sonnet)
+
+Dispatche den **spec-writer**:
 
 ```
-Task (general-purpose/sonnet, run_in_background: true): "Du bist der spec-writer Agent.
-
+Agent(subagent_type="spec-writer", description="Spec schreiben", run_in_background=true, prompt="
   Input:
   - feature_name: [Name]
   - analysis_summary: [Zusammenfassung aus Phase 2]
@@ -88,7 +96,7 @@ Task (general-purpose/sonnet, run_in_background: true): "Du bist der spec-writer
   - workflow_name: [Workflow-Name]
 
   Erstelle eine vollstaendige Spec in docs/specs/[category]/[entity].md
-  nach dem spec-writer Workflow. Beachte alle Qualitaetsregeln."
+  nach dem spec-writer Workflow. Beachte alle Qualitaetsregeln.")
 ```
 
 ### Step 3: Spec validieren (spec-validator/Haiku)
@@ -98,11 +106,10 @@ Dispatche den **spec-validator/Haiku** zur Validierung:
 **Im Vordergrund starten (`run_in_background: false`, #83):** Das Ergebnis wird sofort gebraucht, der Orchestrator hat währenddessen nichts zu tun. Hintergrund-Starts kurzlebiger Prüfagenten ohne Worktree-Isolation kamen wiederholt ohne Bericht zurück — Nachfordern oder Doppelstart kostete jedes Mal eine volle Runde.
 
 ```
-Task (general-purpose/haiku, run_in_background: false): "Du bist der spec-validator Agent.
-
+Agent(subagent_type="spec-validator", description="Spec validieren", run_in_background=false, prompt="
   Validiere die Spec: docs/specs/[category]/[entity].md
   Pruefe alle Required Fields, Sections, Placeholders.
-  Output: VALID oder INVALID mit Details."
+  Output: VALID oder INVALID mit Details.")
 ```
 
 **Bei INVALID:**
@@ -118,8 +125,7 @@ befangen. Dispatche deshalb einen **unabhängigen** Briefer, der die Spec gegen 
 Ursprungsanfrage prüft, ohne deinen Gesprächsverlauf zu kennen:
 
 ```
-Task (general-purpose/sonnet, run_in_background: true): "Du bist der po-briefer Agent.
-
+Agent(subagent_type="po-briefer", description="PO-Briefing schreiben", run_in_background=true, prompt="
   ## Spec
   docs/specs/[category]/[entity].md
 
@@ -129,7 +135,7 @@ Task (general-purpose/sonnet, run_in_background: true): "Du bist der po-briefer 
   ## Workflow
   [workflow-name]
 
-  Folge dem po-briefer Protokoll. Schreibe docs/briefings/[workflow-name].md."
+  Folge dem po-briefer Protokoll. Schreibe docs/briefings/[workflow-name].md.")
 ```
 
 Danach registrieren — ohne diesen Schritt blockiert das Gate die Freigabe:

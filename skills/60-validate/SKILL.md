@@ -56,7 +56,8 @@ Bevor du mit den Prerequisites fortfährst, lade den vollständigen Validierungs
 Dispatche einen **Explore/Haiku Subagenten**:
 
 ```
-Task (Explore/haiku, run_in_background: true): "Lies folgende Ressourcen und extrahiere die konkreten Werte:
+Agent(subagent_type="Explore", model="haiku", description="Validierungs-Kontext laden", run_in_background=true, prompt="
+  Lies folgende Ressourcen und extrahiere die konkreten Werte:
   1. [spec_file aus dem Wiedereinstieg-Block oben] → Acceptance Criteria (AC-1 bis AC-N)
   2. docs/artifacts/<workflow-name>/adversary-dialog.md → Adversary-Verdict und Findings
   3. openspec.yaml (Feld test_command) → konkreter Test-Befehl
@@ -66,7 +67,7 @@ Task (Explore/haiku, run_in_background: true): "Lies folgende Ressourcen und ext
   - affected_files: [bereits aus Wiedereinstieg bekannt]
   - test_command: [konkreter Befehl]
   - Acceptance Criteria: [Liste aller AC-N]
-  - adversary_verdict: [VERIFIED / BROKEN / AMBIGUOUS]"
+  - adversary_verdict: [VERIFIED / BROKEN / AMBIGUOUS]")
 ```
 
 Ersetze alle `[...]`-Platzhalter in Step 1 und Step 3 mit den geladenen Werten — kein Agent darf mit Platzhaltern gestartet werden.
@@ -117,24 +118,24 @@ Dispatche **4 parallele Haiku-Agenten** fuer umfassende Validierung — alle vie
 **Im Vordergrund starten (`run_in_background: false`, #83):** Das Ergebnis wird sofort gebraucht, der Orchestrator hat währenddessen nichts zu tun. Hintergrund-Starts kurzlebiger Prüfagenten ohne Worktree-Isolation kamen wiederholt ohne Bericht zurück — Nachfordern oder Doppelstart kostete jedes Mal eine volle Runde.
 
 ```
-Task 1 (general-purpose/haiku, run_in_background: false) - TEST CHECK:
-  "Fuehre ALLE Tests aus: [test_command]
-  Report: Anzahl passed/failed, Laufzeit, Fehlerdetails."
+Agent(subagent_type="general-purpose", model="haiku", description="TEST CHECK", run_in_background=false, prompt="
+  Fuehre ALLE Tests aus: [test_command]
+  Report: Anzahl passed/failed, Laufzeit, Fehlerdetails.")
 
-Task 2 (general-purpose/haiku, run_in_background: false) - SPEC COMPLIANCE:
-  "Lies die Spec: [spec_file_path]
+Agent(subagent_type="general-purpose", model="haiku", description="SPEC COMPLIANCE", run_in_background=false, prompt="
+  Lies die Spec: [spec_file_path]
   Pruefe jeden Acceptance Criterion gegen die Implementation.
-  Report: Welche Kriterien sind erfuellt, welche nicht?"
+  Report: Welche Kriterien sind erfuellt, welche nicht?")
 
-Task 3 (general-purpose/haiku, run_in_background: false) - REGRESSION CHECK:
-  "Fuehre die vollstaendige Test-Suite aus (nicht nur Feature-Tests).
+Agent(subagent_type="general-purpose", model="haiku", description="REGRESSION CHECK", run_in_background=false, prompt="
+  Fuehre die vollstaendige Test-Suite aus (nicht nur Feature-Tests).
   Report: Gibt es Regressionen? Welche Tests die vorher gruen waren
-  sind jetzt rot?"
+  sind jetzt rot?")
 
-Task 4 (general-purpose/haiku, run_in_background: false) - SCOPE CHECK:
-  "Vergleiche die geaenderten Dateien mit der Spec.
+Agent(subagent_type="general-purpose", model="haiku", description="SCOPE CHECK", run_in_background=false, prompt="
+  Vergleiche die geaenderten Dateien mit der Spec.
   Wurden Dateien ausserhalb des Specs geaendert?
-  Wurden mehr als 5 Dateien / 250 LoC geaendert?"
+  Wurden mehr als 5 Dateien / 250 LoC geaendert?")
 ```
 
 ### Step 2: Ergebnis-Auswertung
@@ -162,25 +163,25 @@ Korrektur-PR am Workflow vorbei.
 Bei Nicht-Code-Fehlern dispatche einen **general-purpose/Sonnet Subagenten**:
 
 ```
-Task (general-purpose/sonnet, run_in_background: true): "Folgende Validierungsfehler wurden gefunden:
+Agent(subagent_type="general-purpose", model="sonnet", description="Auto-Fix Nicht-Code", run_in_background=true, prompt="
+  Folgende Validierungsfehler wurden gefunden:
   [Fehler-Liste aus den 4 Haiku-Reports]
 
   Behebe die Fehler. Beachte:
   - Nur die gemeldeten Fehler fixen, keine anderen Aenderungen
   - Keine Code-Dateien aendern (nur Doku, Tests, Config) — Code-Fix = BROKEN-Pfad
   - Scoping Limits einhalten
-  - Tests nach dem Fix erneut ausfuehren"
+  - Tests nach dem Fix erneut ausfuehren")
 ```
 
 Nach dem Fix: Dispatche die relevanten Haiku-Checks erneut zur Verifikation.
 
 ### Step 3: Dokumentation aktualisieren (docs-updater/Sonnet)
 
-Bei erfolgreicher Validierung dispatche den **docs-updater**:
+Bei erfolgreicher Validierung dispatche den **docs-updater** — eigener Agent-Typ (Projekt-Agent in `.claude/agents/`, lokal auch als Plugin-Agent), Start **ohne `model`**, das Modell steht im Frontmatter (#577):
 
 ```
-Task (general-purpose/sonnet, run_in_background: true): "Du bist der docs-updater Agent.
-
+Agent(subagent_type="docs-updater", description="Doku aktualisieren", run_in_background=true, prompt="
   Input:
   - changed_files: [Liste der geaenderten Dateien]
   - feature_summary: [Kurzbeschreibung]
@@ -189,8 +190,10 @@ Task (general-purpose/sonnet, run_in_background: true): "Du bist der docs-update
   Aktualisiere alle betroffene Dokumentation.
 
   Die Spec-Datei selbst NICHT bearbeiten — der freigegebene Teil ist nach der
-  Freigabe eingefroren (#230, #439)."
+  Freigabe eingefroren (#230, #439).")
 ```
+
+**Fallback, wenn der Typ in der Agent-Liste fehlt:** docs-updater → `agent-os-openspec:docs-updater`, sonst `Agent(subagent_type="general-purpose", model="sonnet", prompt="Lies zuerst .claude/agents/docs-updater.md (im Framework-Repo core/agents/docs-updater.md) und folge ihr. …")`.
 
 **Warum `spec_file_path` nur Lesekontext ist (#230, #439):** Das PO-Briefing ist per
 Teil-Hash (`spec_frozen_sha256`) an den freigegebenen Teil der Spec gebunden. Ändert der

@@ -235,6 +235,20 @@ def check_cloud_hooks(root: "Path | None" = None) -> "tuple[bool, str]":
     return sync_cloud_hooks.check(Path(root) if root is not None else sync_cloud_hooks.REPO_ROOT)
 
 
+def check_cloud_agents(root: "Path | None" = None) -> "tuple[bool, str]":
+    """.claude/agents muss dem Generat aus core/agents entsprechen (#577).
+
+    Cloud-Sitzungen laden keine Plugin-Agenten; dort gelten nur die
+    Projekt-Agenten. Default wie bei check_cloud_hooks: das Repo, aus dem die
+    Skripte stammen (sync_cloud_agents.REPO_ROOT).
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import sync_cloud_agents
+
+    return sync_cloud_agents.check(Path(root) if root is not None
+                                   else sync_cloud_agents.REPO_ROOT)
+
+
 def check_tests() -> "tuple[bool, str]":
     result = subprocess.run([sys.executable, "-m", "pytest", "tests/", "-q"],
                             cwd=str(REPO_ROOT), capture_output=True, text=True)
@@ -291,6 +305,7 @@ def run_pr_gate(base_ref: str) -> int:
         ("Tag", check_tag_free(tag)),
         ("Skills", check_skills_sync()),
         ("Cloud-Hooks", check_cloud_hooks()),
+        ("Cloud-Agenten", check_cloud_agents()),
     ]
 
     failed = 0
@@ -350,6 +365,7 @@ def main() -> int:
         ("Tag", check_tag_free(tag)),
         ("Skills", check_skills_sync()),
         ("Cloud-Hooks", check_cloud_hooks()),
+        ("Cloud-Agenten", check_cloud_agents()),
     ]
     if not args.no_tests:
         checks.append(("Tests", check_tests()))
