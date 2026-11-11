@@ -111,7 +111,7 @@ Regression: `pytest tests/` (insbesondere `test_cloud_hooks_520.py`, `test_cloud
 - **AC-2:** Given ein Ziel mit fehlender, inhaltlich abweichender und veraltet markierter Datei (Quelle entfernt) / When `sync_cloud_agents.py --check` läuft / Then Exit 1 mit je einer Meldung „fehlt“, „abweichend“, „veraltet“, schreibt nichts, und nach `sync` Exit 0
   - Test: tests/test_cloud_agents_577.py::test_check_detects_missing_diverged_and_stale
 
-- **AC-3:** Given eine unmarkierte Datei im Ziel (gleichnamig zu einem Agenten bzw. ohne Quelle, etwa ein Modul-Agent) / When `sync` und `--check` laufen / Then bleibt sie byte-gleich erhalten, wird als „Skipped“ gemeldet, und `--check` zählt sie nicht als Drift
+- **AC-3:** Given eine unmarkierte Datei im Ziel (gleichnamig zu einem Agenten bzw. ohne Quelle, etwa ein Modul-Agent), die nicht als unveränderte Framework-Kopie im Manifest steht (Ausnahme: AC-15) / When `sync` und `--check` laufen / Then bleibt sie byte-gleich erhalten, wird als „Skipped“ gemeldet, und `--check` zählt sie nicht als Drift
   - Test: tests/test_cloud_agents_577.py::test_unmarked_files_never_overwritten_or_deleted
 
 - **AC-4:** Given eine markierte Datei im Ziel, deren Quelle in `core/agents` nicht (mehr) existiert / When `sync` läuft / Then ist die Datei entfernt, markierte Dateien mit Quelle bleiben
@@ -128,6 +128,12 @@ Regression: `pytest tests/` (insbesondere `test_cloud_hooks_520.py`, `test_cloud
 
 - **AC-8:** Given ein Plugin-Modus-Projekt mit Pin / When `setup.py <projekt> --update` zweimal läuft / Then schreibt `update_project` `core/agents` nicht mehr per `sync_dir`/Manifest: keine `.new`-Dateien, keine Manifest-Einträge für `.claude/agents/*`, die Kopien bleiben markiert (kein Flip-Flop) und der zweite Lauf ändert nichts
   - Test: tests/test_cloud_agents_577.py::test_update_in_plugin_mode_does_not_flip_flop
+
+- **AC-15:** Given ein Plugin-Modus-Projekt (mit oder ohne Pin), dessen `.claude/agents/<name>.md` unmarkiert ist und dessen SHA-256 dem Eintrag in `.claude/framework_manifest.json` entspricht (vom Framework installiert, lokal unverändert, z. B. nach Umstieg vom Copy-Modus) / When `setup.py <projekt> --update` läuft / Then wird die Datei durch die markierte Kopie ersetzt, ihr Manifest-Eintrag entfernt und die Übernahme gemeldet; eine unmarkierte Datei mit abweichendem Hash oder ohne Manifest-Eintrag bleibt byte-gleich und wird als „Skipped“ gemeldet
+  - Test: tests/test_cloud_agents_577.py::test_update_adopts_unchanged_manifest_copies
+
+- **AC-16:** Given ein Plugin-Modus-Projekt ohne Pin mit vorhandenen markierten Kopien / When `setup.py <projekt> --update` läuft / Then werden die vorhandenen markierten Kopien auf den Stand von `core/agents` gebracht und veraltete markierte entfernt, fehlende Kopien aber nicht neu angelegt (erneuern, nie anlegen — wie bei den Kurzbefehlen, #566)
+  - Test: tests/test_cloud_agents_577.py::test_update_without_pin_refreshes_existing_marked_only
 
 - **AC-9:** Given ein Copy-Modus-Projekt / When `setup.py <projekt>` installiert und `--update` läuft / Then wird `core/agents` weiterhin ohne Marker nach `.claude/agents` kopiert und über das Manifest aktualisiert, wie vor dieser Änderung
   - Test: tests/test_cloud_agents_577.py::test_copy_mode_agents_unchanged
@@ -161,7 +167,7 @@ Regression: `pytest tests/` (insbesondere `test_cloud_hooks_520.py`, `test_cloud
 Fertig ist diese Änderung, wenn:
 
 - [ ] `.claude/agents/` im Framework-Repo ist erzeugt und eingecheckt, `python3 scripts/sync_cloud_agents.py --check` ist grün (AC-1, AC-2)
-- [ ] Markierte Kopien werden erneuert und entfernt, unmarkierte nie angefasst (AC-3, AC-4)
+- [ ] Markierte Kopien werden erneuert und entfernt, unmarkierte nie angefasst (AC-3, AC-4); unveränderte Framework-Kopien aus dem Manifest werden übernommen, ohne Pin nur vorhandene markierte erneuert (AC-15, AC-16)
 - [ ] `release_check.py` zeigt die Zeile „Cloud-Agenten“ und blockt Drift (AC-5)
 - [ ] `setup.py --cloud-gates` und `--update` mit Pin schreiben die Kopien ohne Flip-Flop und ohne `.new`-Dateien; Copy-Modus unverändert (AC-6 bis AC-9)
 - [ ] Alle Befehle nennen benannte Agenten in Werkzeug-Syntax, Fallback-Modelle stimmen mit dem Frontmatter überein, anonyme Starts haben ein `model` (AC-10 bis AC-12)
@@ -177,3 +183,4 @@ Fertig ist diese Änderung, wenn:
 ## Changelog
 
 - 2026-11-11: Initial spec created
+- 2026-11-11: AC-15/AC-16 ergänzt, AC-3 eingegrenzt. Befund aus der Umsetzung: Copy-Modus-Projekte, die auf das Plugin umgestiegen sind, haben unmarkierte, im Manifest geführte Agent-Kopien; ohne Übernahme veralteten sie, weil `--update` sie im Plugin-Modus nicht mehr per `sync_dir` erneuert

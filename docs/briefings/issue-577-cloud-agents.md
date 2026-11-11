@@ -1,7 +1,7 @@
 ---
 spec_file: docs/specs/feat-577-cloud-agents.md
-spec_sha256: 6a580849474d8caa517b20bd1a6a45c7f14dd1eef0a05a0b0e50cc5108dda34d
-spec_frozen_sha256: 1ea0ce9c5a91251a0cee494c386df68203bf2a14777f18fd9a1d8fcde3ea2a8e
+spec_sha256: 8ecea3f89f00a95e0dc7f8a9851649e6b0f9c2cdf04b04f9c471d5ea5356d0e4
+spec_frozen_sha256: 29fee13d0a928942ef147e6bed19995545875c4d55030098cd6afe447a2b5ed2
 ---
 
 # PO-Briefing: issue-577-cloud-agents
@@ -12,21 +12,20 @@ spec_frozen_sha256: 1ea0ce9c5a91251a0cee494c386df68203bf2a14777f18fd9a1d8fcde3ea
 
 ## Was gebaut wird
 
-Prüf- und Hilfs-Agenten laufen in Cloud-Sitzungen auf ihrem vorgesehenen günstigeren Modell statt auf dem teuersten.
+Prüf- und Entwickler-Agenten laufen in Cloud-Sitzungen mit ihrem günstigeren Modell statt auf dem teuersten.
 
 ## Definition of Done
 
-Alle Agenten liegen in Cloud und Konsumentenprojekten bereit, jeder Agent-Start nennt sein Modell, und alle automatischen Tests sind grün.
+Cloud-Sitzungen finden alle Framework-Agenten mit richtigem Modell; Framework-Projekt und Konsumenten-Projekte erhalten sie automatisch, ein Release-Check meldet Abweichungen.
 
 ## Wie geprüft wird
 
-Tests prüfen Kopien, Aufräumen, Setup-Läufe und Befehlstexte; dass Claude zur Laufzeit wirklich das günstigere Modell wählt, belegen sie nicht.
+Automatische Tests prüfen Kopieren, Aktualisieren und Befehlstexte; ob Claude im echten Betrieb den richtigen Agententyp startet, bleibt ungeprüft.
 
 ## Kritische Anmerkungen
 
-- Doppelte Agenten lokal werden nicht verhindert, nur Doppelstarts pro Aufruf; die Agentenliste wird länger, das kostet etwas Kontext.
-- Der Entwickler-Agent bleibt auf dem teuersten Modell; dort entfällt nur das Nachlesen der Definition.
-- Ohne Cloud-Anbindung gibt es keine Kopien; Cloud-Nutzer führen einmal das Setup aus.
+- Lokal erscheinen Agenten doppelt in der Liste; Mehrkosten gering, gestartet wird nur einer.
+- Konsumenten ohne Cloud-Anbindung bekommen keine Kopien; Cloud-Nutzer müssen einmal Setup ausführen und Dateien einchecken.
 
 ## Freigabe-Frage
 
