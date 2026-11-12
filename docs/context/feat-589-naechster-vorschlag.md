@@ -99,3 +99,59 @@ Innerhalb einer Stufe: Meilenstein vor ohne Meilenstein, früher fälliger Meile
 10. **Sortierung:** Innerhalb einer Stufe: Meilenstein vor ohne, früher fälliger zuerst (`due_on`; Meilensteine ohne `due_on` nachrangig), dann Priorität (`critical` > `high` > `medium` > `low` > ohne Label), dann Issue-Nummer als stabiler Tie-Breaker. `epic`-Issues selbst sind keine vorzuschlagenden Arbeitseinheiten (Container); als Vorschlag nur Sub-Issues bzw. Nicht-Epics.
 11. **Kein Breaking Change:** Ausgabeformat von `endstate` (`ENDSTATE=`, `FOOTER=`) bleibt abwärtskompatibel; bestehende Tests erwarten die heutigen Zeilen (z. B. `END_DONE`-Text in `test_endzustand_550.py`). `CHANGELOG.md` nur unter `[Unreleased]`, keine Versionsnummer in Feature-PR.
 12. **Verwandt/Konflikt:** #588 (Seitenleiste meldet „Erledigt“ zu früh) berührt dieselben Stellen (`build_report` `state`, `end_state`); vor Umsetzung Stand von #588 und offene PRs prüfen (parallele Sitzungen), um Merge-Konflikte in `workflow.py` zu vermeiden. Änderungen an `core/hooks/` erfordern Override bzw. laufenden Workflow ab phase6.
+
+## Analysis
+
+### Type
+Feature (Framework-Erweiterung, Core). Kein Breaking Change: Ausgabe von `endstate` bleibt ohne Vorschlag unverändert.
+
+### Befunde gegen den Plan
+- `endstate` wird nirgends aus einem Hook aufgerufen (nur Befehlstexte 60-validate/70-deploy/80-workflow, Claude ruft es per Bash). Netz in `cmd_endstate` ist damit zulässig (einmal je Abschluss, Timeout 8 s, fail-open). Nicht zulässig ist Netz in `end_state`, `render_plan` und `herdr_bridge.build_report`: beide laufen bei jeder Anzeige/Aktualisierung (herdr_bridge.py:217 ruft `end_state(**queue_end_args)`).
+- Identitätsregel Plan = `endstate` (Spec fix-550): Soll der Vorschlag in der Plan-Schlusszeile erscheinen, muss er über `queue_end_args` in `end_state` kommen, nicht nur in `cmd_endstate`. Lösung: `end_state` bekommt einen Parameter `suggest` (rein, nur Textbau im Fall done); `queue_end_args` liest ihn ausschließlich aus dem Cache `.claude/next_suggestion.json` (kein Netz); `cmd_endstate` füllt den Cache vorher per `fetch`. Plan/Seitenleiste zeigen den Vorschlag damit erst nach `endstate`; vorher die heutige Zeile (akzeptabel, kein Widerspruch). Die Seitenleiste braucht den Vorschlag nicht (Token `state` bleibt `done`); `end_state()["kind"]` bleibt `done`.
+- Cache: Rohdaten (offene Issues, Eltern, Meilensteine) cachen, nicht das Ergebnis; `choose` mit Session-Register (`_read_session_entries`, ohne Liveness-Filter, Komma-Liste im Feld `issue`, eigene `session_id` ausnehmen; tote PIDs ggf. über Liveness-Helfer aus session_singleton_guard filtern) läuft bei jedem Lesen frisch, sonst veraltet die Beanspruchung.
+- REST-Daten tragen die Rangfolge: `issues/N/parent` (Epic), `issues/<parent>/sub_issues` (Geschwister, `state`), `issues?state=open&per_page=100` (Labels, `milestone` inkl. `due_on`, Body), `milestones?state=open`. Achtung: die Issue-Liste enthält auch PRs (Schlüssel `pull_request` filtern) und ist auf 100 gedeckelt (Konsumenten: Paginierung/Obergrenze; bei Überschreitung ohne Fehler abschneiden). `epic`-Container und Geschwister mit offenen Sub-Issues (Verschachtelung) ausschließen bzw. nur Blätter vorschlagen. `critical > high > medium > low > ohne` ist umsetzbar; Meilenstein-`due_on` fehlt teils (nachrangig). Body-Regex für „related“ streng, nur `Folge zu #N`, `aus #N`, `Follow-up (to|of) #N`; das Verweisen der erledigten Nummer reicht nicht allein (Rauschen). Zusätzlich sinnvoll: Ausschluss von Issues mit offenem PR (zweiter Call `pulls?state=open`, Branch/Body `#N`) — optional.
+- `_normalize_auftrag` (hook_utils.py:2853-2868) verwirft unbekannte Felder: `spur` muss dort ergänzt werden (sonst geht sie beim ersten `write_auftrag` verloren). Der Auftrag ist ein Objekt je Projekt, keine Spur je Sitzung: eine Spur wäre also pro Projekt, nicht pro Sitzung. Das ist bei parallelen Sitzungen (je Worktree) eine Schwäche.
+- Autark: `_end_state_queue` und die Kette in 60-validate (Teilstring „aus deinem Auftrag“) greifen unverändert, wenn `endstate` die Nummer vorher per `queue`-Logik (`write_auftrag`) anhängt; Reihenfolge in `cmd_endstate`: Cache/fetch → ggf. anhängen → `queue_end_args` neu → `end_state`. Das Anhängen ist ein Schreibzugriff in einem eigentlich lesenden Kommando (`endstate` wird bei jedem erneuten Aufruf wiederholt): idempotent halten (Nummer schon im Auftrag → nichts tun, geschlossene erledigte nie neu anhängen).
+- #588 (Seitenleiste meldet Erledigt zu früh) berührt `build_report`/`end_state`; Stand und offene PRs vor dem Start prüfen. Mein Plan fasst `build_report` nur für die optionale Spur-Anzeige an, Teil A nicht.
+- Konsumenten ohne `gh`/Auth: `shutil.which("gh")` + returncode-Prüfung, dann kein Vorschlag, Zeile unverändert. Tests ohne Netz: gefaktes `gh` per PATH-Stub oder Monkeypatch von `fetch`; `choose` ist rein und wird tabellarisch getestet (kein Mock nötig).
+- Kill-Switch `next_suggestion.enabled` nur Literal `false` (Muster `auftrag_settings`); `timeout_s` und `cache_ttl_s` mit Defaults.
+
+### Affected Files
+| Datei | Change Type |
+|---|---|
+| `core/hooks/next_suggestion.py` | neu: `choose` (rein), `fetch` (REST, fail-open), Cache lesen/schreiben, Settings |
+| `core/hooks/workflow.py` | `end_state(suggest=)` + Textbau in `_end_state_final`-Fall done; `queue_end_args` liest Cache; `cmd_endstate` fetch, `SUGGEST_ISSUE=`/`SUGGEST_SOURCE=`, Autark-Anhängen |
+| `core/commands/60-validate.md` | Abschluss: Vorschlag wörtlich ausgeben, Kette nur bei „aus deinem Auftrag“ |
+| `scripts/sync_skills.py` + `skills/*/SKILL.md` | `marker_block` ggf. (Zeilenform bleibt „eine Zeile“), Skills neu erzeugen |
+| `config.yaml` | neuer Abschnitt `next_suggestion:` |
+| `CHANGELOG.md` | [Unreleased] |
+| `tests/test_next_suggestion_589.py` | neu |
+| Teil B (Spur): `hook_utils.py` (`_normalize_auftrag`), `workflow.py` (`queue add --spur`, `spur`), `herdr_bridge.py` (`build_report`), `00-intake.md`, Tests |
+
+### Scope Assessment
+Gesamt: ca. 9-10 Dateien (mit generierten Skills mehr), ca. 450-550 LoC inkl. Tests (Modul ~200, workflow ~80, Rest ~40, Tests ~250). Überschreitet 5 Dateien/250 LoC klar. Empfehlung Aufteilung:
+- **Teil A (dieses Issue #589):** `next_suggestion.py` mit Stufen Epic, Meilenstein, verwandt, Priorität (Slot für Spur als optionaler Parameter, `spur=None`), `end_state`-Zusatz, `cmd_endstate`, Autark-Anhängen (Epic/Meilenstein), Config, 60-validate, CHANGELOG, Tests. Auch das ist ca. 7 Dateien; mit Skill-Generat knapp über 5, aber ein zusammenhängender Schnitt, nicht weiter teilbar ohne unbrauchbare Zwischenstände.
+- **Teil B (Folge-Issue, Sub-Issue von #431):** Spur (`_normalize_auftrag`, `queue add --spur`/`spur`, GitHub-Label `spur:<name>`, herdr-Anzeige, `00-intake.md`), Autostart für Spur. Eigener Wert, eigene Designfrage (Spur je Projekt vs. je Sitzung).
+
+### Technical Approach (Empfehlung)
+Teil A wie oben beschrieben, mit diesen Anpassungen am Entwurf:
+1. Vorschlag in `end_state` als reiner Parameter `suggest={"n","source","reason"}`; Netz ausschließlich in `cmd_endstate`; `queue_end_args` liest nur den Cache. Zeile: eine einzige `✅`-Zeile mit Zusatz (kein zweites ❗-Zeile; footer_gate/Auto-/clear bleiben unberührt, da `expected_footer_command` in Phase 8 `None` ist und `MANUAL_COMMANDS`/Slash-Prüfung greifen).
+2. Maschinenlesbar `SUGGEST_ISSUE=`, `SUGGEST_SOURCE=`, `SUGGEST_REASON=` in `endstate`-Ausgabe (nur bei Vorschlag); 60-validate erkennt die Kette weiter am Auftrags-Teilstring, nicht am Vorschlag.
+3. Priorität Auftrag > Vorschlag: nur wenn `queue_next` leer.
+4. Fail-open auf jeder Stufe; Cache atomar (`atomic_write_text`), TTL kurz (Vorschlag 5 min), Schlüssel erledigte Nummer.
+5. Autark-Anhängen idempotent; Quellen Epic/Meilenstein (Spur erst in Teil B).
+
+### Dependencies
+`gh` (optional), `hook_utils.read_auftrag/write_auftrag`, `_read_session_entries`, `workflow_issue_number`, bestehende Tests fix-550/551/555 (Zeilenform unverändert ohne Vorschlag), Stand #588.
+
+### Open Questions
+1. **Produktfrage (PO):** Soll ein autarker Auftrag nach Epic/Meilenstein automatisch das nächste Issue starten, oder nach dem PO-Wortlaut nur innerhalb derselben Spur (#589-Text: „nächste Aufgabe derselben Spur beginnt ohne Zutun“)? Epic-/Meilenstein-Autostart läuft sonst unbegrenzt durch ganze Epics. Empfehlung: in Teil A nur Vorschlag, Autostart erst mit Spur (Teil B) bzw. nur Epic; Tech-Lead-Entscheidung genügt, wenn der PO-Text wörtlich gilt.
+2. Technisch: Spur je Projekt (Auftrag) oder je Sitzung (Session-Register)? Entscheidet Teil B.
+3. Ausschluss Issues mit offenem PR: ja/nein (zusätzlicher REST-Call). Empfehlung: ja, wenn `pulls`-Call im Timeout-Budget bleibt.
+4. Label `spec-proposal` und Issues, die PO-Entscheidung brauchen, als Autostart-Kandidaten? Empfehlung: ausschließen.
+
+### Entscheidungen Tech Lead (2026-11-12)
+- **Aufteilung:** Dieser Workflow liefert Teil A (Vorschlag nach Epic → Meilenstein → verwandt → Priorität, Autark-Fortsetzung). Teil B (freie Spur `spur:<name>`, Setzen, herdr-Anzeige) ist Issue #591. `choose()` bekommt `spur=None` bereits jetzt.
+- **Autostart bei autark:** gilt für Quelle Epic und Meilenstein. Begründung: PO-Entscheidung „Spur = zuerst Epic in GitHub“ und Ergänzung „Meilensteine berücksichtigen“; Epic/Meilenstein sind damit die Spur. Begrenzt durch die Größe von Epic/Meilenstein. Bei `related`/`priority` nur Vorschlag. Keine Produktfrage offen.
+- **Ausschlüsse zusätzlich:** Issues mit Label `epic`, Eltern mit offenen Sub-Issues, PRs, Issues mit offenem PR, `status:deferred`, `spec-proposal`.
+- **Netz nur in `cmd_endstate`**, Rohdaten-Cache; `end_state`/Plan/Seitenleiste lesen nur den Cache.
