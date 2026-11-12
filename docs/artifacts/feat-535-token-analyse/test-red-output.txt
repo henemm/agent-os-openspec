@@ -1,0 +1,388 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.18, pytest-9.2.0, pluggy-1.7.0 -- /home/user/agent-os-openspec/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/user/agent-os-openspec
+collecting ... collected 15 items
+
+tests/test_token_analyse_535.py::TestZuordnung::test_lesen_und_schreiben_nach_pfad FAILED [  6%]
+tests/test_token_analyse_535.py::TestZuordnung::test_bash_und_weitere_kategorien FAILED [ 13%]
+tests/test_token_analyse_535.py::TestZuordnung::test_openspec_nur_am_wortanfang_ist_doku FAILED [ 20%]
+tests/test_token_analyse_535.py::TestDeduplizierung::test_streaming_zeilen_maximum_output FAILED [ 26%]
+tests/test_token_analyse_535.py::TestDeduplizierung::test_dateiuebergreifend_einmal FAILED [ 33%]
+tests/test_token_analyse_535.py::TestKontextstufen::test_stufen_mit_input FAILED [ 40%]
+tests/test_token_analyse_535.py::TestBericht::test_gewichtung_anteile_und_rohsummen FAILED [ 46%]
+tests/test_token_analyse_535.py::TestBericht::test_sortiert_nach_kostenanteil FAILED [ 53%]
+tests/test_token_analyse_535.py::TestCli::test_liste_fasst_worktrees_zusammen FAILED [ 60%]
+tests/test_token_analyse_535.py::TestCli::test_praefix_mit_bindestrich_json_verzeichnis FAILED [ 66%]
+tests/test_token_analyse_535.py::TestCli::test_kein_treffer_exit_1_stderr FAILED [ 73%]
+tests/test_token_analyse_535.py::TestCli::test_kaputte_zeilen_und_unlesbare_dateien_werden_uebersprungen FAILED [ 80%]
+tests/test_token_analyse_535.py::TestDatenschutz::test_ausgabe_ohne_protokollinhalte FAILED [ 86%]
+tests/test_token_analyse_535.py::TestVerteilung::test_datei_in_core_tools_und_setup_spiegelt_tools FAILED [ 93%]
+tests/test_token_analyse_535.py::test_changelog_mentions_535 FAILED      [100%]
+
+=================================== FAILURES ===================================
+_______________ TestZuordnung.test_lesen_und_schreiben_nach_pfad _______________
+
+self = <test_token_analyse_535.TestZuordnung object at 0x7f195ee99450>
+
+    def test_lesen_und_schreiben_nach_pfad(self):
+        """AC-1: Lesen/Schreiben nach Werkzeug und Pfad, je genau eine Tätigkeit."""
+>       ta = _lade()
+             ^^^^^^^
+
+tests/test_token_analyse_535.py:67: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_token_analyse_535.py:26: in _lade
+    spec.loader.exec_module(modul)
+<frozen importlib._bootstrap_external>:1023: in exec_module
+    ???
+<frozen importlib._bootstrap_external>:1160: in get_code
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <_frozen_importlib_external.SourceFileLoader object at 0x7f195eecf590>
+path = '/home/user/agent-os-openspec/core/tools/token_analyse.py'
+
+>   ???
+E   FileNotFoundError: [Errno 2] No such file or directory: '/home/user/agent-os-openspec/core/tools/token_analyse.py'
+
+<frozen importlib._bootstrap_external>:1218: FileNotFoundError
+________________ TestZuordnung.test_bash_und_weitere_kategorien ________________
+
+self = <test_token_analyse_535.TestZuordnung object at 0x7f195ee99590>
+
+    def test_bash_und_weitere_kategorien(self):
+        """AC-2: Bash-Varianten, Teilagenten, Web, MCP, Probieren, Warten, Text, Unbekanntes."""
+>       ta = _lade()
+             ^^^^^^^
+
+tests/test_token_analyse_535.py:87: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_token_analyse_535.py:26: in _lade
+    spec.loader.exec_module(modul)
+<frozen importlib._bootstrap_external>:1023: in exec_module
+    ???
+<frozen importlib._bootstrap_external>:1160: in get_code
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <_frozen_importlib_external.SourceFileLoader object at 0x7f195ec0b110>
+path = '/home/user/agent-os-openspec/core/tools/token_analyse.py'
+
+>   ???
+E   FileNotFoundError: [Errno 2] No such file or directory: '/home/user/agent-os-openspec/core/tools/token_analyse.py'
+
+<frozen importlib._bootstrap_external>:1218: FileNotFoundError
+____________ TestZuordnung.test_openspec_nur_am_wortanfang_ist_doku ____________
+
+self = <test_token_analyse_535.TestZuordnung object at 0x7f195eeb9350>
+
+    def test_openspec_nur_am_wortanfang_ist_doku(self):
+        """AC-3: openspec/… ist Doku, agent-os-openspec/… ist Code."""
+>       ta = _lade()
+             ^^^^^^^
+
+tests/test_token_analyse_535.py:112: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_token_analyse_535.py:26: in _lade
+    spec.loader.exec_module(modul)
+<frozen importlib._bootstrap_external>:1023: in exec_module
+    ???
+<frozen importlib._bootstrap_external>:1160: in get_code
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <_frozen_importlib_external.SourceFileLoader object at 0x7f195ec0b350>
+path = '/home/user/agent-os-openspec/core/tools/token_analyse.py'
+
+>   ???
+E   FileNotFoundError: [Errno 2] No such file or directory: '/home/user/agent-os-openspec/core/tools/token_analyse.py'
+
+<frozen importlib._bootstrap_external>:1218: FileNotFoundError
+___________ TestDeduplizierung.test_streaming_zeilen_maximum_output ____________
+
+self = <test_token_analyse_535.TestDeduplizierung object at 0x7f195ee99310>
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-277/test_streaming_zeilen_maximum_0')
+
+    def test_streaming_zeilen_maximum_output(self, tmp_path):
+        """AC-4: Zeile mit höchstem output_tokens zählt, Blöcke aller Zeilen gesammelt."""
+>       ta = _lade()
+             ^^^^^^^
+
+tests/test_token_analyse_535.py:124: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_token_analyse_535.py:26: in _lade
+    spec.loader.exec_module(modul)
+<frozen importlib._bootstrap_external>:1023: in exec_module
+    ???
+<frozen importlib._bootstrap_external>:1160: in get_code
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <_frozen_importlib_external.SourceFileLoader object at 0x7f195ec0b470>
+path = '/home/user/agent-os-openspec/core/tools/token_analyse.py'
+
+>   ???
+E   FileNotFoundError: [Errno 2] No such file or directory: '/home/user/agent-os-openspec/core/tools/token_analyse.py'
+
+<frozen importlib._bootstrap_external>:1218: FileNotFoundError
+______________ TestDeduplizierung.test_dateiuebergreifend_einmal _______________
+
+self = <test_token_analyse_535.TestDeduplizierung object at 0x7f195ee996d0>
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-277/test_dateiuebergreifend_einmal0')
+
+    def test_dateiuebergreifend_einmal(self, tmp_path):
+        """AC-5: dieselbe message.id in zwei Dateien zählt einmal."""
+>       ta = _lade()
+             ^^^^^^^
+
+tests/test_token_analyse_535.py:141: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_token_analyse_535.py:26: in _lade
+    spec.loader.exec_module(modul)
+<frozen importlib._bootstrap_external>:1023: in exec_module
+    ???
+<frozen importlib._bootstrap_external>:1160: in get_code
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <_frozen_importlib_external.SourceFileLoader object at 0x7f195ec0b6b0>
+path = '/home/user/agent-os-openspec/core/tools/token_analyse.py'
+
+>   ???
+E   FileNotFoundError: [Errno 2] No such file or directory: '/home/user/agent-os-openspec/core/tools/token_analyse.py'
+
+<frozen importlib._bootstrap_external>:1218: FileNotFoundError
+___________________ TestKontextstufen.test_stufen_mit_input ____________________
+
+self = <test_token_analyse_535.TestKontextstufen object at 0x7f195ee99810>
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-277/test_stufen_mit_input0')
+
+    def test_stufen_mit_input(self, tmp_path):
+        """AC-6: Kontext = input + cache_creation + cache_read."""
+>       ta = _lade()
+             ^^^^^^^
+
+tests/test_token_analyse_535.py:156: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_token_analyse_535.py:26: in _lade
+    spec.loader.exec_module(modul)
+<frozen importlib._bootstrap_external>:1023: in exec_module
+    ???
+<frozen importlib._bootstrap_external>:1160: in get_code
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <_frozen_importlib_external.SourceFileLoader object at 0x7f195ec0ba70>
+path = '/home/user/agent-os-openspec/core/tools/token_analyse.py'
+
+>   ???
+E   FileNotFoundError: [Errno 2] No such file or directory: '/home/user/agent-os-openspec/core/tools/token_analyse.py'
+
+<frozen importlib._bootstrap_external>:1218: FileNotFoundError
+______________ TestBericht.test_gewichtung_anteile_und_rohsummen _______________
+
+self = <test_token_analyse_535.TestBericht object at 0x7f195ee99a90>
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-277/test_gewichtung_anteile_und_ro0')
+
+    def test_gewichtung_anteile_und_rohsummen(self, tmp_path):
+        """AC-7: Gewichte 1/2/0,1/5, Anteile und Rohsummen stimmen."""
+>       ta = _lade()
+             ^^^^^^^
+
+tests/test_token_analyse_535.py:179: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_token_analyse_535.py:26: in _lade
+    spec.loader.exec_module(modul)
+<frozen importlib._bootstrap_external>:1023: in exec_module
+    ???
+<frozen importlib._bootstrap_external>:1160: in get_code
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <_frozen_importlib_external.SourceFileLoader object at 0x7f195ec0bf50>
+path = '/home/user/agent-os-openspec/core/tools/token_analyse.py'
+
+>   ???
+E   FileNotFoundError: [Errno 2] No such file or directory: '/home/user/agent-os-openspec/core/tools/token_analyse.py'
+
+<frozen importlib._bootstrap_external>:1218: FileNotFoundError
+_________________ TestBericht.test_sortiert_nach_kostenanteil __________________
+
+self = <test_token_analyse_535.TestBericht object at 0x7f195ee99bd0>
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-277/test_sortiert_nach_kostenantei0')
+capsys = <_pytest.capture.CaptureFixture object at 0x7f195ed9c590>
+
+    def test_sortiert_nach_kostenanteil(self, tmp_path, capsys):
+        """AC-8: Text- und JSON-Ausgabe nach Kostenanteil absteigend."""
+>       ta = _lade()
+             ^^^^^^^
+
+tests/test_token_analyse_535.py:204: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_token_analyse_535.py:26: in _lade
+    spec.loader.exec_module(modul)
+<frozen importlib._bootstrap_external>:1023: in exec_module
+    ???
+<frozen importlib._bootstrap_external>:1160: in get_code
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <_frozen_importlib_external.SourceFileLoader object at 0x7f195edf5970>
+path = '/home/user/agent-os-openspec/core/tools/token_analyse.py'
+
+>   ???
+E   FileNotFoundError: [Errno 2] No such file or directory: '/home/user/agent-os-openspec/core/tools/token_analyse.py'
+
+<frozen importlib._bootstrap_external>:1218: FileNotFoundError
+_________________ TestCli.test_liste_fasst_worktrees_zusammen __________________
+
+self = <test_token_analyse_535.TestCli object at 0x7f195ee99d10>
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-277/test_liste_fasst_worktrees_zus0')
+
+    def test_liste_fasst_worktrees_zusammen(self, tmp_path):
+        """AC-9: --liste zeigt Projekte mit Protokollzahl, Worktrees beim Stamm."""
+        t = [antwort("m1", [{"type": "text"}])]
+        schreibe(tmp_path / "-proj" / "a.jsonl", t)
+        schreibe(tmp_path / "-proj" / "b.jsonl", t)
+        schreibe(tmp_path / "-proj--claude-worktrees-x" / "sub" / "c.jsonl", t)
+        schreibe(tmp_path / "-proj--claude-worktrees-y" / "d.jsonl", t)
+        schreibe(tmp_path / "-andere" / "e.jsonl", t)
+        r = cli("--liste", "--verzeichnis", str(tmp_path), tmp_path=tmp_path)
+>       assert r.returncode == 0, r.stderr
+E       AssertionError: /home/user/agent-os-openspec/.venv/bin/python: can't open file '/home/user/agent-os-openspec/core/tools/token_analyse.py': [Errno 2] No such file or directory
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['/home/user/agent-os-openspec/.venv/bin/python', '/home/user/agent-os-openspec/core/tools/token_analyse.py', '--liste', '--verzeichnis', '/tmp/pytest-of-root/pytest-277/test_liste_fasst_worktrees_zus0'], returncode=2, stdout='', stderr="/home/user/agent-os-openspec/.venv/bin/python: can't open file '/home/user/agent-os-openspec/core/tools/token_analyse.py': [Errno 2] No such file or directory\n").returncode
+
+tests/test_token_analyse_535.py:238: AssertionError
+____________ TestCli.test_praefix_mit_bindestrich_json_verzeichnis _____________
+
+self = <test_token_analyse_535.TestCli object at 0x7f195ee99e50>
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-277/test_praefix_mit_bindestrich_j0')
+
+    def test_praefix_mit_bindestrich_json_verzeichnis(self, tmp_path):
+        """AC-10: Präfix mit '-' als Positionsargument, --json, --verzeichnis."""
+        schreibe(tmp_path / "-proj--claude-worktrees-x" / "a.jsonl",
+                 [antwort("m1", [tool("Bash", command="git status")])])
+        schreibe(tmp_path / "-proj" / "b.jsonl", [antwort("m2", [{"type": "text"}])])
+        schreibe(tmp_path / "-fremd" / "c.jsonl", [antwort("m3", [{"type": "text"}])])
+        r = cli("-proj", "--json", "--verzeichnis", str(tmp_path), tmp_path=tmp_path)
+>       assert r.returncode == 0, r.stderr
+E       AssertionError: /home/user/agent-os-openspec/.venv/bin/python: can't open file '/home/user/agent-os-openspec/core/tools/token_analyse.py': [Errno 2] No such file or directory
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['/home/user/agent-os-openspec/.venv/bin/python', '/home/user/agent-os-openspec/core/tools/token_analyse.py', '-proj', '--json', '--verzeichnis', '/tmp/pytest-of-root/pytest-277/test_praefix_mit_bindestrich_j0'], returncode=2, stdout='', stderr="/home/user/agent-os-openspec/.venv/bin/python: can't open file '/home/user/agent-os-openspec/core/tools/token_analyse.py': [Errno 2] No such file or directory\n").returncode
+
+tests/test_token_analyse_535.py:254: AssertionError
+___________________ TestCli.test_kein_treffer_exit_1_stderr ____________________
+
+self = <test_token_analyse_535.TestCli object at 0x7f195eeb9480>
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-277/test_kein_treffer_exit_1_stder0')
+
+    def test_kein_treffer_exit_1_stderr(self, tmp_path):
+        """AC-11: Präfix ohne Projekte -> Exit 1, Meldung auf stderr."""
+        schreibe(tmp_path / "-proj" / "a.jsonl", [antwort("m1", [{"type": "text"}])])
+        r = cli("-gibtesnicht", "--verzeichnis", str(tmp_path), tmp_path=tmp_path)
+>       assert r.returncode == 1
+E       assert 2 == 1
+E        +  where 2 = CompletedProcess(args=['/home/user/agent-os-openspec/.venv/bin/python', '/home/user/agent-os-openspec/core/tools/token_analyse.py', '-gibtesnicht', '--verzeichnis', '/tmp/pytest-of-root/pytest-277/test_kein_treffer_exit_1_stder0'], returncode=2, stdout='', stderr="/home/user/agent-os-openspec/.venv/bin/python: can't open file '/home/user/agent-os-openspec/core/tools/token_analyse.py': [Errno 2] No such file or directory\n").returncode
+
+tests/test_token_analyse_535.py:263: AssertionError
+____ TestCli.test_kaputte_zeilen_und_unlesbare_dateien_werden_uebersprungen ____
+
+self = <test_token_analyse_535.TestCli object at 0x7f195eeb95b0>
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-277/test_kaputte_zeilen_und_unlesb0')
+
+    def test_kaputte_zeilen_und_unlesbare_dateien_werden_uebersprungen(self, tmp_path):
+        """AC-12: kaputte Zeilen und unlesbare Dateien übersprungen, Exit 0."""
+        ordner = tmp_path / "-proj"
+        schreibe(ordner / "gut.jsonl", [
+            antwort("m1", [{"type": "text"}], out=10),
+            antwort("m2", [tool("Bash", command="git status")], out=20),
+        ], extra='kaputt\n{"type": "assistant", "message": {\n\n')
+        with open(ordner / "gut.jsonl", "ab") as f:
+            f.write(b"\xff\xfe\x00 kein utf8\n")
+        (ordner / "x.jsonl").mkdir()  # Verzeichnis mit .jsonl-Namen: nicht lesbar als Datei
+        (ordner / "y.jsonl").symlink_to(ordner / "gibt-es-nicht.jsonl")  # kaputter Link
+        r = cli("-proj", "--json", "--verzeichnis", str(tmp_path), tmp_path=tmp_path)
+>       assert r.returncode == 0, r.stderr
+E       AssertionError: /home/user/agent-os-openspec/.venv/bin/python: can't open file '/home/user/agent-os-openspec/core/tools/token_analyse.py': [Errno 2] No such file or directory
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['/home/user/agent-os-openspec/.venv/bin/python', '/home/user/agent-os-openspec/core/tools/token_analyse.py', '-proj', '--json', '--verzeichnis', '/tmp/pytest-of-root/pytest-277/test_kaputte_zeilen_und_unlesb0'], returncode=2, stdout='', stderr="/home/user/agent-os-openspec/.venv/bin/python: can't open file '/home/user/agent-os-openspec/core/tools/token_analyse.py': [Errno 2] No such file or directory\n").returncode
+
+tests/test_token_analyse_535.py:279: AssertionError
+______________ TestDatenschutz.test_ausgabe_ohne_protokollinhalte ______________
+
+self = <test_token_analyse_535.TestDatenschutz object at 0x7f195ee99f90>
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-277/test_ausgabe_ohne_protokollinh0')
+capsys = <_pytest.capture.CaptureFixture object at 0x7f195ee9a850>
+
+    def test_ausgabe_ohne_protokollinhalte(self, tmp_path, capsys):
+        """AC-13: weder Text- noch JSON-Ausgabe enthält Protokollinhalte."""
+>       ta = _lade()
+             ^^^^^^^
+
+tests/test_token_analyse_535.py:288: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_token_analyse_535.py:26: in _lade
+    spec.loader.exec_module(modul)
+<frozen importlib._bootstrap_external>:1023: in exec_module
+    ???
+<frozen importlib._bootstrap_external>:1160: in get_code
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <_frozen_importlib_external.SourceFileLoader object at 0x7f195edf4a70>
+path = '/home/user/agent-os-openspec/core/tools/token_analyse.py'
+
+>   ???
+E   FileNotFoundError: [Errno 2] No such file or directory: '/home/user/agent-os-openspec/core/tools/token_analyse.py'
+
+<frozen importlib._bootstrap_external>:1218: FileNotFoundError
+_______ TestVerteilung.test_datei_in_core_tools_und_setup_spiegelt_tools _______
+
+self = <test_token_analyse_535.TestVerteilung object at 0x7f195ee9a0d0>
+
+    def test_datei_in_core_tools_und_setup_spiegelt_tools(self):
+        """AC-14: Datei in core/tools, setup.py spiegelt core/tools/*.py ohne Sonderfall."""
+>       assert PFAD.is_file()
+E       AssertionError: assert False
+E        +  where False = is_file()
+E        +    where is_file = PosixPath('/home/user/agent-os-openspec/core/tools/token_analyse.py').is_file
+
+tests/test_token_analyse_535.py:317: AssertionError
+_________________________ test_changelog_mentions_535 __________________________
+
+    def test_changelog_mentions_535():
+        """AC-15: CHANGELOG [Unreleased] -> ### Added nennt #535."""
+        text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        m = re.search(r"^## \[Unreleased\][^\n]*\n(.*?)(?=^## \[)", text, re.S | re.M)
+        assert m, "kein [Unreleased]-Abschnitt"
+        abschnitt = m.group(1)
+        added = re.search(r"^### Added[^\n]*\n(.*?)(?=^### |\Z)", abschnitt, re.S | re.M)
+        assert added, "kein ### Added unter [Unreleased]"
+>       assert "#535" in added.group(1)
+E       assert '#535' in '\n- **Framework-Agenten in Cloud-Sitzungen (#577):** Cloud-Sitzungen laden keine Plugins; benannte Agenten wie `implementation-validator` oder `po-briefer` starteten dort als `general-purpose`, erbten Opus und lasen ihre Definition per `cat` nach. Neu erzeugt `scripts/sync_cloud_agents.py` aus `core/agents/` markierte Kopien in `.claude/agents/` (Marker-Zeile nach dem Frontmatter; `--check` meldet „fehlt“, „abweichend“, „veraltet“, Exit 1); veraltete markierte Kopien fallen weg, unmarkierte Dateien (eigene oder Modul-Agenten) werden nie angefasst und als „Skipped“ gemeldet. Im Framework-Repo ist `.claude/agents/` eingecheckt, `release_check.py` prüft es in der neuen Zeile „Cloud-Agenten“. Für Plugin-Konsumenten mit Cloud-Pin schreiben `setup.py --cloud-gates` und `--update` dieselben Kopien; `--update` spiegelt `core/agents` im Plugin-Modus nicht mehr per Manifest (kein Hin und Her markiert/unmarkiert, keine `.new`-Dateien). Copy-Modus unverändert. Die Befehle `/01-feature`, `/20-analyse`, `/30-write-spec`, `/50-implement`, `/60-validate` und `/82-test` starten benannte Agenten in Werkzeug-Syntax `Agent(subagent_type="<name>", …)` ohne `model` (das Frontmatter bestimmt das Modell), nennen den Fallback `agent-os-openspec:<name>` bzw. `general-purpose` mit dem Frontmatter-Modell, und anonyme Starts (`general-purpose`, `Explore`, `Plan`) tragen immer ein `model`; `templates/agent_orchestration.md` beschreibt die Regel. Migration: Plugin-Konsumenten mit Cloud-Sitzungen führen `setup.py <projekt> --cloud-gates` (oder `--update`) einmal aus und committen `.claude/agents/`; sonst keine. Tests: `tests/test_cloud_agents_577.py`.\n\n'
+E        +  where '\n- **Framework-Agenten in Cloud-Sitzungen (#577):** Cloud-Sitzungen laden keine Plugins; benannte Agenten wie `implementation-validator` oder `po-briefer` starteten dort als `general-purpose`, erbten Opus und lasen ihre Definition per `cat` nach. Neu erzeugt `scripts/sync_cloud_agents.py` aus `core/agents/` markierte Kopien in `.claude/agents/` (Marker-Zeile nach dem Frontmatter; `--check` meldet „fehlt“, „abweichend“, „veraltet“, Exit 1); veraltete markierte Kopien fallen weg, unmarkierte Dateien (eigene oder Modul-Agenten) werden nie angefasst und als „Skipped“ gemeldet. Im Framework-Repo ist `.claude/agents/` eingecheckt, `release_check.py` prüft es in der neuen Zeile „Cloud-Agenten“. Für Plugin-Konsumenten mit Cloud-Pin schreiben `setup.py --cloud-gates` und `--update` dieselben Kopien; `--update` spiegelt `core/agents` im Plugin-Modus nicht mehr per Manifest (kein Hin und Her markiert/unmarkiert, keine `.new`-Dateien). Copy-Modus unverändert. Die Befehle `/01-feature`, `/20-analyse`, `/30-write-spec`, `/50-implement`, `/60-validate` und `/82-test` starten benannte Agenten in Werkzeug-Syntax `Agent(subagent_type="<name>", …)` ohne `model` (das Frontmatter bestimmt das Modell), nennen den Fallback `agent-os-openspec:<name>` bzw. `general-purpose` mit dem Frontmatter-Modell, und anonyme Starts (`general-purpose`, `Explore`, `Plan`) tragen immer ein `model`; `templates/agent_orchestration.md` beschreibt die Regel. Migration: Plugin-Konsumenten mit Cloud-Sitzungen führen `setup.py <projekt> --cloud-gates` (oder `--update`) einmal aus und committen `.claude/agents/`; sonst keine. Tests: `tests/test_cloud_agents_577.py`.\n\n' = <built-in method group of re.Match object at 0x7f195ebf7760>(1)
+E        +    where <built-in method group of re.Match object at 0x7f195ebf7760> = <re.Match object; span=(1, 1659), match='### Added\n\n- **Framework-Agenten in Cloud-Sitzu>.group
+
+tests/test_token_analyse_535.py:332: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_token_analyse_535.py::TestZuordnung::test_lesen_und_schreiben_nach_pfad
+FAILED tests/test_token_analyse_535.py::TestZuordnung::test_bash_und_weitere_kategorien
+FAILED tests/test_token_analyse_535.py::TestZuordnung::test_openspec_nur_am_wortanfang_ist_doku
+FAILED tests/test_token_analyse_535.py::TestDeduplizierung::test_streaming_zeilen_maximum_output
+FAILED tests/test_token_analyse_535.py::TestDeduplizierung::test_dateiuebergreifend_einmal
+FAILED tests/test_token_analyse_535.py::TestKontextstufen::test_stufen_mit_input
+FAILED tests/test_token_analyse_535.py::TestBericht::test_gewichtung_anteile_und_rohsummen
+FAILED tests/test_token_analyse_535.py::TestBericht::test_sortiert_nach_kostenanteil
+FAILED tests/test_token_analyse_535.py::TestCli::test_liste_fasst_worktrees_zusammen
+FAILED tests/test_token_analyse_535.py::TestCli::test_praefix_mit_bindestrich_json_verzeichnis
+FAILED tests/test_token_analyse_535.py::TestCli::test_kein_treffer_exit_1_stderr
+FAILED tests/test_token_analyse_535.py::TestCli::test_kaputte_zeilen_und_unlesbare_dateien_werden_uebersprungen
+FAILED tests/test_token_analyse_535.py::TestDatenschutz::test_ausgabe_ohne_protokollinhalte
+FAILED tests/test_token_analyse_535.py::TestVerteilung::test_datei_in_core_tools_und_setup_spiegelt_tools
+FAILED tests/test_token_analyse_535.py::test_changelog_mentions_535 - assert ...
+============================== 15 failed in 0.34s ==============================
