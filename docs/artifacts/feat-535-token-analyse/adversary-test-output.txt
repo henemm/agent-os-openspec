@@ -1,0 +1,23 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.18, pytest-9.2.0, pluggy-1.7.0 -- /home/user/agent-os-openspec/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/user/agent-os-openspec
+collecting ... collected 15 items
+
+tests/test_token_analyse_535.py::TestZuordnung::test_lesen_und_schreiben_nach_pfad PASSED [  6%]
+tests/test_token_analyse_535.py::TestZuordnung::test_bash_und_weitere_kategorien PASSED [ 13%]
+tests/test_token_analyse_535.py::TestZuordnung::test_openspec_nur_am_wortanfang_ist_doku PASSED [ 20%]
+tests/test_token_analyse_535.py::TestDeduplizierung::test_streaming_zeilen_maximum_output PASSED [ 26%]
+tests/test_token_analyse_535.py::TestDeduplizierung::test_dateiuebergreifend_einmal PASSED [ 33%]
+tests/test_token_analyse_535.py::TestKontextstufen::test_stufen_mit_input PASSED [ 40%]
+tests/test_token_analyse_535.py::TestBericht::test_gewichtung_anteile_und_rohsummen PASSED [ 46%]
+tests/test_token_analyse_535.py::TestBericht::test_sortiert_nach_kostenanteil PASSED [ 53%]
+tests/test_token_analyse_535.py::TestCli::test_liste_fasst_worktrees_zusammen PASSED [ 60%]
+tests/test_token_analyse_535.py::TestCli::test_praefix_mit_bindestrich_json_verzeichnis PASSED [ 66%]
+tests/test_token_analyse_535.py::TestCli::test_kein_treffer_exit_1_stderr PASSED [ 73%]
+tests/test_token_analyse_535.py::TestCli::test_kaputte_zeilen_und_unlesbare_dateien_werden_uebersprungen PASSED [ 80%]
+tests/test_token_analyse_535.py::TestDatenschutz::test_ausgabe_ohne_protokollinhalte PASSED [ 86%]
+tests/test_token_analyse_535.py::TestVerteilung::test_datei_in_core_tools_und_setup_spiegelt_tools PASSED [ 93%]
+tests/test_token_analyse_535.py::test_changelog_mentions_535 PASSED      [100%]
+
+============================== 15 passed in 0.26s ==============================
