@@ -281,6 +281,49 @@ class TestCli:
         assert b["antworten"] == 2
         assert b["roh"]["out"] == 30
 
+        # F001: Felder mit falschem Typ neben gültigen Antworten (kein Abbruch)
+        def roh(mid, usage, bloecke):
+            return {"type": "assistant", "message": {"id": mid, "usage": usage, "content": bloecke}}
+
+        def nutz(**kw):
+            u = {"input_tokens": 1, "cache_creation_input_tokens": 0,
+                 "cache_read_input_tokens": 1000, "output_tokens": 1}
+            u.update(kw)
+            return u
+
+        text = [{"type": "text"}]
+        schreibe(ordner / "typen.jsonl", [
+            roh("t1", nutz(input_tokens=None, cache_creation_input_tokens="12",
+                           cache_read_input_tokens="x", output_tokens=None), text),
+            roh("t1", nutz(output_tokens="99"), text),            # Streaming-Vergleich mit String
+            roh(["liste"], nutz(output_tokens=100), text),        # id unhashable -> übersprungen
+            roh(42, nutz(output_tokens=100), text),               # id kein str -> übersprungen
+            roh("t2", nutz(output_tokens=7, output_tokens_details="viel"), text),
+            roh("t3", nutz(output_tokens=3), [{"type": "tool_use", "name": "Bash", "input": "git status"}]),
+            roh("t4", nutz(), [{"type": "tool_use", "name": "Edit", "input": {"file_path": None}}]),
+            roh("t5", nutz(), [{"type": "tool_use", "name": None, "input": {}}]),
+            roh("t6", nutz(), [{"type": "tool_use", "name": ["Bash"], "input": {}}]),
+            roh("t7", nutz(), [{"type": "tool_use", "name": "Bash", "input": {"command": ["git", "x"]}}]),
+            roh("t8", nutz(), [{"type": "tool_use", "name": "Read", "input": {"file_path": ["a.md"]}}]),
+            roh("t9", nutz(output_tokens=True, input_tokens=False), text),  # bool zählt nicht als Zahl
+        ])
+        r = cli("-proj", "--json", "--verzeichnis", str(tmp_path), tmp_path=tmp_path)
+        assert r.returncode == 0, r.stderr
+        assert "Traceback" not in r.stderr
+        b = json.loads(r.stdout)
+        assert b["antworten"] == 2 + 9
+        assert b["roh"]["out"] == 30 + 0 + 7 + 3 + 1 + 1 + 1 + 1 + 1 + 0
+        assert b["roh"]["inp"] == 2 + 0 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 0
+        assert b["roh"]["cw"] == 0
+        assert sum(z["davon_denken"] for z in b["taetigkeiten"]) == 0
+
+        # F002: nicht vorhandener Protokollordner -> Meldung auf stderr, Exit 1
+        r = cli("--liste", "--verzeichnis", str(tmp_path / "gibtsnicht"), tmp_path=tmp_path)
+        assert r.returncode == 1
+        assert r.stderr.strip()
+        assert "Traceback" not in r.stderr
+        assert r.stdout.strip() == ""
+
 
 class TestDatenschutz:
     def test_ausgabe_ohne_protokollinhalte(self, tmp_path, capsys):

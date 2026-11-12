@@ -1,0 +1,76 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____ TestCli.test_kaputte_zeilen_und_unlesbare_dateien_werden_uebersprungen ____
+
+self = <test_token_analyse_535.TestCli object at 0x7fa7391a0640>
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-287/test_kaputte_zeilen_und_unlesb0')
+
+    def test_kaputte_zeilen_und_unlesbare_dateien_werden_uebersprungen(self, tmp_path):
+        """AC-12: kaputte Zeilen und unlesbare Dateien übersprungen, Exit 0."""
+        ordner = tmp_path / "-proj"
+        schreibe(ordner / "gut.jsonl", [
+            antwort("m1", [{"type": "text"}], out=10),
+            antwort("m2", [tool("Bash", command="git status")], out=20),
+        ], extra='kaputt\n{"type": "assistant", "message": {\n\n')
+        with open(ordner / "gut.jsonl", "ab") as f:
+            f.write(b"\xff\xfe\x00 kein utf8\n")
+        (ordner / "x.jsonl").mkdir()  # Verzeichnis mit .jsonl-Namen: nicht lesbar als Datei
+        (ordner / "y.jsonl").symlink_to(ordner / "gibt-es-nicht.jsonl")  # kaputter Link
+        r = cli("-proj", "--json", "--verzeichnis", str(tmp_path), tmp_path=tmp_path)
+        assert r.returncode == 0, r.stderr
+        b = json.loads(r.stdout)
+        assert b["antworten"] == 2
+        assert b["roh"]["out"] == 30
+    
+        # F001: Felder mit falschem Typ neben gültigen Antworten (kein Abbruch)
+        def roh(mid, usage, bloecke):
+            return {"type": "assistant", "message": {"id": mid, "usage": usage, "content": bloecke}}
+    
+        def nutz(**kw):
+            u = {"input_tokens": 1, "cache_creation_input_tokens": 0,
+                 "cache_read_input_tokens": 1000, "output_tokens": 1}
+            u.update(kw)
+            return u
+    
+        text = [{"type": "text"}]
+        schreibe(ordner / "typen.jsonl", [
+            roh("t1", nutz(input_tokens=None, cache_creation_input_tokens="12",
+                           cache_read_input_tokens="x", output_tokens=None), text),
+            roh("t1", nutz(output_tokens="99"), text),            # Streaming-Vergleich mit String
+            roh(["liste"], nutz(output_tokens=100), text),        # id unhashable -> übersprungen
+            roh(42, nutz(output_tokens=100), text),               # id kein str -> übersprungen
+            roh("t2", nutz(output_tokens=7, output_tokens_details="viel"), text),
+            roh("t3", nutz(output_tokens=3), [{"type": "tool_use", "name": "Bash", "input": "git status"}]),
+            roh("t4", nutz(), [{"type": "tool_use", "name": "Edit", "input": {"file_path": None}}]),
+            roh("t5", nutz(), [{"type": "tool_use", "name": None, "input": {}}]),
+            roh("t6", nutz(), [{"type": "tool_use", "name": ["Bash"], "input": {}}]),
+            roh("t7", nutz(), [{"type": "tool_use", "name": "Bash", "input": {"command": ["git", "x"]}}]),
+            roh("t8", nutz(), [{"type": "tool_use", "name": "Read", "input": {"file_path": ["a.md"]}}]),
+            roh("t9", nutz(output_tokens=True, input_tokens=False), text),  # bool zählt nicht als Zahl
+        ])
+        r = cli("-proj", "--json", "--verzeichnis", str(tmp_path), tmp_path=tmp_path)
+>       assert r.returncode == 0, r.stderr
+E       AssertionError: Traceback (most recent call last):
+E           File "/home/user/agent-os-openspec/core/tools/token_analyse.py", line 272, in <module>
+E             sys.exit(main())
+E                      ~~~~^^
+E           File "/home/user/agent-os-openspec/core/tools/token_analyse.py", line 263, in main
+E             b = bericht(dateien)
+E           File "/home/user/agent-os-openspec/core/tools/token_analyse.py", line 189, in bericht
+E             summen, schritte, denken, kontext, kontext_schritte = auswerten(dateien)
+E                                                                   ~~~~~~~~~^^^^^^^^^
+E           File "/home/user/agent-os-openspec/core/tools/token_analyse.py", line 167, in auswerten
+E             for u, bloecke in antworten(dateien):
+E                               ~~~~~~~~~^^^^^^^^^
+E           File "/home/user/agent-os-openspec/core/tools/token_analyse.py", line 152, in antworten
+E             if m["usage"].get("output_tokens", 0) > e["usage"].get("output_tokens", 0):
+E                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E         TypeError: '>' not supported between instances of 'NoneType' and 'NoneType'
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['/home/user/agent-os-openspec/.venv/bin/python', '/home/user/agent-os-openspec/core/tools/token...^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: \'>\' not supported between instances of \'NoneType\' and \'NoneType\'\n').returncode
+
+tests/test_token_analyse_535.py:311: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_token_analyse_535.py::TestCli::test_kaputte_zeilen_und_unlesbare_dateien_werden_uebersprungen
+1 failed, 14 deselected in 0.21s
