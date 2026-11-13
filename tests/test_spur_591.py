@@ -673,16 +673,16 @@ class TestDokumentation:
 
     def test_changelog_nennt_591(self):
         changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        # [Unreleased] plus juengster Versionsabschnitt: nach einem Release steht der
-        # Eintrag dort.
+        # Release-stabil: "### Added" aus JEDEM Abschnitt ([Unreleased] und alle
+        # "## [x.y.z]"), weil der Eintrag mit jedem Release einen Abschnitt weiter
+        # nach hinten wandert (zuvor nur [Unreleased] + juengstes Release).
         kopf = changelog.split("## [Unreleased]", 1)[1]
-        unreleased = "\n## [".join(kopf.split("\n## [", 2)[:2])
-        added = _section(unreleased, "### Added")
+        added = "\n".join(_section(teil, "### Added") for teil in kopf.split("\n## ["))
         # Eigener Eintrag (fette Ueberschrift mit #591); der #589-Eintrag erwaehnt
         # #591 schon als Ausblick und zaehlt nicht.
         own = [ln for ln in added.splitlines()
                if re.match(r"^- \*\*[^*]*#591[^*]*\*\*", ln)]
-        assert own, "CHANGELOG [Unreleased] -> ### Added hat keinen Eintrag zu #591"
+        assert own, "CHANGELOG -> kein ### Added-Abschnitt hat einen Eintrag zu #591"
         assert any("Spur" in ln for ln in own), own
         first = re.search(r"^## \[(\d+\.\d+\.\d+)\]", changelog, re.MULTILINE)
         plugin = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text())
