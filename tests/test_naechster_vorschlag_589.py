@@ -790,6 +790,9 @@ class TestDokumentation:
         assert res.returncode == 0, (res.stdout, res.stderr)
 
         changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        unreleased = changelog.split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
+        # [Unreleased] plus juengster Versionsabschnitt: nach einem Release steht der
+        # Eintrag dort.
+        kopf = changelog.split("## [Unreleased]", 1)[1]
+        unreleased = "\n## [".join(kopf.split("\n## [", 2)[:2])
         added = _section(unreleased, "### Added")
-        assert "#589" in added, "CHANGELOG [Unreleased] -> ### Added nennt #589 nicht"
+        assert "#589" in added, "CHANGELOG [Unreleased]/neuestes Release -> ### Added nennt #589 nicht"

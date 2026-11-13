@@ -367,9 +367,13 @@ class TestVerteilung:
 def test_changelog_mentions_535():
     """AC-15: CHANGELOG [Unreleased] -> ### Added nennt #535."""
     text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    m = re.search(r"^## \[Unreleased\][^\n]*\n(.*?)(?=^## \[)", text, re.S | re.M)
+    # [Unreleased] plus juengster Versionsabschnitt: nach einem Release steht der
+    # Eintrag dort.
+    m = re.search(r"^## \[Unreleased\][^\n]*\n(.*?)(?=^## \[\d)", text, re.S | re.M)
     assert m, "kein [Unreleased]-Abschnitt"
-    abschnitt = m.group(1)
+    rest = text[m.end():]
+    neu = re.search(r"^## \[\d[^\n]*\n(.*?)(?=^## \[|\Z)", rest, re.S | re.M)
+    abschnitt = m.group(1) + (neu.group(1) if neu else "")
     added = re.search(r"^### Added[^\n]*\n(.*?)(?=^### |\Z)", abschnitt, re.S | re.M)
-    assert added, "kein ### Added unter [Unreleased]"
+    assert added, "kein ### Added unter [Unreleased] oder im neuesten Release"
     assert "#535" in added.group(1)
