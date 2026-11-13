@@ -77,7 +77,7 @@ _HOOK_DIR = Path(__file__).resolve().parent
 
 SOURCE = "user:openspec"
 AGENT = "claude"
-TOKEN_NAMES = ("workflow", "issue", "phase", "step", "next", "state")
+TOKEN_NAMES = ("workflow", "issue", "phase", "step", "next", "state", "spur")
 # Endzustand (#550) als Seitenleisten-Token: dieselbe Quelle wie Chat und Plan.
 STATE_TOKENS = {"done": "erledigt", "waiting": "läuft", "you": "du"}
 MAX_LEN = 80  # Herdr kappt Titel/Token-Werte ohnehin bei 80 Zeichen
@@ -185,6 +185,15 @@ def run_herdr(args, wait: bool = False, timeout: float = 2.0):
         return None
 
 
+def _spur_token(workflow) -> str:
+    """Spur (#591) aus dem Auftrag, nur lesend; "" ohne Spur oder bei Fehlern."""
+    try:
+        auftrag = workflow.read_auftrag()
+        return _clean((auftrag or {}).get("spur") or "")
+    except Exception:
+        return ""
+
+
 def build_report(data) -> "dict | None":
     """Titel + Tokens fuer den Workflow-Stand; None = Clear statt Report."""
     if not isinstance(data, dict):
@@ -217,6 +226,8 @@ def build_report(data) -> "dict | None":
             # #555: dieselben Auftrags-Argumente wie `endstate` und Plan
             "state": STATE_TOKENS.get(
                 workflow.end_state(data, **workflow.queue_end_args(data))["kind"], "du"),
+            # #591: nur Anzeige, die Hoheit ueber die Spur liegt beim Framework
+            "spur": _spur_token(workflow),
         },
     }
 

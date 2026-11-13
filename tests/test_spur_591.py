@@ -631,8 +631,13 @@ class TestHerdrAnzeige:
         stub = h466._make_stub(tmp_path)
         env = _env(mit, HERDR_ENV="1", HERDR_PANE_ID=h466.PANE,
                    HERDR_BIN_PATH=str(stub), STUB_LOG=str(log))
+        # Nacheinander: beide Aufrufe starten den Stub detached; parallel verschraenken
+        # sich dessen printf-Schreibvorgaenge im Log.
         _py(mit, ("import herdr_bridge\n"
                   f"herdr_bridge.report_workflow({data!r})\n"
+                  "print('null')\n"), env=env)
+        h466._settled_calls(log, 1)
+        _py(mit, ("import herdr_bridge\n"
                   "herdr_bridge.clear()\n"
                   "print('null')\n"), env=env)
         calls = h466._settled_calls(log, 2)

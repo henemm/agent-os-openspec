@@ -56,10 +56,14 @@ sichere den Auftrag vor dem ersten Workflow per `workflow.py queue add` auf der
 Platte, damit er `/clear` und Worktree-Wechsel überlebt:
 
 ```bash
-python3 .claude/hooks/workflow.py queue add <N...> [--autark] [--note "<Wortlaut>"]
+python3 .claude/hooks/workflow.py queue add <N...> [--autark] [--note "<Wortlaut>"] [--spur <name>]
 ```
 
 `--autark` nur, wenn der PO „autark“ bzw. „melde dich nur, wenn …“ gesagt hat.
+`--spur <name>` (auch einzeln: `workflow.py spur <name>`), wenn der PO eine Spur genannt hat
+oder die Aufgabe zu einer erkennbaren Reihe gehört (#591): nach „fertig“ schlägt `endstate`
+dann offene Issues mit dem GitHub-Label `spur:<name>` vor. Epic und Meilenstein haben Vorrang;
+die Spur wirkt als Stufe 3. Das Label muss an den Issues gesetzt sein.
 Die Datei `.claude/auftrag.json` liegt im Haupt-Repo; `workflow.py complete` hakt
 das Issue ab, `workflow.py queue` zeigt den Stand (`NEXT=`, `PROMPT=`). Ein
 autarker Auftrag hält die Kette nicht für `/clear` an; menschliche Pflichtstopps

@@ -38,7 +38,7 @@ from hook_utils import UnsafeStateError, atomic_write_json, read_state_json
 from hook_utils import issue_number_from_name, workflow_issue_number
 from hook_utils import (auftrag_settings, auftrag_path, read_auftrag, write_auftrag,
                         auftrag_open_issues, auftrag_autark_open, auftrag_mark_done,
-                        auftrag_note_text)
+                        auftrag_note_text, auftrag_set_spur, normalize_spur)
 setup_path()
 
 import hashlib as _hashlib
@@ -550,6 +550,15 @@ def _suggest_claimed() -> list:
             if e.get("issue") and (own is None or e.get("session_id") != own)]
 
 
+def _auftrag_spur() -> "str | None":
+    """Spur (#591) aus dem Auftrag oder None. Wirft nie."""
+    try:
+        auftrag = read_auftrag()
+        return (auftrag or {}).get("spur") or None
+    except Exception:
+        return None
+
+
 def cached_suggestion(data) -> "dict | None":
     """Vorschlag (#589) nur aus dem Cache, frisch gegen das Session-Register. Wirft nie.
 
@@ -564,7 +573,7 @@ def cached_suggestion(data) -> "dict | None":
         raw = next_suggestion.read_cache(find_project_root(), done, ttl_s=cfg["cache_ttl_s"])
         if raw is None:
             return None
-        return next_suggestion.choose(raw, done, _suggest_claimed())
+        return next_suggestion.choose(raw, done, _suggest_claimed(), spur=_auftrag_spur())
     except Exception:
         return None
 
@@ -3420,8 +3429,8 @@ def cmd_endstate(args: list[str]) -> None:
 def _refresh_suggestion(data: dict, queue: dict) -> bool:
     """Vorschlags-Rohdaten (#589) aus dem Cache, sonst per `gh api` holen und cachen.
 
-    Autarker Auftrag ohne naechstes Issue und Quelle Epic/Meilenstein: Nummer
-    idempotent an den Auftrag haengen (Kette #551). True, wenn Rohdaten vorliegen.
+    Autarker Auftrag ohne naechstes Issue und Quelle Epic/Meilenstein/Spur (#591):
+    Nummer idempotent an den Auftrag haengen (Kette #551). True, wenn Rohdaten vorliegen.
     Fail-open, wirft nie; Kill-Switch `next_suggestion.enabled: false`.
     """
     try:
@@ -3437,9 +3446,9 @@ def _refresh_suggestion(data: dict, queue: dict) -> bool:
             if raw is None:
                 return False
             next_suggestion.write_cache(root, done, raw)
-        suggest = next_suggestion.choose(raw, done, _suggest_claimed())
+        suggest = next_suggestion.choose(raw, done, _suggest_claimed(), spur=_auftrag_spur())
         if suggest and queue.get("autark") is True \
-                and suggest["source"] in ("epic", "milestone"):
+                and suggest["source"] in ("epic", "milestone", "spur"):
             auftrag = read_auftrag(root)
             if auftrag and auftrag["autark"] is True \
                     and all(e["n"] != suggest["n"] for e in auftrag["issues"]):
@@ -4055,7 +4064,9 @@ def cmd_context(args: list[str]) -> None:
 
 
 QUEUE_USAGE = ('Usage: workflow.py queue [list | add <N...> [--autark] [--note "<text>"] '
-               '| done <N> | clear]')
+               '[--spur <name>] | done <N> | clear]')
+SPUR_USAGE = ("Usage: workflow.py spur [<name> | --clear]  "
+              "(Name aus a-z, 0-9, '-'; GitHub-Label spur:<name>)")
 QUEUE_AUTARK_SUFFIX = (" (autark: Auftrag aus .claude/auftrag.json weiter abarbeiten, "
                        "kein Halt für /clear)")
 
@@ -4082,17 +4093,22 @@ def _print_queue(auftrag) -> None:
     if open_issues:
         suffix = QUEUE_AUTARK_SUFFIX if autark else ""
         print(f"PROMPT=/00-intake #{open_issues[0]}{suffix}")
+    print(f"SPUR={(auftrag or {}).get('spur') or 'none'}")
 
 
-def _parse_queue_add(args: list[str]) -> "tuple[list[int], bool, str | None]":
-    """(Nummern, --autark, --note) aus den `queue add`-Argumenten; Fehler → Usage."""
-    numbers, autark, note, i = [], False, None, 0
+def _parse_queue_add(args: list[str]) -> "tuple[list[int], bool, str | None, str | None]":
+    """(Nummern, --autark, --note, --spur) aus den `queue add`-Argumenten; Fehler → Usage."""
+    numbers, autark, note, spur, i = [], False, None, None, 0
     while i < len(args):
         arg = args[i]
         if arg == "--autark":
             autark = True
         elif arg == "--note" and i + 1 < len(args):
             note, i = args[i + 1], i + 1
+        elif arg == "--spur" and i + 1 < len(args):
+            spur, i = normalize_spur(args[i + 1]), i + 1
+            if spur is None:
+                _queue_usage_exit()
         elif _queue_num(arg) is not None:
             numbers.append(_queue_num(arg))
         else:
@@ -4100,14 +4116,14 @@ def _parse_queue_add(args: list[str]) -> "tuple[list[int], bool, str | None]":
         i += 1
     if not numbers:
         _queue_usage_exit()
-    return numbers, autark, note
+    return numbers, autark, note, spur
 
 
 def _queue_add(root: Path, args: list[str]) -> None:
     """Nummern anhaengen; Doppelte ignoriert, erledigte wieder `open` (#551)."""
-    numbers, autark, note = _parse_queue_add(args)
+    numbers, autark, note, spur = _parse_queue_add(args)
     auftrag = read_auftrag(root) or {"issues": [], "autark": False, "note": "",
-                                     "created": "", "updated": ""}
+                                     "spur": "", "created": "", "updated": ""}
     by_number = {e["n"]: e for e in auftrag["issues"]}
     for n in numbers:
         if n in by_number:
@@ -4119,15 +4135,17 @@ def _queue_add(root: Path, args: list[str]) -> None:
         auftrag["autark"] = True
     if note is not None:
         auftrag["note"] = note
+    if spur is not None:
+        auftrag["spur"] = spur
     write_auftrag(root, auftrag)
 
 
 def cmd_queue(args: list[str]) -> None:
-    """`queue [list | add <N..> [--autark] [--note T] | done <N> | clear]` (#551).
+    """`queue [list | add <N..> [--autark] [--note T] [--spur S] | done <N> | clear]` (#551).
 
     Auftragsliste `<Haupt-Repo>/.claude/auftrag.json`, wirkt ohne aktiven
-    Workflow. Ausgabe `QUEUE=`, `AUTARK=`, `NEXT=` und bei offenem Auftrag
-    `PROMPT=/00-intake #<NEXT>`. Kill-Switch `auftrag.enabled: false`: genau
+    Workflow. Ausgabe `QUEUE=`, `AUTARK=`, `NEXT=`, bei offenem Auftrag
+    `PROMPT=/00-intake #<NEXT>` und `SPUR=<name>|none` (#591). Kill-Switch `auftrag.enabled: false`: genau
     `QUEUE=disabled`, Exit 0, keine Schreibung.
     """
     if not auftrag_settings()["enabled"]:
@@ -4153,6 +4171,36 @@ def cmd_queue(args: list[str]) -> None:
     elif sub != "list" or rest:
         _queue_usage_exit()
     _print_queue(read_auftrag(root))
+
+
+def cmd_spur(args: list[str]) -> None:
+    """`spur [<name> | --clear]` (#591): Spur des Auftrags setzen, leeren oder zeigen.
+
+    Ausgabe genau `SPUR=<name>` bzw. `SPUR=none`. Setzen legt bei Bedarf einen
+    Auftrag mit leerer Liste an; `--clear` leert nur das Feld. Ungueltiger Name:
+    Usage auf stderr, Exit 1, keine Schreibung. Kill-Switch `auftrag.enabled:
+    false`: genau `SPUR=disabled`, Exit 0, keine Schreibung.
+    """
+    if not auftrag_settings()["enabled"]:
+        print("SPUR=disabled")
+        return
+    root = find_project_root()
+    if len(args) > 1:
+        print(SPUR_USAGE, file=sys.stderr)
+        sys.exit(1)
+    if not args:
+        print(f"SPUR={(read_auftrag(root) or {}).get('spur') or 'none'}")
+        return
+    name = "" if args[0] == "--clear" else args[0]
+    if not name and args[0] == "--clear" and read_auftrag(root) is None:
+        print("SPUR=none")
+        return
+    if args[0] != "--clear" and normalize_spur(name) is None:
+        print(f"spur: ungültiger Name {name!r}", file=sys.stderr)
+        print(SPUR_USAGE, file=sys.stderr)
+        sys.exit(1)
+    auftrag = auftrag_set_spur(root, name)
+    print(f"SPUR={(auftrag or {}).get('spur') or 'none'}")
 
 
 def _split_batch(args: list[str]) -> list[list[str]]:
@@ -4413,6 +4461,7 @@ COMMANDS = {
     "waiting": cmd_waiting,
     "endstate": cmd_endstate,
     "queue": cmd_queue,
+    "spur": cmd_spur,
     "retro-list": cmd_retro_list,
     "sessions": cmd_sessions,
     "observable-surface": cmd_observable_surface,
