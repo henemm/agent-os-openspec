@@ -94,7 +94,7 @@ _FALLBACK_PLUGIN_KEYS = frozenset({
     "scope_guard", "spec_validation", "bash_gate", "e2e_scope", "claude_md",
     "protected_paths", "always_allowed", "home_assistant", "ios_swiftui",
     "bug_fix", "e2e_tests", "output_specs", "qa_gate", "herdr", "autonomy",
-    "context_budget", "auftrag",
+    "context_budget", "auftrag", "next_suggestion",
 })
 _MAX_PROBE_BYTES = 256 * 1024
 _TOP_LEVEL_KEY_RE = re.compile(r"^[\"']?([A-Za-z_][\w-]*)[\"']?\s*:", re.MULTILINE)

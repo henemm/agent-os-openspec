@@ -1,0 +1,36 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.18, pytest-9.2.0, pluggy-1.7.0 -- /home/user/agent-os-openspec/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/user/agent-os-openspec
+collecting ... collected 18 items
+
+tests/test_naechster_vorschlag_589.py::TestChooseRangfolge::test_stufen_epic_vor_meilenstein_vor_verwandt_vor_prioritaet PASSED [  5%]
+tests/test_naechster_vorschlag_589.py::TestChooseRangfolge::test_kein_kandidat_none_und_spur_ohne_wirkung PASSED [ 11%]
+tests/test_naechster_vorschlag_589.py::TestChooseSortierung::test_meilenstein_faelligkeit_prioritaet_nummer PASSED [ 16%]
+tests/test_naechster_vorschlag_589.py::TestChooseAusschluesse::test_ausgeschlossene_kandidaten PASSED [ 22%]
+tests/test_naechster_vorschlag_589.py::TestChooseAusschluesse::test_von_anderer_sitzung_beanspruchtes_issue PASSED [ 27%]
+tests/test_naechster_vorschlag_589.py::TestChooseVerwandt::test_strenge_regex_nur_erledigte_nummer PASSED [ 33%]
+tests/test_naechster_vorschlag_589.py::TestFetch::test_nur_rest_aufrufe_und_rohdaten PASSED [ 38%]
+tests/test_naechster_vorschlag_589.py::TestFetch::test_fail_open_ohne_gh_fehler_timeout_json PASSED [ 44%]
+tests/test_naechster_vorschlag_589.py::TestCache::test_atomar_ttl_schluessel_und_frisches_choose PASSED [ 50%]
+tests/test_naechster_vorschlag_589.py::TestEndStateZeile::test_zeile_mit_zusatz_und_ohne_byte_gleich PASSED [ 55%]
+tests/test_naechster_vorschlag_589.py::TestEndstateKommando::test_suggest_zeilen_nur_bei_vorschlag PASSED [ 61%]
+tests/test_naechster_vorschlag_589.py::TestEndstateKommando::test_ohne_vorschlag_heutige_zeile_unveraendert PASSED [ 66%]
+tests/test_naechster_vorschlag_589.py::TestNetzfrei::test_plan_und_end_state_ohne_netz_gleiche_zeile PASSED [ 72%]
+tests/test_naechster_vorschlag_589.py::TestAuftragVorrang::test_offener_auftrag_hat_vorrang PASSED [ 77%]
+tests/test_naechster_vorschlag_589.py::TestAutark::test_anhaengen_idempotent_nur_epic_und_meilenstein PASSED [ 83%]
+tests/test_naechster_vorschlag_589.py::TestKillSwitch::test_nur_literal_false_schaltet_ab PASSED [ 88%]
+tests/test_naechster_vorschlag_589.py::TestFooterGate::test_erweiterte_zeile_wird_nicht_geblockt PASSED [ 94%]
+tests/test_naechster_vorschlag_589.py::TestDokumentation::test_befehlstext_skill_sync_und_changelog PASSED [100%]
+
+============================= 18 passed in 12.27s ==============================
+.....................................................................    [100%]
+69 passed in 19.92s
+........................................................................ [ 89%]
+........................................................................ [ 91%]
+........................................................................ [ 93%]
+........................................................................ [ 95%]
+....................................sss..s..ssssssssss..s..sssssss...... [ 97%]
+........................................................................ [ 99%]
+......................                                                   [100%]
+3736 passed, 30 skipped in 536.87s (0:08:56)

@@ -459,6 +459,13 @@ auf (autarker Auftrag) — kein Halt für `/clear`. Bei `ENDSTATE=you` (`❗ Du:
 Auftrag nicht autark) gib die Zeile wörtlich aus und warte auf den PO. Ein `ENDSTATE=waiting`
 ohne „aus deinem Auftrag“ (CI, Deploy, Agent) startet keine Kette.
 
+Vorschlag (#589): Ohne nächstes Issue aus dem Auftrag nennt die ✅-Zeile hinter `FOOTER=` oft
+schon die nächste Aufgabe („… mit /00-intake #M weitermachen (<Grund>).“); dann folgen
+`SUGGEST_ISSUE=M`, `SUGGEST_SOURCE=epic|milestone|related|priority` und `SUGGEST_REASON=`.
+Das ist nur Auskunft für dich: gib die Zeile wörtlich aus und starte wegen eines bloßen
+Vorschlags nichts selbst — die Kette greift weiterhin nur bei „aus deinem Auftrag“ (bei einem
+autarken Auftrag hängt `endstate` Epic-/Meilenstein-Nachfolger selbst an und meldet dann ⏳).
+
 ## On Failure
 
 If validation fails after auto-fix attempt:

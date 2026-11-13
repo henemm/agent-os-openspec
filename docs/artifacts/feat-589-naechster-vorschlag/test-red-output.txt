@@ -1,0 +1,344 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.18, pytest-9.2.0, pluggy-1.7.0 -- /home/user/agent-os-openspec/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/user/agent-os-openspec
+collecting ... collected 18 items
+
+tests/test_naechster_vorschlag_589.py::TestChooseRangfolge::test_stufen_epic_vor_meilenstein_vor_verwandt_vor_prioritaet FAILED [  5%]
+tests/test_naechster_vorschlag_589.py::TestChooseRangfolge::test_kein_kandidat_none_und_spur_ohne_wirkung FAILED [ 11%]
+tests/test_naechster_vorschlag_589.py::TestChooseSortierung::test_meilenstein_faelligkeit_prioritaet_nummer FAILED [ 16%]
+tests/test_naechster_vorschlag_589.py::TestChooseAusschluesse::test_ausgeschlossene_kandidaten FAILED [ 22%]
+tests/test_naechster_vorschlag_589.py::TestChooseAusschluesse::test_von_anderer_sitzung_beanspruchtes_issue FAILED [ 27%]
+tests/test_naechster_vorschlag_589.py::TestChooseVerwandt::test_strenge_regex_nur_erledigte_nummer FAILED [ 33%]
+tests/test_naechster_vorschlag_589.py::TestFetch::test_nur_rest_aufrufe_und_rohdaten FAILED [ 38%]
+tests/test_naechster_vorschlag_589.py::TestFetch::test_fail_open_ohne_gh_fehler_timeout_json FAILED [ 44%]
+tests/test_naechster_vorschlag_589.py::TestCache::test_atomar_ttl_schluessel_und_frisches_choose FAILED [ 50%]
+tests/test_naechster_vorschlag_589.py::TestEndStateZeile::test_zeile_mit_zusatz_und_ohne_byte_gleich FAILED [ 55%]
+tests/test_naechster_vorschlag_589.py::TestEndstateKommando::test_suggest_zeilen_nur_bei_vorschlag FAILED [ 61%]
+tests/test_naechster_vorschlag_589.py::TestEndstateKommando::test_ohne_vorschlag_heutige_zeile_unveraendert PASSED [ 66%]
+tests/test_naechster_vorschlag_589.py::TestNetzfrei::test_plan_und_end_state_ohne_netz_gleiche_zeile FAILED [ 72%]
+tests/test_naechster_vorschlag_589.py::TestAuftragVorrang::test_offener_auftrag_hat_vorrang PASSED [ 77%]
+tests/test_naechster_vorschlag_589.py::TestAutark::test_anhaengen_idempotent_nur_epic_und_meilenstein FAILED [ 83%]
+tests/test_naechster_vorschlag_589.py::TestKillSwitch::test_nur_literal_false_schaltet_ab FAILED [ 88%]
+tests/test_naechster_vorschlag_589.py::TestFooterGate::test_erweiterte_zeile_wird_nicht_geblockt FAILED [ 94%]
+tests/test_naechster_vorschlag_589.py::TestDokumentation::test_befehlstext_skill_sync_und_changelog FAILED [100%]
+
+=================================== FAILURES ===================================
+_ TestChooseRangfolge.test_stufen_epic_vor_meilenstein_vor_verwandt_vor_prioritaet _
+
+self = <test_naechster_vorschlag_589.TestChooseRangfolge object at 0x7f60fcdc9450>
+
+    def test_stufen_epic_vor_meilenstein_vor_verwandt_vor_prioritaet(self):
+>       ns = _ns()
+             ^^^^^
+
+tests/test_naechster_vorschlag_589.py:230: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ns():
+        sys.path.insert(0, str(HOOKS_DIR))
+>       import next_suggestion  # noqa: PLC0415
+        ^^^^^^^^^^^^^^^^^^^^^^
+E       ModuleNotFoundError: No module named 'next_suggestion'
+
+tests/test_naechster_vorschlag_589.py:108: ModuleNotFoundError
+______ TestChooseRangfolge.test_kein_kandidat_none_und_spur_ohne_wirkung _______
+
+self = <test_naechster_vorschlag_589.TestChooseRangfolge object at 0x7f60fcdc9950>
+
+    def test_kein_kandidat_none_und_spur_ohne_wirkung(self):
+>       ns = _ns()
+             ^^^^^
+
+tests/test_naechster_vorschlag_589.py:255: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ns():
+        sys.path.insert(0, str(HOOKS_DIR))
+>       import next_suggestion  # noqa: PLC0415
+        ^^^^^^^^^^^^^^^^^^^^^^
+E       ModuleNotFoundError: No module named 'next_suggestion'
+
+tests/test_naechster_vorschlag_589.py:108: ModuleNotFoundError
+_____ TestChooseSortierung.test_meilenstein_faelligkeit_prioritaet_nummer ______
+
+self = <test_naechster_vorschlag_589.TestChooseSortierung object at 0x7f60fcdc9a90>
+
+    def test_meilenstein_faelligkeit_prioritaet_nummer(self):
+>       ns = _ns()
+             ^^^^^
+
+tests/test_naechster_vorschlag_589.py:269: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ns():
+        sys.path.insert(0, str(HOOKS_DIR))
+>       import next_suggestion  # noqa: PLC0415
+        ^^^^^^^^^^^^^^^^^^^^^^
+E       ModuleNotFoundError: No module named 'next_suggestion'
+
+tests/test_naechster_vorschlag_589.py:108: ModuleNotFoundError
+____________ TestChooseAusschluesse.test_ausgeschlossene_kandidaten ____________
+
+self = <test_naechster_vorschlag_589.TestChooseAusschluesse object at 0x7f60fcdc9810>
+
+    def test_ausgeschlossene_kandidaten(self):
+>       ns = _ns()
+             ^^^^^
+
+tests/test_naechster_vorschlag_589.py:313: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ns():
+        sys.path.insert(0, str(HOOKS_DIR))
+>       import next_suggestion  # noqa: PLC0415
+        ^^^^^^^^^^^^^^^^^^^^^^
+E       ModuleNotFoundError: No module named 'next_suggestion'
+
+tests/test_naechster_vorschlag_589.py:108: ModuleNotFoundError
+_____ TestChooseAusschluesse.test_von_anderer_sitzung_beanspruchtes_issue ______
+
+self = <test_naechster_vorschlag_589.TestChooseAusschluesse object at 0x7f60fcdc9bd0>
+
+    def test_von_anderer_sitzung_beanspruchtes_issue(self):
+>       ns = _ns()
+             ^^^^^
+
+tests/test_naechster_vorschlag_589.py:348: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ns():
+        sys.path.insert(0, str(HOOKS_DIR))
+>       import next_suggestion  # noqa: PLC0415
+        ^^^^^^^^^^^^^^^^^^^^^^
+E       ModuleNotFoundError: No module named 'next_suggestion'
+
+tests/test_naechster_vorschlag_589.py:108: ModuleNotFoundError
+__________ TestChooseVerwandt.test_strenge_regex_nur_erledigte_nummer __________
+
+self = <test_naechster_vorschlag_589.TestChooseVerwandt object at 0x7f60fcdc9d10>
+
+    def test_strenge_regex_nur_erledigte_nummer(self):
+>       ns = _ns()
+             ^^^^^
+
+tests/test_naechster_vorschlag_589.py:371: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ns():
+        sys.path.insert(0, str(HOOKS_DIR))
+>       import next_suggestion  # noqa: PLC0415
+        ^^^^^^^^^^^^^^^^^^^^^^
+E       ModuleNotFoundError: No module named 'next_suggestion'
+
+tests/test_naechster_vorschlag_589.py:108: ModuleNotFoundError
+_________________ TestFetch.test_nur_rest_aufrufe_und_rohdaten _________________
+
+self = <test_naechster_vorschlag_589.TestFetch object at 0x7f60fcdc9e50>
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-295/test_nur_rest_aufrufe_und_rohd0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f60fccb1b50>
+
+    def test_nur_rest_aufrufe_und_rohdaten(self, tmp_path, monkeypatch):
+>       ns = _ns()
+             ^^^^^
+
+tests/test_naechster_vorschlag_589.py:399: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ns():
+        sys.path.insert(0, str(HOOKS_DIR))
+>       import next_suggestion  # noqa: PLC0415
+        ^^^^^^^^^^^^^^^^^^^^^^
+E       ModuleNotFoundError: No module named 'next_suggestion'
+
+tests/test_naechster_vorschlag_589.py:108: ModuleNotFoundError
+_____________ TestFetch.test_fail_open_ohne_gh_fehler_timeout_json _____________
+
+self = <test_naechster_vorschlag_589.TestFetch object at 0x7f60fcdc9f90>
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-295/test_fail_open_ohne_gh_fehler_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f60fce345f0>
+
+    def test_fail_open_ohne_gh_fehler_timeout_json(self, tmp_path, monkeypatch):
+>       ns = _ns()
+             ^^^^^
+
+tests/test_naechster_vorschlag_589.py:437: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ns():
+        sys.path.insert(0, str(HOOKS_DIR))
+>       import next_suggestion  # noqa: PLC0415
+        ^^^^^^^^^^^^^^^^^^^^^^
+E       ModuleNotFoundError: No module named 'next_suggestion'
+
+tests/test_naechster_vorschlag_589.py:108: ModuleNotFoundError
+___________ TestCache.test_atomar_ttl_schluessel_und_frisches_choose ___________
+
+self = <test_naechster_vorschlag_589.TestCache object at 0x7f60fcdca0d0>
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-295/test_atomar_ttl_schluessel_und0')
+
+    def test_atomar_ttl_schluessel_und_frisches_choose(self, tmp_path):
+>       ns = _ns()
+             ^^^^^
+
+tests/test_naechster_vorschlag_589.py:467: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ns():
+        sys.path.insert(0, str(HOOKS_DIR))
+>       import next_suggestion  # noqa: PLC0415
+        ^^^^^^^^^^^^^^^^^^^^^^
+E       ModuleNotFoundError: No module named 'next_suggestion'
+
+tests/test_naechster_vorschlag_589.py:108: ModuleNotFoundError
+_________ TestEndStateZeile.test_zeile_mit_zusatz_und_ohne_byte_gleich _________
+
+self = <test_naechster_vorschlag_589.TestEndStateZeile object at 0x7f60fcdca210>
+
+    def test_zeile_mit_zusatz_und_ohne_byte_gleich(self):
+        wf = _wf()
+        from klartext_gate import treffer  # noqa: PLC0415
+    
+        data = _data()
+        sug = {"n": 612, "source": "epic", "title": "Plan zeigt Vorschlag",
+               "reason": "gleiche Sammelaufgabe: Plan zeigt Vorschlag"}
+        for archived in (False, True):
+            base = wf.end_state(data, archived=archived)
+            assert base["line"] == TODAY, base
+>           assert wf.end_state(data, archived=archived, suggest=None) == base
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           TypeError: end_state() got an unexpected keyword argument 'suggest'
+
+tests/test_naechster_vorschlag_589.py:532: TypeError
+__________ TestEndstateKommando.test_suggest_zeilen_nur_bei_vorschlag __________
+
+self = <test_naechster_vorschlag_589.TestEndstateKommando object at 0x7f60fcdca350>
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-295/test_suggest_zeilen_nur_bei_vo0')
+
+    def test_suggest_zeilen_nur_bei_vorschlag(self, tmp_path):
+        for kind, n in EXPECT.items():
+            proj, log, env = _case(tmp_path, kind, kind=kind)
+            res = _cli(proj, "endstate", env=env)
+            assert res.returncode == 0, (kind, res.stdout, res.stderr)
+            assert _kv(res.stdout, "ENDSTATE") == "done", res.stdout
+>           assert _kv(res.stdout, "SUGGEST_ISSUE") == str(n), (kind, res.stdout)
+E           AssertionError: ('epic', 'ENDSTATE=done
+E             FOOTER=✅ Erledigt: #547 ist fertig. Du kannst /clear ausführen und das nächste Issue starten.
+E             ')
+E           assert None == '610'
+E            +  where None = _kv('ENDSTATE=done\nFOOTER=✅ Erledigt: #547 ist fertig. Du kannst /clear ausführen und das nächste Issue starten.\n', 'SUGGEST_ISSUE')
+E            +    where 'ENDSTATE=done\nFOOTER=✅ Erledigt: #547 ist fertig. Du kannst /clear ausführen und das nächste Issue starten.\n' = CompletedProcess(args=['/home/user/agent-os-openspec/.venv/bin/python', '/home/user/agent-os-openspec/core/hooks/workflow.py', 'endstate'], returncode=0, stdout='ENDSTATE=done\nFOOTER=✅ Erledigt: #547 ist fertig. Du kannst /clear ausführen und das nächste Issue starten.\n', stderr='').stdout
+E            +  and   '610' = str(610)
+
+tests/test_naechster_vorschlag_589.py:573: AssertionError
+_________ TestNetzfrei.test_plan_und_end_state_ohne_netz_gleiche_zeile _________
+
+self = <test_naechster_vorschlag_589.TestNetzfrei object at 0x7f60fcdca5d0>
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-295/test_plan_und_end_state_ohne_n0')
+
+    def test_plan_und_end_state_ohne_netz_gleiche_zeile(self, tmp_path):
+        proj, log, env = _case(tmp_path, "netz")
+        res = _cli(proj, "endstate", env=env)
+        assert res.returncode == 0, (res.stdout, res.stderr)
+        footer = _kv(res.stdout, "FOOTER")
+>       assert "/00-intake #610" in footer, footer
+E       AssertionError: ✅ Erledigt: #547 ist fertig. Du kannst /clear ausführen und das nächste Issue starten.
+E       assert '/00-intake #610' in '✅ Erledigt: #547 ist fertig. Du kannst /clear ausführen und das nächste Issue starten.'
+
+tests/test_naechster_vorschlag_589.py:614: AssertionError
+________ TestAutark.test_anhaengen_idempotent_nur_epic_und_meilenstein _________
+
+self = <test_naechster_vorschlag_589.TestAutark object at 0x7f60fcdca850>
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-295/test_anhaengen_idempotent_nur_0')
+
+    def test_anhaengen_idempotent_nur_epic_und_meilenstein(self, tmp_path):
+        for kind in ("epic", "milestone"):
+            n = EXPECT[kind]
+            wait = (f"⏳ Läuft noch: Claude startet #{n} aus deinem Auftrag. "
+                    "Du musst nichts tun, ich melde mich.")
+            proj, log, env = _case(tmp_path, f"autark-{kind}", kind=kind)
+            _write_auftrag(proj, [(DONE, "done")], autark=True)
+            for run in (1, 2):
+                res = _cli(proj, "endstate", env=env)
+                assert res.returncode == 0, (kind, run, res.stdout, res.stderr)
+>               assert _kv(res.stdout, "ENDSTATE") == "waiting", (kind, run, res.stdout)
+E               AssertionError: ('epic', 1, 'ENDSTATE=done
+E                 FOOTER=✅ Erledigt: #547 ist fertig. Du kannst /clear ausführen und das nächste Issue starten.
+E                 ')
+E               assert 'done' == 'waiting'
+E                 
+E                 - waiting
+E                 + done
+
+tests/test_naechster_vorschlag_589.py:672: AssertionError
+______________ TestKillSwitch.test_nur_literal_false_schaltet_ab _______________
+
+self = <test_naechster_vorschlag_589.TestKillSwitch object at 0x7f60fcdca990>
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-295/test_nur_literal_false_schalte0')
+
+    def test_nur_literal_false_schaltet_ab(self, tmp_path):
+>       ns = _ns()
+             ^^^^^
+
+tests/test_naechster_vorschlag_589.py:709: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ns():
+        sys.path.insert(0, str(HOOKS_DIR))
+>       import next_suggestion  # noqa: PLC0415
+        ^^^^^^^^^^^^^^^^^^^^^^
+E       ModuleNotFoundError: No module named 'next_suggestion'
+
+tests/test_naechster_vorschlag_589.py:108: ModuleNotFoundError
+___________ TestFooterGate.test_erweiterte_zeile_wird_nicht_geblockt ___________
+
+self = <test_naechster_vorschlag_589.TestFooterGate object at 0x7f60fcdcaad0>
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-295/test_erweiterte_zeile_wird_nic0')
+
+    def test_erweiterte_zeile_wird_nicht_geblockt(self, tmp_path):
+        from test_endzustand_550 import WF as WF550, _run_footer_gate  # noqa: PLC0415
+        wf = _wf()
+        sug = {"n": 612, "source": "milestone", "title": "Plan zeigt Vorschlag",
+               "reason": "gleicher Meilenstein: Plan zeigt Vorschlag"}
+        data = _data(name=WF550)
+        assert wf.expected_footer_command(data) is None
+>       line = wf.end_state(data, suggest=sug)["line"]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: end_state() got an unexpected keyword argument 'suggest'
+
+tests/test_naechster_vorschlag_589.py:750: TypeError
+_________ TestDokumentation.test_befehlstext_skill_sync_und_changelog __________
+
+self = <test_naechster_vorschlag_589.TestDokumentation object at 0x7f60fcdcac10>
+
+    def test_befehlstext_skill_sync_und_changelog(self):
+        heading = "### Abschluss: Endzustand melden"
+        for where, path in (("command", COMMANDS_DIR / "60-validate.md"),
+                            ("skill", SKILLS_DIR / "60-validate" / "SKILL.md")):
+            sec = _section(path.read_text(encoding="utf-8"), heading)
+            assert sec, (where, "Abschnitt fehlt")
+            for needle in ("SUGGEST_ISSUE", "SUGGEST_SOURCE", "SUGGEST_REASON",
+                           "Vorschlag", "aus deinem Auftrag", "FOOTER="):
+>               assert needle in sec, (where, needle)
+E               AssertionError: ('command', 'SUGGEST_ISSUE')
+E               assert 'SUGGEST_ISSUE' in ' (Pflicht, #550)\n\nNach `complete` ist der Workflow archiviert; die Endzustand-Zeile kommt trotzdem aus derselben\nQuelle wie Plan und Seitenleiste:\n\n```bash\npython3 .claude/hooks/workflow.py endstate <N>\n```\n\n`ENDSTATE=done|waiting|you` nennt die Art, `FOOTER=` die fertige Zeile. Gib den Wert hinter\n`FOOTER=` **wörtlich** als Endzustand-Zeile aus — genau eine der drei Formen `✅ Erledigt: …`,\n`⏳ Läuft noch: …` oder `❗ Du: … — …`. Erfinde keine Aufgabe für den PO (keine „Abnahme“, kein\n„Deploy“, wenn `endstate` es nicht nennt) und keine zweite Abschlusszeile. Wartest du danach\nnoch auf CI, einen Agenten oder einen Server: vorher `workflow.py waiting "<worauf>" <N>`, dann\n`endstate` erneut aufrufen.\n\nKette bei offenem Auftrag (#551, #555): Sie greift nur, wenn der Wert hinter `FOOTER=`\n„aus deinem Auftrag“ enthält; `M` ist die Nummer darin (dieselbe wie `NEXT=M` aus\n`python3 .claude/hooks/workflow.py queue`). Bei `ENDSTATE=waiting` (`⏳ Läuft noch: Claude\nstartet #M aus deinem Auftrag. …`) gib die Zeile aus und rufe danach `/00-intake #M` selbst\nauf (autarker Auftrag) — kein Halt für `/clear`. Bei `ENDSTATE=you` (`❗ Du: /00-intake #M — …`,\nAuftrag nicht autark) gib die Zeile wörtlich aus und warte auf den PO. Ein `ENDSTATE=waiting`\nohne „aus deinem Auftrag“ (CI, Deploy, Agent) startet keine Kette.\n'
+
+tests/test_naechster_vorschlag_589.py:785: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_naechster_vorschlag_589.py::TestChooseRangfolge::test_stufen_epic_vor_meilenstein_vor_verwandt_vor_prioritaet
+FAILED tests/test_naechster_vorschlag_589.py::TestChooseRangfolge::test_kein_kandidat_none_und_spur_ohne_wirkung
+FAILED tests/test_naechster_vorschlag_589.py::TestChooseSortierung::test_meilenstein_faelligkeit_prioritaet_nummer
+FAILED tests/test_naechster_vorschlag_589.py::TestChooseAusschluesse::test_ausgeschlossene_kandidaten
+FAILED tests/test_naechster_vorschlag_589.py::TestChooseAusschluesse::test_von_anderer_sitzung_beanspruchtes_issue
+FAILED tests/test_naechster_vorschlag_589.py::TestChooseVerwandt::test_strenge_regex_nur_erledigte_nummer
+FAILED tests/test_naechster_vorschlag_589.py::TestFetch::test_nur_rest_aufrufe_und_rohdaten
+FAILED tests/test_naechster_vorschlag_589.py::TestFetch::test_fail_open_ohne_gh_fehler_timeout_json
+FAILED tests/test_naechster_vorschlag_589.py::TestCache::test_atomar_ttl_schluessel_und_frisches_choose
+FAILED tests/test_naechster_vorschlag_589.py::TestEndStateZeile::test_zeile_mit_zusatz_und_ohne_byte_gleich
+FAILED tests/test_naechster_vorschlag_589.py::TestEndstateKommando::test_suggest_zeilen_nur_bei_vorschlag
+FAILED tests/test_naechster_vorschlag_589.py::TestNetzfrei::test_plan_und_end_state_ohne_netz_gleiche_zeile
+FAILED tests/test_naechster_vorschlag_589.py::TestAutark::test_anhaengen_idempotent_nur_epic_und_meilenstein
+FAILED tests/test_naechster_vorschlag_589.py::TestKillSwitch::test_nur_literal_false_schaltet_ab
+FAILED tests/test_naechster_vorschlag_589.py::TestFooterGate::test_erweiterte_zeile_wird_nicht_geblockt
+FAILED tests/test_naechster_vorschlag_589.py::TestDokumentation::test_befehlstext_skill_sync_und_changelog
+========================= 16 failed, 2 passed in 1.05s =========================

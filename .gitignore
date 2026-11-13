@@ -64,6 +64,8 @@ docs/artifacts/feat-285/*
 .claude/context_usage/
 # Auftragsliste eines Mehr-Issue-Auftrags (#551, `workflow.py queue`) — Laufzeit-Zustand.
 .claude/auftrag.json
+# Rohdaten-Cache des Vorschlags nach "fertig" (#589, `workflow.py endstate`) — Laufzeit-Zustand.
+.claude/next_suggestion.json
 
 # Herdr-/Titel-Laufzeitdateien (#490, #492, #496)
 .claude/issue_titles.json
