@@ -134,6 +134,38 @@ def letzte_texte(pfad: str) -> "tuple[str, str]":
     return "\n".join(antwort), ""
 
 
+def pruefe(payload) -> "list[str]":
+    """Treffer, mit denen `main` die Antwort zurückweisen würde; sonst `[]` (#597).
+
+    Reine Funktion mit denselben Ausnahmen wie `main` (abgeschaltet, kein
+    dict, `stop_hook_active`, kein Antworttext, Nutzer fragt selbst). Ohne
+    Prozess-Seiteneffekt (kein `adopt_payload_cwd`), damit herdr_bridge sie
+    als Vorprüfung nutzen kann. Jede Ausnahme ergibt `[]` (fail-open).
+    """
+    try:
+        if _abgeschaltet():
+            return []
+        if not isinstance(payload, dict) or payload.get("stop_hook_active"):
+            return []
+        antwort = payload.get("last_assistant_message")
+        frage = ""
+        pfad = payload.get("transcript_path")
+        if isinstance(pfad, str) and pfad:
+            try:
+                antwort_t, frage = letzte_texte(pfad)
+            except Exception:
+                antwort_t, frage = "", ""
+            if not isinstance(antwort, str) or not antwort:
+                antwort = antwort_t
+        if not isinstance(antwort, str) or not antwort:
+            return []
+        if treffer(frage):
+            return []  # der Nutzer hat selbst danach gefragt
+        return treffer(antwort)
+    except Exception:
+        return []
+
+
 def main() -> None:
     if _abgeschaltet():
         sys.exit(0)
@@ -145,22 +177,7 @@ def main() -> None:
         sys.exit(0)
     adopt_payload_cwd(payload)
 
-    antwort = payload.get("last_assistant_message")
-    frage = ""
-    pfad = payload.get("transcript_path")
-    if isinstance(pfad, str) and pfad:
-        try:
-            antwort_t, frage = letzte_texte(pfad)
-        except Exception:
-            antwort_t, frage = "", ""
-        if not isinstance(antwort, str) or not antwort:
-            antwort = antwort_t
-    if not isinstance(antwort, str) or not antwort:
-        sys.exit(0)
-
-    if treffer(frage):
-        sys.exit(0)  # der Nutzer hat selbst danach gefragt
-    gefunden = treffer(antwort)
+    gefunden = pruefe(payload)
     if not gefunden:
         sys.exit(0)
 

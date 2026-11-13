@@ -153,7 +153,7 @@ Prüfe der Reihe nach, bevor du unten etwas ausgibst:
 - Alle Ergebnisdateien dieser Phase liegen auf der Platte
 - Alle RED-Artefakte per `add-artifact` registriert
 - RED per `workflow.py mark-red "<Ergebnis>"` gemeldet
-- Keine uncommitteten Änderungen an Dateien, die `/50-implement` braucht
+- Keine ungesicherten Änderungen an Dateien, die `/50-implement` braucht
 - Keine Erkenntnis, die für `/50-implement` nötig und nirgends niedergeschrieben ist
 
 Sind alle Punkte erfüllt: Gib den Positiv-Block aus. Ist mindestens einer verletzt: Gib stattdessen den Negativ-Block aus und ersetze dessen Platzhalter durch den konkreten Sicherungsschritt.
@@ -176,7 +176,7 @@ Workflow: `<name>` · Issue: **#<N>** · Phase 5 (`phase5_tdd_red`) ✓ · jetzt
 ---
 **Gesichert auf der Platte:**
 - `.claude/workflows/<name>.json` — Phase `phase6_implement`, Feld `spec_file`, Verdict, Artefakt-Register
-- `tests/<test-datei>.py` — die geschriebenen, fehlschlagenden Testdateien (committed)
+- `tests/<test-datei>.py` — die geschriebenen, fehlschlagenden Testdateien (gesichert)
 - `docs/artifacts/<workflow-name>/test-red-output.txt` — RED-Beleg, per `add-artifact` registriert
 
 ✅ **`/clear` ist jetzt gefahrlos** — alles oben Gelistete stellt der Folge-Befehl allein aus diesen Dateien wieder her. Im Gesprächsverlauf steht nichts, was verloren ginge.

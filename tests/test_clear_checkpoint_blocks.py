@@ -226,7 +226,7 @@ def test_output_sections_contain_no_meta_instructions(name):
 def test_no_commit_precondition_in_early_phases(name):
     """Phasen 1-3 committen nichts — eine Commit-Vorbedingung wäre immer verletzt."""
     instruction = "\n".join(_checkpoint_sections(name)[0])
-    assert "uncommitteten" not in instruction, (
+    assert "uncommitteten" not in instruction and "ungesicherten" not in instruction, (
         f"{name}: Commit-Vorbedingung ist hier immer verletzt (die Ergebnisdatei der "
         f"Phase ist per Definition uncommitted und wird vom Folgeschritt gebraucht) — "
         f"sie darf nicht in der Prüfliste stehen"
@@ -239,7 +239,7 @@ def test_commit_precondition_kept_in_late_phases(name):
     instruction = "\n".join(_checkpoint_sections(name)[0])
     follow = FOLLOW_COMMAND[name]
     expected = (
-        f"- Keine uncommitteten Änderungen an Dateien, die `{follow}` braucht"
+        f"- Keine ungesicherten Änderungen an Dateien, die `{follow}` braucht"
     )
     assert expected in instruction, f"{name}: Commit-Vorbedingung fehlt"
 

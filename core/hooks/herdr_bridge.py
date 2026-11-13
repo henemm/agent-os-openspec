@@ -26,6 +26,20 @@ enter` erst `/clear` und dann den naechsten Workflow-Befehl in den Pane tippt. D
 jedem Zweifel ab, protokolliert den Grund in `.claude/herdr_auto_clear.log` und
 endet immer mit Exit 0.
 
+#597 "Das neueste saubere Antwortende gewinnt": Jeder saubere Stop (auch ein
+Folge-Stop mit `stop_hook_active`) darf einen Runner starten; ein Stop, den
+`klartext_gate.pruefe` zurueckweisen wuerde, startet keinen (Vermerk bleibt).
+Einziges Einmal-Token ist der Grenz-Vermerk `auto_clear_boundary` im
+Workflow-State: kein Verbrauch beim Spawn, kein Once-Lock. Der Runner nimmt den
+Vermerk erst unmittelbar vor dem Tippen von `/clear` (`_Runner._take_boundary`,
+atomar unter `fcntl.flock` auf `<Projekt>/.claude/herdr_auto_clear.lock`, muss
+zu `--phase`, `--command` und `--boundary-at` passen); wer ihn nicht bekommt,
+tippt nicht ("Grenze bereits vergeben"). Bricht ein Runner vor dem Abschicken
+von `/clear` ab, weil Claude weiterarbeitet, bleibt der Vermerk liegen (bzw.
+wird zurueckgelegt, sofern kein neuerer im State steht) und der naechste
+saubere Stop startet einen neuen Runner; jeder andere Abbruch verwirft den
+eigenen Vermerk, nach abgeschicktem `/clear` bleibt er verbraucht.
+
 #506: Herdrs Agent-Status (`agent wait`) entscheidet nicht mehr — lokale
 Erkennungsregeln koennen ihn beliebig verschieben. Der Runner liest eigene
 Plugin-Signale je Pane aus `.claude/herdr_signals/` (`record_signal`):
@@ -289,9 +303,8 @@ def report_active() -> None:
 
 # --- Auto-/clear an Phasengrenzen (#467) ------------------------------------
 
-AC_STATE_FILE = "herdr_auto_clear_state.json"
 AC_LOG_FILE = "herdr_auto_clear.log"
-AC_LOCK_SECONDS = 600  # Once-Lock: identischer Schluessel loest 10 min nicht erneut aus
+AC_TOKEN_LOCK_FILE = "herdr_auto_clear.lock"  # flock fuer die Vermerk-Entnahme (#597)
 AC_BOUNDARY_MAX_AGE_S = 900  # Grenz-Vermerk (#495) gilt hoechstens 15 min
 # grace_s 10 (#506 R2): fremde Stop-Hooks laufen ohne Signal; blockt einer nach
 # laengerer Laufzeit, kommt die Fortsetzung (PreToolUse/Stop) erst danach
@@ -429,50 +442,15 @@ def _ac_base_for(start: Path) -> Path:
     return current
 
 
-def _lock_active(stamp, now: float) -> bool:
-    return (isinstance(stamp, (int, float)) and not isinstance(stamp, bool)
-            and 0 <= now - stamp < AC_LOCK_SECONDS)
-
-
-def _read_lock_state(path: Path) -> dict:
-    from hook_utils import read_state_json
-    try:
-        data = read_state_json(path, path.parent.parent)
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
-
-
-def _acquire_lock(key: str) -> bool:
-    """Once-Lock setzen; False, wenn der Schluessel noch gesperrt ist."""
-    from hook_utils import atomic_write_json
-    path = _ac_base() / ".claude" / AC_STATE_FILE
-    now = time.time()
-    state = {k: v for k, v in _read_lock_state(path).items() if _lock_active(v, now)}
-    if key in state:
-        return False
-    state[key] = now
-    atomic_write_json(path, state, root=path.parent.parent)
-    return True
-
-
-def _release_lock(key: str) -> None:
-    try:
-        from hook_utils import atomic_write_json
-        path = _ac_base() / ".claude" / AC_STATE_FILE
-        state = _read_lock_state(path)
-        if state.pop(key, None) is not None:
-            atomic_write_json(path, state, root=path.parent.parent)
-    except Exception:
-        pass
-
-
 def spawn_auto_clear(pane: str, workflow_name: str, phase: str, command: str,
-                     cfg: dict, since: "float | None" = None) -> bool:
+                     cfg: dict, since: "float | None" = None,
+                     boundary_at: str = "") -> bool:
     """Runner detached starten (kein Shell, eigene Session, DEVNULL); sofort zurueck.
 
     `since` (Epoch-Sekunden, Default jetzt) ist der Stop-Hook-Zeitpunkt (#506):
     Eingaben danach gelten fuer den Runner als "Nutzer hat weitergeschrieben".
+    `boundary_at` ist das `at` des Grenz-Vermerks (#597): nur genau diesen
+    Vermerk darf der Runner vor dem Tippen nehmen.
     """
     try:
         since = time.time() if since is None else float(since)
@@ -482,7 +460,7 @@ def spawn_auto_clear(pane: str, workflow_name: str, phase: str, command: str,
                 "--grace", str(cfg.get("grace_s", AC_DEFAULTS["grace_s"])),
                 "--idle-timeout", str(cfg.get("idle_timeout_s", AC_DEFAULTS["idle_timeout_s"])),
                 "--announce", "1" if cfg.get("announce", True) else "0",
-                "--since", repr(since)]
+                "--since", repr(since), "--boundary-at", str(boundary_at)]
         subprocess.Popen(
             argv,
             stdin=subprocess.DEVNULL,
@@ -538,7 +516,9 @@ def maybe_auto_clear(payload, message, data) -> bool:
     """Trigger-Bedingungen (#467) in Spec-Reihenfolge; True = Runner gespawnt.
 
     Ausloeser ist der Grenz-Vermerk `auto_clear_boundary` (#495), nicht mehr der
-    Positiv-Satz; der Negativ-Satz bleibt Veto.
+    Positiv-Satz; der Negativ-Satz bleibt Veto. #597: auch ein Folge-Stop mit
+    `stop_hook_active` darf starten; der Vermerk wird beim Spawn nicht verbraucht
+    (das tut erst der Runner vor dem Tippen), einen Once-Lock gibt es nicht.
 
     Fail-open: jede nicht erfuellte Bedingung oder Ausnahme = kein Spawn.
     """
@@ -551,12 +531,6 @@ def maybe_auto_clear(payload, message, data) -> bool:
         if cfg is None:
             return False
         # Ab hier Opt-in aktiv: jeder Abbruch landet als `skip:` im Log (#478)
-        if isinstance(payload, dict) and payload.get("stop_hook_active") is True:
-            # Folge-Stop nach Fusszeilen-Korrektur: kein Auto-/clear, Vermerk verwerfen,
-            # damit kein spaeterer Turn derselben Phase ausloest (#495)
-            if isinstance(data, dict) and isinstance(data.get("auto_clear_boundary"), dict):
-                _consume_boundary(data, data["auto_clear_boundary"])
-            return _ac_skip("stop_hook_active")
         if not isinstance(data, dict) or not isinstance(message, str):
             return _ac_skip("Workflow ohne Name/Phase")
         _hooks_on_path()
@@ -573,30 +547,45 @@ def maybe_auto_clear(payload, message, data) -> bool:
         _, footer_commands = _footer_parts()
         if first not in footer_commands(message):
             return _ac_skip(f"Fusszeile nennt {command} nicht")
-        # Ab hier wird der Vermerk ausgewertet: Einmal-Signal, also verbrauchen (#495)
         boundary = data.get("auto_clear_boundary")
         if not isinstance(boundary, dict):
             return _ac_skip("keine Grenze vermerkt")
-        _consume_boundary(data, boundary)
+        # Klartext-Vorpruefung (#597), vor jedem Verbrauch: weist klartext_gate diesen
+        # Stop zurueck, kommt garantiert ein Folge-Stop; Vermerk unangetastet lassen
+        if _klartext_hits(payload):
+            return _ac_skip("Klartext-Prüfung weist die Antwort zurück")
+        # Negativ-Marker, fremder oder veralteter Vermerk: verbrauchen wie bisher (#495)
         if NEGATIVE_MARKER in message.replace("**", ""):
+            _consume_boundary(data, boundary)
             return _ac_skip("Negativmarker")
         if not _boundary_matches(data, command):
+            _consume_boundary(data, boundary)
             return _ac_skip("keine Grenze vermerkt")
         if not _boundary_fresh(boundary):
+            _consume_boundary(data, boundary)
             return _ac_skip("Grenze veraltet")
         name = str(data.get("name") or "")
         phase = str(data.get("current_phase") or "")
         if not name or not phase:
             return _ac_skip("Workflow ohne Name/Phase")
-        key = f"{name}|{phase}|{command}"
-        if not _acquire_lock(key):
-            return _ac_skip("Once-Lock aktiv")
-        if not spawn_auto_clear(pane, name, phase, command, cfg, since=since):
-            _release_lock(key)
+        # Kein Verbrauch beim Spawn: der Runner nimmt den Vermerk vor dem Tippen (#597)
+        if not spawn_auto_clear(pane, name, phase, command, cfg, since=since,
+                                boundary_at=str(boundary.get("at"))):
             return _ac_skip("Spawn fehlgeschlagen")
         return True
     except Exception:
         return False
+
+
+def _klartext_hits(payload) -> list:
+    """Treffer von `klartext_gate.pruefe` (#597); Import-/Laufzeitfehler = keine (fail-open)."""
+    try:
+        _hooks_on_path()
+        import klartext_gate
+        hits = klartext_gate.pruefe(payload)
+        return list(hits) if isinstance(hits, list) else []
+    except Exception:
+        return []
 
 
 def _boundary_matches(data: dict, command: str) -> bool:
@@ -666,7 +655,15 @@ def _ac_skip(reason: str) -> bool:
 # --- Runner (eigener Prozess) ---
 
 class _Abort(Exception):
-    """Runner-Abbruch mit Grund; nach Abbruch wird nichts mehr gesendet."""
+    """Runner-Abbruch mit Grund; nach Abbruch wird nichts mehr gesendet.
+
+    `continuation` (#597): Grund ist ein Weiterarbeiten von Claude (Signal
+    `activity`/`stop`); dann bleibt der Grenz-Vermerk fuer einen spaeteren Stop.
+    """
+
+    def __init__(self, message: str = "", continuation: bool = False):
+        super().__init__(message)
+        self.continuation = continuation
 
 
 def _ac_log(line: str, log_file: str = AC_LOG_FILE) -> None:
@@ -811,6 +808,143 @@ class _Runner:
         # Gesamt-Deadline: eine Wartephase (SessionStart nach /clear), Delays, Prompts, Puffer
         budget = grace + 2 * self.settle + self.idle_timeout + 5 * AC_PROMPT_TIMEOUT + 20
         self.deadline = time.monotonic() + budget
+        # Grenz-Vermerk als Einmal-Token (#597): `at` aus dem Spawn, genommener
+        # Vermerk (zum Zuruecklegen) und ob `/clear` abgeschickt wurde
+        raw_at = getattr(args, "boundary_at", None)
+        self.boundary_at = raw_at if isinstance(raw_at, str) else ""
+        self.taken = None
+        self.submitted = False
+
+    # --- Grenz-Vermerk als Einmal-Token (#597) ---
+
+    def _with_token_lock(self, fn):
+        """`fn(root, state_path)` unter flock auf `<root>/.claude/herdr_auto_clear.lock`.
+
+        Basis ist das Hauptprojekt (`find_project_root`, wie der Workflow-State),
+        nicht die worktree-lokale `_ac_base`. Rueckgabe `(True, Ergebnis)`; ohne
+        `fcntl`, bei Lock-Fehler oder Ausnahme in `fn` `(False, None)`. Die Sperre
+        wird in jedem Fall freigegeben.
+        """
+        try:
+            import fcntl
+            _hooks_on_path()
+            from hook_utils import find_project_root
+            name = str(self.args.workflow or "")
+            if not name or "/" in name or name.startswith("."):
+                return False, None
+            root = find_project_root()
+            state_path = root / ".claude" / "workflows" / f"{name}.json"
+            fd = os.open(str(root / ".claude" / AC_TOKEN_LOCK_FILE),
+                         os.O_CREAT | os.O_RDWR, 0o644)
+        except (Exception, SystemExit):
+            return False, None
+        try:
+            end = time.monotonic() + 10.0
+            while True:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    if time.monotonic() >= end:
+                        return False, None
+                    time.sleep(0.01)
+            try:
+                return True, fn(root, state_path)
+            finally:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+        except Exception:
+            return False, None
+        finally:
+            try:
+                os.close(fd)
+            except Exception:
+                pass
+
+    def _take_boundary(self) -> bool:
+        """Vermerk atomar nehmen, wenn er exakt zu phase/command/at passt; sonst False."""
+        args, own_at = self.args, self.boundary_at
+
+        def take(root, path):
+            from hook_utils import atomic_write_json, read_state_json
+            state = read_state_json(path, root)
+            boundary = state.get("auto_clear_boundary") if isinstance(state, dict) else None
+            if (not own_at or not isinstance(boundary, dict)
+                    or boundary.get("phase") != args.phase
+                    or boundary.get("command") != args.command
+                    or boundary.get("at") != own_at):
+                return None
+            del state["auto_clear_boundary"]
+            atomic_write_json(path, state, root=root)
+            return boundary
+
+        ok, boundary = self._with_token_lock(take)
+        if ok and isinstance(boundary, dict):
+            self.taken = boundary
+            return True
+        return False
+
+    def _restore_boundary(self) -> str:
+        """Genommenen Vermerk zuruecklegen, nur wenn keiner im State steht.
+
+        "restored", "newer" (anderer Vermerk vorhanden, bleibt) oder "failed".
+        """
+        taken = self.taken
+
+        def restore(root, path):
+            from hook_utils import atomic_write_json, read_state_json
+            state = read_state_json(path, root)
+            if not isinstance(state, dict) or not isinstance(taken, dict):
+                return "failed"
+            if "auto_clear_boundary" in state:
+                return "newer"
+            state["auto_clear_boundary"] = taken
+            atomic_write_json(path, state, root=root)
+            return "restored"
+
+        ok, result = self._with_token_lock(restore)
+        return result if ok and isinstance(result, str) else "failed"
+
+    def _discard_boundary(self) -> None:
+        """Noch nicht genommenen eigenen Vermerk (`at` == `--boundary-at`) verwerfen.
+
+        Ein neuerer Vermerk (anderes `at`) bleibt; fail-open (ohne Sperre: nichts).
+        """
+        own_at = self.boundary_at
+
+        def discard(root, path):
+            from hook_utils import atomic_write_json, read_state_json
+            state = read_state_json(path, root)
+            boundary = state.get("auto_clear_boundary") if isinstance(state, dict) else None
+            if own_at and isinstance(boundary, dict) and boundary.get("at") == own_at:
+                del state["auto_clear_boundary"]
+                atomic_write_json(path, state, root=root)
+
+        self._with_token_lock(discard)
+
+    def settle_boundary(self, continuation: bool) -> str:
+        """Vermerk-Schicksal nach einem Abbruch (#597); Rueckgabe: Log-Zusatz.
+
+        Nach abgeschicktem `/clear`: bleibt verbraucht. Davor bei Weiterarbeiten
+        von Claude: liegen lassen bzw. zuruecklegen. Jeder andere Abbruch:
+        eigenen, noch nicht genommenen Vermerk verwerfen.
+        """
+        try:
+            if self.submitted:
+                return ""
+            if continuation:
+                if self.taken is None:
+                    return "; Grenze bleibt"
+                result = self._restore_boundary()
+                if result == "restored":
+                    return "; Grenze bleibt (zurückgelegt)"
+                if result == "newer":
+                    return "; neuerer Vermerk bleibt"
+                return "; Grenze nicht zurückgelegt"
+            if self.taken is None:
+                self._discard_boundary()
+        except Exception:
+            pass
+        return ""
 
     def _remaining(self) -> float:
         rest = self.deadline - time.monotonic()
@@ -861,7 +995,8 @@ class _Runner:
                     continue
                 raise _Abort(f"{label}: Sitzung beendet (session_end {at - ref:+.1f}s)")
             why = "Nutzer hat weitergeschrieben" if kind == "input" else "Claude arbeitet weiter"
-            raise _Abort(f"{label}: {why} ({kind} {at - ref:+.1f}s)")
+            raise _Abort(f"{label}: {why} ({kind} {at - ref:+.1f}s)",
+                         continuation=kind != "input")
         data = read_signal(self.args.pane, "session")
         at = _signal_at(data)
         if at is not None and at > ref and data.get("source") != "clear":
@@ -924,7 +1059,8 @@ class _Runner:
                     f"Zeile loeschen Exit {res.returncode}"
             except _Abort as inner:
                 note = f"Zeile loeschen: {inner}"
-            raise _Abort(f"{exc} [zwischen Text und Enter, {note}]")
+            raise _Abort(f"{exc} [zwischen Text und Enter, {note}]",
+                         continuation=exc.continuation)
         res = self._call(["pane", "send-keys", self.args.pane, "enter"], AC_PROMPT_TIMEOUT)
         if res.returncode != 0:
             raise _Abort(f"pane send-keys enter ({text!r}) Exit {res.returncode}")
@@ -942,8 +1078,12 @@ class _Runner:
         self._sleep(self.settle)
         self._recheck("vor /clear")
         self._check_activity(self.since, "vor /clear")  # unmittelbar vor dem Tippen
+        # Einmal-Token (#597): nur wer den Vermerk bekommt, tippt
+        if not self._take_boundary():
+            raise _Abort("Grenze bereits vergeben")
         t_clear = time.time()
         self._prompt("/clear", self.since, "vor /clear")
+        self.submitted = True
         self._wait_session_clear(t_clear)
         self._sleep(self.settle)
         self._recheck("vor Folgebefehl")
@@ -970,13 +1110,23 @@ def run_auto_clear(argv) -> int:
         parser.add_argument("--announce", default="1")
         # Stop-Hook-Epoch (#506); roh als Text, `_parse_since` prueft
         parser.add_argument("--since", default=None)
+        # `at` des Grenz-Vermerks (#597): nur diesen Vermerk darf der Runner nehmen
+        parser.add_argument("--boundary-at", default="")
         try:
             args = parser.parse_args(argv)
         except SystemExit:
             _ac_log(f"{tag}: ABBRUCH: ungueltige Argumente")
             return 0
         tag = f"{args.workflow}|{args.phase}|{args.command}"
-        _Runner(args).run()
+        runner = _Runner(args)
+        try:
+            runner.run()
+        except _Abort as exc:
+            note = runner.settle_boundary(exc.continuation)
+            raise _Abort(f"{exc}{note}") from None
+        except Exception:
+            runner.settle_boundary(False)
+            raise
         _ac_log(f"{tag}: OK: /clear und Folgebefehl gesendet")
     except _Abort as exc:
         _ac_log(f"{tag}: ABBRUCH: {exc}")
