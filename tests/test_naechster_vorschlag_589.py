@@ -790,9 +790,9 @@ class TestDokumentation:
         assert res.returncode == 0, (res.stdout, res.stderr)
 
         changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        # [Unreleased] plus juengster Versionsabschnitt: nach einem Release steht der
-        # Eintrag dort.
+        # Release-stabil: "### Added" aus JEDEM Abschnitt ([Unreleased] und alle
+        # "## [x.y.z]"), weil der Eintrag mit jedem Release einen Abschnitt weiter
+        # nach hinten wandert (zuvor nur [Unreleased] + juengstes Release).
         kopf = changelog.split("## [Unreleased]", 1)[1]
-        unreleased = "\n## [".join(kopf.split("\n## [", 2)[:2])
-        added = _section(unreleased, "### Added")
-        assert "#589" in added, "CHANGELOG [Unreleased]/neuestes Release -> ### Added nennt #589 nicht"
+        added = "\n".join(_section(teil, "### Added") for teil in kopf.split("\n## ["))
+        assert "#589" in added, "CHANGELOG -> kein ### Added-Abschnitt nennt #589"

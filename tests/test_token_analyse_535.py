@@ -367,13 +367,10 @@ class TestVerteilung:
 def test_changelog_mentions_535():
     """AC-15: CHANGELOG [Unreleased] -> ### Added nennt #535."""
     text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    # [Unreleased] plus juengster Versionsabschnitt: nach einem Release steht der
-    # Eintrag dort.
-    m = re.search(r"^## \[Unreleased\][^\n]*\n(.*?)(?=^## \[\d)", text, re.S | re.M)
-    assert m, "kein [Unreleased]-Abschnitt"
-    rest = text[m.end():]
-    neu = re.search(r"^## \[\d[^\n]*\n(.*?)(?=^## \[|\Z)", rest, re.S | re.M)
-    abschnitt = m.group(1) + (neu.group(1) if neu else "")
-    added = re.search(r"^### Added[^\n]*\n(.*?)(?=^### |\Z)", abschnitt, re.S | re.M)
-    assert added, "kein ### Added unter [Unreleased] oder im neuesten Release"
-    assert "#535" in added.group(1)
+    # Release-stabil: "### Added" aus JEDEM Abschnitt ([Unreleased] und alle
+    # "## [x.y.z]"), weil der Eintrag mit jedem Release einen Abschnitt weiter
+    # nach hinten wandert (zuvor nur [Unreleased] + juengstes Release).
+    assert re.search(r"^## \[Unreleased\]", text, re.M), "kein [Unreleased]-Abschnitt"
+    added = re.findall(r"^### Added[^\n]*\n(.*?)(?=^##+ |\Z)", text, re.S | re.M)
+    assert added, "kein ### Added-Abschnitt im CHANGELOG"
+    assert any("#535" in block for block in added), "kein ### Added-Abschnitt nennt #535"
