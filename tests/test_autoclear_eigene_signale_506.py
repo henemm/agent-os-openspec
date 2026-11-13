@@ -22,6 +22,12 @@ nur noch Tastatur: getippt wird per `pane send-text <pane> <text>`, abgeschickt 
 Marker-Vertrag (Spec, Implementation Details): `<base>/.claude/herdr_signals/`
 mit `<pane>.input.json` = `{"at": <time.time()>}` und
 `<pane>.session.json` = `{"source": "<clear|startup|resume|compact>", "at": ...}`.
+
+#597 (docs/specs/fix-597-autoclear-klartext.md): Der Runner tippt nur, wenn er
+unmittelbar vor `/clear` den passenden Grenz-Vermerk nimmt (Einmal-Token,
+`--boundary-at`). Runner-Faelle (`_case`) legen deshalb den Vermerk
+`{phase, command, at=BOUNDARY_AT}` in den State, `_runner_argv` uebergibt
+`--boundary-at BOUNDARY_AT`. Der Once-Lock entfaellt.
 """
 
 import json
@@ -48,6 +54,7 @@ WF = "fix-506-autoclear-ohne-herdr-status"
 PHASE = "phase6_implement"
 CMD = "/50-implement #506"
 IDLE_TIMEOUT = 2
+BOUNDARY_AT = datetime.now().isoformat()  # `at` des Grenz-Vermerks der Runner-Faelle (#597)
 
 STUB_SCRIPT = r"""#!/bin/bash
 { for a in "$@"; do printf '%s\0' "$a"; done; printf '\n'; } >> "$STUB_LOG"
@@ -154,7 +161,9 @@ def _case(tmp_path: Path, label: str, *, session_to: "str | None" = PANE,
     """Isoliertes Projekt + Stub; der Stub schreibt den session-Marker fuer `session_to`."""
     root = tmp_path / label
     root.mkdir()
-    proj = _project(root, phase=phase)
+    # #597: passender Grenz-Vermerk, sonst tippt der Runner nie (Einmal-Token)
+    proj = _project(root, phase=phase,
+                    auto_clear_boundary={"phase": phase, "command": CMD, "at": BOUNDARY_AT})
     log = root / "stub.log"
     stub = _make_stub(root)
     if session_to is not None:
@@ -194,11 +203,12 @@ _NOW = object()  # Sentinel: --since = Zeitpunkt des Aufrufs (wie der Stop-Hook)
 
 
 def _runner_argv(*, command: str = CMD, phase: str = PHASE, grace: float = 0,
-                 idle_timeout: float = IDLE_TIMEOUT, since=_NOW) -> list:
+                 idle_timeout: float = IDLE_TIMEOUT, since=_NOW,
+                 boundary_at: str = BOUNDARY_AT) -> list:
     argv = [sys.executable, str(BRIDGE), "auto-clear",
             "--pane", PANE, "--workflow", WF, "--phase", phase, "--command", command,
             "--grace", str(grace), "--settle", "0", "--idle-timeout", str(idle_timeout),
-            "--announce", "0"]
+            "--announce", "0", "--boundary-at", boundary_at]
     if since is _NOW:
         since = time.time()
     if since is not None:
@@ -563,7 +573,9 @@ def _footer_message(command: str = CMD) -> str:
                         "⚙ /50-implement · agent-os-openspec 4.4.8"])
 
 
-def test_manual_lock_and_recheck_unchanged(tmp_path):
+def test_manual_taken_boundary_and_recheck_unchanged(tmp_path):
+    """AC-10 (#506); #597 (Spec fix-597 Implementation Details 7) ersetzt Teil (b):
+    statt Once-Lock gilt "Vermerk bereits von anderem Runner genommen"."""
     # (a) /99-reset: Runner tippt nichts
     proj, log, env, _ = _case(tmp_path, "reset")
     res = _run_runner(proj, env, command="/99-reset #506")
@@ -571,13 +583,11 @@ def test_manual_lock_and_recheck_unchanged(tmp_path):
     assert _typed_or_prompted(_calls(log)) == [], _calls(log)
     assert "manuell" in _runner_log(proj), _runner_log(proj)
 
-    # (b) Once-Lock gesetzt: footer_gate spawnt keinen Runner
-    root = tmp_path / "lock"
+    # (b) Vermerk bereits von anderem Runner genommen (#597, ersetzt den Once-Lock):
+    #     kein Vermerk im State -> footer_gate spawnt keinen Runner
+    root = tmp_path / "taken"
     root.mkdir()
-    boundary = {"phase": PHASE, "command": CMD, "at": datetime.now().isoformat()}
-    proj = _project(root, auto_clear_boundary=boundary)
-    lock = proj / ".claude" / "herdr_auto_clear_state.json"
-    lock.write_text(json.dumps({f"{WF}|{PHASE}|{CMD}": time.time()}))
+    proj = _project(root)
     log = root / "stub.log"
     env = _env(proj, log, _make_stub(root))
     payload = {"session_id": "sess-506", "hook_event_name": "Stop", "cwd": str(proj),
@@ -587,7 +597,8 @@ def test_manual_lock_and_recheck_unchanged(tmp_path):
                          capture_output=True, text=True, env=env, cwd=str(proj), timeout=30)
     assert res.returncode == 0, res.stderr
     time.sleep(0.8)
-    assert _calls(log) == [], f"Runner trotz Once-Lock gespawnt: {_calls(log)}"
+    assert _calls(log) == [], f"Runner ohne Vermerk gespawnt: {_calls(log)}"
+    assert "skip: keine Grenze vermerkt" in _runner_log(proj), _runner_log(proj)
 
     # (c) Phase wechselt in der Grace-Zeit: _recheck vor /clear, nichts getippt
     proj, log, env, root = _case(tmp_path, "recheck-before")

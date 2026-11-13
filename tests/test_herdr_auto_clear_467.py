@@ -18,11 +18,14 @@ STUB_LOG und verzweigt nach Unterbefehl:
 
 Vertraege, die diese Tests festlegen (die Spec nennt sie nicht exakt):
 - Runner-CLI: `herdr_bridge.py auto-clear --pane P --workflow W --phase PH
-  --command C --grace 0 --settle 0 --idle-timeout 5 --announce 0`; `--idle-timeout`
-  in Sekunden (Frist fuer das SessionStart(clear)-Signal, #506), `--announce 0` =
-  keine Vorankuendigung.
-- Once-Lock `.claude/herdr_auto_clear_state.json`: flaches JSON-Objekt
-  `{"<workflow>|<phase>|<befehl>": <epoch-sekunden als Zahl>}`.
+  --command C --grace 0 --settle 0 --idle-timeout 5 --announce 0
+  --boundary-at AT`; `--idle-timeout` in Sekunden (Frist fuer das
+  SessionStart(clear)-Signal, #506), `--announce 0` = keine Vorankuendigung.
+- #597: Kein Once-Lock mehr (keine `.claude/herdr_auto_clear_state.json`). Der
+  Grenz-Vermerk `auto_clear_boundary` ist das einzige Einmal-Token: der Runner
+  nimmt ihn (passend zu `--phase`, `--command`, `--boundary-at`) unmittelbar vor
+  dem Tippen von `/clear`; ohne Vermerk tippt er nichts. Runner-Tests legen den
+  Vermerk `BOUNDARY` deshalb in den State und uebergeben `--boundary-at`.
 - `has_clear_marker(message) -> bool` (reine Funktion in herdr_bridge).
 
 Importfehler/fehlende Funktionen erscheinen als Test-FAIL: Module werden erst im
@@ -176,12 +179,14 @@ def _waits(calls: list) -> list:
 
 
 def _run_runner(proj: Path, env: dict, *, command: str = CMD, phase: str = PHASE,
-                idle_timeout: float = IDLE_TIMEOUT,
+                idle_timeout: float = IDLE_TIMEOUT, boundary_at: "str | None" = None,
                 timeout: float = 30) -> subprocess.CompletedProcess:
+    # #597: `--boundary-at` = `at` des Vermerks im State (Default: BOUNDARY)
     argv = [sys.executable, str(BRIDGE), "auto-clear",
             "--pane", PANE, "--workflow", WF, "--phase", phase, "--command", command,
             "--grace", "0", "--settle", "0", "--idle-timeout", str(idle_timeout),
-            "--announce", "0"]
+            "--announce", "0",
+            "--boundary-at", BOUNDARY["at"] if boundary_at is None else boundary_at]
     return subprocess.run(argv, capture_output=True, text=True, env=env,
                           cwd=str(proj), timeout=timeout)
 
@@ -189,7 +194,8 @@ def _run_runner(proj: Path, env: dict, *, command: str = CMD, phase: str = PHASE
 def _runner_case(tmp_path: Path, label: str, phase: str = PHASE, **env_extra):
     root = tmp_path / label
     root.mkdir()
-    proj = _project(root, phase=phase)
+    # #597: der Runner tippt nur mit passendem Grenz-Vermerk (Einmal-Token)
+    proj = _project(root, phase=phase, auto_clear_boundary=dict(BOUNDARY, phase=phase))
     log = root / "stub.log"
     stub = _make_stub(root)
     return proj, log, _env(proj, log, stub, **env_extra), root
@@ -356,11 +362,16 @@ def test_no_spawn_without_herdr_env(tmp_path, missing):
 
 # --- AC-6 -------------------------------------------------------------------
 
-def test_no_spawn_when_stop_hook_active(tmp_path):
+def test_spawn_when_stop_hook_active(tmp_path):
+    """#597 (Spec fix-597 AC-3) ersetzt test_no_spawn_when_stop_hook_active: ein Folge-
+    Stop (`stop_hook_active`) mit passender Grenze und sauberer Antwort ist ein spaeteres
+    sauberes Antwortende und startet einen Runner."""
     proj, log, stub, env = _hook_case(tmp_path, auto_clear_boundary=BOUNDARY)
     res = _run_hook(proj, env, _message(POSITIVE), stop_hook_active=True)
     assert res.returncode == 0, res.stderr
-    _assert_no_calls(log)
+    calls = _wait_calls(log, 1)
+    assert calls, "Kein Runner beim stop_hook_active-Stop (Stub nie aufgerufen)"
+    assert calls[0][:2] == ["notification", "show"], calls[0]
 
 
 # --- AC-7 -------------------------------------------------------------------
@@ -414,37 +425,32 @@ def test_no_spawn_when_expected_step_is_freetext(tmp_path):
 
 # --- AC-12 ------------------------------------------------------------------
 
-def test_once_lock_blocks_duplicate_and_expires_after_10_min(tmp_path):
+def test_second_identical_stop_does_not_double_type(tmp_path):
+    """#597 (Spec fix-597 AC-5/AC-6) ersetzt test_once_lock_blocks_duplicate_and_expires_after_10_min:
+    zwei identische Stops erzeugen hoechstens zwei Runner, getippt werden `/clear` und
+    der Folgebefehl genau einmal; kein 600-s-Once-Lock, keine herdr_auto_clear_state.json."""
     proj, log, stub, env = _hook_case(tmp_path, auto_clear_boundary=BOUNDARY)
     msg = _message(POSITIVE)
-    res = _run_hook(proj, env, msg)
-    assert res.returncode == 0, res.stderr
+    for _ in range(2):
+        res = _run_hook(proj, env, msg)
+        assert res.returncode == 0, res.stderr
     assert _wait_calls(log, 1), "Erster Payload spawnte keinen Runner"
-    assert len(_notifications(log)) == 1
 
-    res = _run_hook(proj, env, msg)  # identisch -> Lock
-    assert res.returncode == 0, res.stderr
-    time.sleep(1.0)
-    assert len(_notifications(log)) == 1, "Zweiter identischer Payload spawnte erneut"
+    def ended() -> int:
+        return sum(1 for ln in _runner_log(proj).splitlines() if ": OK" in ln or "ABBRUCH" in ln)
 
-    lock = proj / ".claude" / "herdr_auto_clear_state.json"
-    state = json.loads(lock.read_text())
-    key = f"{WF}|{PHASE}|{CMD}"
-    assert key in state, state
-    state[key] = time.time() - 11 * 60
-    lock.write_text(json.dumps(state))
-    # Seit #495 verbraucht der Spawn den Vermerk: neue Grenze wie `workflow.py autoclear`
-    wf = proj / ".claude" / "workflows" / f"{WF}.json"
-    data = json.loads(wf.read_text())
-    data["auto_clear_boundary"] = dict(BOUNDARY, at=datetime.now().isoformat())
-    wf.write_text(json.dumps(data))
-
-    res = _run_hook(proj, env, msg)  # Lock abgelaufen + neue Grenze -> erneut
-    assert res.returncode == 0, res.stderr
-    deadline = time.monotonic() + 3
-    while len(_notifications(log)) < 2 and time.monotonic() < deadline:
-        time.sleep(0.05)
-    assert len(_notifications(log)) == 2, "Abgelaufener Lock loeste nicht erneut aus"
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline and (": OK" not in _runner_log(proj)
+                                           or ended() < len(_notifications(log))):
+        time.sleep(0.1)
+    assert 1 <= len(_notifications(log)) <= 2, _notifications(log)
+    assert ended() == len(_notifications(log)), _runner_log(proj)
+    follow = ["pane", "send-text", PANE, "/agent-os-openspec:50-implement #467"]
+    assert _prompts(_calls(log)) == CLEAR_TYPED + [follow, ENTER], \
+        f"Log: {_runner_log(proj)!r} Aufrufe: {_calls(log)}"
+    assert not (proj / ".claude" / "herdr_auto_clear_state.json").exists(), "Once-Lock-Datei angelegt"
+    data = json.loads((proj / ".claude" / "workflows" / f"{WF}.json").read_text())
+    assert "auto_clear_boundary" not in data, data
 
 
 # --- AC-13 ------------------------------------------------------------------
@@ -486,7 +492,7 @@ def test_runner_aborts_when_state_changed_between_steps(tmp_path):
     # (a) Aenderung vor dem Recheck "vor /clear": gar kein Prompt
     root = tmp_path / "a"
     root.mkdir()
-    proj = _project(root)
+    proj = _project(root, auto_clear_boundary=BOUNDARY)
     hook = _state_changer(root)
     log = root / "stub.log"
     env = _env(proj, log, _make_stub(root))
@@ -499,7 +505,7 @@ def test_runner_aborts_when_state_changed_between_steps(tmp_path):
     # (b) Aenderung beim /clear: nur /clear, kein Folgebefehl
     root = tmp_path / "b"
     root.mkdir()
-    proj = _project(root)
+    proj = _project(root, auto_clear_boundary=BOUNDARY)
     hook = _state_changer(root)
     log = root / "stub.log"
     env = _env(proj, log, _make_stub(root), STUB_CLEAR_HOOK=str(hook))

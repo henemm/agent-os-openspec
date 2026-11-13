@@ -29,6 +29,7 @@ import stat
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -386,11 +387,15 @@ def test_auto_clear_logs_skip_reason_only_when_enabled(tmp_path):
 
 # --- AC-9 -------------------------------------------------------------------
 
+RUNNER_BOUNDARY_AT = datetime.now().isoformat()  # #597: `at` des Grenz-Vermerks
+
+
 def _run_runner(proj: Path, env: dict, command: str = "/50-implement #478",
                 phase: str = "phase6_implement"):
+    # #597: der Runner tippt nur mit passendem Grenz-Vermerk (`--boundary-at`)
     argv = [sys.executable, str(BRIDGE), "auto-clear", "--pane", PANE, "--workflow", WF,
             "--phase", phase, "--command", command, "--grace", "0", "--settle", "0",
-            "--idle-timeout", "5", "--announce", "0"]
+            "--idle-timeout", "5", "--announce", "0", "--boundary-at", RUNNER_BOUNDARY_AT]
     return _run(argv, env, proj)
 
 
@@ -398,7 +403,10 @@ def test_runner_ignores_herdr_agent_status(tmp_path):
     # #506 ersetzt test_runner_reads_real_agent_status_field: Herdrs Status (auch
     # `blocked` wie beim PO-Manifest) entscheidet nicht mehr, `agent wait` entfaellt.
     cmd = "/50-implement #478"
-    data = _wf_data(phase="phase6_implement")
+    # #597: Grenz-Vermerk als Einmal-Token, sonst tippt der Runner nicht
+    data = _wf_data(phase="phase6_implement",
+                    auto_clear_boundary={"phase": "phase6_implement", "command": cmd,
+                                         "at": RUNNER_BOUNDARY_AT})
 
     for status in ("idle", "blocked"):
         proj, log, env = _case(tmp_path, status, AUTO_ON, data, STUB_STATUS=status)

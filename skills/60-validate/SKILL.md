@@ -274,7 +274,7 @@ Begründung, Anzahl geprüfter Dateien, Messwurzel und Config-Quelle.
 Fehlt in dieser Ausgabe die Zeile `OBSERVABLE_SURFACE=no` — aus welchem Grund auch immer, also
 auch bei `OBSERVABLE_SURFACE=yes`, bei einem Absturz, bei abweichendem Format oder wenn der
 Aufruf ganz ausgeblieben ist —, dann gilt das als „Oberfläche vorhanden" und die Schlussfrage
-„Soll ich den Code committen?" wird gestellt. Nur die ausdrücklich gelesene Zeile
+„Soll ich den Stand sichern?" wird gestellt. Nur die ausdrücklich gelesene Zeile
 `OBSERVABLE_SURFACE=no` lässt sie entfallen.
 
 Daraus ergeben sich vier Kombinationen — die Autonomie-Regel sticht, die neue Prüfung wirkt in
@@ -282,7 +282,7 @@ genau einer Zeile:
 
 | Oberfläche | Autonomie dokumentiert | Schlusszeile |
 |---|---|---|
-| `yes` | nein | Frage „Soll ich den Code committen?" — unverändert wie bisher |
+| `yes` | nein | Frage „Soll ich den Stand sichern?" — unverändert wie bisher |
 | `yes` | ja | Ankündigung: schreibe fest und deploye, Kette im selben Turn |
 | `no` | nein | Ankündigung: schreibe jetzt fest, keine Rückfrage |
 | `no` | ja | Ankündigung: schreibe fest und deploye, Kette im selben Turn |
@@ -308,7 +308,7 @@ Bei `AUTONOMY=auto` (nach Step 4, also mit `phase8_complete`):
    Fehler) gilt als `AUTO_SHIP=off`. Default im Auto-Modus ist an; abschalten per
    `autonomy.ship: false` in der Projekt-`config.yaml` (`settings.local.json` zählt nicht).
 2. **Committen ohne Rückfrage** — unabhängig von `OBSERVABLE_SURFACE`; die Frage „Soll ich den
-   Code committen?" entfällt. Die Commit-Gates (`bash_gate.py`) gelten wie immer.
+   Stand sichern?" entfällt. Die Commit-Gates (`bash_gate.py`) gelten wie immer.
    Bei `AUTO_SHIP=on`: Steht der Checkout auf `main`, `master`, dem Default-Branch des Remotes
    (ermittelt wie in Punkt 3) oder einem detached `HEAD`, legst du VOR dem Commit einen
    Feature-Branch mit dem Workflow-Namen an (`git switch -c <workflow-name>`). Existiert der Name
@@ -393,9 +393,9 @@ Nach erfolgreicher Validierung, gib dem User folgende Zusammenfassung:
 - Alle Anforderungen aus dem Plan erfüllt
 - Keine bestehenden Funktionen beeinträchtigt
 
-**Bereit für:** Commit[, dann Deploy — falls im Projekt vorgesehen]
+**Bereit für:** Sichern[, dann Deploy — falls im Projekt vorgesehen]
 
-Soll ich den Code committen?
+Soll ich den Stand sichern?
 
 ---
 

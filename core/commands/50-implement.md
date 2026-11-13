@@ -360,7 +360,7 @@ Prüfe der Reihe nach, bevor du unten etwas ausgibst:
 - Phase im Workflow-State geschrieben — `python3 .claude/hooks/workflow.py status` bestätigt sie
 - Alle Ergebnisdateien dieser Phase liegen auf der Platte
 - Alle RED-Artefakte per `add-artifact` registriert
-- Keine uncommitteten Änderungen an Dateien, die `/60-validate` braucht
+- Keine ungesicherten Änderungen an Dateien, die `/60-validate` braucht
 - Keine Erkenntnis, die für `/60-validate` nötig und nirgends niedergeschrieben ist
 
 Sind alle Punkte erfüllt: Gib den Positiv-Block aus. Ist mindestens einer verletzt: Gib stattdessen den Negativ-Block aus und ersetze dessen Platzhalter durch den konkreten Sicherungsschritt.
@@ -383,7 +383,7 @@ Workflow: `<name>` · Issue: **#<N>** · Verdict: VERIFIED
 ---
 **Gesichert auf der Platte:**
 - `.claude/workflows/<name>.json` — Phase `phase7_validate`, Feld `spec_file`, Verdict `VERIFIED`, Artefakt-Register
-- Commit der Implementierung — alle geänderten Dateien sind committed, `git status` ist sauber
+- Stand der Implementierung — alle geänderten Dateien sind gesichert, es gibt keine ungesicherten Änderungen
 
 ✅ **`/clear` ist jetzt gefahrlos** — alles oben Gelistete stellt der Folge-Befehl allein aus diesen Dateien wieder her. Im Gesprächsverlauf steht nichts, was verloren ginge.
 

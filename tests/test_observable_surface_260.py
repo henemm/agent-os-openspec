@@ -1,7 +1,7 @@
 """Beobachtbare Oberflaeche erkennen — Vertrag von `has_observable_surface()`
 und des CLI-Unterbefehls `workflow.py observable-surface` (Issue #260).
 
-Die Pruefung entscheidet, ob die Schlussfrage „Soll ich den Code committen?"
+Die Pruefung entscheidet, ob die Schlussfrage „Soll ich den Stand sichern?"
 in `/60-validate` entfaellt. Sie ist bewusst fail-closed: nur ein positiver
 Nachweis, dass JEDE geaenderte Datei nachweislich keine Oberflaeche beruehrt,
 fuehrt zu `no`. Jede Unsicherheit — kaputte Config, kein Basis-Stand,
@@ -552,7 +552,7 @@ def test_ac14_validate_asks_without_no_line():
     THEN:  (a) ein fenced bash-Block ruft `workflow.py observable-surface` VOR
            der Zusammenfassung auf, (b) der Text legt ausdruecklich fest, dass
            ohne die Zeile `OBSERVABLE_SURFACE=no` die Schlussfrage „Soll ich
-           den Code committen?" gestellt wird, (c) alle vier Kombinationen aus
+           den Stand sichern?" gestellt wird, (c) alle vier Kombinationen aus
            Oberflaeche (yes/no) und dokumentierter Autonomie (ja/nein) stehen
            im Text.
     """
@@ -584,7 +584,7 @@ def test_ac14_validate_asks_without_no_line():
         "Der Text muss die Zeichenkette `OBSERVABLE_SURFACE=no` benennen, "
         "an der die Abstufung haengt"
     )
-    assert "Soll ich den Code committen?" in text, (
+    assert "Soll ich den Stand sichern?" in text, (
         "Die Schlussfrage muss weiterhin woertlich im Befehlstext stehen"
     )
     mentions = [p for p in text.split("\n\n") if "OBSERVABLE_SURFACE=no" in p]

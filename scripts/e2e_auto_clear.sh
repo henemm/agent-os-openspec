@@ -10,9 +10,10 @@
 #   B  NEGATIV       wie A, aber mit "`/clear` jetzt NICHT" -> skip: Negativmarker.
 #   C  OHNE VERMERK  kein Grenz-Phasenwechsel, nur die ❗Du-Zeile `/10-context #999`
 #                    -> skip: keine Grenze vermerkt.
-#   D  VERBRAUCHT    A, danach (Once-Lock geloescht) ein weiterer Turn mit derselben
-#                    ❗Du-Zeile ohne Phasenwechsel -> skip: keine Grenze vermerkt, kein
-#                    zweites /clear (Vermerk ist Einmal-Signal, #495 F001).
+#   D  VERBRAUCHT    A (Vermerk nach dem Tippen verbraucht, keine Once-Lock-Datei, #597),
+#                    danach ein weiterer Turn mit derselben ❗Du-Zeile ohne Phasenwechsel
+#                    -> skip: keine Grenze vermerkt, kein zweites /clear (Vermerk ist
+#                    Einmal-Token, #495 F001).
 #   E  ECHT          (nur explizit per ONLY=E) echter Plugin-Befehl
 #                    `/agent-os-openspec:10-context #999` in einem Wegwerf-Projekt mit
 #                    grossem Modell (E2E_MODEL, Default opus) -> phase2_analyse, Herdr
@@ -40,17 +41,25 @@
 #                    Berechtigungsdialog) -> `ABBRUCH: vor /clear: Claude arbeitet weiter`,
 #                    kein Enter/`/clear`, Dialog steht noch, PERM-PROBE-FILE fehlt.
 #   Q  STOP+SLEEP    (#506 R1) wie P, aber Fortsetzung `sleep 12` (freigegeben) -> ABBRUCH
-#                    "Claude arbeitet weiter", kein ❯ /clear waehrend und nach dem Turn.
+#                    "Claude arbeitet weiter", kein ❯ /clear waehrend des Turns. Endet die
+#                    Fortsetzung mit sauberer ❗Du-Zeile, gewinnt dieser Stop (#597): danach
+#                    genau ein ❯ /clear, Log erst ABBRUCH (Grenze bleibt), dann OK.
+#   R  NEUFASSUNG    (#597) wie A (grace_s 10), aber ein fremder Projekt-Stop-Hook blockt
+#                    genau einmal und verlangt nur die erneute ❗Du-Zeile -> Runner 1 bricht
+#                    ab ("Claude arbeitet weiter", Grenze bleibt), Runner 2 des Folge-Stops
+#                    tippt: im TUI genau ein ❯ /clear und genau ein Folgebefehl, Log
+#                    erst ABBRUCH, dann OK.
 #   S  LANGSAMER STOP-HOOK (#506 R2-F001) fremder Stop-Hook schlaeft 8 s und blockt DANN,
 #                    Fortsetzung mit freigegebenem `sleep 3`; OHNE grace_s in der Config
 #                    (Default-grace 10 s) -> ABBRUCH "Claude arbeitet weiter", kein
-#                    ❯ /clear und kein SessionStart(clear) waehrend und nach der Fortsetzung.
+#                    ❯ /clear waehrend der Fortsetzung; danach gewinnt der saubere Folge-Stop
+#                    (#597): genau ein ❯ /clear, Log erst ABBRUCH, dann OK.
 #
 # Aufruf:
 #   HERDR_E2E_BIN=/pfad/zu/herdr bash scripts/e2e_auto_clear.sh   # vorhandenes Binary
 #   bash scripts/e2e_auto_clear.sh                                # laedt v0.9.5, prueft SHA256
 #   KEEP=1 ...      laesst die Arbeitsordner stehen
-#   ONLY="A C" ...  nur ausgewaehlte Szenarien (Default "A B C D F G H P Q S"; E, G0 nur explizit)
+#   ONLY="A C" ...  nur ausgewaehlte Szenarien (Default "A B C D F G H P Q R S"; E, G0 nur explizit)
 #   E2E_MODEL=...   Modell (Default haiku fuer A-D, opus fuer E)
 #
 # Voraussetzungen: claude (eingeloggt bzw. Auth per Umgebung), git, python3, curl.
@@ -71,10 +80,11 @@ MODEL_E="${E2E_MODEL:-opus}"
 MODEL="$MODEL_AD"
 E_TIMEOUT_S="${E_TIMEOUT_S:-900}"
 KEEP="${KEEP:-0}"
-ONLY="${ONLY:-A B C D F G H P Q S}"
+ONLY="${ONLY:-A B C D F G H P Q R S}"
 CASE_GRACE=1      # grace_s je Szenario (run_case); leer = Eintrag fehlt, Default gilt (S)
 CASE_MANIFEST=0   # 1 = PO-Manifest im Test-Herdr (G, G0)
-CASE_STOPHOOK=""  # perm|sleep|slowsleep = fremder Projekt-Stop-Hook, der einmal blockt (P, Q, S)
+CASE_STOPHOOK=""  # perm|sleep|slowsleep|rewrite = fremder Projekt-Stop-Hook, der einmal blockt (P, Q, S, R)
+TURN_T0=0         # Epoch vor boundary_turn (wait_turn_end: Stop-Marker danach)
 
 log() { printf '[e2e %s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 
@@ -354,15 +364,22 @@ manifest_precheck() {  # drei Endbildschirme wie in #506 -> blocked / working / 
 # ist NICHT freigegeben -> Bash-Berechtigungsdialog. sleep: `sleep 12` ist freigegeben
 # -> der Turn laeuft 12 s weiter. slowsleep (#506 R2-F001): der Hook schlaeft beim ersten
 # Stop 8 s und blockt DANN, Fortsetzung `sleep 3` (freigegeben); `.fired` enthaelt Start-
-# und Block-Epoch. Die Rechtepruefung bleibt an (nur Allow-Liste).
-write_foreign_stop_hook() {  # $1 = perm|sleep|slowsleep; nutzt W, T
+# und Block-Epoch. rewrite (#597): kein Werkzeug, Claude schreibt nur die Antwort mit der
+# ❗Du-Zeile neu (wie nach einer Klartext-Zurueckweisung). Die Rechtepruefung bleibt an
+# (nur Allow-Liste).
+write_foreign_stop_hook() {  # $1 = perm|sleep|slowsleep|rewrite; nutzt W, T
     python3 - "$1" "$W" "$T/.claude/settings.json" "$CMD" <<'PY'
 import json, sys
 mode, w, settings, cmd = sys.argv[1:5]
-task = {"perm": f"touch {w}/PERM-PROBE-FILE", "sleep": "sleep 12", "slowsleep": "sleep 3"}[mode]
-reason = (f"Projektregel (Stop-Hook): Fuehre jetzt noch mit dem Bash-Werkzeug genau den Befehl  "
-          f"{task}  aus (unveraendert, ohne Zusatz, nicht im Hintergrund) und gib danach als "
-          f"gesamte Antwort genau diese eine Zeile aus: ❗Du: `{cmd}`")
+if mode == "rewrite":
+    reason = (f"Projektregel (Stop-Hook): Benutze keine Werkzeuge und gib als gesamte Antwort "
+              f"noch einmal genau diese eine Zeile aus, ohne Codeblock: ❗Du: `{cmd}`")
+else:
+    task = {"perm": f"touch {w}/PERM-PROBE-FILE", "sleep": "sleep 12",
+            "slowsleep": "sleep 3"}[mode]
+    reason = (f"Projektregel (Stop-Hook): Fuehre jetzt noch mit dem Bash-Werkzeug genau den "
+              f"Befehl  {task}  aus (unveraendert, ohne Zusatz, nicht im Hintergrund) und gib "
+              f"danach als gesamte Antwort genau diese eine Zeile aus: ❗Du: `{cmd}`")
 hook = f"{w}/foreign_stophook.py"
 slow = mode == "slowsleep"
 open(hook, "w").write(
@@ -462,10 +479,10 @@ Fuehre mit dem Bash-Werkzeug genau diesen Befehl aus, unveraendert, ohne cd und 
 $PHASE_CMD
 Gib danach als gesamte Antwort genau diese eine Zeile aus, ohne Codeblock und ohne weiteren Text:
 ❗Du: \`$CMD\`" || return
-    # Den Vermerk verbraucht der Stop-Hook sofort; Beleg fuer ihn ist der Runner-Start
+    # Den Vermerk nimmt der Runner unmittelbar vor dem Tippen (#597); Beleg ist die Log-Zeile
     wait_log "$WF|phase2_analyse|$CMD: " 120
     ac_log | grep -Fq "$WF|phase2_analyse|$CMD: OK"; check "Log: $WF|phase2_analyse|$CMD: OK" $?
-    has_boundary >/dev/null; [ $? -ne 0 ]; check "State ohne auto_clear_boundary (beim Spawn verbraucht)" $?
+    has_boundary >/dev/null; [ $? -ne 0 ]; check "State ohne auto_clear_boundary (beim Tippen verbraucht)" $?
     wait_pane "E2E-FOLGEBEFEHL-OK #999" 90; check "TUI: E2E-FOLGEBEFEHL-OK #999" $?
     H agent wait e2e --until idle --until done --timeout 30000 >/dev/null 2>&1 || true
     local txt; txt="$(pane_text 400)"
@@ -513,10 +530,10 @@ scenario_C() {
 scenario_D() {
     scenario_A
     [ "$CASE_FAIL" -eq 0 ] || { echo "  FAIL D: Vorstufe A fehlgeschlagen"; return; }
-    # Once-Lock entfernen (herdr_bridge._acquire_lock: <_ac_base()>/.claude/herdr_auto_clear_state.json,
-    # _ac_base() = Worktree): ohne Verbrauch des Vermerks wuerde jetzt erneut ausgeloest
-    rm -f "$T/.claude/herdr_auto_clear_state.json" "$P/.claude/herdr_auto_clear_state.json"
-    [ ! -e "$T/.claude/herdr_auto_clear_state.json" ]; check "Once-Lock-Datei entfernt" $?
+    # Einziges Einmal-Token ist der Vermerk (#597): nach A verbraucht, Once-Lock gibt es nicht
+    has_boundary >/dev/null; [ $? -ne 0 ]; check "Vermerk nach A verbraucht" $?
+    [ ! -e "$T/.claude/herdr_auto_clear_state.json" ] && [ ! -e "$P/.claude/herdr_auto_clear_state.json" ]
+    check "keine Once-Lock-Datei herdr_auto_clear_state.json" $?
     local before; before="$(pane_text 400 | grep -Fc "❯ /clear")"
     send_prompt "Automatisierter Ende-zu-Ende-Test. Benutze keine Werkzeuge. Gib als gesamte Antwort genau diese eine Zeile aus, ohne Codeblock und ohne weiteren Text:
 ❗Du: \`$CMD\`" || return
@@ -606,6 +623,7 @@ Gib danach als gesamte Antwort genau diese eine Zeile aus, ohne Codeblock und oh
 
 # --- Szenarien G, G0, H (#506) -----------------------------------------------
 boundary_turn() {  # $1 = Du-Zeile; ohne --wait: beim PO-Manifest bleibt Herdr auf blocked
+    TURN_T0="$(date +%s.%N)"
     H agent prompt e2e "$INTRO
 Fuehre mit dem Bash-Werkzeug genau diesen Befehl aus, unveraendert, ohne cd und ohne Zusatz:
 $PHASE_CMD
@@ -613,14 +631,29 @@ Gib danach als gesamte Antwort genau diese eine Zeile aus, ohne Codeblock und oh
 $1" >/dev/null 2>&1 || { echo "  FAIL agent prompt (Testaufbau)"; CASE_FAIL=1; return 1; }
 }
 
-wait_turn_end() {  # Phase 2 erreicht und Vermerk verbraucht = Stop-Hook hat den Runner gestartet
+stop_after_turn_start() {  # Stop-Marker des Plugins (footer_gate) nach TURN_T0 vorhanden
+    python3 - "$TURN_T0" "$T/.claude/herdr_signals" <<'PY'
+import glob, json, os, sys
+t0 = float(sys.argv[1])
+for f in glob.glob(os.path.join(sys.argv[2], "*.stop.json")):
+    try:
+        if float(json.load(open(f)).get("at", 0)) > t0:
+            sys.exit(0)
+    except Exception:
+        pass
+sys.exit(1)
+PY
+}
+
+wait_turn_end() {  # Phase 2 erreicht und Stop-Marker nach Turn-Start = Stop-Hook lief (Runner gestartet)
+    # Seit #597 bleibt der Vermerk bis zum Tippen liegen; Beleg ist daher der Stop-Marker
     local i
     for i in $(seq 1 240); do
         if H agent read e2e --source visible 2>/dev/null | grep -Fq "Do you want to proceed?"; then
             echo "  FAIL Claude haengt an einer Freigabe (Testaufbau)"; CASE_FAIL=1; return 1
         fi
-        if [ "$(cur_phase)" = "phase2_analyse" ] && ! has_boundary >/dev/null; then
-            log "Turn-Ende nach $((i / 2))s (Phase 2, Vermerk verbraucht)"; return 0
+        if [ "$(cur_phase)" = "phase2_analyse" ] && stop_after_turn_start; then
+            log "Turn-Ende nach $((i / 2))s (Phase 2, Stop-Marker)"; return 0
         fi
         sleep 0.5
     done
@@ -678,6 +711,7 @@ scenario_H() {
     wait_log "$WF|phase2_analyse|$CMD: " 60
     ac_log | grep -Fq "$WF|phase2_analyse|$CMD: ABBRUCH: vor /clear: Nutzer hat weitergeschrieben"
     check "Log: ABBRUCH: vor /clear: Nutzer hat weitergeschrieben" $?
+    has_boundary >/dev/null; [ $? -ne 0 ]; check "State ohne auto_clear_boundary (Abbruch verwirft, #597)" $?
     ls "$T/.claude/herdr_signals/"*.input.json >/dev/null 2>&1; check "Eingabe-Marker vorhanden" $?
     wait_pane "H-ZWISCHENFRAGE-OK" 90; check "TUI: Zwischenfrage beantwortet" $?
     sleep 5
@@ -697,6 +731,27 @@ print_markers() {
     for f in "$T/.claude/herdr_signals/"*.json; do
         [ -f "$f" ] && echo "    marker | $(basename "$f") $(tr -d '\n ' <"$f")"
     done
+}
+
+# #597: das neueste saubere Antwortende gewinnt. Erst bricht der Runner des ersten Stops
+# ab, ohne den Vermerk zu verwerfen, dann tippt der Runner des Folge-Stops genau einmal.
+check_newest_stop_wins() {  # $1 = Szenario; nach dem Turn
+    wait_log "$WF|phase2_analyse|$CMD: OK" 120
+    local lines first_abort first_ok
+    lines="$(ac_log | grep -F "$WF|phase2_analyse|$CMD: " | grep -Fv ": skip:")"
+    first_abort="$(echo "$lines" | grep -Fn ": ABBRUCH" | head -1)"
+    first_ok="$(echo "$lines" | grep -Fn ": OK" | head -1 | cut -d: -f1)"
+    echo "$first_abort" | grep -Fq "Claude arbeitet weiter" && echo "$first_abort" | grep -Fq "Grenze bleibt"
+    check "$1 Log: erster Runner ABBRUCH \"Claude arbeitet weiter\" mit \"Grenze bleibt\"" $?
+    [ -n "$first_ok" ] && [ "${first_abort%%:*}" -lt "$first_ok" ] 2>/dev/null
+    check "$1 Log: erst ABBRUCH, dann OK" $?
+    [ "$(echo "$lines" | grep -Fc ": OK")" -eq 1 ]; check "$1 Log: genau ein Runner-OK" $?
+    wait_pane "E2E-FOLGEBEFEHL-OK #999" 90; check "$1 TUI: E2E-FOLGEBEFEHL-OK #999" $?
+    H agent wait e2e --until idle --until done --timeout 30000 >/dev/null 2>&1 || true
+    local txt; txt="$(pane_text 400)"
+    [ "$(echo "$txt" | grep -Fc "❯ /clear")" -eq 1 ]; check "$1 TUI: genau ein ❯ /clear" $?
+    [ "$(echo "$txt" | grep -Fc "❯ $CMD")" -eq 1 ]; check "$1 TUI: genau ein ❯ $CMD" $?
+    has_boundary >/dev/null; [ $? -ne 0 ]; check "$1 State ohne auto_clear_boundary (beim Tippen verbraucht)" $?
 }
 
 scenario_P() {
@@ -737,13 +792,28 @@ scenario_Q() {
     ! echo "$txt" | grep -Fq "❯ /clear"; check "TUI: kein ❯ /clear waehrend des Turns" $?
     echo "$txt" | grep -Fq "sleep 12"; check "TUI: sleep 12 laeuft bzw. lief" $?
     ! dialog_open; check "TUI: kein Berechtigungsdialog (sleep 12 freigegeben)" $?
-    sleep 18  # Turn (sleep 12) endet; danach darf nichts nachgereicht werden
+    # Die Fortsetzung endet mit sauberer ❗Du-Zeile: dieser Stop gewinnt (#597)
+    check_newest_stop_wins Q
     txt="$(pane_text 400)"
-    ! echo "$txt" | grep -Fq "❯ /clear"; check "TUI: kein ❯ /clear nach dem Turn" $?
-    ! ac_log | grep -Fq ": OK"; check "Log: kein Runner-OK" $?
     echo "  Belege Q:"; ac_log | sed 's/^/    log  | /'
     print_markers
-    echo "$txt" | grep -E "sleep 12|❯ /clear|❗Du|Stop hook" | sed 's/^/    pane | /'
+    echo "$txt" | grep -E "sleep 12|❯ /clear|❯ /20-analyse|❗Du|Stop hook|E2E-FOLGEBEFEHL-OK" \
+        | sed 's/^/    pane | /'
+}
+
+# --- Szenario R (#597: fremder Stop-Hook weist die Antwort einmal zurueck) ---------------
+scenario_R() {
+    boundary_turn "❗Du: \`$CMD\`" || return
+    local i fired=1
+    for i in $(seq 1 120); do [ -f "$W/foreign_stophook.fired" ] && { fired=0; break; }; sleep 0.5; done
+    check "fremder Stop-Hook hat einmal geblockt (Neufassung der Antwort)" $fired
+    check_newest_stop_wins R
+    local txt; txt="$(pane_text 400)"
+    echo "$txt" | grep -Fq "SessionStart:clear"; check "TUI: SessionStart:clear" $?
+    echo "  Belege R:"; ac_log | sed 's/^/    log  | /'
+    print_markers
+    echo "$txt" | grep -E "SessionStart:clear|❯ /clear|❯ /20-analyse|E2E-FOLGEBEFEHL-OK|❗Du|Stop hook" \
+        | sed 's/^/    pane | /'
 }
 
 # --- Szenario S (#506 R2-F001: langsamer fremder Stop-Hook, Default-grace) -------------
@@ -789,10 +859,7 @@ PY
     check "Log: ABBRUCH: vor /clear: Claude arbeitet weiter" $?
     local txt; txt="$(pane_text 400)"
     ! echo "$txt" | grep -Fq "❯ /clear"; check "TUI: kein ❯ /clear waehrend der Fortsetzung" $?
-    sleep 15  # Fortsetzung (sleep 3) endet; danach darf nichts nachgereicht werden
-    txt="$(pane_text 400)"
-    echo "$txt" | tr -s ' \n' '  ' | grep -Fq "Befehl sleep 3 aus"
-    check "TUI: Stop-Hook-Fortsetzung (sleep 3) angezeigt" $?
+    ! echo "$txt" | grep -Fq "SessionStart:clear"; check "TUI: kein SessionStart:clear waehrend der Fortsetzung" $?
     python3 - "$T/.claude/herdr_signals" "$W/foreign_stophook.fired" <<'PY'
 import glob, json, re, sys
 block = float(re.search(r"block=([0-9.]+)", open(sys.argv[2]).read()).group(1))
@@ -800,12 +867,15 @@ ats = [json.load(open(f)).get("at", 0) for f in glob.glob(sys.argv[1] + "/*.acti
 sys.exit(0 if any(a > block for a in ats) else 1)
 PY
     check "Fortsetzung lief: PreToolUse-Marker nach dem Block des fremden Stop-Hooks" $?
-    ! echo "$txt" | grep -Fq "❯ /clear"; check "TUI: kein ❯ /clear nach der Fortsetzung" $?
-    ! echo "$txt" | grep -Fq "SessionStart:clear"; check "TUI: kein SessionStart:clear" $?
-    ! grep -Fq '"clear"' "$T/.claude/herdr_signals/$PANE.session.json" 2>/dev/null \
-        && ! grep -Fq '"clear"' "$T/.claude/herdr_signals/"*.session.json 2>/dev/null
-    check "kein session-Marker source=clear" $?
-    ! ac_log | grep -Fq ": OK"; check "Log: kein Runner-OK" $?
+    local shown=1
+    for i in $(seq 1 15); do  # vor dem /clear des Folge-Runners, solange der Text sichtbar ist
+        pane_text 400 | tr -s ' \n' '  ' | grep -Fq "Befehl sleep 3 aus" && { shown=0; break; }
+        sleep 1
+    done
+    check "TUI: Stop-Hook-Fortsetzung (sleep 3) angezeigt" $shown
+    # Die Fortsetzung endet mit sauberer ❗Du-Zeile: dieser Stop gewinnt (#597)
+    check_newest_stop_wins S
+    txt="$(pane_text 400)"
     echo "  Belege S:"; ac_log | sed 's/^/    log  | /'
     print_markers
     print_timeline
@@ -846,6 +916,8 @@ run_case() {
     if [ "$name" = "H" ]; then CASE_GRACE=25; fi
     if [ "$name" = "P" ]; then CASE_GRACE=8; CASE_STOPHOOK=perm; fi
     if [ "$name" = "Q" ]; then CASE_GRACE=6; CASE_STOPHOOK=sleep; fi
+    # R: grace 10, damit Runner 1 die Neufassung (Folge-Stop) sicher vor dem Tippen sieht
+    if [ "$name" = "R" ]; then CASE_GRACE=10; CASE_STOPHOOK=rewrite; fi
     if [ "$name" = "S" ]; then CASE_GRACE=""; CASE_STOPHOOK=slowsleep; fi  # MUSS Default-grace
     log "=== Szenario $name ==="
     trap 'teardown_case; cleanup_global' EXIT
