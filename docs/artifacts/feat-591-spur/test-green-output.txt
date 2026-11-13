@@ -1,0 +1,22 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.18, pytest-9.2.0, pluggy-1.7.0 -- /home/user/agent-os-openspec/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/user/agent-os-openspec
+collecting ... collected 14 items
+
+tests/test_spur_591.py::TestNamensregel::test_normalisierung_und_ungueltige_werte PASSED [  7%]
+tests/test_spur_591.py::TestAuftragRoundTrip::test_spur_bleibt_erhalten_ungueltig_wird_verworfen PASSED [ 14%]
+tests/test_spur_591.py::TestCliSpur::test_setzen_zeigen_leeren_und_ungueltiger_name PASSED [ 21%]
+tests/test_spur_591.py::TestCliSpur::test_queue_add_spur_setzt_und_ueberschreibt PASSED [ 28%]
+tests/test_spur_591.py::TestAnzeigeKillSwitch::test_spur_zeile_und_disabled PASSED [ 35%]
+tests/test_spur_591.py::TestChooseSpur::test_rang_nach_meilenstein_vor_verwandt_und_ausschluesse PASSED [ 42%]
+tests/test_spur_591.py::TestChooseSpur::test_case_insensitiv_fehlendes_label_naechste_stufe_ohne_spur_wie_vorher PASSED [ 50%]
+tests/test_spur_591.py::TestEndstateSpur::test_endstate_und_cache_nutzen_spur_des_auftrags PASSED [ 57%]
+tests/test_spur_591.py::TestAutarkSpur::test_anhaengen_idempotent_nur_bei_autark PASSED [ 64%]
+tests/test_spur_591.py::TestNetzfrei::test_plan_und_seitenleiste_ohne_netzaufruf PASSED [ 71%]
+tests/test_spur_591.py::TestHerdrAnzeige::test_token_spur_nur_anzeige_fail_open PASSED [ 78%]
+tests/test_spur_591.py::TestDokumentation::test_befehlstext_und_skill_synchron PASSED [ 85%]
+tests/test_spur_591.py::TestDokumentation::test_changelog_nennt_591 PASSED [ 92%]
+tests/test_spur_591.py::TestRegression::test_ohne_spur_unveraendert PASSED [100%]
+
+============================== 14 passed in 7.47s ==============================

@@ -2851,6 +2851,27 @@ def auftrag_path(root=None) -> Path:
     return base / ".claude" / AUFTRAG_FILENAME
 
 
+SPUR_MAX_LEN = 40
+
+
+def normalize_spur(value) -> "str | None":
+    """Spurname nach der Namensregel (#591): `[a-z0-9-]`, ohne Rand-/Doppel-`-`, max. 40.
+
+    Ein fuehrendes `spur:` wird abgeschnitten. Kein String oder leeres Ergebnis -> None.
+    Das GitHub-Label dazu heisst immer `spur:<name>`.
+    """
+    if not isinstance(value, str):
+        return None
+    text = value.strip().lower()
+    if text.startswith("spur:"):
+        text = text[len("spur:"):]
+    text = re.sub(r"[\s_]+", "-", text.strip())
+    text = re.sub(r"[^a-z0-9-]", "", text)
+    text = re.sub(r"-{2,}", "-", text).strip("-")
+    text = text[:SPUR_MAX_LEN].strip("-")
+    return text or None
+
+
 def _normalize_auftrag(raw) -> "dict | None":
     """Rohdaten in die feste Form bringen, sonst None. Doppelte Nummern fallen weg."""
     if not isinstance(raw, dict) or not isinstance(raw.get("issues"), list):
@@ -2865,6 +2886,7 @@ def _normalize_auftrag(raw) -> "dict | None":
     note = raw.get("note")
     return {"issues": issues, "autark": raw.get("autark") is True,
             "note": note if isinstance(note, str) else "",
+            "spur": normalize_spur(raw.get("spur")) or "",
             "created": str(raw.get("created") or ""), "updated": str(raw.get("updated") or "")}
 
 
@@ -2920,6 +2942,24 @@ def auftrag_mark_done(root, n) -> bool:
         return True
     except Exception:
         return False
+
+
+def auftrag_set_spur(root, name) -> "dict | None":
+    """Spur setzen (`name` normalisiert) bzw. mit leerem `name` leeren und schreiben.
+
+    Fehlt ein Auftrag, wird einer mit leerer Liste angelegt. Liefert den geschriebenen
+    Auftrag; None bei ungueltigem Namen (dann wird nichts geschrieben).
+    """
+    spur = ""
+    if name:
+        spur = normalize_spur(name)
+        if spur is None:
+            return None
+    auftrag = read_auftrag(root) or {"issues": [], "autark": False, "note": "",
+                                     "spur": "", "created": "", "updated": ""}
+    auftrag["spur"] = spur
+    write_auftrag(root, auftrag)
+    return auftrag
 
 
 def auftrag_note_text(auftrag) -> str:

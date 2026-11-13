@@ -7,8 +7,8 @@ Utility fuer `workflow.py endstate`, Plan und Seitenleiste: Meldet ein Workflow
 
 - `choose(raw, done_number, claimed, spur=None, now=None)`: reine Auswahl ohne
   Netz-, Datei- oder Config-Zugriff. Rangfolge Epic-Geschwister, gleicher
-  Meilenstein, (Spur: #591, hier ohne Wirkung), verwandte Aufgabe, wichtigste
-  offene Aufgabe; Ergebnis `{"n", "source", "reason", "title"}` oder None.
+  Meilenstein, gleiche Spur (Label `spur:<name>`, #591), verwandte Aufgabe,
+  wichtigste offene Aufgabe; Ergebnis `{"n", "source", "reason", "title"}` oder None.
 - `fetch(root, done_number, timeout_s)`: Rohdaten ausschliesslich per `gh api`
   (REST, nie GraphQL), fail-open: jeder Fehler ergibt None, nie eine Ausnahme.
 - `write_cache`/`read_cache`: Rohdaten in `<root>/.claude/next_suggestion.json`
@@ -33,6 +33,7 @@ TITLE_MAX = 60
 SOURCE_TEXT = {
     "epic": "gleiche Sammelaufgabe",
     "milestone": "gleicher Meilenstein",
+    "spur": "gleiche Spur",
     "related": "knüpft an eine Aufgabe an",
     "priority": "wichtigste offene Aufgabe",
 }
@@ -210,7 +211,9 @@ def short_title(title, limit: int = TITLE_MAX) -> str:
 def choose(raw, done_number, claimed, spur=None, now=None) -> "dict | None":
     """Naechste Aufgabe aus den Rohdaten oder None. Rein, wirft nie.
 
-    `spur` (#591) und `now` sind in Teil A ohne Wirkung.
+    `spur` (#591): Stufe 3 nach dem Meilenstein, offene Issues mit Label
+    `spur:<spur>` (case-insensitiv, getrimmt); None oder "" = keine Spur.
+    `now` ist ohne Wirkung.
     """
     try:
         done_n = _num(done_number)
@@ -232,7 +235,10 @@ def choose(raw, done_number, claimed, spur=None, now=None) -> "dict | None":
             stages.append(("milestone", [i for i in issues if isinstance(i, dict)
                                          and isinstance(i.get("milestone"), dict)
                                          and i["milestone"].get("number") == ms_n]))
-        # Stufe 3 Spur: kommt mit #591
+        if isinstance(spur, str) and spur.strip():
+            want = f"spur:{spur.strip().lower()}"
+            stages.append(("spur", [i for i in issues if isinstance(i, dict)
+                                    and want in {lb.strip().lower() for lb in _labels(i)}]))
         related = _related_re(done_n)
         stages.append(("related", [i for i in issues if isinstance(i, dict)
                                    and isinstance(i.get("body"), str)

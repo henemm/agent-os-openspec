@@ -1,0 +1,76 @@
+...............................                                          [100%]
+31 passed in 24.62s
+........................................................................ [ 93%]
+........................................................................ [ 95%]
+..................................................sss..s..ssssssssss..s. [ 97%]
+.sssssss................................................................ [ 99%]
+....................................                                     [100%]
+3750 passed, 30 skipped in 604.45s (0:10:04)
+........................................................................ [ 64%]
+...................F....................                                 [100%]
+=================================== FAILURES ===================================
+____________ TestHerdrAnzeige.test_token_spur_nur_anzeige_fail_open ____________
+
+self = <test_spur_591.TestHerdrAnzeige object at 0x7ff965751950>
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-337/test_token_spur_nur_anzeige_fa0')
+
+    def test_token_spur_nur_anzeige_fail_open(self, tmp_path):
+        data = _data(phase="phase6_implement")
+    
+        mit = _plain_project(tmp_path / "mit")
+        path = _write_spur_auftrag(mit, [(548, "open")], "mein-thema")
+        before = path.read_bytes()
+        got = _report(mit, data)
+        assert "spur" in got["names"], got["names"]
+        assert got["rep"] is not None, got
+        assert set(got["rep"]["tokens"]) == set(got["names"]), got
+        assert got["rep"]["tokens"]["spur"] == "mein-thema", got
+        assert path.read_bytes() == before
+    
+        for label, setup in (("ohne-spur", lambda p: _write_auftrag(p, [(548, "open")])),
+                             ("ohne-auftrag", lambda p: None),
+                             ("kaputt", lambda p: _auftrag_path(p).write_text("{kaputt"))):
+            proj = _plain_project(tmp_path / label)
+            setup(proj)
+            got = _report(proj, data)
+            assert got["rep"] is not None, (label, got)
+            assert got["rep"]["tokens"].get("spur") == "", (label, got)
+    
+        # Leser wirft: Report bleibt, Token leer
+        got = _py(mit, (
+            "import hook_utils\n"
+            "def boom(*a, **k):\n"
+            "    raise RuntimeError('kaputt')\n"
+            "hook_utils.read_auftrag = boom\n"
+            "import workflow, herdr_bridge\n"
+            "workflow.read_auftrag = boom\n"
+            f"rep = herdr_bridge.build_report({data!r})\n"
+            "print(json.dumps(rep))\n"))
+        assert got is not None, "build_report bleibt fail-open"
+        assert got["tokens"].get("spur") == "", got
+    
+        # report_workflow / clear behandeln das Token wie die uebrigen
+        log = tmp_path / "herdr.log"
+        stub = h466._make_stub(tmp_path)
+        env = _env(mit, HERDR_ENV="1", HERDR_PANE_ID=h466.PANE,
+                   HERDR_BIN_PATH=str(stub), STUB_LOG=str(log))
+        _py(mit, ("import herdr_bridge\n"
+                  f"herdr_bridge.report_workflow({data!r})\n"
+                  "herdr_bridge.clear()\n"
+                  "print('null')\n"), env=env)
+        calls = h466._settled_calls(log, 2)
+        reports = [c for c in calls if "--title" in c]
+        clears = [c for c in calls if "--clear-title" in c]
+        assert len(reports) == 1 and len(clears) == 1, calls
+        tokens = h466._tokens(reports[0])
+>       assert tokens.get("spur") == "mein-thema", reports[0]
+E       AssertionError: ['pane', 'report-metadata', 'pane', 'pane-466', '--source', 'report-metadata', ...]
+E       assert None == 'mein-thema'
+E        +  where None = <built-in method get of dict object at 0x7ff9656d8e80>('spur')
+E        +    where <built-in method get of dict object at 0x7ff9656d8e80> = {'next': '', '--clear-token': ''}.get
+
+tests/test_spur_591.py:643: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_spur_591.py::TestHerdrAnzeige::test_token_spur_nur_anzeige_fail_open
+1 failed, 111 passed in 43.24s
+--- Gesamtsuite: 3750 passed, 30 skipped (siehe oben)
