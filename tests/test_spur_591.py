@@ -673,7 +673,10 @@ class TestDokumentation:
 
     def test_changelog_nennt_591(self):
         changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        unreleased = changelog.split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
+        # [Unreleased] plus juengster Versionsabschnitt: nach einem Release steht der
+        # Eintrag dort.
+        kopf = changelog.split("## [Unreleased]", 1)[1]
+        unreleased = "\n## [".join(kopf.split("\n## [", 2)[:2])
         added = _section(unreleased, "### Added")
         # Eigener Eintrag (fette Ueberschrift mit #591); der #589-Eintrag erwaehnt
         # #591 schon als Ausblick und zaehlt nicht.
