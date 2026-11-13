@@ -376,6 +376,9 @@ NEXT_WHY = {
 }
 
 END_DONE = "✅ Erledigt: {}. Du kannst /clear ausführen und das nächste Issue starten."
+# Mit Vorschlag (#589): dieselbe ✅-Zeile, Schluss nennt die naechste Aufgabe
+END_DONE_SUGGEST = ("✅ Erledigt: {}. Du kannst /clear ausführen und mit /00-intake #{} "
+                    "weitermachen ({}).")
 END_WAITING = "⏳ Läuft noch: {}. Du musst nichts tun, ich melde mich."
 END_YOU = "❗ Du: {} — {}"
 
@@ -406,20 +409,42 @@ def _end(kind: str, line: str, cmd: "str | None" = None) -> dict:
     return {"kind": kind, "line": line, "cmd": cmd}
 
 
-def _end_state_final(data: dict, deploy, autonomous: bool) -> dict:
-    """Endzustand fuer Phase 8 bzw. archiviert (#550, Tabelle der Spec)."""
+def _suggest_parts(suggest, own) -> "tuple[int, str] | None":
+    """(Nummer, Grund) eines gueltigen Vorschlags (#589), sonst None. Pure."""
+    if not isinstance(suggest, dict):
+        return None
+    number = _queue_number(suggest.get("n"))
+    reason = suggest.get("reason")
+    if number is None or number == _queue_number(own) or not isinstance(reason, str):
+        return None
+    reason = " ".join(reason.split())
+    return (number, reason) if reason else None
+
+
+def _end_state_final(data: dict, deploy, autonomous: bool, suggest=None) -> dict:
+    """Endzustand fuer Phase 8 bzw. archiviert (#550, Tabelle der Spec).
+
+    `suggest` (#589) aendert nur die ✅-Zeilen: Schluss nennt die naechste Aufgabe.
+    """
     issue = workflow_issue_number(data)
     head = f"#{issue}" if issue else (str(data.get("name") or "") or "der Workflow")
+    parts = _suggest_parts(suggest, issue)
+
+    def done(what: str) -> dict:
+        if parts:
+            return _end("done", END_DONE_SUGGEST.format(what, *parts))
+        return _end("done", END_DONE.format(what))
+
     if data.get("status") == "abandoned":
-        return _end("done", END_DONE.format(f"{head} ist abgebrochen"))
+        return done(f"{head} ist abgebrochen")
     if data.get("no_build_reason"):
-        return _end("done", END_DONE.format(f"{head} ist ohne Code-Änderung beendet"))
+        return done(f"{head} ist ohne Code-Änderung beendet")
     if _plan_deploy_mode(deploy) != "configured":
-        return _end("done", END_DONE.format(f"{head} ist fertig"))
+        return done(f"{head} ist fertig")
     status = data.get("deploy_status")
     cmd = f"/70-deploy #{issue}" if issue else "/70-deploy"
     if status == "done":
-        return _end("done", END_DONE.format(f"{head} ist fertig und deployt"))
+        return done(f"{head} ist fertig und deployt")
     if status == "running":
         return _end("waiting", END_WAITING.format(f"das Deploy von {head}"))
     if status == "failed":
@@ -473,7 +498,7 @@ def _end_state_queue(number: int, autark: bool) -> dict:
 
 def end_state(data, archived: bool = False, deploy="off",
               autonomous: bool = False, queue_next=None, autark: bool = False,
-              self_driven: bool = False) -> dict:
+              self_driven: bool = False, suggest=None) -> dict:
     """Genau einer von drei Endzustaenden (#550): done | waiting | you.
 
     Rueckgabe `{"kind", "line", "cmd"}`; `line` ist die ganze Zeile fuer
@@ -484,10 +509,12 @@ def end_state(data, archived: bool = False, deploy="off",
     (#551) aendern nur den Fall „Workflow fertig“ (Art done): naechstes Issue
     aus dem Auftrag statt ✅; die eigene Issue-Nummer zaehlt dabei nie (#555).
     `self_driven` (#555, aus `queue_end_args`) gilt nur fuer Phasen vor 8.
+    `suggest` (#589, `next_suggestion.choose`) aendert nur die ✅-Zeile ohne
+    naechstes Issue aus dem Auftrag: "mit /00-intake #M weitermachen (<Grund>)".
     """
     data = data if isinstance(data, dict) else {}
     final = archived or data.get("current_phase") == "phase8_complete"
-    state = _end_state_final(data, deploy, autonomous) if final else \
+    state = _end_state_final(data, deploy, autonomous, suggest) if final else \
         _end_state_open(data, self_driven is True)
     waiting = _one_line(data.get("waiting_on") or "")
     failed = state["kind"] == "you" and final and data.get("deploy_status") == "failed"
@@ -513,26 +540,57 @@ def _wrap_plan_tail(line: str, width: int) -> "list[str]":
     return [(head + ":")[:width]] + (textwrap.wrap(rest, width) or [])
 
 
-def queue_end_args(data) -> dict:
-    """`{"queue_next", "autark", "self_driven"}` fuer `end_state` (#551, #555). Wirft nie.
+def _suggest_claimed() -> list:
+    """Rohe `issue`-Werte anderer Sitzungen aus dem Session-Register (#589).
 
-    Gemeinsame Quelle fuer `endstate`, Plan und Seitenleiste: `queue_next` ist
-    die erste offene Nummer, die nicht die des geprueften Workflows ist;
-    `self_driven` ist Autonomie `auto` UND ein offener autarker Auftrag. Ohne
-    Auftrag, mit Kill-Switch oder bei Fehlern alles leer bzw. False.
+    Die eigene Sitzung (`CLAUDE_CODE_SESSION_ID`) zaehlt nicht.
+    """
+    own = os.environ.get("CLAUDE_CODE_SESSION_ID") or None
+    return [e.get("issue") for e in _read_session_entries()
+            if e.get("issue") and (own is None or e.get("session_id") != own)]
+
+
+def cached_suggestion(data) -> "dict | None":
+    """Vorschlag (#589) nur aus dem Cache, frisch gegen das Session-Register. Wirft nie.
+
+    Kein Netz: die Rohdaten holt allein `workflow.py endstate`.
+    """
+    try:
+        import next_suggestion
+        cfg = next_suggestion.settings()
+        done = _queue_number(workflow_issue_number(data))
+        if not cfg["enabled"] or done is None:
+            return None
+        raw = next_suggestion.read_cache(find_project_root(), done, ttl_s=cfg["cache_ttl_s"])
+        if raw is None:
+            return None
+        return next_suggestion.choose(raw, done, _suggest_claimed())
+    except Exception:
+        return None
+
+
+def queue_end_args(data) -> dict:
+    """`{"queue_next", "autark", "self_driven", "suggest"}` fuer `end_state`. Wirft nie.
+
+    Gemeinsame Quelle fuer `endstate`, Plan und Seitenleiste (#551, #555):
+    `queue_next` ist die erste offene Nummer, die nicht die des geprueften
+    Workflows ist; `self_driven` ist Autonomie `auto` UND ein offener autarker
+    Auftrag. Ohne Auftrag, mit Kill-Switch oder bei Fehlern alles leer bzw.
+    False. `suggest` (#589) kommt nur ohne `queue_next` und nur aus dem Cache.
     """
     empty = {"queue_next": None, "autark": False, "self_driven": False}
     try:
         auftrag = read_auftrag()
         if not auftrag:
-            return empty
+            return {**empty, "suggest": cached_suggestion(data)}
         own = workflow_issue_number(data)
         own_n = int(own) if own else None
         open_issues = auftrag_open_issues(auftrag)
         nxt = next((n for n in open_issues if n != own_n), None)
         autark = auftrag["autark"] is True
         driven = bool(autark and open_issues) and autonomy_mode() == "auto"
-        return {"queue_next": nxt, "autark": autark, "self_driven": driven}
+        return {"queue_next": nxt, "autark": autark, "self_driven": driven,
+                "suggest": None if nxt is not None else cached_suggestion(data)}
     except Exception:
         return empty
 
@@ -3334,16 +3392,62 @@ def cmd_endstate(args: list[str]) -> None:
 
     Ohne Argument der aktive Workflow, sonst laufend oder archiviert (der
     Abschluss-Turn laeuft nach `complete`). Ausgabe `ENDSTATE=<kind>` und
-    `FOOTER=<line>`; kein Treffer -> Meldung auf stderr, Exit 1.
+    `FOOTER=<line>`; kein Treffer -> Meldung auf stderr, Exit 1. Nur hier holt
+    der Vorschlag (#589) Netzdaten; steht er in der Zeile, folgen
+    `SUGGEST_ISSUE=`, `SUGGEST_SOURCE=` und `SUGGEST_REASON=`.
     """
     path, data, name = _status_target(args[0] if args else None)
     data = dict(data)
     data.setdefault("name", name)
-    state = end_state(data, archived=path.parent == _archive_dir(),
-                      deploy=deploy_mode(), autonomous=deploy_autonomous(),
-                      **queue_end_args(data))
+    kw = {"archived": path.parent == _archive_dir(), "deploy": deploy_mode(),
+          "autonomous": deploy_autonomous()}
+    queue = queue_end_args(data)
+    plain = {**queue, "suggest": None}
+    if queue.get("queue_next") is None and end_state(data, **kw, **plain)["kind"] == "done":
+        if _refresh_suggestion(data, queue):
+            queue = queue_end_args(data)
+            plain = {**queue, "suggest": None}
+    state = end_state(data, **kw, **queue)
     print(f"ENDSTATE={state['kind']}")
     print(f"FOOTER={state['line']}")
+    suggest = queue.get("suggest")
+    if suggest and state != end_state(data, **kw, **plain):
+        print(f"SUGGEST_ISSUE={suggest['n']}")
+        print(f"SUGGEST_SOURCE={suggest['source']}")
+        print(f"SUGGEST_REASON={suggest['reason']}")
+
+
+def _refresh_suggestion(data: dict, queue: dict) -> bool:
+    """Vorschlags-Rohdaten (#589) aus dem Cache, sonst per `gh api` holen und cachen.
+
+    Autarker Auftrag ohne naechstes Issue und Quelle Epic/Meilenstein: Nummer
+    idempotent an den Auftrag haengen (Kette #551). True, wenn Rohdaten vorliegen.
+    Fail-open, wirft nie; Kill-Switch `next_suggestion.enabled: false`.
+    """
+    try:
+        import next_suggestion
+        cfg = next_suggestion.settings()
+        done = _queue_number(workflow_issue_number(data))
+        if not cfg["enabled"] or done is None:
+            return False
+        root = find_project_root()
+        raw = next_suggestion.read_cache(root, done, ttl_s=cfg["cache_ttl_s"])
+        if raw is None:
+            raw = next_suggestion.fetch(root, done, timeout_s=cfg["timeout_s"])
+            if raw is None:
+                return False
+            next_suggestion.write_cache(root, done, raw)
+        suggest = next_suggestion.choose(raw, done, _suggest_claimed())
+        if suggest and queue.get("autark") is True \
+                and suggest["source"] in ("epic", "milestone"):
+            auftrag = read_auftrag(root)
+            if auftrag and auftrag["autark"] is True \
+                    and all(e["n"] != suggest["n"] for e in auftrag["issues"]):
+                auftrag["issues"].append({"n": suggest["n"], "status": "open"})
+                write_auftrag(root, auftrag)
+        return True
+    except Exception:
+        return False
 
 
 def cmd_deploy_config(args: list[str]) -> None:

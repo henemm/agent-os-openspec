@@ -339,6 +339,16 @@ context_budget:
 auftrag:
   enabled: true
 
+# Vorschlag nach "fertig" (#589): `workflow.py endstate` holt per `gh api` (REST)
+# Eltern-Issue, Geschwister, offene Issues und Meilensteine und nennt in der
+# ✅-Zeile die naechste Aufgabe (Epic > Meilenstein > verwandt > Prioritaet).
+# Ohne gh/Netz bleibt die Zeile wie bisher. Rohdaten-Cache:
+# .claude/next_suggestion.json. Nur das Literal false schaltet ab.
+next_suggestion:
+  enabled: true
+  timeout_s: 8        # Zeitbudget fuer alle gh-Aufrufe zusammen (Sekunden)
+  cache_ttl_s: 300    # Gueltigkeit des Rohdaten-Caches (Sekunden)
+
 # Herdr-Sidebar (#466): Laeuft Claude in einem Herdr-Pane (HERDR_ENV=1), meldet
 # core/hooks/herdr_bridge.py den Workflow-Stand display-only per
 # `herdr pane report-metadata` (Tokens workflow, issue, phase, step, next).
