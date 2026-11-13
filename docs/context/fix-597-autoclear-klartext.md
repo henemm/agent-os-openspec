@@ -78,3 +78,64 @@ in den Scope gehört oder als eigenes Issue.
 - Doppelte Runner verhindern (ein Runner je Pane/Grenze), auch wenn mehrere Stops in Folge kommen.
 - Bestehende Tests kodieren das alte Verhalten; bewusst anpassen, nicht löschen.
 - `skills/` ist generiert: Vorlagen in `core/commands/` ändern und `scripts/sync_skills.py` laufen lassen.
+
+## Analysis
+
+### Type
+Bug (Ursache belegt, siehe Ursachenkette oben).
+
+### Leitidee (Antwort auf den PO-Einwand "zu kompliziert")
+Eine Regel statt Sonderfälle: **Jedes saubere Antwortende darf die Übergabe starten, ein
+späteres ersetzt ein früheres, als erledigt gilt sie erst, wenn wirklich getippt wurde.**
+- Der Grenz-Vermerk `auto_clear_boundary` ist das einzige Einmal-Token (Idempotenz-Schlüssel):
+  der Runner nimmt es atomar unmittelbar vor dem Tippen von `/clear`; wer es nicht bekommt,
+  tippt nicht. Der 10-min-Once-Lock (`herdr_auto_clear_state.json`) entfällt dadurch.
+- Kein Verbrauch beim Spawn, keine Sonderbehandlung von `stop_hook_active`.
+- Bricht ein Runner ab, weil Claude weiterarbeitet, bleibt das Token liegen; der nächste
+  saubere Stop startet einen neuen Runner (der alte bricht von selbst ab, weil er den neueren
+  Stop sieht). Andere Abbrüche (Nutzer schreibt, Fehler, Deadline) verwerfen das Token wie bisher.
+- Prüfen vor Handeln: `maybe_auto_clear` fragt den Klartext-Prüfer (gleiche Funktion, gleiche
+  Ausnahmen) und startet bei Zurückweisung gar nicht erst (Token bleibt).
+- Herdr bleibt Tastatur (Begründung #506; Herdr-eigene Claude-Integration mappt Stop→idle und
+  hat dieselbe Lücke).
+
+Verworfene Variante "Debounce in einem Runner" (Plan-Review): gleichwertig in der Wirkung, aber
+größerer Umbau des bewährten Runners (Ruhefenster, Stop-Verdict im Signal, Lock-Übernahme,
+Exit-Race). Die Ersetzungs-Variante hält den Runner fast unverändert und braucht keinen Lock.
+
+### Affected Files (with changes)
+| File | Change Type | Description |
+|------|-------------|-------------|
+| core/hooks/herdr_bridge.py | MODIFY | `maybe_auto_clear`: stop_hook_active-Zweig und Verbrauch beim Spawn raus, Once-Lock raus, Klartext-Vorprüfung; neu `_take_boundary` (atomar unter flock) im Runner vor `/clear`; Abbruchbehandlung: bei "Claude arbeitet weiter" vor `/clear` Token behalten/zurücklegen, sonst verwerfen |
+| core/hooks/klartext_gate.py | MODIFY | `main` in reine Funktion `pruefe(payload) -> list[str]` + dünnes `main`; Verhalten unverändert |
+| core/hooks/footer_gate.py | MODIFY (klein/keins) | nur falls Payload-Weitergabe nötig; `_discard_boundary` (#497a) bleibt |
+| core/commands/40-tdd-red.md, 50-implement.md, 60-validate.md (+ skills/ via sync_skills.py) | MODIFY | Git-Wörter aus Ausgabeblöcken und wörtlichen Fragen entfernen |
+| tests/test_autoclear_retry_597.py | CREATE | neue Tests (RED) |
+| tests/test_vorlagen_klartext_597.py | CREATE | jeder Ausgabeblock und jede „…“-Frage der Vorlagen durch `klartext_gate.treffer` |
+| tests/test_herdr_auto_clear_467.py, test_autoclear_boundary_495.py, test_autoclear_eigene_signale_506.py (+ ggf. 489/497) | MODIFY | Erwartungen an neues Verhalten anpassen (stop_hook_active, Once-Lock, Verbrauchszeitpunkt) |
+| CHANGELOG.md | MODIFY | [Unreleased] |
+
+### Scope Assessment
+- Files: ~10 (+ generierte skills)
+- Estimated LoC: ~+250/-120 (davon ~60 % Tests)
+- Risk Level: HIGH (Stop-Hook-Pfad in jedem Projekt; Tipp-Sicherheit bei Berechtigungsdialogen)
+
+### Technical Approach
+1. Vorlagen + Vorlagen-Test (schneller Gewinn, beseitigt den beobachteten Auslöser).
+2. `klartext_gate.pruefe` extrahieren; `maybe_auto_clear` nutzt sie als Vorprüfung.
+3. Token-Modell: kein Verbrauch beim Spawn, kein Once-Lock, `_take_boundary` im Runner, Abbruchregeln.
+4. Alte Tests auf neues Verhalten umschreiben, E2E-Szenario R (fremder Stop-Hook blockt einmal,
+   Neufassung, danach genau ein `/clear`) in `scripts/e2e_auto_clear.sh` ergänzen (lokal beim PO, nicht CI).
+
+### Risiken
+- Tipp-Sicherheit (#506 Szenario P): unverändert, Runner bricht bei jeder Aktivität nach seinem Stop ab.
+- Restlücke (wie heute, Known Limitation): fremder Stop-Hook blockt, Claude schreibt ohne Werkzeugaufruf
+  länger als `grace` neu → kein Signal; der Klartext-Fall ist durch die Vorprüfung deterministisch abgedeckt.
+- Doppeltes Tippen: ausgeschlossen durch atomare Token-Entnahme (flock).
+- Plugin-Hooks greifen erst nach Neustart von Claude Code (#599).
+
+### Dependencies
+Siehe oben; zusätzlich `fcntl` (nur POSIX, wie bestehende `_pp_flock`).
+
+### Open Questions
+- keine (Nebenbefund als #599 ausgelagert)
