@@ -363,6 +363,9 @@ herdr:
   # erwarteten Slash-Befehl, tippt ein detachter Runner `/clear` und danach
   # `/<cmd> #N` in den Pane. Freigaben bleiben manuell. `herdr.enabled: false`
   # schaltet auch dies ab. Abbrueche: .claude/herdr_auto_clear.log
+  # Zurueckgewiesene Antworten (#597): der neueste saubere Stop gewinnt; der
+  # Grenz-Vermerk wird erst unmittelbar vor dem Tippen von /clear genommen.
+  # "Claude arbeitet weiter" laesst ihn liegen, andere Abbrueche verwerfen ihn.
   # Fuer alle Projekte (#480): "env": {"OPENSPEC_HERDR_AUTO_CLEAR": "1"} in
   # ~/.claude/settings.json; ein Projektwert true/false hat Vorrang.
   auto_clear:
