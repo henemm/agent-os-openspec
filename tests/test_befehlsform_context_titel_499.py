@@ -16,6 +16,10 @@ Vertraege, die diese Tests festlegen (die Spec nennt sie nicht exakt):
   `pathlib.Path.home` eine `RuntimeError` werfen laesst (wie Python ohne HOME/pwd).
 - Die Cache-Sperre ist eine `fcntl.flock`-Sperre auf `<cache>.lock`
   (Muster `herdr_bridge._pp_flock`).
+- #597 (docs/specs/fix-597-autoclear-klartext.md): Runner-Faelle legen einen
+  passenden Grenz-Vermerk (`at` = BOUNDARY_AT) in den State und uebergeben
+  `--boundary-at`; der Runner tippt nur mit diesem Einmal-Token. Kein Once-Lock
+  mehr; Antworttexte ohne Git-Woerter (Klartext-Vorpruefung).
 """
 
 import fcntl
@@ -52,7 +56,8 @@ PLUGIN = "/agent-os-openspec:20-analyse #999"
 RESET = "/99-reset #999"
 AC_LOG = Path(".claude") / "herdr_auto_clear.log"
 TITLE_LOG = Path(".claude") / "issue_titles.log"
-PLAIN = "Phase sauber abgeschlossen, Stand committet."
+PLAIN = "Phase sauber abgeschlossen, Stand gesichert."  # ohne Git-Woerter (#597)
+BOUNDARY_AT = datetime.now().isoformat()  # `at` des Grenz-Vermerks der Runner-Faelle (#597)
 
 # Stub-gh: antwortet auf `api repos/.../issues/N` UND `issue view N` (damit AC-9
 # am Cache-Verlust scheitert, nicht an der Aufrufform). Titel: ${GH_TITLE} oder
@@ -117,6 +122,9 @@ def _env(proj: Path, log: Path, stub: Path, **extra) -> dict:
 def _case(tmp_path: Path, label: str, phase: str = PHASE, **fields):
     root = tmp_path / label
     root.mkdir(parents=True)
+    # #597: passender Grenz-Vermerk, sonst tippt der Runner nie (Einmal-Token)
+    fields.setdefault("auto_clear_boundary",
+                      {"phase": phase, "command": SHORT, "at": BOUNDARY_AT})
     proj = _project(root, phase=phase, **fields)
     log = root / "stub.log"
     stub = _make_stub(root)
@@ -126,7 +134,8 @@ def _case(tmp_path: Path, label: str, phase: str = PHASE, **fields):
 def _run_runner(proj: Path, env: dict, command: str = SHORT, phase: str = PHASE):
     argv = [sys.executable, str(BRIDGE), "auto-clear",
             "--pane", PANE, "--workflow", WF, "--phase", phase, "--command", command,
-            "--grace", "0", "--settle", "0", "--idle-timeout", "5", "--announce", "0"]
+            "--grace", "0", "--settle", "0", "--idle-timeout", "5", "--announce", "0",
+            "--boundary-at", BOUNDARY_AT]
     return subprocess.run(argv, capture_output=True, text=True, env=env,
                           cwd=str(proj), timeout=60)
 
@@ -304,7 +313,9 @@ def test_form_check_error_falls_back_to_plugin_form(tmp_path):
 
 # --- AC-4 ---------------------------------------------------------------------
 
-def test_state_log_and_lock_keep_short_form(tmp_path):
+def test_state_and_log_keep_short_form(tmp_path):
+    """AC-4 (#499); #597 (Spec fix-597, Affected Files): statt des Once-Lock-Schluessels
+    gilt: keine herdr_auto_clear_state.json, Grenze nach `OK` verbraucht."""
     proj, log, env, _ = _case(tmp_path, "shortkeys")
     res = subprocess.run([sys.executable, str(WORKFLOW_PY), "autoclear"],
                          capture_output=True, text=True, env=env, cwd=str(proj),
@@ -321,11 +332,14 @@ def test_state_log_and_lock_keep_short_form(tmp_path):
         f"Runner endete nicht; Log: {_ac_log(proj)!r}; Calls: {_calls(log)}")
     # getippter Text: Plugin-Form (kein Alias im Projekt/Home)
     assert _texts(log) == ["/clear", PLUGIN], (_texts(log), _ac_log(proj))
-    # Log-Tag und Once-Lock-Schluessel: Kurzform
+    # Log-Tag: Kurzform
     assert f"{WF}|{PHASE}|{SHORT}: OK" in _ac_log(proj), _ac_log(proj)
     assert PLUGIN not in _ac_log(proj), _ac_log(proj)
-    lock = json.loads((proj / ".claude" / "herdr_auto_clear_state.json").read_text())
-    assert list(lock) == [f"{WF}|{PHASE}|{SHORT}"], lock
+    # #597: kein Once-Lock mehr; der Vermerk (Einmal-Token) ist nach dem Tippen verbraucht
+    assert not (proj / ".claude" / "herdr_auto_clear_state.json").exists(), \
+        (proj / ".claude" / "herdr_auto_clear_state.json").read_text()
+    state = json.loads((proj / ".claude" / "workflows" / f"{WF}.json").read_text())
+    assert "auto_clear_boundary" not in state, state
     # Ankuendigung nennt weiter die Kurzform (gleiche Quelle wie die Fusszeile)
     notes = [c for c in _calls(log) if _kind(c) == "notification show"]
     assert notes and SHORT in " ".join(notes[0]), notes

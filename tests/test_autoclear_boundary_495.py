@@ -9,6 +9,12 @@ dieser Vermerk zu Phase und erwartetem Befehl passt — der Positiv-Satz
 „`/clear` ist jetzt gefahrlos“ ist nicht mehr noetig, der Negativ-Satz bleibt Veto.
 
 Hook- und Stub-Helfer aus tests/test_herdr_auto_clear_467.py.
+
+#597 (docs/specs/fix-597-autoclear-klartext.md): Der Vermerk wird nicht mehr beim
+Spawn verbraucht, sondern erst vom Runner unmittelbar vor dem Tippen genommen
+(Einmal-Token); der Once-Lock und der Verbrauch bei `stop_hook_active` entfallen.
+Die Antworttexte enthalten keine Git-Woerter mehr (sonst greift die
+Klartext-Vorpruefung, `skip: Klartext-Prüfung weist die Antwort zurück`).
 """
 
 import json
@@ -22,15 +28,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_herdr_auto_clear_467 import (  # noqa: E402
     AUTO_ON,
     CMD,
+    CLEAR_TYPED,
+    ENTER,
     HOOKS_DIR,
     NEGATIVE,
+    PANE,
     PHASE,
     WF,
     _assert_no_calls,
+    _calls,
     _du,
     _hook_case,
     _message,
     _notifications,
+    _prompts,
     _run_hook,
     _wait_calls,
 )
@@ -38,8 +49,9 @@ from test_herdr_auto_clear_467 import (  # noqa: E402
 WORKFLOW = HOOKS_DIR / "workflow.py"
 AC_LOG = Path(".claude") / "herdr_auto_clear.log"
 
-# Antwort OHNE Positiv-Satz, aber mit korrekter ❗Du-Zeile
-PLAIN = "Phase sauber abgeschlossen, Stand committet."
+# Antwort OHNE Positiv-Satz, aber mit korrekter ❗Du-Zeile; ohne Git-Woerter (#597)
+PLAIN = "Phase sauber abgeschlossen, Stand gesichert."
+FOLLOW = [["pane", "send-text", PANE, "/agent-os-openspec:50-implement #467"], ENTER]
 
 
 def _wf_file(proj: Path) -> Path:
@@ -65,6 +77,19 @@ def _run_autoclear(proj: Path, env: dict) -> subprocess.CompletedProcess:
 def _ac_log(proj: Path) -> str:
     path = proj / AC_LOG
     return path.read_text() if path.exists() else ""
+
+
+def _ended(proj: Path) -> int:
+    """Beendete Runner (OK-/ABBRUCH-Zeilen im Log)."""
+    return sum(1 for ln in _ac_log(proj).splitlines() if ": OK" in ln or "ABBRUCH" in ln)
+
+
+def _wait_runners_done(proj: Path, log: Path, timeout: float = 30) -> None:
+    """Bis ein Runner getippt hat (OK) und alle gestarteten Runner beendet sind."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline and (": OK" not in _ac_log(proj)
+                                           or _ended(proj) < len(_notifications(log))):
+        time.sleep(0.1)
 
 
 # --- AC-1 -------------------------------------------------------------------
@@ -165,7 +190,10 @@ def test_negative_marker_vetoes_boundary(tmp_path):
 
 # --- AC-7 -------------------------------------------------------------------
 
-def test_once_lock_single_spawn(tmp_path):
+def test_single_boundary_types_once(tmp_path):
+    """#597 (Spec fix-597 AC-6) ersetzt test_once_lock_single_spawn: zwei Stops mit
+    derselben Grenze; nicht "genau ein Spawn", sondern getippt wird genau einmal
+    (der Vermerk ist das Einmal-Token)."""
     proj, log, stub, env = _hook_case(tmp_path, auto_clear_boundary=_boundary())
     msg = _message(PLAIN, du=_du(CMD))
     res = _run_hook(proj, env, msg)
@@ -173,29 +201,29 @@ def test_once_lock_single_spawn(tmp_path):
     assert _wait_calls(log, 1), f"Erster Stop spawnte keinen Runner; Log: {_ac_log(proj)!r}"
     res = _run_hook(proj, env, msg)
     assert res.returncode == 0, res.stderr
-    time.sleep(1.0)
-    assert len(_notifications(log)) == 1, _notifications(log)
+    _wait_runners_done(proj, log)
+    assert 1 <= len(_notifications(log)) <= 2, _notifications(log)
+    assert _prompts(_calls(log)) == CLEAR_TYPED + FOLLOW, \
+        f"Log: {_ac_log(proj)!r} Aufrufe: {_calls(log)}"
+    assert _ac_log(proj).count(": OK") == 1, _ac_log(proj)
 
 
 # --- F001/F002: Vermerk ist Einmal-Signal ------------------------------------
 
-def _age_lock(proj: Path, seconds: float = 601) -> None:
-    lock = proj / ".claude" / "herdr_auto_clear_state.json"
-    state = json.loads(lock.read_text())
-    key = f"{WF}|{PHASE}|{CMD}"
-    assert key in state, state
-    state[key] = time.time() - seconds
-    lock.write_text(json.dumps(state))
-
-
-def test_boundary_consumed_after_spawn(tmp_path):
+def test_boundary_consumed_after_typing(tmp_path):
+    """#597 (Spec fix-597 AC-5) ersetzt test_boundary_consumed_after_spawn: nach dem
+    Spawn liegt der Vermerk noch, verbraucht ist er erst nach `OK` (getippt); ein
+    zweiter Stop mitten in der Phase loest danach nicht erneut aus."""
     proj, log, stub, env = _hook_case(tmp_path, auto_clear_boundary=_boundary())
     msg = _message(PLAIN, du=_du(CMD))
     res = _run_hook(proj, env, msg)
     assert res.returncode == 0, res.stderr
     assert _wait_calls(log, 1), f"Grenz-Stop spawnte keinen Runner; Log: {_ac_log(proj)!r}"
+    assert isinstance(_state(proj).get("auto_clear_boundary"), dict), \
+        f"Vermerk schon beim Spawn verbraucht: {_state(proj)}"
+    _wait_runners_done(proj, log)
+    assert ": OK" in _ac_log(proj), _ac_log(proj)
     assert "auto_clear_boundary" not in _state(proj), _state(proj)
-    _age_lock(proj)  # Once-Lock abgelaufen: nur der Verbrauch schuetzt noch
     question = _message("Implementierung halb fertig. Variante A oder B?", du=_du(CMD))
     res = _run_hook(proj, env, question)
     assert res.returncode == 0, res.stderr
@@ -234,12 +262,16 @@ def test_stale_boundary_ignored(tmp_path):
     assert "auto_clear_boundary" not in _state(proj), _state(proj)
 
 
-def test_boundary_consumed_on_stop_hook_active(tmp_path):
+def test_boundary_kept_on_stop_hook_active(tmp_path):
+    """#597 (Spec fix-597 AC-3) ersetzt test_boundary_consumed_on_stop_hook_active:
+    ein Folge-Stop (`stop_hook_active`) verwirft die Grenze nicht mehr, sondern
+    startet einen Runner; der Vermerk bleibt bis zum Tippen liegen."""
     proj, log, stub, env = _hook_case(tmp_path, auto_clear_boundary=_boundary())
     msg = _message(PLAIN, du=_du(CMD))
     res = _run_hook(proj, env, msg, stop_hook_active=True)
     assert res.returncode == 0, res.stderr
-    assert "auto_clear_boundary" not in _state(proj), _state(proj)
-    res = _run_hook(proj, env, msg)
-    assert res.returncode == 0, res.stderr
-    _assert_no_calls(log)
+    calls = _wait_calls(log, 1)
+    assert calls, f"Kein Runner beim stop_hook_active-Stop; Log: {_ac_log(proj)!r}"
+    assert calls[0][:2] == ["notification", "show"], calls[0]
+    assert isinstance(_state(proj).get("auto_clear_boundary"), dict), _state(proj)
+    assert "skip: stop_hook_active" not in _ac_log(proj), _ac_log(proj)

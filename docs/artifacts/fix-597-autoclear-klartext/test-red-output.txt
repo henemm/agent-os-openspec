@@ -1,0 +1,1487 @@
+.FFFFFFFFFF.F.......F.....FFFFFFF........FF...FFFFFFFFFFFF.....FFFFFF... [ 72%]
+FFFFFFFFF..................F                                             [100%]
+=================================== FAILURES ===================================
+_______________ test_ausgabebloecke_und_fragen_ohne_git_woerter ________________
+
+    def test_ausgabebloecke_und_fragen_ohne_git_woerter():
+        """AC-1: kein Ausgabeblock und keine zitierte Frage enthält ein Git-Wort.
+    
+        Gegeben alle `core/commands/*.md` und `skills/*/SKILL.md`; jeder Block
+        zwischen `---` nach einer "Ausgabe"-Überschrift und jede „…“-Phrase läuft
+        durch `klartext_gate.treffer`; erwartet: kein einziger Treffer, und
+        `skills/` ist nach `sync_skills.py` synchron zu `core/commands`.
+        """
+        treffer = _treffer()
+        files = _template_files()
+        assert len(files) >= 20, files
+        befunde = []
+        for path in files:
+            rel = path.relative_to(REPO_ROOT)
+            text = path.read_text(encoding="utf-8")
+            for heading, lineno, block in output_blocks(text):
+                hits = treffer(block)
+                if hits:
+                    zeilen = [ln.strip() for ln in block.splitlines() if treffer(ln)]
+                    befunde.append(f"{rel}:{lineno} Block unter {heading!r}: {hits} in {zeilen}")
+            for lineno, phrase in quoted_phrases(text):
+                hits = treffer(phrase)
+                if hits:
+                    befunde.append(f"{rel}:{lineno} Zitat {phrase!r}: {hits}")
+>       assert not befunde, ("Git-Wörter in wörtlich ausgegebenen Vorlagen-Texten "
+                             f"({len(befunde)}):\n" + "\n".join(befunde))
+E       AssertionError: Git-Wörter in wörtlich ausgegebenen Vorlagen-Texten (10):
+E         core/commands/40-tdd-red.md:161 Block unter '### Ausgabe A: Positiv-Block (alle Vorbedingungen erfüllt)': ['committed'] in ['- `tests/<test-datei>.py` — die geschriebenen, fehlschlagenden Testdateien (committed)']
+E         core/commands/50-implement.md:384 Block unter '### Ausgabe A: Positiv-Block (alle Vorbedingungen erfüllt)': ['Commit', 'committed'] in ['- Commit der Implementierung — alle geänderten Dateien sind committed, `git status` ist sauber']
+E         core/commands/60-validate.md:371 Block unter '### Zusammenfassung an den User': ['Commit', 'committen'] in ['**Bereit für:** Commit[, dann Deploy — falls im Projekt vorgesehen]', 'Soll ich den Code committen?']
+E         core/commands/60-validate.md:261 Zitat '„Soll ich den Code committen?"': ['committen']
+E         core/commands/60-validate.md:269 Zitat '„Soll ich den Code committen?"': ['committen']
+E         skills/40-tdd-red/SKILL.md:177 Block unter '### Ausgabe A: Positiv-Block (alle Vorbedingungen erfüllt)': ['committed'] in ['- `tests/<test-datei>.py` — die geschriebenen, fehlschlagenden Testdateien (committed)']
+E         skills/50-implement/SKILL.md:400 Block unter '### Ausgabe A: Positiv-Block (alle Vorbedingungen erfüllt)': ['Commit', 'committed'] in ['- Commit der Implementierung — alle geänderten Dateien sind committed, `git status` ist sauber']
+E         skills/60-validate/SKILL.md:387 Block unter '### Zusammenfassung an den User': ['Commit', 'committen'] in ['**Bereit für:** Commit[, dann Deploy — falls im Projekt vorgesehen]', 'Soll ich den Code committen?']
+E         skills/60-validate/SKILL.md:277 Zitat '„Soll ich den Code committen?"': ['committen']
+E         skills/60-validate/SKILL.md:285 Zitat '„Soll ich den Code committen?"': ['committen']
+E       assert not ["core/commands/40-tdd-red.md:161 Block unter '### Ausgabe A: Positiv-Block (alle Vorbedingungen erfüllt)': ['committe...t)': ['committed'] in ['- `tests/<test-datei>.py` — die geschriebenen, fehlschlagenden Testdateien (committed)']", ...]
+
+tests/test_vorlagen_klartext_597.py:134: AssertionError
+_________________ test_klartext_pruefe_matches_main_behaviour __________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_klartext_pruefe_matches_m0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f53cc679250>
+
+    def test_klartext_pruefe_matches_main_behaviour(tmp_path, monkeypatch):
+        """AC-2: `klartext_gate.pruefe(payload)` liefert Treffer bzw. `[]`, wirft nie;
+        `main` entscheidet identisch (Exit 2 mit derselben Meldung nur bei Treffern)."""
+        sys.path.insert(0, str(HOOKS_DIR))
+        try:
+            import klartext_gate  # noqa: PLC0415
+        finally:
+            sys.path.remove(str(HOOKS_DIR))
+        pruefe = getattr(klartext_gate, "pruefe", None)
+>       assert callable(pruefe), "klartext_gate.pruefe(payload) fehlt"
+E       AssertionError: klartext_gate.pruefe(payload) fehlt
+E       assert False
+E        +  where False = callable(None)
+
+tests/test_autoclear_retry_597.py:461: AssertionError
+___________________ test_stop_hook_active_stop_spawns_runner ___________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_stop_hook_active_stop_spa0')
+
+    def test_stop_hook_active_stop_spawns_runner(tmp_path):
+        """AC-3: Folge-Stop (`stop_hook_active: true`) mit passender Grenze und sauberer
+        Antwort startet einen Runner; kein `skip: stop_hook_active`, der Vermerk bleibt
+        bis zum Tippen liegen und ist erst danach verbraucht."""
+        case = Case(tmp_path, "sha", grace=2)
+        res = case.run_footer(_message(), stop_hook_active=True)
+        assert res.returncode == 0, res.stderr
+>       assert _wait_for(lambda: case.notifications(), 3), \
+            f"Kein Runner beim stop_hook_active-Stop; Log: {case.runner_log()!r}"
+E       AssertionError: Kein Runner beim stop_hook_active-Stop; Log: '2026-11-13T17:11:50 skip: stop_hook_active\n'
+E       assert []
+E        +  where [] = _wait_for(<function test_stop_hook_active_stop_spawns_runner.<locals>.<lambda> at 0x7f53cbcf2f20>, 3)
+
+tests/test_autoclear_retry_597.py:546: AssertionError
+_______________ test_klartext_pre_check_skips_and_keeps_boundary _______________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_klartext_pre_check_skips_0')
+
+    def test_klartext_pre_check_skips_and_keeps_boundary(tmp_path):
+        """AC-4: Würde `klartext_gate` die Antwort zurückweisen, startet `maybe_auto_clear`
+        keinen Runner (`skip: Klartext-Prüfung weist die Antwort zurück`), der Vermerk
+        bleibt unverändert; Negativ-Marker und veralteter Vermerk wie bisher (verbraucht);
+        Fehler der Vorprüfung gelten als "keine Treffer" (fail-open)."""
+        # (a) Git-Wort in der Antwort: kein Spawn, Vermerk unverändert
+        case = Case(tmp_path, "git")
+        res = case.run_footer(_message(GIT))
+        assert res.returncode == 0, res.stderr
+>       _assert_no_calls(case)
+
+tests/test_autoclear_retry_597.py:568: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+case = <test_autoclear_retry_597.Case object at 0x7f53cbcd1090>
+
+    def _assert_no_calls(case: Case) -> None:
+        time.sleep(0.8)
+>       assert case.calls() == [], f"Stub unerwartet aufgerufen: {case.calls()}"
+E       AssertionError: Stub unerwartet aufgerufen: [['notification', 'show', 'OpenSpec Auto-/clear', '--body', 'In 0s: /clear, dann /50-implement #597']]
+E       assert [['notificati...lement #597']] == []
+E         
+E         Left contains one more item: ['notification', 'show', 'OpenSpec Auto-/clear', '--body', 'In 0s: /clear, dann /50-implement #597']
+E         Use -v to get more diff
+
+tests/test_autoclear_retry_597.py:322: AssertionError
+________________ test_spawn_keeps_boundary_and_has_no_once_lock ________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_spawn_keeps_boundary_and_0')
+
+    def test_spawn_keeps_boundary_and_has_no_once_lock(tmp_path):
+        """AC-5: Spawn verbraucht den Vermerk nicht, es gibt keinen 600-s-Once-Lock
+        (keine `herdr_auto_clear_state.json`, zwei Stops in Folge spawnen beide) und der
+        Spawn übergibt `--boundary-at` mit dem `at` des Vermerks."""
+        # (a) maybe_auto_clear direkt, Popen abgefangen: zwei Stops, zwei Spawns
+        case = Case(tmp_path, "probe")
+        out = _probe(case, "normal", _message(), n=2)
+>       assert out["results"] == [True, True], \
+            f"Zweiter Stop nicht gespawnt (Once-Lock/Verbrauch?): {out}; Log: {case.runner_log()!r}"
+E       AssertionError: Zweiter Stop nicht gespawnt (Once-Lock/Verbrauch?): {'results': [True, False], 'calls': [['/home/user/agent-os-openspec/.venv/bin/python', '/home/user/agent-os-openspec/core/hooks/herdr_bridge.py', 'auto-clear', '--pane', 'pane-597', '--workflow', 'fix-597-autoclear-klartext', '--phase', 'phase6_implement', '--command', '/50-implement #597', '--grace', '0', '--idle-timeout', '5', '--announce', '1', '--since', '1794589914.5027575']]}; Log: '2026-11-13T17:11:54 skip: keine Grenze vermerkt\n'
+E       assert [True, False] == [True, True]
+E         
+E         At index 1 diff: False != True
+E         Use -v to get more diff
+
+tests/test_autoclear_retry_597.py:611: AssertionError
+____________________ test_two_runners_only_one_takes_token _____________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_two_runners_only_one_take0')
+
+    def test_two_runners_only_one_takes_token(tmp_path):
+        """AC-6: Zwei (bzw. viele) Runner für dieselbe Grenze: genau einer bekommt den
+        Vermerk (atomar unter flock), der andere bricht mit "Grenze bereits vergeben" ab;
+        getippt werden `/clear` und der Folgebefehl insgesamt genau einmal."""
+        # (a) acht Prozesse rufen gleichzeitig _take_boundary
+        case = Case(tmp_path, "race")
+        before = case.state()
+        start = time.time() + 2.0
+        procs = [_start_take(case, start=start) for _ in range(8)]
+>       results = [_result_of(p)["taken"] for p in procs]
+                   ^^^^^^^^^^^^^
+
+tests/test_autoclear_retry_597.py:644: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+proc = <Popen: returncode: 1 args: ['/home/user/agent-os-openspec/.venv/bin/python'...>
+timeout = 30
+
+    def _result_of(proc: subprocess.Popen, timeout: float = 30) -> dict:
+        out, err = proc.communicate(timeout=timeout)
+        lines = [ln for ln in out.splitlines() if ln.startswith("RESULT=")]
+>       assert proc.returncode == 0 and lines, f"_take_boundary-Prozess: {out!r} {err!r}"
+E       AssertionError: _take_boundary-Prozess: '' 'Traceback (most recent call last):\n  File "<string>", line 16, in <module>\n    result = runner._take_boundary()\n             ^^^^^^^^^^^^^^^^^^^^^\nAttributeError: \'_Runner\' object has no attribute \'_take_boundary\'\n'
+E       assert (1 == 0)
+E        +  where 1 = <Popen: returncode: 1 args: ['/home/user/agent-os-openspec/.venv/bin/python'...>.returncode
+
+tests/test_autoclear_retry_597.py:425: AssertionError
+____________ test_take_boundary_requires_exact_match_and_fails_safe ____________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_take_boundary_requires_ex0')
+
+    def test_take_boundary_requires_exact_match_and_fails_safe(tmp_path):
+        """AC-7: `_take_boundary` liefert nur bei exakt passendem Vermerk (phase, command,
+        at) True; fehlt er, passt er nicht, ist der State unlesbar, schlägt die Sperre
+        fehl oder fehlt `fcntl`: False, State unverändert, der Runner tippt nichts."""
+        # Positiv-Kontrolle: passt -> True, nur das Feld entfernt, Sperre freigegeben
+        case = Case(tmp_path, "passt")
+        before = case.state()
+>       out = _take(case)
+              ^^^^^^^^^^^
+
+tests/test_autoclear_retry_597.py:691: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+case = <test_autoclear_retry_597.Case object at 0x7f53cbcf5e00>, over = {}
+
+    def _take(case: Case, **over) -> dict:
+        res = case.py(TAKE_PROBE, json.dumps(_take_cfg(case, **over)))
+        lines = [ln for ln in res.stdout.splitlines() if ln.startswith("RESULT=")]
+>       assert res.returncode == 0 and lines, \
+            f"_take_boundary-Aufruf fehlgeschlagen: {res.stdout!r} {res.stderr!r}"
+E       AssertionError: _take_boundary-Aufruf fehlgeschlagen: '' 'Traceback (most recent call last):\n  File "<string>", line 16, in <module>\n    result = runner._take_boundary()\n             ^^^^^^^^^^^^^^^^^^^^^\nAttributeError: \'_Runner\' object has no attribute \'_take_boundary\'\n'
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/home/user/agent-os-openspec/.venv/bin/python', '-c', 'import sys; sys.path.insert(0, \'/home/...ndary()\n             ^^^^^^^^^^^^^^^^^^^^^\nAttributeError: \'_Runner\' object has no attribute \'_take_boundary\'\n').returncode
+
+tests/test_autoclear_retry_597.py:410: AssertionError
+_________________________ test_newest_clean_stop_wins __________________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_newest_clean_stop_wins0')
+
+    def test_newest_clean_stop_wins(tmp_path):
+        """AC-8: Stop #1 startet Runner 1, ein fremder Hook blockt, Stop #2
+        (`stop_hook_active`) startet Runner 2. Runner 1 sieht Stop #2, bricht ab und
+        verwirft den Vermerk nicht ("Claude arbeitet weiter", "Grenze bleibt"); Runner 2
+        nimmt ihn und tippt genau einmal `/clear` und den Folgebefehl; Log: erst ABBRUCH,
+        dann OK."""
+        case = Case(tmp_path, "newest", grace=2)
+        res = case.run_footer(_message())
+        assert res.returncode == 0, res.stderr
+        assert _wait_for(lambda: case.notifications(), 3), \
+            f"Stop #1 startete keinen Runner; Log: {case.runner_log()!r}"
+        time.sleep(1.0)  # klartext_gate o. Ae. blockt Stop #1, Claude schreibt neu
+        res = case.run_footer(_message(), stop_hook_active=True)
+        assert res.returncode == 0, res.stderr
+        assert _wait_for(lambda: "ABBRUCH" in case.runner_log(), 10), \
+            f"Runner 1 brach nicht ab; Log: {case.runner_log()!r}"
+>       assert case.current_boundary() == case.boundary, \
+            f"Runner 1 (bzw. Stop #2) verwarf den Vermerk: {case.state()}; Log: {case.runner_log()!r}"
+E       AssertionError: Runner 1 (bzw. Stop #2) verwarf den Vermerk: {'name': 'fix-597-autoclear-klartext', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'phase_transitions': [], 'phase_log': []}; Log: '2026-11-13T17:11:57 skip: stop_hook_active\n2026-11-13T17:11:58 fix-597-autoclear-klartext|phase6_implement|/50-implement #597: ABBRUCH: vor /clear: Claude arbeitet weiter (stop +1.1s)\n'
+E       assert None == {'phase': 'phase6_implement', 'command': '/50-implement #597', 'at': '2026-11-13T17:11:56.667113'}
+E        +  where None = current_boundary()
+E        +    where current_boundary = <test_autoclear_retry_597.Case object at 0x7f53cc2ab530>.current_boundary
+E        +  and   {'phase': 'phase6_implement', 'command': '/50-implement #597', 'at': '2026-11-13T17:11:56.667113'} = <test_autoclear_retry_597.Case object at 0x7f53cc2ab530>.boundary
+
+tests/test_autoclear_retry_597.py:760: AssertionError
+_________ test_restore_boundary_on_continuation_between_text_and_enter _________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_restore_boundary_on_conti0')
+
+    def test_restore_boundary_on_continuation_between_text_and_enter(tmp_path):
+        """AC-9: Runner hat den Vermerk genommen, zwischen `send-text /clear` und Enter
+        kommt ein `activity`- bzw. `stop`-Signal: Zeile per `ctrl+u` gelöscht, Vermerk
+        zurückgelegt — aber nur, wenn kein neuerer Vermerk im State steht."""
+        # (a) activity zwischen Text und Enter: zurückgelegt
+        case = Case(tmp_path, "activity")
+        case.after_text_hook("/clear", "activity", kind="pretooluse")
+        res = case.run_runner(since=time.time() - 0.5)
+        assert res.returncode == 0, res.stderr
+>       assert case.typing() == [CLEAR[0], CTRL_U], \
+            f"(a) Log: {case.runner_log()!r} Aufrufe: {case.calls()}"
+E       AssertionError: (a) Log: '2026-11-13T17:11:58 auto-clear: ABBRUCH: ungueltige Argumente\n' Aufrufe: []
+E       assert [] == [['pane', 'se...7', 'ctrl+u']]
+E         
+E         Right contains 2 more items, first extra item: ['pane', 'send-text', 'pane-597', '/clear']
+E         Use -v to get more diff
+
+tests/test_autoclear_retry_597.py:785: AssertionError
+_____________ test_discard_boundary_on_user_input_and_other_aborts _____________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_discard_boundary_on_user_0')
+
+    def test_discard_boundary_on_user_input_and_other_aborts(tmp_path):
+        """AC-10: Abbruch vor dem Abschicken von `/clear` durch Nutzereingabe,
+        Sitzungsende/Neustart, Phasenwechsel, Herdr-Fehler oder `/99-reset`: Vermerk
+        verworfen (nur der eigene, ein neuerer bleibt), kein Neuversuch; nach
+        abgeschicktem `/clear` bleibt er verbraucht; `ABBRUCH` im Log.
+    
+        Die Gesamt-Deadline (Budget >= 95 s) ist hier nicht in vertretbarer Zeit
+        auslösbar; sie läuft über denselben Abbruchpfad wie die übrigen Gründe."""
+        befunde = []
+    
+        def check(case: Case, label: str, *, typing, boundary=None, reason=None):
+            if case.typing() != typing:
+                befunde.append(f"{label}: getippt {case.typing()}, erwartet {typing}")
+            if case.current_boundary() != boundary:
+                befunde.append(f"{label}: Vermerk {case.current_boundary()!r}, erwartet {boundary!r}")
+            log = case.runner_log()
+            if "ABBRUCH" not in log or (reason and reason not in log):
+                befunde.append(f"{label}: Log ohne ABBRUCH/{reason!r}: {log!r}")
+    
+        # (a) Nutzer schreibt in der Grace-Zeit
+        case = Case(tmp_path, "input", grace=1)
+        proc = case.start_runner(grace=1.5)
+        time.sleep(0.5)
+        case.write_marker("input")
+        _finish(proc)
+        check(case, "input", typing=[], reason=TYPED_ON)
+        # kein Neuversuch: der nächste saubere Stop findet keinen Vermerk mehr
+        n_calls = len(case.calls())
+        res = case.run_footer(_message())
+        assert res.returncode == 0, res.stderr
+        time.sleep(0.8)
+        if len(case.calls()) != n_calls:
+            befunde.append(f"input: Neuversuch nach Abbruch: {case.calls()}")
+        if not case.runner_log().rstrip().endswith("skip: keine Grenze vermerkt"):
+            befunde.append(f"input: kein Skip 'keine Grenze vermerkt': {case.runner_log()!r}")
+    
+        # (b) Nutzereingabe, inzwischen neuerer Vermerk: der neuere bleibt
+        case = Case(tmp_path, "input-newer")
+        newer = {"phase": PHASE, "command": CMD,
+                 "at": (datetime.now() + timedelta(seconds=30)).isoformat()}
+        proc = case.start_runner(grace=1.5)
+        time.sleep(0.5)
+        case.set_boundary(newer)
+        case.write_marker("input")
+        _finish(proc)
+        check(case, "input-newer", typing=[], boundary=newer, reason=TYPED_ON)
+    
+        # (c) Sitzung beendet bzw. neu gestartet in der Grace-Zeit
+        for label, signal, fields in (("session-end", "activity",
+                                       {"kind": "session_end", "reason": "prompt_input_exit"}),
+                                      ("restart", "session", {"source": "startup"})):
+            case = Case(tmp_path, label)
+            proc = case.start_runner(grace=1.5)
+            time.sleep(0.5)
+            case.write_marker(signal, **fields)
+            _finish(proc)
+            check(case, label, typing=[])
+    
+        # (d) Phase wechselt in der Grace-Zeit
+        case = Case(tmp_path, "phase")
+        proc = case.start_runner(grace=1.5)
+        time.sleep(0.5)
+        subprocess.run(["bash", str(case.phase_changer())], check=True, timeout=30)
+        _finish(proc)
+        check(case, "phase", typing=[], reason="vor /clear")
+    
+        # (e) Herdr-Fehler: Binary ungültig (vor dem Nehmen) bzw. send-text scheitert (danach)
+        case = Case(tmp_path, "herdr-bin", HERDR_BIN_PATH=str(tmp_path / "gibt-es-nicht"))
+        res = case.run_runner(announce="1")
+        assert res.returncode == 0, res.stderr
+        check(case, "herdr-bin", typing=[])
+        case = Case(tmp_path, "herdr-text", STUB_TEXT_EXIT="1")
+        res = case.run_runner()
+        assert res.returncode == 0, res.stderr
+        check(case, "herdr-text", typing=[CLEAR[0]])
+    
+        # (f) Nutzereingabe zwischen Text und Enter: Zeile gelöscht, Vermerk NICHT zurückgelegt
+        case = Case(tmp_path, "input-between")
+        case.after_text_hook("/clear", "input")
+        res = case.run_runner(since=time.time() - 0.5)
+        assert res.returncode == 0, res.stderr
+        check(case, "input-between", typing=[CLEAR[0], CTRL_U], reason=TYPED_ON)
+    
+        # (g) /99-reset-Sperre
+        case = Case(tmp_path, "reset", boundary=_boundary(command=RESET))
+        res = case.run_runner(command=RESET)
+        assert res.returncode == 0, res.stderr
+        check(case, "reset", typing=[], reason="manuell")
+    
+        # (h) nach abgeschicktem /clear (kein SessionStart): bleibt verbraucht
+        case = Case(tmp_path, "after-clear", STUB_SESSION_SOURCE="none")
+        res = case.run_runner(idle_timeout=1)
+        assert res.returncode == 0, res.stderr
+        check(case, "after-clear", typing=CLEAR, reason="SessionStart")
+    
+>       assert not befunde, "\n".join(befunde)
+E       AssertionError: input: Vermerk {'phase': 'phase6_implement', 'command': '/50-implement #597', 'at': '2026-11-13T17:11:58.898920'}, erwartet None
+E         input: Log ohne ABBRUCH/'Nutzer hat weitergeschrieben': '2026-11-13T17:11:58 auto-clear: ABBRUCH: ungueltige Argumente\n'
+E         input: Neuversuch nach Abbruch: [['notification', 'show', 'OpenSpec Auto-/clear', '--body', 'In 1s: /clear, dann /50-implement #597']]
+E         input: kein Skip 'keine Grenze vermerkt': '2026-11-13T17:11:58 auto-clear: ABBRUCH: ungueltige Argumente\n'
+E         input-newer: Log ohne ABBRUCH/'Nutzer hat weitergeschrieben': '2026-11-13T17:12:00 auto-clear: ABBRUCH: ungueltige Argumente\n'
+E         session-end: Vermerk {'phase': 'phase6_implement', 'command': '/50-implement #597', 'at': '2026-11-13T17:12:00.771060'}, erwartet None
+E         restart: Vermerk {'phase': 'phase6_implement', 'command': '/50-implement #597', 'at': '2026-11-13T17:12:01.274100'}, erwartet None
+E         phase: Vermerk {'phase': 'phase6_implement', 'command': '/50-implement #597', 'at': '2026-11-13T17:12:01.776146'}, erwartet None
+E         phase: Log ohne ABBRUCH/'vor /clear': '2026-11-13T17:12:01 auto-clear: ABBRUCH: ungueltige Argumente\n'
+E         herdr-bin: Vermerk {'phase': 'phase6_implement', 'command': '/50-implement #597', 'at': '2026-11-13T17:12:02.311727'}, erwartet None
+E         herdr-text: getippt [], erwartet [['pane', 'send-text', 'pane-597', '/clear']]
+E         herdr-text: Vermerk {'phase': 'phase6_implement', 'command': '/50-implement #597', 'at': '2026-11-13T17:12:02.392558'}, erwartet None
+E         input-between: getippt [], erwartet [['pane', 'send-text', 'pane-597', '/clear'], ['pane', 'send-keys', 'pane-597', 'ctrl+u']]
+E         input-between: Vermerk {'phase': 'phase6_implement', 'command': '/50-implement #597', 'at': '2026-11-13T17:12:02.453080'}, erwartet None
+E         input-between: Log ohne ABBRUCH/'Nutzer hat weitergeschrieben': '2026-11-13T17:12:02 auto-clear: ABBRUCH: ungueltige Argumente\n'
+E         reset: Vermerk {'phase': 'phase6_implement', 'command': '/99-reset #597', 'at': '2026-11-13T17:12:02.516221'}, erwartet None
+E         reset: Log ohne ABBRUCH/'manuell': '2026-11-13T17:12:02 auto-clear: ABBRUCH: ungueltige Argumente\n'
+E         after-clear: getippt [], erwartet [['pane', 'send-text', 'pane-597', '/clear'], ['pane', 'send-keys', 'pane-597', 'enter']]
+E         after-clear: Vermerk {'phase': 'phase6_implement', 'command': '/50-implement #597', 'at': '2026-11-13T17:12:02.573614'}, erwartet None
+E         after-clear: Log ohne ABBRUCH/'SessionStart': '2026-11-13T17:12:02 auto-clear: ABBRUCH: ungueltige Argumente\n'
+E       assert not ["input: Vermerk {'phase': 'phase6_implement', 'command': '/50-implement #597', 'at': '2026-11-13T17:11:58.898920'}, e...'phase': 'phase6_implement', 'command': '/50-implement #597', 'at': '2026-11-13T17:12:00.771060'}, erwartet None", ...]
+
+tests/test_autoclear_retry_597.py:900: AssertionError
+_____________________ test_runner_exact_sequence_and_flags _____________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_runner_exact_sequence_and0')
+
+    def test_runner_exact_sequence_and_flags(tmp_path):
+        proj, log, env, _ = _runner_case(tmp_path, "seq")
+        # Kurz-Alias im Projekt: der Runner tippt die Kurzform (#499, sonst Plugin-Form)
+        alias = proj / ".claude" / "commands" / "50-implement.md"
+        alias.parent.mkdir(parents=True, exist_ok=True)
+        alias.write_text("Alias\n")
+        res = _run_runner(proj, env)
+        assert res.returncode == 0, res.stderr
+        calls = _calls(log)
+        # #506: kein `agent wait`/`agent prompt` mehr — Herdr dient nur noch als Tastatur
+        assert _waits(calls) == [], calls
+        assert [c for c in calls if c and c[0] == "agent"] == [], calls
+>       assert [_kind(c) for c in calls] == ["pane send-text", "pane send-keys"] * 2, calls
+E       AssertionError: []
+E       assert [] == ['pane send-t...ne send-keys']
+E         
+E         Right contains 4 more items, first extra item: 'pane send-text'
+E         Use -v to get more diff
+
+tests/test_herdr_auto_clear_467.py:316: AssertionError
+_______________________ test_spawn_when_stop_hook_active _______________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_spawn_when_stop_hook_acti0')
+
+    def test_spawn_when_stop_hook_active(tmp_path):
+        """#597 (Spec fix-597 AC-3) ersetzt test_no_spawn_when_stop_hook_active: ein Folge-
+        Stop (`stop_hook_active`) mit passender Grenze und sauberer Antwort ist ein spaeteres
+        sauberes Antwortende und startet einen Runner."""
+        proj, log, stub, env = _hook_case(tmp_path, auto_clear_boundary=BOUNDARY)
+        res = _run_hook(proj, env, _message(POSITIVE), stop_hook_active=True)
+        assert res.returncode == 0, res.stderr
+        calls = _wait_calls(log, 1)
+>       assert calls, "Kein Runner beim stop_hook_active-Stop (Stub nie aufgerufen)"
+E       AssertionError: Kein Runner beim stop_hook_active-Stop (Stub nie aufgerufen)
+E       assert []
+
+tests/test_herdr_auto_clear_467.py:373: AssertionError
+_______________ test_second_identical_stop_does_not_double_type ________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_second_identical_stop_doe0')
+
+    def test_second_identical_stop_does_not_double_type(tmp_path):
+        """#597 (Spec fix-597 AC-5/AC-6) ersetzt test_once_lock_blocks_duplicate_and_expires_after_10_min:
+        zwei identische Stops erzeugen hoechstens zwei Runner, getippt werden `/clear` und
+        der Folgebefehl genau einmal; kein 600-s-Once-Lock, keine herdr_auto_clear_state.json."""
+        proj, log, stub, env = _hook_case(tmp_path, auto_clear_boundary=BOUNDARY)
+        msg = _message(POSITIVE)
+        for _ in range(2):
+            res = _run_hook(proj, env, msg)
+            assert res.returncode == 0, res.stderr
+        assert _wait_calls(log, 1), "Erster Payload spawnte keinen Runner"
+    
+        def ended() -> int:
+            return sum(1 for ln in _runner_log(proj).splitlines() if ": OK" in ln or "ABBRUCH" in ln)
+    
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline and (": OK" not in _runner_log(proj)
+                                               or ended() < len(_notifications(log))):
+            time.sleep(0.1)
+        assert 1 <= len(_notifications(log)) <= 2, _notifications(log)
+        assert ended() == len(_notifications(log)), _runner_log(proj)
+        follow = ["pane", "send-text", PANE, "/agent-os-openspec:50-implement #467"]
+>       assert _prompts(_calls(log)) == CLEAR_TYPED + [follow, ENTER], \
+            f"Log: {_runner_log(proj)!r} Aufrufe: {_calls(log)}"
+E       AssertionError: Log: '2026-11-13T17:12:16 skip: keine Grenze vermerkt\n2026-11-13T17:12:16 feat-467-herdr-auto-clear|phase6_implement|/50-implement #467: ABBRUCH: vor /clear: Claude arbeitet weiter (stop +0.1s)\n' Aufrufe: [['notification', 'show', 'OpenSpec Auto-/clear', '--body', 'In 0s: /clear, dann /50-implement #467']]
+E       assert [] == [['pane', 'se...67', 'enter']]
+E         
+E         Right contains 4 more items, first extra item: ['pane', 'send-text', 'pane-467', '/clear']
+E         Use -v to get more diff
+
+tests/test_herdr_auto_clear_467.py:449: AssertionError
+______________________ test_runner_aborts_on_wait_timeout ______________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_runner_aborts_on_wait_tim0')
+
+    def test_runner_aborts_on_wait_timeout(tmp_path):
+        # #506: die einzige Wartephase ist das SessionStart(clear)-Signal nach /clear
+        proj, log, env, _ = _runner_case(tmp_path, "timeout", STUB_SESSION_SOURCE="none")
+        start = time.monotonic()
+        res = _run_runner(proj, env, idle_timeout=1)
+        _assert_clean_abort(res, proj)
+>       assert time.monotonic() - start >= 0.8, "Frist nicht abgewartet"
+E       AssertionError: Frist nicht abgewartet
+E       assert (2346.813539122 - 2346.7535079) >= 0.8
+E        +  where 2346.813539122 = <built-in function monotonic>()
+E        +    where <built-in function monotonic> = time.monotonic
+
+tests/test_herdr_auto_clear_467.py:464: AssertionError
+______ test_runner_aborts_on_new_input_or_foreign_session_source[startup] ______
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_runner_aborts_on_new_inpu0')
+source = 'startup'
+
+    @pytest.mark.parametrize("source", ["startup", "resume", "compact"])
+    def test_runner_aborts_on_new_input_or_foreign_session_source(tmp_path, source):
+        # #506: Nutzer hat weitergeschrieben -> gar kein Prompt
+        proj, log, env, _ = _runner_case(tmp_path, f"first-{source}")
+        _input_marker(proj, time.time() + 60)
+        res = _run_runner(proj, env)
+        _assert_clean_abort(res, proj)
+        assert _prompts(_calls(log)) == [], _calls(log)
+>       assert "Nutzer hat weitergeschrieben" in _runner_log(proj), _runner_log(proj)
+E       AssertionError: 2026-11-13T17:12:47 auto-clear: ABBRUCH: ungueltige Argumente
+E         
+E       assert 'Nutzer hat weitergeschrieben' in '2026-11-13T17:12:47 auto-clear: ABBRUCH: ungueltige Argumente\n'
+E        +  where '2026-11-13T17:12:47 auto-clear: ABBRUCH: ungueltige Argumente\n' = _runner_log(PosixPath('/tmp/pytest-of-root/pytest-265/test_runner_aborts_on_new_inpu0/first-startup/proj'))
+
+tests/test_herdr_auto_clear_467.py:479: AssertionError
+______ test_runner_aborts_on_new_input_or_foreign_session_source[resume] _______
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_runner_aborts_on_new_inpu1')
+source = 'resume'
+
+    @pytest.mark.parametrize("source", ["startup", "resume", "compact"])
+    def test_runner_aborts_on_new_input_or_foreign_session_source(tmp_path, source):
+        # #506: Nutzer hat weitergeschrieben -> gar kein Prompt
+        proj, log, env, _ = _runner_case(tmp_path, f"first-{source}")
+        _input_marker(proj, time.time() + 60)
+        res = _run_runner(proj, env)
+        _assert_clean_abort(res, proj)
+        assert _prompts(_calls(log)) == [], _calls(log)
+>       assert "Nutzer hat weitergeschrieben" in _runner_log(proj), _runner_log(proj)
+E       AssertionError: 2026-11-13T17:12:47 auto-clear: ABBRUCH: ungueltige Argumente
+E         
+E       assert 'Nutzer hat weitergeschrieben' in '2026-11-13T17:12:47 auto-clear: ABBRUCH: ungueltige Argumente\n'
+E        +  where '2026-11-13T17:12:47 auto-clear: ABBRUCH: ungueltige Argumente\n' = _runner_log(PosixPath('/tmp/pytest-of-root/pytest-265/test_runner_aborts_on_new_inpu1/first-resume/proj'))
+
+tests/test_herdr_auto_clear_467.py:479: AssertionError
+______ test_runner_aborts_on_new_input_or_foreign_session_source[compact] ______
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_runner_aborts_on_new_inpu2')
+source = 'compact'
+
+    @pytest.mark.parametrize("source", ["startup", "resume", "compact"])
+    def test_runner_aborts_on_new_input_or_foreign_session_source(tmp_path, source):
+        # #506: Nutzer hat weitergeschrieben -> gar kein Prompt
+        proj, log, env, _ = _runner_case(tmp_path, f"first-{source}")
+        _input_marker(proj, time.time() + 60)
+        res = _run_runner(proj, env)
+        _assert_clean_abort(res, proj)
+        assert _prompts(_calls(log)) == [], _calls(log)
+>       assert "Nutzer hat weitergeschrieben" in _runner_log(proj), _runner_log(proj)
+E       AssertionError: 2026-11-13T17:12:47 auto-clear: ABBRUCH: ungueltige Argumente
+E         
+E       assert 'Nutzer hat weitergeschrieben' in '2026-11-13T17:12:47 auto-clear: ABBRUCH: ungueltige Argumente\n'
+E        +  where '2026-11-13T17:12:47 auto-clear: ABBRUCH: ungueltige Argumente\n' = _runner_log(PosixPath('/tmp/pytest-of-root/pytest-265/test_runner_aborts_on_new_inpu2/first-compact/proj'))
+
+tests/test_herdr_auto_clear_467.py:479: AssertionError
+_____________ test_runner_aborts_when_state_changed_between_steps ______________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_runner_aborts_when_state_0')
+
+    def test_runner_aborts_when_state_changed_between_steps(tmp_path):
+        # (a) Aenderung vor dem Recheck "vor /clear": gar kein Prompt
+        root = tmp_path / "a"
+        root.mkdir()
+        proj = _project(root, auto_clear_boundary=BOUNDARY)
+        hook = _state_changer(root)
+        log = root / "stub.log"
+        env = _env(proj, log, _make_stub(root))
+        subprocess.run(["bash", str(hook)], check=True, timeout=30)
+        res = _run_runner(proj, env)
+        _assert_clean_abort(res, proj)
+        assert _prompts(_calls(log)) == [], _calls(log)
+>       assert "vor /clear" in _runner_log(proj), _runner_log(proj)
+E       AssertionError: 2026-11-13T17:12:47 auto-clear: ABBRUCH: ungueltige Argumente
+E         
+E       assert 'vor /clear' in '2026-11-13T17:12:47 auto-clear: ABBRUCH: ungueltige Argumente\n'
+E        +  where '2026-11-13T17:12:47 auto-clear: ABBRUCH: ungueltige Argumente\n' = _runner_log(PosixPath('/tmp/pytest-of-root/pytest-265/test_runner_aborts_when_state_0/a/proj'))
+
+tests/test_herdr_auto_clear_467.py:503: AssertionError
+__________________ test_runner_aborts_when_clear_prompt_fails __________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_runner_aborts_when_clear_0')
+
+    def test_runner_aborts_when_clear_prompt_fails(tmp_path):
+        proj, log, env, _ = _runner_case(tmp_path, "clearfail", STUB_CLEAR_EXIT="1")
+        res = _run_runner(proj, env)
+        _assert_clean_abort(res, proj)
+>       assert _prompts(_calls(log)) == CLEAR_TYPED, _calls(log)
+E       AssertionError: []
+E       assert [] == [['pane', 'se...67', 'enter']]
+E         
+E         Right contains 2 more items, first extra item: ['pane', 'send-text', 'pane-467', '/clear']
+E         Use -v to get more diff
+
+tests/test_herdr_auto_clear_467.py:524: AssertionError
+_______________________ test_single_boundary_types_once ________________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_single_boundary_types_onc0')
+
+    def test_single_boundary_types_once(tmp_path):
+        """#597 (Spec fix-597 AC-6) ersetzt test_once_lock_single_spawn: zwei Stops mit
+        derselben Grenze; nicht "genau ein Spawn", sondern getippt wird genau einmal
+        (der Vermerk ist das Einmal-Token)."""
+        proj, log, stub, env = _hook_case(tmp_path, auto_clear_boundary=_boundary())
+        msg = _message(PLAIN, du=_du(CMD))
+        res = _run_hook(proj, env, msg)
+        assert res.returncode == 0, res.stderr
+        assert _wait_calls(log, 1), f"Erster Stop spawnte keinen Runner; Log: {_ac_log(proj)!r}"
+        res = _run_hook(proj, env, msg)
+        assert res.returncode == 0, res.stderr
+        _wait_runners_done(proj, log)
+        assert 1 <= len(_notifications(log)) <= 2, _notifications(log)
+>       assert _prompts(_calls(log)) == CLEAR_TYPED + FOLLOW, \
+            f"Log: {_ac_log(proj)!r} Aufrufe: {_calls(log)}"
+E       AssertionError: Log: '2026-11-13T17:12:51 skip: keine Grenze vermerkt\n2026-11-13T17:12:53 feat-467-herdr-auto-clear|phase6_implement|/50-implement #467: ABBRUCH: vor /clear: Claude arbeitet weiter (stop +0.1s)\n' Aufrufe: [['notification', 'show', 'OpenSpec Auto-/clear', '--body', 'In 0s: /clear, dann /50-implement #467']]
+E       assert [] == [['pane', 'se...67', 'enter']]
+E         
+E         Right contains 4 more items, first extra item: ['pane', 'send-text', 'pane-467', '/clear']
+E         Use -v to get more diff
+
+tests/test_autoclear_boundary_495.py:206: AssertionError
+_____________________ test_boundary_consumed_after_typing ______________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_boundary_consumed_after_t0')
+
+    def test_boundary_consumed_after_typing(tmp_path):
+        """#597 (Spec fix-597 AC-5) ersetzt test_boundary_consumed_after_spawn: nach dem
+        Spawn liegt der Vermerk noch, verbraucht ist er erst nach `OK` (getippt); ein
+        zweiter Stop mitten in der Phase loest danach nicht erneut aus."""
+        proj, log, stub, env = _hook_case(tmp_path, auto_clear_boundary=_boundary())
+        msg = _message(PLAIN, du=_du(CMD))
+        res = _run_hook(proj, env, msg)
+        assert res.returncode == 0, res.stderr
+        assert _wait_calls(log, 1), f"Grenz-Stop spawnte keinen Runner; Log: {_ac_log(proj)!r}"
+>       assert isinstance(_state(proj).get("auto_clear_boundary"), dict), \
+            f"Vermerk schon beim Spawn verbraucht: {_state(proj)}"
+E       AssertionError: Vermerk schon beim Spawn verbraucht: {'name': 'feat-467-herdr-auto-clear', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'phase_transitions': [], 'phase_log': []}
+E       assert False
+E        +  where False = isinstance(None, dict)
+E        +    where None = <built-in method get of dict object at 0x7f53cbaebc80>('auto_clear_boundary')
+E        +      where <built-in method get of dict object at 0x7f53cbaebc80> = {'name': 'feat-467-herdr-auto-clear', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'phase_transitions': [], ...}.get
+E        +        where {'name': 'feat-467-herdr-auto-clear', 'workflow_type': 'feature', 'current_phase': 'phase6_implement', 'phase_transitions': [], ...} = _state(PosixPath('/tmp/pytest-of-root/pytest-265/test_boundary_consumed_after_t0/proj'))
+
+tests/test_autoclear_boundary_495.py:222: AssertionError
+____________________ test_boundary_kept_on_stop_hook_active ____________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_boundary_kept_on_stop_hoo0')
+
+    def test_boundary_kept_on_stop_hook_active(tmp_path):
+        """#597 (Spec fix-597 AC-3) ersetzt test_boundary_consumed_on_stop_hook_active:
+        ein Folge-Stop (`stop_hook_active`) verwirft die Grenze nicht mehr, sondern
+        startet einen Runner; der Vermerk bleibt bis zum Tippen liegen."""
+        proj, log, stub, env = _hook_case(tmp_path, auto_clear_boundary=_boundary())
+        msg = _message(PLAIN, du=_du(CMD))
+        res = _run_hook(proj, env, msg, stop_hook_active=True)
+        assert res.returncode == 0, res.stderr
+        calls = _wait_calls(log, 1)
+>       assert calls, f"Kein Runner beim stop_hook_active-Stop; Log: {_ac_log(proj)!r}"
+E       AssertionError: Kein Runner beim stop_hook_active-Stop; Log: '2026-11-13T17:13:24 skip: stop_hook_active\n'
+E       assert []
+
+tests/test_autoclear_boundary_495.py:274: AssertionError
+______________________ test_runner_never_calls_agent_wait ______________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_runner_never_calls_agent_0')
+
+    def test_runner_never_calls_agent_wait(tmp_path):
+        proj, log, env, _ = _case(tmp_path, "nowait", STUB_SESSION_DELAY="0.3")
+        res = _run_runner(proj, env)
+        _assert_clean(res, proj)
+        calls = _calls(log)
+        assert [c for c in calls if _kind(c) == "agent wait"] == [], \
+            f"Runner ruft weiterhin `agent wait` auf: {calls}"
+        assert [c for c in calls if _kind(c) == "agent prompt"] == [], \
+            f"Runner tippt per `agent prompt` (bei `blocked` abgelehnt): {calls}"
+        assert [c for c in calls if c and c[0] == "agent"] == [], \
+            f"Runner nutzt weiterhin `agent`-Befehle: {calls}"
+>       assert [_kind(c) for c in calls] == ["pane send-text", "pane send-keys"] * 2, calls
+E       AssertionError: []
+E       assert [] == ['pane send-t...ne send-keys']
+E         
+E         Right contains 4 more items, first extra item: 'pane send-text'
+E         Use -v to get more diff
+
+tests/test_autoclear_eigene_signale_506.py:273: AssertionError
+_______________ test_new_input_since_spawn_aborts_without_typing _______________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_new_input_since_spawn_abo0')
+
+    def test_new_input_since_spawn_aborts_without_typing(tmp_path):
+        proj, log, env, _ = _case(tmp_path, "input")
+        since = time.time()  # Stop-Hook-Zeitpunkt
+        proc = _start_runner(proj, env, grace=2.5, since=since)
+        time.sleep(0.8)  # Nutzer schickt in der Grace-Zeit einen neuen Prompt ab
+        _write_marker(_marker(proj, PANE, "input"), at=time.time())
+        out, err = proc.communicate(timeout=40)
+        assert proc.returncode == 0, err
+        assert _typed_or_prompted(_calls(log)) == [], _calls(log)
+>       assert "Nutzer hat weitergeschrieben" in _runner_log(proj), _runner_log(proj)
+E       AssertionError: 2026-11-13T17:13:28 auto-clear: ABBRUCH: ungueltige Argumente
+E         
+E       assert 'Nutzer hat weitergeschrieben' in '2026-11-13T17:13:28 auto-clear: ABBRUCH: ungueltige Argumente\n'
+E        +  where '2026-11-13T17:13:28 auto-clear: ABBRUCH: ungueltige Argumente\n' = _runner_log(PosixPath('/tmp/pytest-of-root/pytest-265/test_new_input_since_spawn_abo0/input/proj'))
+
+tests/test_autoclear_eigene_signale_506.py:289: AssertionError
+_____________________ test_no_new_input_types_clear[none] ______________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_no_new_input_types_clear_0')
+variant = 'none'
+
+    @pytest.mark.parametrize("variant", ["none", "older"])
+    def test_no_new_input_types_clear(tmp_path, variant):
+        proj, log, env, _ = _case(tmp_path, variant, STUB_SESSION_DELAY="0.3")
+        since = time.time()
+        if variant == "older":
+            _write_marker(_marker(proj, PANE, "input"), at=since - 60)
+        res = _run_runner(proj, env, since=since)
+        _assert_clean(res, proj)
+        typing = _typing(_calls(log))
+>       assert typing[:2] == CLEAR, \
+            f"/clear nicht getippt; Log: {_runner_log(proj)!r} Aufrufe: {_calls(log)}"
+E       AssertionError: /clear nicht getippt; Log: '2026-11-13T17:13:28 auto-clear: ABBRUCH: ungueltige Argumente\n' Aufrufe: []
+E       assert [] == [['pane', 'se...06', 'enter']]
+E         
+E         Right contains 2 more items, first extra item: ['pane', 'send-text', 'pane-506', '/clear']
+E         Use -v to get more diff
+
+tests/test_autoclear_eigene_signale_506.py:303: AssertionError
+_____________________ test_no_new_input_types_clear[older] _____________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_no_new_input_types_clear_1')
+variant = 'older'
+
+    @pytest.mark.parametrize("variant", ["none", "older"])
+    def test_no_new_input_types_clear(tmp_path, variant):
+        proj, log, env, _ = _case(tmp_path, variant, STUB_SESSION_DELAY="0.3")
+        since = time.time()
+        if variant == "older":
+            _write_marker(_marker(proj, PANE, "input"), at=since - 60)
+        res = _run_runner(proj, env, since=since)
+        _assert_clean(res, proj)
+        typing = _typing(_calls(log))
+>       assert typing[:2] == CLEAR, \
+            f"/clear nicht getippt; Log: {_runner_log(proj)!r} Aufrufe: {_calls(log)}"
+E       AssertionError: /clear nicht getippt; Log: '2026-11-13T17:13:29 auto-clear: ABBRUCH: ungueltige Argumente\n' Aufrufe: []
+E       assert [] == [['pane', 'se...06', 'enter']]
+E         
+E         Right contains 2 more items, first extra item: ['pane', 'send-text', 'pane-506', '/clear']
+E         Use -v to get more diff
+
+tests/test_autoclear_eigene_signale_506.py:303: AssertionError
+_______________ test_input_between_stop_and_runner_start_aborts ________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_input_between_stop_and_ru0')
+
+    def test_input_between_stop_and_runner_start_aborts(tmp_path):
+        # (a) Eingabe zwischen Stop-Hook (--since) und Runner-Start: zaehlt als neu
+        proj, log, env, _ = _case(tmp_path, "gap", STUB_SESSION_DELAY="0.3")
+        since = time.time()
+        _write_marker(_marker(proj, PANE, "input"), at=since + 0.1)
+        time.sleep(0.4)  # Runner startet erst nach der Eingabe
+        res = _run_runner(proj, env, since=since)
+        _assert_clean(res, proj)
+        assert _typed_or_prompted(_calls(log)) == [], \
+            f"(a) trotz Eingabe nach --since getippt: {_calls(log)}"
+>       assert "Nutzer hat weitergeschrieben" in _runner_log(proj), _runner_log(proj)
+E       AssertionError: 2026-11-13T17:13:29 auto-clear: ABBRUCH: ungueltige Argumente
+E         
+E       assert 'Nutzer hat weitergeschrieben' in '2026-11-13T17:13:29 auto-clear: ABBRUCH: ungueltige Argumente\n'
+E        +  where '2026-11-13T17:13:29 auto-clear: ABBRUCH: ungueltige Argumente\n' = _runner_log(PosixPath('/tmp/pytest-of-root/pytest-265/test_input_between_stop_and_ru0/gap/proj'))
+
+tests/test_autoclear_eigene_signale_506.py:319: AssertionError
+______________ test_session_clear_after_own_clear_types_followup _______________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_session_clear_after_own_c0')
+
+    def test_session_clear_after_own_clear_types_followup(tmp_path):
+        proj, log, env, _ = _case(tmp_path, "followup", STUB_SESSION_DELAY="0.8")
+        res = _run_runner(proj, env)
+        _assert_clean(res, proj)
+>       assert _typing(_calls(log)) == CLEAR + FOLLOW, \
+            f"Log: {_runner_log(proj)!r} Aufrufe: {_calls(log)}"
+E       AssertionError: Log: '2026-11-13T17:13:29 auto-clear: ABBRUCH: ungueltige Argumente\n' Aufrufe: []
+E       assert [] == [['pane', 'se...06', 'enter']]
+E         
+E         Right contains 4 more items, first extra item: ['pane', 'send-text', 'pane-506', '/clear']
+E         Use -v to get more diff
+
+tests/test_autoclear_eigene_signale_506.py:347: AssertionError
+_____________ test_missing_session_signal_aborts_without_followup ______________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_missing_session_signal_ab0')
+
+    def test_missing_session_signal_aborts_without_followup(tmp_path):
+        proj, log, env, _ = _case(tmp_path, "nosession", session_to=None)
+        start = time.monotonic()
+        res = _run_runner(proj, env)
+        elapsed = time.monotonic() - start
+        _assert_clean(res, proj)
+>       assert _typing(_calls(log)) == CLEAR, \
+            f"Log: {_runner_log(proj)!r} Aufrufe: {_calls(log)}"
+E       AssertionError: Log: '2026-11-13T17:13:29 auto-clear: ABBRUCH: ungueltige Argumente\n' Aufrufe: []
+E       assert [] == [['pane', 'se...06', 'enter']]
+E         
+E         Right contains 2 more items, first extra item: ['pane', 'send-text', 'pane-506', '/clear']
+E         Use -v to get more diff
+
+tests/test_autoclear_eigene_signale_506.py:362: AssertionError
+____ test_session_start_before_own_clear_does_not_count[stale-preexisting] _____
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_session_start_before_own_0')
+variant = 'stale-preexisting'
+
+    @pytest.mark.parametrize("variant", ["stale-preexisting", "stale-at", "startup"])
+    def test_session_start_before_own_clear_does_not_count(tmp_path, variant):
+        if variant == "stale-preexisting":
+            # Marker aus einem frueheren SessionStart(clear), Stub schreibt keinen neuen
+            proj, log, env, _ = _case(tmp_path, variant, session_to=None)
+            _write_marker(_marker(proj, PANE, "session"), source="clear", at=time.time() - 5)
+        elif variant == "stale-at":
+            proj, log, env, _ = _case(tmp_path, variant, STUB_SESSION_AT_OFFSET="-100")
+        else:
+            proj, log, env, _ = _case(tmp_path, variant, STUB_SESSION_SOURCE="startup")
+        res = _run_runner(proj, env)
+        _assert_clean(res, proj)
+>       assert _typing(_calls(log)) == CLEAR, \
+            f"Log: {_runner_log(proj)!r} Aufrufe: {_calls(log)}"
+E       AssertionError: Log: '2026-11-13T17:13:29 auto-clear: ABBRUCH: ungueltige Argumente\n' Aufrufe: []
+E       assert [] == [['pane', 'se...06', 'enter']]
+E         
+E         Right contains 2 more items, first extra item: ['pane', 'send-text', 'pane-506', '/clear']
+E         Use -v to get more diff
+
+tests/test_autoclear_eigene_signale_506.py:383: AssertionError
+_________ test_session_start_before_own_clear_does_not_count[stale-at] _________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_session_start_before_own_1')
+variant = 'stale-at'
+
+    @pytest.mark.parametrize("variant", ["stale-preexisting", "stale-at", "startup"])
+    def test_session_start_before_own_clear_does_not_count(tmp_path, variant):
+        if variant == "stale-preexisting":
+            # Marker aus einem frueheren SessionStart(clear), Stub schreibt keinen neuen
+            proj, log, env, _ = _case(tmp_path, variant, session_to=None)
+            _write_marker(_marker(proj, PANE, "session"), source="clear", at=time.time() - 5)
+        elif variant == "stale-at":
+            proj, log, env, _ = _case(tmp_path, variant, STUB_SESSION_AT_OFFSET="-100")
+        else:
+            proj, log, env, _ = _case(tmp_path, variant, STUB_SESSION_SOURCE="startup")
+        res = _run_runner(proj, env)
+        _assert_clean(res, proj)
+>       assert _typing(_calls(log)) == CLEAR, \
+            f"Log: {_runner_log(proj)!r} Aufrufe: {_calls(log)}"
+E       AssertionError: Log: '2026-11-13T17:13:30 auto-clear: ABBRUCH: ungueltige Argumente\n' Aufrufe: []
+E       assert [] == [['pane', 'se...06', 'enter']]
+E         
+E         Right contains 2 more items, first extra item: ['pane', 'send-text', 'pane-506', '/clear']
+E         Use -v to get more diff
+
+tests/test_autoclear_eigene_signale_506.py:383: AssertionError
+_________ test_session_start_before_own_clear_does_not_count[startup] __________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_session_start_before_own_2')
+variant = 'startup'
+
+    @pytest.mark.parametrize("variant", ["stale-preexisting", "stale-at", "startup"])
+    def test_session_start_before_own_clear_does_not_count(tmp_path, variant):
+        if variant == "stale-preexisting":
+            # Marker aus einem frueheren SessionStart(clear), Stub schreibt keinen neuen
+            proj, log, env, _ = _case(tmp_path, variant, session_to=None)
+            _write_marker(_marker(proj, PANE, "session"), source="clear", at=time.time() - 5)
+        elif variant == "stale-at":
+            proj, log, env, _ = _case(tmp_path, variant, STUB_SESSION_AT_OFFSET="-100")
+        else:
+            proj, log, env, _ = _case(tmp_path, variant, STUB_SESSION_SOURCE="startup")
+        res = _run_runner(proj, env)
+        _assert_clean(res, proj)
+>       assert _typing(_calls(log)) == CLEAR, \
+            f"Log: {_runner_log(proj)!r} Aufrufe: {_calls(log)}"
+E       AssertionError: Log: '2026-11-13T17:13:30 auto-clear: ABBRUCH: ungueltige Argumente\n' Aufrufe: []
+E       assert [] == [['pane', 'se...06', 'enter']]
+E         
+E         Right contains 2 more items, first extra item: ['pane', 'send-text', 'pane-506', '/clear']
+E         Use -v to get more diff
+
+tests/test_autoclear_eigene_signale_506.py:383: AssertionError
+__________________________ test_markers_are_per_pane ___________________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_markers_are_per_pane0')
+
+    def test_markers_are_per_pane(tmp_path):
+        # (a) Eingabe in einem fremden Pane waehrend der Grace-Zeit stoppt nicht
+        proj, log, env, _ = _case(tmp_path, "foreign-input", STUB_SESSION_DELAY="0.3")
+        proc = _start_runner(proj, env, grace=1.5)
+        time.sleep(0.5)
+        _write_marker(_marker(proj, OTHER_PANE, "input"), at=time.time())
+        _, err = proc.communicate(timeout=40)
+        assert proc.returncode == 0, err
+>       assert _typing(_calls(log)) == CLEAR + FOLLOW, \
+            f"(a) Log: {_runner_log(proj)!r} Aufrufe: {_calls(log)}"
+E       AssertionError: (a) Log: '2026-11-13T17:13:30 auto-clear: ABBRUCH: ungueltige Argumente\n' Aufrufe: []
+E       assert [] == [['pane', 'se...06', 'enter']]
+E         
+E         Right contains 4 more items, first extra item: ['pane', 'send-text', 'pane-506', '/clear']
+E         Use -v to get more diff
+
+tests/test_autoclear_eigene_signale_506.py:399: AssertionError
+_______________ test_manual_taken_boundary_and_recheck_unchanged _______________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_manual_taken_boundary_and0')
+
+    def test_manual_taken_boundary_and_recheck_unchanged(tmp_path):
+        """AC-10 (#506); #597 (Spec fix-597 Implementation Details 7) ersetzt Teil (b):
+        statt Once-Lock gilt "Vermerk bereits von anderem Runner genommen"."""
+        # (a) /99-reset: Runner tippt nichts
+        proj, log, env, _ = _case(tmp_path, "reset")
+        res = _run_runner(proj, env, command="/99-reset #506")
+        _assert_clean(res, proj)
+        assert _typed_or_prompted(_calls(log)) == [], _calls(log)
+>       assert "manuell" in _runner_log(proj), _runner_log(proj)
+E       AssertionError: 2026-11-13T17:13:32 auto-clear: ABBRUCH: ungueltige Argumente
+E         
+E       assert 'manuell' in '2026-11-13T17:13:32 auto-clear: ABBRUCH: ungueltige Argumente\n'
+E        +  where '2026-11-13T17:13:32 auto-clear: ABBRUCH: ungueltige Argumente\n' = _runner_log(PosixPath('/tmp/pytest-of-root/pytest-265/test_manual_taken_boundary_and0/reset/proj'))
+
+tests/test_autoclear_eigene_signale_506.py:584: AssertionError
+_______________ test_activity_after_since_aborts_without_typing ________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_activity_after_since_abor0')
+
+    def test_activity_after_since_aborts_without_typing(tmp_path):
+        # (a) Aktivitaet (Tool-Aufruf) in der Grace-Zeit: nichts tippen
+        proj, log, env, _ = _case(tmp_path, "act-grace", STUB_SESSION_DELAY="0.3")
+        since = time.time()
+        proc = _start_v12(proj, env, since_raw=repr(since), grace=2.0)
+        time.sleep(0.8)
+        _write_marker(_marker(proj, PANE, "activity"), kind="pretooluse", at=time.time())
+        _finish(proc)
+        assert _typed_or_prompted(_calls(log)) == [], \
+            f"(a) trotz Aktivitaet nach --since getippt: {_calls(log)}"
+>       assert WORKING in _runner_log(proj), f"(a) {_runner_log(proj)!r}"
+E       AssertionError: (a) '2026-11-13T17:13:32 auto-clear: ABBRUCH: ungueltige Argumente\n'
+E       assert 'Claude arbeitet weiter' in '2026-11-13T17:13:32 auto-clear: ABBRUCH: ungueltige Argumente\n'
+E        +  where '2026-11-13T17:13:32 auto-clear: ABBRUCH: ungueltige Argumente\n' = _runner_log(PosixPath('/tmp/pytest-of-root/pytest-265/test_activity_after_since_abor0/act-grace/proj'))
+
+tests/test_autoclear_eigene_signale_506.py:706: AssertionError
+_____________________ test_second_stop_after_since_aborts ______________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_second_stop_after_since_a0')
+
+    def test_second_stop_after_since_aborts(tmp_path):
+        # (a) eigener Stop (at <= since) loest keinen Abbruch aus
+        proj, log, env, _ = _case(tmp_path, "own-stop", STUB_SESSION_DELAY="0.3")
+        since = time.time()
+        _write_marker(_marker(proj, PANE, "stop"), at=since - 0.01)
+        proc = _start_v12(proj, env, since_raw=repr(since), grace=0.5)
+        _finish(proc)
+>       assert _typing(_calls(log)) == CLEAR + FOLLOW, \
+            f"(a) Log: {_runner_log(proj)!r} Aufrufe: {_calls(log)}"
+E       AssertionError: (a) Log: '2026-11-13T17:13:33 auto-clear: ABBRUCH: ungueltige Argumente\n' Aufrufe: []
+E       assert [] == [['pane', 'se...06', 'enter']]
+E         
+E         Right contains 4 more items, first extra item: ['pane', 'send-text', 'pane-506', '/clear']
+E         Use -v to get more diff
+
+tests/test_autoclear_eigene_signale_506.py:758: AssertionError
+_________ test_activity_during_wait_for_clear_prevents_followup[input] _________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_activity_during_wait_for_0')
+kind = 'input'
+
+    @pytest.mark.parametrize("kind", ["input", "activity", "stop"])
+    def test_activity_during_wait_for_clear_prevents_followup(tmp_path, kind):
+        proj, log, env, root = _case(tmp_path, f"wait-{kind}", STUB_SESSION_DELAY="4.5")
+        fields = {"kind": "pretooluse"} if kind == "activity" else {}
+        env["STUB_CLEAR_HOOK"] = str(_clear_hook_writing(
+            root, _marker(proj, PANE, kind), TOLERANCE_S + 0.6, **fields))
+        session = _marker(proj, PANE, "session")
+        proc = _start_v12(proj, env, since_raw=repr(time.time()), idle_timeout=8)
+        _finish(proc)
+        # Abbruch waehrend des Wartens: der SessionStart(clear)-Marker kam noch gar nicht
+        assert not session.exists(), \
+            f"Runner wartete bis SessionStart(clear) statt beim Signal abzubrechen: {_runner_log(proj)!r}"
+>       assert _wait_for(session.exists, 6), "Stub schrieb den SessionStart-Marker nicht"
+E       AssertionError: Stub schrieb den SessionStart-Marker nicht
+E       assert False
+E        +  where False = _wait_for(exists, 6)
+E        +    where exists = PosixPath('/tmp/pytest-of-root/pytest-265/test_activity_during_wait_for_0/wait-input/proj/.claude/herdr_signals/pane-506.session.json').exists
+
+tests/test_autoclear_eigene_signale_506.py:798: AssertionError
+_______ test_activity_during_wait_for_clear_prevents_followup[activity] ________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_activity_during_wait_for_1')
+kind = 'activity'
+
+    @pytest.mark.parametrize("kind", ["input", "activity", "stop"])
+    def test_activity_during_wait_for_clear_prevents_followup(tmp_path, kind):
+        proj, log, env, root = _case(tmp_path, f"wait-{kind}", STUB_SESSION_DELAY="4.5")
+        fields = {"kind": "pretooluse"} if kind == "activity" else {}
+        env["STUB_CLEAR_HOOK"] = str(_clear_hook_writing(
+            root, _marker(proj, PANE, kind), TOLERANCE_S + 0.6, **fields))
+        session = _marker(proj, PANE, "session")
+        proc = _start_v12(proj, env, since_raw=repr(time.time()), idle_timeout=8)
+        _finish(proc)
+        # Abbruch waehrend des Wartens: der SessionStart(clear)-Marker kam noch gar nicht
+        assert not session.exists(), \
+            f"Runner wartete bis SessionStart(clear) statt beim Signal abzubrechen: {_runner_log(proj)!r}"
+>       assert _wait_for(session.exists, 6), "Stub schrieb den SessionStart-Marker nicht"
+E       AssertionError: Stub schrieb den SessionStart-Marker nicht
+E       assert False
+E        +  where False = _wait_for(exists, 6)
+E        +    where exists = PosixPath('/tmp/pytest-of-root/pytest-265/test_activity_during_wait_for_1/wait-activity/proj/.claude/herdr_signals/pane-506.session.json').exists
+
+tests/test_autoclear_eigene_signale_506.py:798: AssertionError
+_________ test_activity_during_wait_for_clear_prevents_followup[stop] __________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_activity_during_wait_for_2')
+kind = 'stop'
+
+    @pytest.mark.parametrize("kind", ["input", "activity", "stop"])
+    def test_activity_during_wait_for_clear_prevents_followup(tmp_path, kind):
+        proj, log, env, root = _case(tmp_path, f"wait-{kind}", STUB_SESSION_DELAY="4.5")
+        fields = {"kind": "pretooluse"} if kind == "activity" else {}
+        env["STUB_CLEAR_HOOK"] = str(_clear_hook_writing(
+            root, _marker(proj, PANE, kind), TOLERANCE_S + 0.6, **fields))
+        session = _marker(proj, PANE, "session")
+        proc = _start_v12(proj, env, since_raw=repr(time.time()), idle_timeout=8)
+        _finish(proc)
+        # Abbruch waehrend des Wartens: der SessionStart(clear)-Marker kam noch gar nicht
+        assert not session.exists(), \
+            f"Runner wartete bis SessionStart(clear) statt beim Signal abzubrechen: {_runner_log(proj)!r}"
+>       assert _wait_for(session.exists, 6), "Stub schrieb den SessionStart-Marker nicht"
+E       AssertionError: Stub schrieb den SessionStart-Marker nicht
+E       assert False
+E        +  where False = _wait_for(exists, 6)
+E        +    where exists = PosixPath('/tmp/pytest-of-root/pytest-265/test_activity_during_wait_for_2/wait-stop/proj/.claude/herdr_signals/pane-506.session.json').exists
+
+tests/test_autoclear_eigene_signale_506.py:798: AssertionError
+_______________ test_since_validation_falls_back_to_runner_start _______________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_since_validation_falls_ba0')
+
+    def test_since_validation_falls_back_to_runner_start(tmp_path):
+        def _raw(value: str) -> str:
+            return repr(time.time() + 60) if value == "zukunft" else value
+    
+        runs = []
+        for i, value in enumerate(INVALID_SINCE):
+            # (i) Marker nach dem verworfenen Wert, aber vor Runner-Start: zaehlt nicht
+            proj, log, env, _ = _case(tmp_path, f"stale-{i}", STUB_SESSION_DELAY="0.3")
+            _write_marker(_marker(proj, PANE, "input"), at=time.time() - 10)
+            runs.append(("stale", value, proj, log, _start_v12(proj, env, since_raw=_raw(value))))
+            # (ii) Marker nach Runner-Start (Grace-Zeit): wird weiterhin erkannt
+            proj, log, env, _ = _case(tmp_path, f"fresh-{i}", STUB_SESSION_DELAY="0.3")
+            runs.append(("fresh", value, proj, log,
+                         _start_v12(proj, env, since_raw=_raw(value), grace=4.0)))
+        # gueltig, knapp in der Zukunft (<= jetzt + 5 s): unveraendert uebernommen,
+        # eine Eingabe davor zaehlt also nicht
+        proj, log, env, _ = _case(tmp_path, "valid-near-future", STUB_SESSION_DELAY="0.3")
+        runs.append(("near-future", "jetzt+4", proj, log,
+                     _start_v12(proj, env, since_raw=repr(time.time() + 4.0), grace=2.0)))
+        # gueltig, in der Vergangenheit: Eingabe zwischen since und Runner-Start zaehlt
+        proj, log, env, _ = _case(tmp_path, "valid-past", STUB_SESSION_DELAY="0.3")
+        since = time.time() - 3
+        _write_marker(_marker(proj, PANE, "input"), at=since + 1)
+        runs.append(("past", "jetzt-3", proj, log,
+                     _start_v12(proj, env, since_raw=repr(since), grace=0.5)))
+    
+        time.sleep(2.0)  # alle Runner gestartet, die fresh-/near-future-Runner noch in grace
+        for kind, _, proj, _, _ in runs:
+            if kind in ("fresh", "near-future"):
+                _write_marker(_marker(proj, PANE, "input"), at=time.time())
+    
+        failures = []
+        for kind, value, proj, log, proc in runs:
+            _finish(proc)
+            text = _runner_log(proj)
+            typing = _typing(_calls(log))
+            if kind == "stale":
+                if typing != CLEAR + FOLLOW:
+                    failures.append(f"--since={value} (Marker vor Runner-Start): erwartet voller "
+                                    f"Lauf, Log {text.strip()!r}")
+            elif kind == "fresh":
+                if typing or TYPED_ON not in text:
+                    failures.append(f"--since={value} (Marker nach Runner-Start): erwartet Abbruch "
+                                    f"'{TYPED_ON}', getippt {typing}, Log {text.strip()!r}")
+            elif kind == "near-future":
+                if typing[:2] != CLEAR:
+                    failures.append(f"--since={value}: gueltiger Wert nicht uebernommen, "
+                                    f"Log {text.strip()!r}")
+            elif typing or TYPED_ON not in text:
+                failures.append(f"--since={value}: gueltiger Wert nicht uebernommen, "
+                                f"Log {text.strip()!r}")
+            if kind in ("stale", "fresh") and "since" not in text.lower():
+                failures.append(f"--since={value}: kein Vermerk zum verworfenen --since im Log "
+                                f"({text.strip()!r})")
+>       assert failures == [], "\n".join(failures)
+E       AssertionError: --since=nan (Marker vor Runner-Start): erwartet voller Lauf, Log '2026-11-13T17:13:58 auto-clear: ABBRUCH: ungueltige Argumente'
+E         --since=nan: kein Vermerk zum verworfenen --since im Log ('2026-11-13T17:13:58 auto-clear: ABBRUCH: ungueltige Argumente')
+E         --since=nan (Marker nach Runner-Start): erwartet Abbruch 'Nutzer hat weitergeschrieben', getippt [], Log '2026-11-13T17:13:58 auto-clear: ABBRUCH: ungueltige Argumente'
+E         --since=nan: kein Vermerk zum verworfenen --since im Log ('2026-11-13T17:13:58 auto-clear: ABBRUCH: ungueltige Argumente')
+E         --since=inf (Marker vor Runner-Start): erwartet voller Lauf, Log '2026-11-13T17:13:58 auto-clear: ABBRUCH: ungueltige Argumente'
+E         --since=inf: kein Vermerk zum verworfenen --since im Log ('2026-11-13T17:13:58 auto-clear: ABBRUCH: ungueltige Argumente')
+E         --since=inf (Marker nach Runner-Start): erwartet Abbruch 'Nutzer hat weitergeschrieben', getippt [], Log '2026-11-13T17:13:58 auto-clear: ABBRUCH: ungueltige Argumente'
+E         --since=inf: kein Vermerk zum verworfenen --since im Log ('2026-11-13T17:13:58 auto-clear: ABBRUCH: ungueltige Argumente')
+E         --since=-inf (Marker vor Runner-Start): erwartet voller Lauf, Log '2026-11-13T17:13:58 auto-clear: ABBRUCH: ungueltige Argumente'
+E         --since=-inf: kein Vermerk zum verworfenen --since im Log ('2026-11-13T17:13:58 auto-clear: ABBRUCH: ungueltige Argumente')
+E         --since=-inf (Marker nach Runner-Start): erwartet Abbruch 'Nutzer hat weitergeschrieben', getippt [], Log '2026-11-13T17:13:58 auto-clear: ABBRUCH: ungueltige Argumente'
+E         --since=-inf: kein Vermerk zum verworfenen --since im Log ('2026-11-13T17:13:58 auto-clear: ABBRUCH: ungueltige Argumente')
+E         --since=keine-zahl (Marker vor Runner-Start): erwartet voller Lauf, Log '2026-11-13T17:13:58 auto-clear: ABBRUCH: ungueltige Argumente'
+E         --since=keine-zahl: kein Vermerk zum verworfenen --since im Log ('2026-11-13T17:13:58 auto-clear: ABBRUCH: ungueltige Argumente')
+E         --since=keine-zahl (Marker nach Runner-Start): erwartet Abbruch 'Nutzer hat weitergeschrieben', getippt [], Log '2026-11-13T17:13:58 auto-clear: ABBRUCH: ungueltige Argumente'
+E         --since=keine-zahl: kein Vermerk zum verworfenen --since im Log ('2026-11-13T17:13:58 auto-clear: ABBRUCH: ungueltige Argumente')
+E         --since=0 (Marker vor Runner-Start): erwartet voller Lauf, Log '2026-11-13T17:13:58 auto-clear: ABBRUCH: ungueltige Argumente'
+E         --since=0: kein Vermerk zum verworfenen --since im Log ('2026-11-13T17:13:58 auto-clear: ABBRUCH: ungueltige Argumente')
+E         --since=0 (Marker nach Runner-Start): erwartet Abbruch 'Nutzer hat weitergeschrieben', getippt [], Log '2026-11-13T17:13:58 auto-clear: ABBRUCH: ungueltige Argumente'
+E         --since=0: kein Vermerk zum verworfenen --since im Log ('2026-11-13T17:13:58 auto-clear: ABBRUCH: ungueltige Argumente')
+E         --since=-5 (Marker vor Runner-Start): erwartet voller Lauf, Log '2026-11-13T17:13:58 auto-clear: ABBRUCH: ungueltige Argumente'
+E         --since=-5: kein Vermerk zum verworfenen --since im Log ('2026-11-13T17:13:58 auto-clear: ABBRUCH: ungueltige Argumente')
+E         --since=-5 (Marker nach Runner-Start): erwartet Abbruch 'Nutzer hat weitergeschrieben', getippt [], Log '2026-11-13T17:13:58 auto-clear: ABBRUCH: ungueltige Argumente'
+E         --since=-5: kein Vermerk zum verworfenen --since im Log ('2026-11-13T17:13:58 auto-clear: ABBRUCH: ungueltige Argumente')
+E         --since=zukunft (Marker vor Runner-Start): erwartet voller Lauf, Log '2026-11-13T17:13:58 auto-clear: ABBRUCH: ungueltige Argumente'
+E         --since=zukunft: kein Vermerk zum verworfenen --since im Log ('2026-11-13T17:13:58 auto-clear: ABBRUCH: ungueltige Argumente')
+E         --since=zukunft (Marker nach Runner-Start): erwartet Abbruch 'Nutzer hat weitergeschrieben', getippt [], Log '2026-11-13T17:13:58 auto-clear: ABBRUCH: ungueltige Argumente'
+E         --since=zukunft: kein Vermerk zum verworfenen --since im Log ('2026-11-13T17:13:58 auto-clear: ABBRUCH: ungueltige Argumente')
+E         --since=jetzt+4: gueltiger Wert nicht uebernommen, Log '2026-11-13T17:13:58 auto-clear: ABBRUCH: ungueltige Argumente'
+E         --since=jetzt-3: gueltiger Wert nicht uebernommen, Log '2026-11-13T17:13:58 auto-clear: ABBRUCH: ungueltige Argumente'
+E       assert ["--since=nan...mente')", ...] == []
+E         
+E         Left contains 30 more items, first extra item: "--since=nan (Marker vor Runner-Start): erwartet voller Lauf, Log '2026-11-13T17:13:58 auto-clear: ABBRUCH: ungueltige Argumente'"
+E         Use -v to get more diff
+
+tests/test_autoclear_eigene_signale_506.py:1140: AssertionError
+______________________ test_markers_use_payload_cwd_base _______________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_markers_use_payload_cwd_b0')
+
+    def test_markers_use_payload_cwd_base(tmp_path):
+        root = tmp_path / "wtcase"
+        root.mkdir()
+        proj = _project(root)
+        wt, sub = _worktree(root, proj)
+        env = _hook_env(proj, root, herdr_env="1", pane=PANE)
+        base = _base_for(sub, env)
+        assert base == wt, f"Vorbedingung: _ac_base fuer den Worktree ist {base}"
+        assert _base_for(proj, env) == proj
+    
+        def _wt_marker(kind):
+            return base / ".claude" / AC_SIGNAL_DIR_NAME / f"{PANE}.{kind}.json"
+    
+        # Prozess-cwd = Haupt-Repo, Payload-cwd = Worktree-Unterordner
+        res = _run_listener(proj, env, raw=json.dumps(
+            {"prompt": "weiter", "session_id": "sess-506", "cwd": str(sub),
+             "hook_event_name": "UserPromptSubmit"}))
+        assert res.returncode == 0, res.stderr
+        res = _run_banner(proj, env, raw=json.dumps(
+            {"session_id": "sess-506", "cwd": str(sub), "hook_event_name": "SessionStart",
+             "source": "clear"}))
+        assert res.returncode == 0, res.stderr
+        res = _run_guard(env, proj, payload_cwd=sub)
+        assert res.returncode == 0, res.stderr
+        guard_kind = (json.loads(_wt_marker("activity").read_text()).get("kind")
+                      if _wt_marker("activity").is_file() else None)
+        res = _run_footer(env, proj, sub, _footer_message())
+        assert res.returncode == 0, res.stderr
+        res = _run_signal_cli(env, proj, json.dumps(
+            {"session_id": "sess-506", "cwd": str(sub), "hook_event_name": "Notification",
+             "notification_type": "permission_prompt"}))
+        assert res.returncode == 0, res.stderr
+    
+        missing = [k for k in ("input", "session", "activity", "stop") if not _wt_marker(k).is_file()]
+        assert missing == [], \
+            f"Marker fehlen im Worktree-Basisordner {base}: {missing}; " \
+            f"Worktree: {_signal_files(wt)}, Haupt-Repo: {_signal_files(proj)}"
+        assert guard_kind == "pretooluse", guard_kind
+        assert json.loads(_wt_marker("activity").read_text()).get("kind") == "notification"
+        assert json.loads(_wt_marker("session").read_text()).get("source") == "clear"
+        assert _signal_files(proj) == [], f"Marker im Haupt-Repo statt im Worktree: {_signal_files(proj)}"
+    
+        # Der Runner (gestartet wie vom Spawner im Basisordner) findet die Eingabe-Marke
+        for p in (base / ".claude" / AC_SIGNAL_DIR_NAME).iterdir():
+            p.unlink()
+        log = root / "stub.log"
+        renv = _env(proj, log, root / "herdr-stub", STUB_BLOCKED="1",
+                    STUB_SESSION_MARKER=str(_wt_marker("session")), STUB_SESSION_DELAY="0.3")
+        proc = _start_v12(proj, renv, cwd=base, since_raw=repr(time.time()), grace=2.5)
+        time.sleep(0.8)
+        res = _run_listener(proj, env, raw=json.dumps(
+            {"prompt": "noch eine Frage", "session_id": "sess-506", "cwd": str(sub),
+             "hook_event_name": "UserPromptSubmit"}))
+        assert res.returncode == 0, res.stderr
+        _finish(proc)
+        wt_log = base / ".claude" / "herdr_auto_clear.log"
+        text = wt_log.read_text() if wt_log.exists() else ""
+        assert _typed_or_prompted(_calls(log)) == [], \
+            f"Runner fand die Eingabe-Marke des Worktrees nicht: {_calls(log)} Log {text!r}"
+>       assert TYPED_ON in text, text
+E       AssertionError: 2026-11-13T17:14:00 auto-clear: ABBRUCH: ungueltige Argumente
+E         
+E       assert 'Nutzer hat weitergeschrieben' in '2026-11-13T17:14:00 auto-clear: ABBRUCH: ungueltige Argumente\n'
+
+tests/test_autoclear_eigene_signale_506.py:1223: AssertionError
+__________ test_slow_foreign_stop_hook_within_default_grace_no_clear ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_slow_foreign_stop_hook_wi0')
+
+    def test_slow_foreign_stop_hook_within_default_grace_no_clear(tmp_path):
+        # Default-grace deckt typische fremde Stop-Hooks ab (F001): >= 10 s in Code und Template
+        sys.path.insert(0, str(HOOKS_DIR))
+        try:
+            import importlib
+            import herdr_bridge
+            importlib.reload(herdr_bridge)
+            assert herdr_bridge.AC_DEFAULTS["grace_s"] >= DEFAULT_GRACE_MIN, herdr_bridge.AC_DEFAULTS
+        finally:
+            sys.path.remove(str(HOOKS_DIR))
+        import yaml  # noqa: PLC0415
+        template = yaml.safe_load((REPO_ROOT / "config.yaml").read_text())
+        assert template["herdr"]["auto_clear"]["grace_s"] >= DEFAULT_GRACE_MIN, \
+            template["herdr"]["auto_clear"]
+    
+        # Runner ohne `--grace` (Default): fremder Stop-Hook schlaeft 8 s und blockt dann,
+        # die Fortsetzung ruft ein Werkzeug auf (PreToolUse-Marker bei ~8,5 s) -> nichts tippen
+        proj, log, env, root = _case(tmp_path, "slow-stophook", STUB_SESSION_DELAY="0.3")
+        argv = _argv_v12(since_raw=None, settle=0, idle_timeout=2)
+        i = argv.index("--grace")
+        del argv[i:i + 2]
+        since = time.time()
+        argv.append(f"--since={since!r}")
+        _write_marker_later(root, _marker(proj, PANE, "activity"), 8.5, kind="pretooluse")
+        proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                env=env, cwd=str(proj))
+        _finish(proc, timeout=90)
+        assert _typed_or_prompted(_calls(log)) == [], \
+            f"/clear in den noch laufenden Turn getippt (Default-grace zu kurz): {_calls(log)} " \
+            f"Log {_runner_log(proj)!r}"
+>       assert WORKING in _runner_log(proj), _runner_log(proj)
+E       AssertionError: 2026-11-13T17:14:01 auto-clear: ABBRUCH: ungueltige Argumente
+E         
+E       assert 'Claude arbeitet weiter' in '2026-11-13T17:14:01 auto-clear: ABBRUCH: ungueltige Argumente\n'
+E        +  where '2026-11-13T17:14:01 auto-clear: ABBRUCH: ungueltige Argumente\n' = _runner_log(PosixPath('/tmp/pytest-of-root/pytest-265/test_slow_foreign_stop_hook_wi0/slow-stophook/proj'))
+
+tests/test_autoclear_eigene_signale_506.py:1283: AssertionError
+_______________ test_recheck_between_text_and_enter_clears_line ________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_recheck_between_text_and_0')
+
+    def test_recheck_between_text_and_enter_clears_line(tmp_path):
+        # (a) Aktivitaet zwischen `send-text /clear` und Enter: Zeile loeschen, kein Enter
+        proj, log, env, root = _case(tmp_path, "toctou-clear", STUB_SESSION_DELAY="0.3")
+        env["HERDR_BIN_PATH"] = str(_wrapping_stub(root, _marker(proj, PANE, "activity"),
+                                                   "/clear", kind="pretooluse"))
+        proc = _start_v12(proj, env, since_raw=repr(time.time() - 0.5))
+        _finish(proc)
+        typing = _typing(_calls(log))
+>       assert typing == [["pane", "send-text", PANE, "/clear"], CTRL_U], \
+            f"(a) Log: {_runner_log(proj)!r} Aufrufe: {_calls(log)}"
+E       AssertionError: (a) Log: '2026-11-13T17:14:02 auto-clear: ABBRUCH: ungueltige Argumente\n' Aufrufe: []
+E       assert [] == [['pane', 'se...6', 'ctrl+u']]
+E         
+E         Right contains 2 more items, first extra item: ['pane', 'send-text', 'pane-506', '/clear']
+E         Use -v to get more diff
+
+tests/test_autoclear_eigene_signale_506.py:1315: AssertionError
+______________________ test_session_end_or_restart_aborts ______________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_session_end_or_restart_ab0')
+
+    def test_session_end_or_restart_aborts(tmp_path):
+        # (a) Claude im Pane neu gestartet (SessionStart source != clear nach since): nichts tippen
+        for source in ("startup", "resume"):
+            proj, log, env, root = _case(tmp_path, f"restart-{source}", STUB_SESSION_DELAY="0.3")
+            since = time.time()
+            proc = _start_v12(proj, env, since_raw=repr(since), grace=1.5)
+            time.sleep(0.5)
+            _write_marker(_marker(proj, PANE, "session"), source=source, at=time.time())
+            _finish(proc)
+            assert _typed_or_prompted(_calls(log)) == [], \
+                f"(a/{source}) nach Neustart getippt: {_calls(log)} Log {_runner_log(proj)!r}"
+            assert "ABBRUCH" in _runner_log(proj), _runner_log(proj)
+    
+        # (b) hooks.json: SessionEnd ruft `signal activity` direkt nach plan-pane-close, kleiner timeout
+        hooks = json.loads(HOOKS_JSON.read_text())["hooks"]
+        cmds = [h for g in hooks["SessionEnd"] for h in g.get("hooks", [])]
+        names = [h["command"] for h in cmds]
+        sig = "${CLAUDE_PLUGIN_ROOT}/core/hooks/herdr_bridge.py signal activity"
+        close = "${CLAUDE_PLUGIN_ROOT}/core/hooks/herdr_bridge.py plan-pane-close"
+        assert sig in names, f"SessionEnd ohne `signal activity`: {names}"
+        assert names.index(sig) == names.index(close) + 1, names
+        assert cmds[names.index(sig)].get("timeout", 99) <= 2, cmds[names.index(sig)]
+    
+        # (c) CLI: SessionEnd -> activity kind=session_end mit reason, still, Exit 0
+        root = tmp_path / "cli-end"
+        root.mkdir()
+        proj = _project(root)
+        henv = _hook_env(proj, root, herdr_env="1", pane=PANE)
+        payload = {"session_id": "sess-506", "cwd": str(proj), "hook_event_name": "SessionEnd",
+                   "reason": "prompt_input_exit"}
+        res = _run_signal_cli(henv, root, json.dumps(payload))
+        assert (res.returncode, res.stdout, res.stderr) == (0, "", ""), res
+        data = json.loads(_marker(proj, PANE, "activity").read_text())
+        assert data.get("kind") == "session_end", data
+        assert data.get("reason") == "prompt_input_exit", data
+    
+        # (d) Sitzung in der Grace-Zeit beendet (Marker session_end nach since): nichts tippen
+        proj, log, env, root = _case(tmp_path, "ended", STUB_SESSION_DELAY="0.3")
+        proc = _start_v12(proj, env, since_raw=repr(time.time()), grace=1.5)
+        time.sleep(0.5)
+        _write_marker(_marker(proj, PANE, "activity"), kind="session_end",
+                      reason="prompt_input_exit", at=time.time())
+        _finish(proc)
+        assert _typed_or_prompted(_calls(log)) == [], \
+            f"(d) nach Sitzungsende getippt: {_calls(log)} Log {_runner_log(proj)!r}"
+        assert "ABBRUCH" in _runner_log(proj), _runner_log(proj)
+    
+        # (e) SessionEnd(reason=clear) des EIGENEN /clear (auch nach der Toleranz) blockt den
+        #     Folgebefehl nicht
+        proj, log, env, root = _case(tmp_path, "own-clear-end", STUB_SESSION_DELAY="3.4")
+        env["STUB_CLEAR_HOOK"] = str(_clear_hook_writing(
+            root, _marker(proj, PANE, "activity"), TOLERANCE_S + 0.6, kind="session_end",
+            reason="clear"))
+        proc = _start_v12(proj, env, since_raw=repr(time.time()), idle_timeout=7)
+        _finish(proc)
+>       assert _typing(_calls(log)) == CLEAR + FOLLOW, \
+            f"(e) Log: {_runner_log(proj)!r} Aufrufe: {_calls(log)}"
+E       AssertionError: (e) Log: '2026-11-13T17:14:03 auto-clear: ABBRUCH: ungueltige Argumente\n' Aufrufe: []
+E       assert [] == [['pane', 'se...06', 'enter']]
+E         
+E         Right contains 4 more items, first extra item: ['pane', 'send-text', 'pane-506', '/clear']
+E         Use -v to get more diff
+
+tests/test_autoclear_eigene_signale_506.py:1387: AssertionError
+_____________ test_alias_present_in_each_location_sends_short_form _____________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_alias_present_in_each_loc0')
+
+    def test_alias_present_in_each_location_sends_short_form(tmp_path):
+        seen = {}
+        for label in ("projekt-commands", "projekt-skills", "home-commands", "home-skills"):
+            proj, log, env, _ = _case(tmp_path, label)
+            alias = _alias_paths(proj)[label]
+            alias.parent.mkdir(parents=True, exist_ok=True)
+            alias.write_text("---\ndescription: Kurz-Alias\n---\nAlias\n")
+            res = _run_runner(proj, env)
+            assert res.returncode == 0, (label, res.stderr)
+            seen[label] = _texts(log)
+        for label, texts in seen.items():
+>           assert texts == ["/clear", SHORT], (label, texts)
+E           AssertionError: ('projekt-commands', [])
+E           assert [] == ['/clear', '/20-analyse #999']
+E             
+E             Right contains 2 more items, first extra item: '/clear'
+E             Use -v to get more diff
+
+tests/test_befehlsform_context_titel_499.py:259: AssertionError
+_______________ test_no_alias_sends_plugin_form_keeps_arguments ________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_no_alias_sends_plugin_for0')
+
+    def test_no_alias_sends_plugin_form_keeps_arguments(tmp_path):
+        proj, log, env, _ = _case(tmp_path, "plugin")
+        res = _run_runner(proj, env)
+        assert res.returncode == 0, res.stderr
+>       assert _texts(log) == ["/clear", PLUGIN], (_texts(log), _ac_log(proj))
+E       AssertionError: ([], '2026-11-13T17:14:04 auto-clear: ABBRUCH: ungueltige Argumente
+E         ')
+E       assert [] == ['/clear', '/...analyse #999']
+E         
+E         Right contains 2 more items, first extra item: '/clear'
+E         Use -v to get more diff
+
+tests/test_befehlsform_context_titel_499.py:275: AssertionError
+_______________ test_form_check_error_falls_back_to_plugin_form ________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_form_check_error_falls_ba0')
+
+    def test_form_check_error_falls_back_to_plugin_form(tmp_path):
+        proj, log, env, root = _case(tmp_path, "nohome")
+        site = root / "site"
+        site.mkdir()
+        (site / "sitecustomize.py").write_text(SITECUSTOMIZE_NO_HOME)
+        env["PYTHONPATH"] = os.pathsep.join(
+            [str(site)] + ([env["PYTHONPATH"]] if env.get("PYTHONPATH") else []))
+        # Plausibilitaet: im Subprozess wirft Path.home() tatsaechlich
+        check = _py("import pathlib\ntry:\n    pathlib.Path.home()\n    print('HOME-OK')\n"
+                    "except RuntimeError:\n    print('HOME-ERR')\n", env, proj)
+        assert check.stdout.strip() == "HOME-ERR", (check.stdout, check.stderr)
+        res = _run_runner(proj, env)
+        assert res.returncode == 0, res.stderr
+        assert "Traceback" not in res.stderr, res.stderr
+>       assert _texts(log) == ["/clear", PLUGIN], (_texts(log), _ac_log(proj))
+E       AssertionError: ([], '2026-11-13T17:14:04 auto-clear: ABBRUCH: ungueltige Argumente
+E         ')
+E       assert [] == ['/clear', '/...analyse #999']
+E         
+E         Right contains 2 more items, first extra item: '/clear'
+E         Use -v to get more diff
+
+tests/test_befehlsform_context_titel_499.py:310: AssertionError
+______________________ test_state_and_log_keep_short_form ______________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_state_and_log_keep_short_0')
+
+    def test_state_and_log_keep_short_form(tmp_path):
+        """AC-4 (#499); #597 (Spec fix-597, Affected Files): statt des Once-Lock-Schluessels
+        gilt: keine herdr_auto_clear_state.json, Grenze nach `OK` verbraucht."""
+        proj, log, env, _ = _case(tmp_path, "shortkeys")
+        res = subprocess.run([sys.executable, str(WORKFLOW_PY), "autoclear"],
+                             capture_output=True, text=True, env=env, cwd=str(proj),
+                             timeout=30)
+        assert res.returncode == 0, res.stderr
+        state = json.loads((proj / ".claude" / "workflows" / f"{WF}.json").read_text())
+        boundary = state.get("auto_clear_boundary")
+        assert isinstance(boundary, dict), state
+        assert boundary.get("command") == SHORT, boundary
+    
+        res = _run_hook(proj, env, _message(_du(SHORT)))
+        assert res.returncode == 0, res.stderr
+        assert _wait_for(lambda: ": OK" in _ac_log(proj) or "ABBRUCH" in _ac_log(proj)), (
+            f"Runner endete nicht; Log: {_ac_log(proj)!r}; Calls: {_calls(log)}")
+        # getippter Text: Plugin-Form (kein Alias im Projekt/Home)
+        assert _texts(log) == ["/clear", PLUGIN], (_texts(log), _ac_log(proj))
+        # Log-Tag: Kurzform
+        assert f"{WF}|{PHASE}|{SHORT}: OK" in _ac_log(proj), _ac_log(proj)
+        assert PLUGIN not in _ac_log(proj), _ac_log(proj)
+        # #597: kein Once-Lock mehr; der Vermerk (Einmal-Token) ist nach dem Tippen verbraucht
+>       assert not (proj / ".claude" / "herdr_auto_clear_state.json").exists(), \
+            (proj / ".claude" / "herdr_auto_clear_state.json").read_text()
+E       AssertionError: {
+E           "fix-999-befehlsform|phase2_analyse|/20-analyse #999": 1794590044.3097432
+E         }
+E       assert not True
+E        +  where True = exists()
+E        +    where exists = ((PosixPath('/tmp/pytest-of-root/pytest-265/test_state_and_log_keep_short_0/shortkeys/proj') / '.claude') / 'herdr_auto_clear_state.json').exists
+
+tests/test_befehlsform_context_titel_499.py:339: AssertionError
+____________________ test_runner_ignores_herdr_agent_status ____________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-265/test_runner_ignores_herdr_agen0')
+
+    def test_runner_ignores_herdr_agent_status(tmp_path):
+        # #506 ersetzt test_runner_reads_real_agent_status_field: Herdrs Status (auch
+        # `blocked` wie beim PO-Manifest) entscheidet nicht mehr, `agent wait` entfaellt.
+        cmd = "/50-implement #478"
+        # #597: Grenz-Vermerk als Einmal-Token, sonst tippt der Runner nicht
+        data = _wf_data(phase="phase6_implement",
+                        auto_clear_boundary={"phase": "phase6_implement", "command": cmd,
+                                             "at": RUNNER_BOUNDARY_AT})
+    
+        for status in ("idle", "blocked"):
+            proj, log, env = _case(tmp_path, status, AUTO_ON, data, STUB_STATUS=status)
+            # Kurz-Alias im Projekt: der Runner tippt die Kurzform (#499, sonst Plugin-Form)
+            alias = proj / ".claude" / "commands" / "50-implement.md"
+            alias.parent.mkdir(parents=True, exist_ok=True)
+            alias.write_text("Alias\n")
+            res = _run_runner(proj, env, cmd)
+            assert res.returncode == 0, res.stderr
+            assert "Traceback" not in res.stderr, res.stderr
+            assert _of(_calls(log), "agent wait") == [], (status, _calls(log))
+            assert _of(_calls(log), "agent prompt") == [], (status, _calls(log))
+            enter = ["pane", "send-keys", PANE, "enter"]
+            typed = [c for c in _calls(log) if c[:1] == ["pane"]]
+>           assert typed == [["pane", "send-text", PANE, "/clear"], enter,
+                             ["pane", "send-text", PANE, cmd], enter], \
+                (status, _calls(log), _skip_log(proj))
+E           AssertionError: ('idle', [], '2026-11-13T17:14:24 auto-clear: ABBRUCH: ungueltige Argumente
+E             ')
+E           assert [] == [['pane', 'se...78', 'enter']]
+E             
+E             Right contains 4 more items, first extra item: ['pane', 'send-text', 'pane-478', '/clear']
+E             Use -v to get more diff
+
+tests/test_herdr_plan_deploy_sessionstart_478.py:424: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_vorlagen_klartext_597.py::test_ausgabebloecke_und_fragen_ohne_git_woerter
+FAILED tests/test_autoclear_retry_597.py::test_klartext_pruefe_matches_main_behaviour
+FAILED tests/test_autoclear_retry_597.py::test_stop_hook_active_stop_spawns_runner
+FAILED tests/test_autoclear_retry_597.py::test_klartext_pre_check_skips_and_keeps_boundary
+FAILED tests/test_autoclear_retry_597.py::test_spawn_keeps_boundary_and_has_no_once_lock
+FAILED tests/test_autoclear_retry_597.py::test_two_runners_only_one_takes_token
+FAILED tests/test_autoclear_retry_597.py::test_take_boundary_requires_exact_match_and_fails_safe
+FAILED tests/test_autoclear_retry_597.py::test_newest_clean_stop_wins - Asser...
+FAILED tests/test_autoclear_retry_597.py::test_restore_boundary_on_continuation_between_text_and_enter
+FAILED tests/test_autoclear_retry_597.py::test_discard_boundary_on_user_input_and_other_aborts
+FAILED tests/test_herdr_auto_clear_467.py::test_runner_exact_sequence_and_flags
+FAILED tests/test_herdr_auto_clear_467.py::test_spawn_when_stop_hook_active
+FAILED tests/test_herdr_auto_clear_467.py::test_second_identical_stop_does_not_double_type
+FAILED tests/test_herdr_auto_clear_467.py::test_runner_aborts_on_wait_timeout
+FAILED tests/test_herdr_auto_clear_467.py::test_runner_aborts_on_new_input_or_foreign_session_source[startup]
+FAILED tests/test_herdr_auto_clear_467.py::test_runner_aborts_on_new_input_or_foreign_session_source[resume]
+FAILED tests/test_herdr_auto_clear_467.py::test_runner_aborts_on_new_input_or_foreign_session_source[compact]
+FAILED tests/test_herdr_auto_clear_467.py::test_runner_aborts_when_state_changed_between_steps
+FAILED tests/test_herdr_auto_clear_467.py::test_runner_aborts_when_clear_prompt_fails
+FAILED tests/test_autoclear_boundary_495.py::test_single_boundary_types_once
+FAILED tests/test_autoclear_boundary_495.py::test_boundary_consumed_after_typing
+FAILED tests/test_autoclear_boundary_495.py::test_boundary_kept_on_stop_hook_active
+FAILED tests/test_autoclear_eigene_signale_506.py::test_runner_never_calls_agent_wait
+FAILED tests/test_autoclear_eigene_signale_506.py::test_new_input_since_spawn_aborts_without_typing
+FAILED tests/test_autoclear_eigene_signale_506.py::test_no_new_input_types_clear[none]
+FAILED tests/test_autoclear_eigene_signale_506.py::test_no_new_input_types_clear[older]
+FAILED tests/test_autoclear_eigene_signale_506.py::test_input_between_stop_and_runner_start_aborts
+FAILED tests/test_autoclear_eigene_signale_506.py::test_session_clear_after_own_clear_types_followup
+FAILED tests/test_autoclear_eigene_signale_506.py::test_missing_session_signal_aborts_without_followup
+FAILED tests/test_autoclear_eigene_signale_506.py::test_session_start_before_own_clear_does_not_count[stale-preexisting]
+FAILED tests/test_autoclear_eigene_signale_506.py::test_session_start_before_own_clear_does_not_count[stale-at]
+FAILED tests/test_autoclear_eigene_signale_506.py::test_session_start_before_own_clear_does_not_count[startup]
+FAILED tests/test_autoclear_eigene_signale_506.py::test_markers_are_per_pane
+FAILED tests/test_autoclear_eigene_signale_506.py::test_manual_taken_boundary_and_recheck_unchanged
+FAILED tests/test_autoclear_eigene_signale_506.py::test_activity_after_since_aborts_without_typing
+FAILED tests/test_autoclear_eigene_signale_506.py::test_second_stop_after_since_aborts
+FAILED tests/test_autoclear_eigene_signale_506.py::test_activity_during_wait_for_clear_prevents_followup[input]
+FAILED tests/test_autoclear_eigene_signale_506.py::test_activity_during_wait_for_clear_prevents_followup[activity]
+FAILED tests/test_autoclear_eigene_signale_506.py::test_activity_during_wait_for_clear_prevents_followup[stop]
+FAILED tests/test_autoclear_eigene_signale_506.py::test_since_validation_falls_back_to_runner_start
+FAILED tests/test_autoclear_eigene_signale_506.py::test_markers_use_payload_cwd_base
+FAILED tests/test_autoclear_eigene_signale_506.py::test_slow_foreign_stop_hook_within_default_grace_no_clear
+FAILED tests/test_autoclear_eigene_signale_506.py::test_recheck_between_text_and_enter_clears_line
+FAILED tests/test_autoclear_eigene_signale_506.py::test_session_end_or_restart_aborts
+FAILED tests/test_befehlsform_context_titel_499.py::test_alias_present_in_each_location_sends_short_form
+FAILED tests/test_befehlsform_context_titel_499.py::test_no_alias_sends_plugin_form_keeps_arguments
+FAILED tests/test_befehlsform_context_titel_499.py::test_form_check_error_falls_back_to_plugin_form
+FAILED tests/test_befehlsform_context_titel_499.py::test_state_and_log_keep_short_form
+FAILED tests/test_herdr_plan_deploy_sessionstart_478.py::test_runner_ignores_herdr_agent_status
+49 failed, 51 passed in 154.51s (0:02:34)
