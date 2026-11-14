@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.12.2] - 2026-11-14
+
+Der Adversary-Nachweis erkennt jetzt auch Dateien, deren Pfad ein Leerzeichen enthält (etwa `Meditationstimer iOS/…`). Bisher wurde so eine Datei beim Stempeln übersprungen, und der Wechsel in die Validierung blieb mit „nicht zitiert und gehasht“ stehen (#606). Migration: keine. Konsumenten erhalten die Fassung per `claude plugin update agent-os-openspec@henemm-private`.
+
 ### Fixed
 
 - **`Code reference:` mit Leerzeichen im Pfad (#606):** `adversary_dialog.py` las aus einer `Code reference:`-Zeile nur das erste Token. `Code reference: Meditationstimer iOS/CalendarView.swift:127` ergab den Pfad `Meditationstimer`, `stamp` übersprang die Datei, und der Wechsel nach phase7_validate blockierte mit „nicht zitiert und gehasht“. Neu liest `_code_ref_path` die ganze Zeile: in Backticks gilt der ganze Inhalt als Pfad (Zeilenangabe wird abgetrennt); sonst darf er mit Zeilenangabe (`:<zeile>`, auch Bereiche und Listen) einzelne Leerzeichen enthalten, Folgetext wie ` — Erklärung`, ` (funktion)`, `, b.py:3`, ` und b.py:3` oder ein abschließendes `;` gehört nicht zum Pfad; ohne Zeilenangabe gilt wie bisher das erste Token. Gegen 26.757 reale `Code reference:`-Zeilen aus Konsumenten-Artefakten geprüft: geändert haben sich nur der Leerzeichen-Pfad und zwei Fälle mit angehängtem `;`. Migration: keine. Tests: `tests/test_code_ref_leerzeichen_606.py`.
