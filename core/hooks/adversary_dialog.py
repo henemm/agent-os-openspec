@@ -581,7 +581,31 @@ def dialog_verdict(artifact_path: str) -> "str | None":
     return None if text is None else _normalize_verdict(text)
 
 
-_CODE_REF_RE = re.compile(r"(?im)^\s*Code reference:\s*(\S+)")
+_CODE_REF_RE = re.compile(r"(?im)^[ \t]*Code reference:[ \t]*(.+?)[ \t]*$")
+# Pfad mit ':<zeile>' (#606): Segmente ohne Leerzeichen, durch EIN Leerzeichen
+# verbunden ('Meditationstimer iOS/X.swift:12'); kein ':', ',', ';', '(' im Pfad,
+# damit Folgetext ('— Erklärung', '(funktion)', ', b.py:3', 'und b.py:3') abfällt.
+_REF_SEG = r"[^\s:,;()`'\"]+"
+_CODE_REF_WITH_LINE_RE = re.compile(
+    rf"^({_REF_SEG}(?: {_REF_SEG})*?):\d[\d,\-]*(?=$|[\s,;)])"
+)
+
+
+def _code_ref_path(ref: str) -> str:
+    """Pfad aus dem Rest einer 'Code reference:'-Zeile (#606).
+
+    In Backticks gilt der ganze Inhalt als Pfad. Sonst darf der Pfad mit
+    Zeilenangabe Leerzeichen enthalten; ohne Zeilenangabe gilt wie bisher das
+    erste Token.
+    """
+    if ref.startswith("`") and "`" in ref[1:]:
+        inner = ref[1:ref.index("`", 1)].strip()
+        return re.sub(r":\d[\d,\-]*$", "", inner)
+    m = _CODE_REF_WITH_LINE_RE.match(ref)
+    if m:
+        return m.group(1)
+    token = ref.split()[0].strip("`") if ref.split() else ""
+    return re.sub(r":\d[\d,\-]*$", "", token)  # ':<zeile>'-Suffix abtrennen
 _EXAMINED_FILES_HEADER_RE = re.compile(r"(?m)^## Geprüfte Dateien\s*$")
 _EXAMINED_FILES_LINE_RE = re.compile(r"(?m)^-\s*sha256:([0-9a-f]{64})\s+(.+?)\s*$")
 
@@ -597,8 +621,7 @@ def _extract_examined_files(scan: str) -> list[str]:
     """
     files = set()
     for m in _CODE_REF_RE.finditer(scan):
-        token = m.group(1)
-        path = re.sub(r":\d[\d,\-]*$", "", token)  # ':<zeile>'-Suffix abtrennen
+        path = _code_ref_path(m.group(1))
         if path:
             files.add(path)
     return sorted(files)
