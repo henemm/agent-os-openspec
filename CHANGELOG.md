@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`Code reference:` mit Leerzeichen im Pfad (#606):** `adversary_dialog.py` las aus einer `Code reference:`-Zeile nur das erste Token. `Code reference: Meditationstimer iOS/CalendarView.swift:127` ergab den Pfad `Meditationstimer`, `stamp` übersprang die Datei, und der Wechsel nach phase7_validate blockierte mit „nicht zitiert und gehasht“. Neu liest `_code_ref_path` die ganze Zeile: umschließende Backticks fallen weg; mit Zeilenangabe (`:<zeile>`, auch Bereiche und Listen) darf der Pfad einzelne Leerzeichen enthalten, Folgetext wie ` — Erklärung`, ` (funktion)`, `, b.py:3`, ` und b.py:3` oder ein abschließendes `;` gehört nicht zum Pfad; ohne Zeilenangabe gilt wie bisher das erste Token. Gegen 26.757 reale `Code reference:`-Zeilen aus Konsumenten-Artefakten geprüft: geändert haben sich nur der Leerzeichen-Pfad und zwei Fälle mit angehängtem `;`. Migration: keine. Tests: `tests/test_code_ref_leerzeichen_606.py`.
+
 ## [4.12.1] - 2026-11-13
 
 Der Auto-Modus mit automatischem `/clear` bleibt an Phasengrenzen nicht mehr stehen, wenn eine Abschlussantwort einmal zurückgewiesen und neu geschrieben wird. Das galt bisher in jeder Phase. Jetzt gilt: Das neueste saubere Antwortende startet die Übergabe, und erledigt ist sie erst, wenn wirklich getippt wurde. Die Abschlusstexte der Phasen-Befehle enthalten keine Git-Wörter mehr, ein Test hält das so (#597). Migration: keine. Wichtig: Die neue Prüflogik wirkt erst nach einem Neustart von Claude Code (#599). Konsumenten erhalten die Fassung per `claude plugin update agent-os-openspec@henemm-private`.
