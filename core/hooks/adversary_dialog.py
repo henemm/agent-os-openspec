@@ -594,11 +594,13 @@ _CODE_REF_WITH_LINE_RE = re.compile(
 def _code_ref_path(ref: str) -> str:
     """Pfad aus dem Rest einer 'Code reference:'-Zeile (#606).
 
-    Umschliessende Backticks werden entfernt. Mit Zeilenangabe darf der Pfad
-    Leerzeichen enthalten; ohne Zeilenangabe gilt wie bisher das erste Token.
+    In Backticks gilt der ganze Inhalt als Pfad. Sonst darf der Pfad mit
+    Zeilenangabe Leerzeichen enthalten; ohne Zeilenangabe gilt wie bisher das
+    erste Token.
     """
     if ref.startswith("`") and "`" in ref[1:]:
-        ref = ref[1:ref.index("`", 1)].strip()
+        inner = ref[1:ref.index("`", 1)].strip()
+        return re.sub(r":\d[\d,\-]*$", "", inner)
     m = _CODE_REF_WITH_LINE_RE.match(ref)
     if m:
         return m.group(1)
