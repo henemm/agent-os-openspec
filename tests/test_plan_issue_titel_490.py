@@ -153,8 +153,9 @@ def test_issue_title_cli_fetch_and_fail_open(tmp_path):
     proj, log, env = _case(tmp_path, "ok", GH_TITLE=LONG_TITLE)
     res = _workflow(["issue-title", "490"], env, proj)
     assert res.returncode == 0, res.stderr
-    assert res.stdout.strip() == SHORT_LONG, res.stdout
-    assert json.loads(_cache(proj).read_text()) == {"490": SHORT_LONG}
+    # #612: voller Titel (bis 24 Woerter) statt Sechs-Wort-Form
+    assert res.stdout.strip() == LONG_TITLE, res.stdout
+    assert json.loads(_cache(proj).read_text()) == {"490": LONG_TITLE}
     calls = _gh_calls(log)
     assert len(calls) == 1 and calls[0].startswith("api repos/{owner}/{repo}/issues/490"), calls
 

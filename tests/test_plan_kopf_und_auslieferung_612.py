@@ -255,11 +255,15 @@ def test_render_plan_head_with_brief_and_wrapping():
     assert "".join(title_block).startswith("Paket F:")
     rest = wrapped[len(title_block) + 3:]
     brief_block = rest[:rest.index("")]
-    problem_lines = [ln for ln in brief_block if not ln.startswith("Ziel")]
+    goal_at = next(i for i, ln in enumerate(brief_block) if ln.startswith("Ziel: "))
+    problem_lines = brief_block[:goal_at]
     assert problem_lines[0].startswith("Problem:")
     assert len(problem_lines) == wf.PLAN_BRIEF_MAX_LINES, problem_lines
     assert problem_lines[-1].endswith("…")
-    assert brief_block[-1].startswith("Ziel: Zielwort")
+    goal_lines = brief_block[goal_at:]
+    assert 1 <= len(goal_lines) <= wf.PLAN_BRIEF_MAX_LINES, goal_lines
+    assert " ".join(goal_lines) == "Ziel: Zielwort Zielwort Zielwort", goal_lines
+    assert rest[rest.index("") + 1].startswith(("✔", "▶", "○")), rest  # danach die Schritte
 
 
 def test_issue_brief_cli_fetches_caches_and_plan_shows_it(tmp_path):
@@ -549,6 +553,10 @@ def test_ship_status_cli_active_archived_and_fallback(tmp_path):
     es = _workflow(["endstate", ISSUE], env, proj)
     assert _kv(es.stdout, "ENDSTATE") == "you"
     assert _kv(es.stdout, "FOOTER").startswith(f"❗ Du: /60-validate #{ISSUE} — Auslieferung fehlgeschlagen (CI rot)")
+    # c2) Adversary F001: nach `failed` findet ein erneuter Lauf ohne Nummer den Workflow
+    res = _workflow(["ship-status", "running", "--note", "zweiter Versuch"], env, proj)
+    assert res.returncode == 0 and res.stdout.strip() == f"SHIP_STATUS=running ({WF})", res.stderr
+    assert json.loads(cur.read_text())["ship_note"] == "zweiter Versuch"
     res = _workflow(["ship-status", "skipped", ISSUE], env, proj)
     assert "ship_note" not in json.loads(cur.read_text())
 

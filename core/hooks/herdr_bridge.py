@@ -214,11 +214,14 @@ def build_report(data) -> "dict | None":
         return None
     phase = data.get("current_phase")
     step = STEP_LABELS.get(phase) if isinstance(phase, str) else None
-    if step is None:
-        return None
     if str(_HOOK_DIR) not in sys.path:
         sys.path.insert(0, str(_HOOK_DIR))
     import workflow  # Lazy: workflow.py importiert diese Datei (zirkulaer vermeiden)
+
+    if step is None and phase == "phase8_complete" and workflow._ship_pending(data):
+        step = "SHIP"  # #612: Code fertig, Auslieferung laeuft noch -> kein Clear
+    if step is None:
+        return None
 
     name = str(data.get("name") or "")
     issue = workflow.workflow_issue_number(data) or ""  # #513: State-Feld vor Name
