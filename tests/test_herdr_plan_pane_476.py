@@ -207,7 +207,8 @@ def test_render_full_workflow_marks_done_running_open():
     assert _step_lines(out) == [
         "✔ 1 Kontext", "✔ 2 Analyse", "✔ 3 Spec", "✔ 4 Freigabe",
         "▶ 5 TDD-RED  (läuft)",
-        "○ 6 Implement", "○ 6b Adversary", "○ 7 Validierung", "○ 8 Fertig",
+        "○ 6 Implement", "○ 6b Adversary", "○ 7 Validierung", "○ 8 Code fertig",
+        "○ Ausliefern",  # #612: Auslieferung als eigener Schritt
     ]
     # #550: Schlusszeile ist der Endzustand (❗ mit Befehl) statt „Nächster: …“
     assert lines[-1] == workflow.end_state(data)["line"], lines
@@ -221,7 +222,7 @@ def test_render_fast_track_steps():
     out = _render(data)
     assert _step_lines(out) == [
         "✔ 3 Spec", "✔ 4 Freigabe", "▶ 6 Implement  (läuft)",
-        "○ 7 Validierung", "○ 8 Fertig",
+        "○ 7 Validierung", "○ 8 Code fertig", "○ Ausliefern",
     ]
     for absent in ("Kontext", "Analyse", "TDD-RED", "Adversary"):
         assert absent not in out
@@ -234,7 +235,7 @@ def test_render_fast_track_off_list_phase():
     out = _render(data)
     assert _step_lines(out) == [
         "✔ 3 Spec", "▶ 4 Freigabe  (läuft)",
-        "○ 6 Implement", "○ 7 Validierung", "○ 8 Fertig",
+        "○ 6 Implement", "○ 7 Validierung", "○ 8 Code fertig", "○ Ausliefern",
     ]
 
 

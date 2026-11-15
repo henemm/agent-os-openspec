@@ -345,6 +345,14 @@ PLAN_STEPS = (
 _FAST_PLAN_PHASES = ("phase3_spec", "phase4_approved", "phase6_implement",
                      "phase7_validate", "phase8_complete")
 PLAN_STEPS_FAST = tuple(s for s in PLAN_STEPS if s[2] in _FAST_PLAN_PHASES)
+PLAN_TITLE_MAX_LINES = 3   # #612: voller Issue-Titel im Plan-Kopf, umbrochen
+PLAN_BRIEF_MAX_LINES = 5   # #612: je Absatz Problem/Ziel
+
+# Auslieferung (#612): Commit, Push, PR, CI, Merge als eigener Schritt nach
+# "8 Code fertig". `phase8_complete` setzt `ship_status: open`; `ship-status`
+# (auch aus scripts/ship.py) fuehrt ihn weiter. Erst `done`/`skipped` macht ✅.
+SHIP_STATUS_VALUES = ("running", "done", "failed", "skipped")
+SHIP_PENDING_VALUES = ("open", "running", "failed")
 
 
 def _plan_deploy_mode(deploy) -> str:
@@ -421,10 +429,44 @@ def _suggest_parts(suggest, own) -> "tuple[int, str] | None":
     return (number, reason) if reason else None
 
 
-def _end_state_final(data: dict, deploy, autonomous: bool, suggest=None) -> dict:
+def _ship_pending(data: dict) -> bool:
+    """Auslieferung (#612) noch nicht abgeschlossen: open/running/failed."""
+    return data.get("ship_status") in SHIP_PENDING_VALUES
+
+
+def _end_state_ship(data: dict, head: str, issue, auto_mode: bool) -> dict:
+    """Endzustand, solange die Auslieferung (#612) offen, laufend oder gescheitert ist.
+
+    `open` ist der Stand direkt nach `phase8_complete`: im Auto-Modus liefert Claude
+    im selben Turn aus (⏳), sonst wartet der Commit auf das Wort des PO (❗).
+    `running` ist immer ⏳ (Push, PR, CI, Merge laufen), `failed` immer ❗ mit dem
+    Grund aus `ship_note` — nie ein Git-Auftrag an den PO.
+    """
+    status = data.get("ship_status")
+    raw = data.get("ship_note")
+    note = _one_line(raw) if isinstance(raw, str) else ""
+    what = f"die Auslieferung von {head}"
+    if status == "running":
+        return _end("waiting", END_WAITING.format(f"{what} ({note})" if note else what))
+    if status == "failed":
+        cmd = f"/60-validate #{issue}" if issue else "/60-validate"
+        why = f"Auslieferung fehlgeschlagen ({note}), bitte neu anstoßen" if note else \
+            "Auslieferung fehlgeschlagen, bitte neu anstoßen"
+        return _end("you", END_YOU.format(cmd, why), cmd)
+    if auto_mode:
+        return _end("waiting", END_WAITING.format(f"{what} (Commit, PR, CI, Merge)"))
+    return _end("you", END_YOU.format(
+        "Sichern freigeben",
+        f"der Code von {head} ist fertig, Commit und Auslieferung stehen noch aus"))
+
+
+def _end_state_final(data: dict, deploy, autonomous: bool, suggest=None,
+                     auto_mode: bool = False) -> dict:
     """Endzustand fuer Phase 8 bzw. archiviert (#550, Tabelle der Spec).
 
     `suggest` (#589) aendert nur die ✅-Zeilen: Schluss nennt die naechste Aufgabe.
+    Eine nicht abgeschlossene Auslieferung (#612, `ship_status`) kommt vor dem
+    Deploy: erst gemergt, dann deployt, dann ✅.
     """
     issue = workflow_issue_number(data)
     head = f"#{issue}" if issue else (str(data.get("name") or "") or "der Workflow")
@@ -439,8 +481,11 @@ def _end_state_final(data: dict, deploy, autonomous: bool, suggest=None) -> dict
         return done(f"{head} ist abgebrochen")
     if data.get("no_build_reason"):
         return done(f"{head} ist ohne Code-Änderung beendet")
+    if _ship_pending(data):
+        return _end_state_ship(data, head, issue, auto_mode)
+    shipped = data.get("ship_status") == "done"
     if _plan_deploy_mode(deploy) != "configured":
-        return done(f"{head} ist fertig")
+        return done(f"{head} ist fertig und ausgeliefert" if shipped else f"{head} ist fertig")
     status = data.get("deploy_status")
     cmd = f"/70-deploy #{issue}" if issue else "/70-deploy"
     if status == "done":
@@ -498,7 +543,7 @@ def _end_state_queue(number: int, autark: bool) -> dict:
 
 def end_state(data, archived: bool = False, deploy="off",
               autonomous: bool = False, queue_next=None, autark: bool = False,
-              self_driven: bool = False, suggest=None) -> dict:
+              self_driven: bool = False, suggest=None, auto_mode: bool = False) -> dict:
     """Genau einer von drei Endzustaenden (#550): done | waiting | you.
 
     Rueckgabe `{"kind", "line", "cmd"}`; `line` ist die ganze Zeile fuer
@@ -511,13 +556,16 @@ def end_state(data, archived: bool = False, deploy="off",
     `self_driven` (#555, aus `queue_end_args`) gilt nur fuer Phasen vor 8.
     `suggest` (#589, `next_suggestion.choose`) aendert nur die ✅-Zeile ohne
     naechstes Issue aus dem Auftrag: "mit /00-intake #M weitermachen (<Grund>)".
+    `auto_mode` (#612, aus `queue_end_args`): Autonomie `auto` — eine offene
+    Auslieferung ist dann ⏳ (Claude liefert selbst aus) statt ❗.
     """
     data = data if isinstance(data, dict) else {}
     final = archived or data.get("current_phase") == "phase8_complete"
-    state = _end_state_final(data, deploy, autonomous, suggest) if final else \
-        _end_state_open(data, self_driven is True)
+    state = _end_state_final(data, deploy, autonomous, suggest, auto_mode is True) \
+        if final else _end_state_open(data, self_driven is True)
     waiting = _one_line(data.get("waiting_on") or "")
-    failed = state["kind"] == "you" and final and data.get("deploy_status") == "failed"
+    failed = state["kind"] == "you" and final and (
+        data.get("deploy_status") == "failed" or data.get("ship_status") == "failed")
     number = _queue_number(queue_next)
     own = _queue_number(workflow_issue_number(data))
     if number is not None and number == own:
@@ -578,8 +626,16 @@ def cached_suggestion(data) -> "dict | None":
         return None
 
 
+def _auto_mode_flag() -> bool:
+    """Autonomie `auto` als Flag fuer `end_state` (#612); jede Ausnahme -> False."""
+    try:
+        return autonomy_mode() == "auto"
+    except Exception:
+        return False
+
+
 def queue_end_args(data) -> dict:
-    """`{"queue_next", "autark", "self_driven", "suggest"}` fuer `end_state`. Wirft nie.
+    """`{"queue_next", "autark", "self_driven", "auto_mode", "suggest"}` fuer `end_state`. Wirft nie.
 
     Gemeinsame Quelle fuer `endstate`, Plan und Seitenleiste (#551, #555):
     `queue_next` ist die erste offene Nummer, die nicht die des geprueften
@@ -587,11 +643,13 @@ def queue_end_args(data) -> dict:
     Auftrag. Ohne Auftrag, mit Kill-Switch oder bei Fehlern alles leer bzw.
     False. `suggest` (#589) kommt nur ohne `queue_next` und nur aus dem Cache.
     """
-    empty = {"queue_next": None, "autark": False, "self_driven": False}
+    empty = {"queue_next": None, "autark": False, "self_driven": False,
+             "auto_mode": False}
     try:
+        auto = _auto_mode_flag()
         auftrag = read_auftrag()
         if not auftrag:
-            return {**empty, "suggest": cached_suggestion(data)}
+            return {**empty, "auto_mode": auto, "suggest": cached_suggestion(data)}
         own = workflow_issue_number(data)
         own_n = int(own) if own else None
         open_issues = auftrag_open_issues(auftrag)
@@ -599,6 +657,7 @@ def queue_end_args(data) -> dict:
         autark = auftrag["autark"] is True
         driven = bool(autark and open_issues) and autonomy_mode() == "auto"
         return {"queue_next": nxt, "autark": autark, "self_driven": driven,
+                "auto_mode": auto,
                 "suggest": None if nxt is not None else cached_suggestion(data)}
     except Exception:
         return empty
@@ -619,7 +678,7 @@ def render_plan(data, archived: bool = False, width: "int | None" = None,
     if not isinstance(data, dict):
         lines, tail = ["Kein aktiver Workflow"], None
     else:
-        lines = _plan_lines(data, archived, deploy) + [""]
+        lines = _plan_lines(data, archived, deploy, width) + [""]
         tail = end_state(data, archived=archived, deploy=deploy,
                          autonomous=autonomous, **(queue or {}))["line"]
     if isinstance(width, int) and width > 0:
@@ -631,14 +690,20 @@ def render_plan(data, archived: bool = False, width: "int | None" = None,
     return "\n".join(lines)
 
 
-def _plan_lines(data: dict, archived: bool, deploy) -> "list[str]":
-    """Kopf und Schrittliste des Plans ohne Schlusszeile (#476, #490, #510)."""
+def _plan_lines(data: dict, archived: bool, deploy,
+                width: "int | None" = None) -> "list[str]":
+    """Kopf und Schrittliste des Plans ohne Schlusszeile (#476, #490, #510, #612)."""
     fast = data.get("workflow_type") == "feature-fast"
     steps = PLAN_STEPS_FAST if fast else PLAN_STEPS
     phase = data.get("current_phase")
     done_all = archived or phase == "phase8_complete"
-    with_deploy = _plan_deploy_mode(deploy) == "configured" and not (
-        data.get("status") == "abandoned" or data.get("no_build_reason"))
+    no_build = bool(data.get("status") == "abandoned" or data.get("no_build_reason"))
+    with_deploy = _plan_deploy_mode(deploy) == "configured" and not no_build
+    # #612: Auslieferung als eigener Schritt. Vor Phase 8 immer (sie kommt noch),
+    # ab Phase 8 nur mit Marker — archivierte Workflows aelterer Fassungen haben
+    # keinen und bleiben wie bisher.
+    with_ship = not no_build and ("ship_status" in data or not done_all)
+    ship_final = not with_ship or data.get("ship_status") in ("done", "skipped")
     running = None
     if not done_all and phase in PHASES and phase != "phase0_idle":
         # Phase nicht in der Liste (Fast Track): letzter Schritt davor laeuft
@@ -650,20 +715,62 @@ def _plan_lines(data: dict, archived: bool, deploy) -> "list[str]":
     lines = [f"Workflow #{issue}" if issue else "Workflow", str(data.get("name") or "")]
     title = data.get("issue_title")
     if isinstance(title, str) and title.strip():
-        lines.append(title)  # #490: Kurztitel des Issues unter dem Namen
+        lines += _wrap_text(title, width, PLAN_TITLE_MAX_LINES)  # #490/#612: Titel
     lines.append("")
+    lines += _plan_brief_lines(data.get("issue_brief"), width)  # #612: Problem/Ziel
     for i, (nr, label, step_phase) in enumerate(steps):
-        if with_deploy and step_phase == "phase8_complete":
-            label = "Code fertig"  # #510: fertig ist erst das Deploy
+        if (with_deploy or with_ship) and step_phase == "phase8_complete":
+            label = "Code fertig"  # #510/#612: fertig ist erst nach Auslieferung/Deploy
         if done_all or (running is not None and i < running):
             lines.append(f"✔ {nr} {label}")
         elif i == running:
             lines.append(f"▶ {nr} {label}  (läuft)")
         else:
             lines.append(f"○ {nr} {label}")
+    if with_ship:
+        lines.append(_plan_ship_line(data.get("ship_status"), done_all))
     if with_deploy:
-        lines.append(_plan_deploy_line(data.get("deploy_status"), done_all))
+        lines.append(_plan_deploy_line(data.get("deploy_status"), done_all and ship_final))
     return lines
+
+
+def _plan_ship_line(status, done_all: bool) -> str:
+    """Zeile „Ausliefern“ des Plans (#612): Commit, Push, PR, CI, Merge."""
+    if not done_all:
+        return "○ Ausliefern"
+    return {"done": "✔ Ausliefern", "running": "▶ Ausliefern  (läuft)",
+            "failed": "✘ Ausliefern  (fehlgeschlagen)",
+            "skipped": "○ Ausliefern  (entfällt)"}.get(status, "▶ Ausliefern  (offen)")
+
+
+def _wrap_text(text: str, width: "int | None", max_lines: int) -> "list[str]":
+    """Text auf `width` umbrechen, hoechstens `max_lines` Zeilen, Rest „…“ (#612).
+
+    Ohne `width` eine einzige Zeile. Pure.
+    """
+    text = " ".join(str(text).split())
+    if not text:
+        return []
+    if not (isinstance(width, int) and width > 0):
+        return [text]
+    import textwrap
+    out = textwrap.wrap(text, width, break_long_words=True) or [text[:width]]
+    if len(out) > max_lines:
+        out = out[:max_lines]
+        out[-1] = out[-1][: max(1, width - 1)].rstrip() + "…"
+    return out
+
+
+def _plan_brief_lines(brief, width: "int | None") -> "list[str]":
+    """Kopfblock „Problem“/„Ziel“ aus der Issue-Kurzfassung (#612); leer ohne Inhalt."""
+    if not isinstance(brief, dict):
+        return []
+    out: "list[str]" = []
+    for key, label in (("problem", "Problem"), ("goal", "Ziel")):
+        value = brief.get(key)
+        if isinstance(value, str) and value.strip():
+            out += _wrap_text(f"{label}: {value}", width, PLAN_BRIEF_MAX_LINES)
+    return out + [""] if out else []
 
 
 def _plan_deploy_line(status, done_all: bool) -> str:
@@ -852,8 +959,178 @@ def _store_issue_title(issue, title: str) -> None:
             os.close(fd)  # gibt die Sperre frei
 
 
-def fetch_issue_title(issue, timeout: float = 8) -> "str | None":
-    """Titel per `gh api` (REST) holen, kuerzen, cachen (#490/#492).
+# --- Issue-Kurzfassung (#612): Problem/Ziel aus dem Issue-Text fuer den Plan-Kopf ----
+
+ISSUE_TITLE_MAX_WORDS = 24  # voller Titel im Plan-Kopf (umbrochen), statt 6 Woerter
+BRIEF_MAX_CHARS = 260       # je Absatz Problem/Ziel, dann „…“
+BRIEF_PROBLEM_WORDS = (
+    "problem", "defekt", "fehler", "beschreibung", "description", "summary",
+    "zusammenfassung", "kontext", "context", "motivation", "hintergrund", "background",
+    "ist-zustand", "ist zustand", "aktuell", "symptom", "situation", "ausgangslage",
+    "current behavior", "current behaviour", "beobachtung", "observed", "warum", "why",
+)
+BRIEF_GOAL_WORDS = (
+    "ziel", "goal", "soll", "erwartet", "expected", "lösung", "loesung", "solution",
+    "vorschlag", "proposal", "wunsch", "nutzen", "outcome", "ergebnis", "akzeptanz",
+    "acceptance", "definition of done", "anforderung", "requirement", "job to be done",
+)
+_BRIEF_MD_HEADING_RE = _re.compile(r"^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$")
+_BRIEF_BOLD_HEADING_RE = _re.compile(r"^\s*\*\*([^*\n]{1,60}?)\s*[:：]?\s*\*\*\s*[:：]?\s*(.*)$")
+_BRIEF_KEY_LINE_RE = _re.compile(r"^\s*([A-Za-zÄÖÜäöüß][\w /&-]{0,40}?)\s*[:：]\s+(.*)$")
+_BRIEF_LIST_RE = _re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s*)?(.*)$")
+
+
+def _brief_words(heading: str) -> "str | None":
+    """'problem' / 'goal' / None je nach Ueberschrift (Wortlisten, case-insensitiv)."""
+    low = " ".join(heading.lower().split())
+    if any(w in low for w in BRIEF_PROBLEM_WORDS):
+        return "problem"
+    if any(w in low for w in BRIEF_GOAL_WORDS):
+        return "goal"
+    return None
+
+
+def _brief_inline(text: str) -> str:
+    """Markdown-Inline-Syntax entfernen: Bilder, Links (Text bleibt), HTML, Code, Fett."""
+    text = _re.sub(r"!\[[^\]]*\]\([^)]*\)", "", text)
+    text = _re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)
+    text = _re.sub(r"<[^>\n]+>", "", text)
+    text = _re.sub(r"`([^`]*)`", r"\1", text)
+    text = _re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+    text = _re.sub(r"__(.+?)__", r"\1", text)
+    text = _re.sub(r"(?<!\w)[*_]([^*_\n]+)[*_](?!\w)", r"\1", text)
+    text = _re.sub(r"^\s*>\s?", "", text)
+    return " ".join(text.split())
+
+
+def _brief_clamp(text: str, limit: int = BRIEF_MAX_CHARS) -> str:
+    """Text an einer Wortgrenze auf `limit` Zeichen kuerzen, Ende „…“."""
+    if len(text) <= limit:
+        return text
+    cut = text[: limit - 1]
+    if " " in cut:
+        cut = cut[: cut.rfind(" ")]
+    return cut.rstrip(" ,;:.-") + "…"
+
+
+def _brief_join(lines: "list[str]") -> str:
+    """Abschnittszeilen zu einem Absatz: Listenpunkte mit „; “, sonst Leerzeichen."""
+    parts: "list[str]" = []
+    items: "list[str]" = []
+    for raw in lines:
+        if raw.lstrip().startswith("|") or _re.fullmatch(r"\s*[-=*_]{3,}\s*", raw):
+            continue  # Tabellen und Trennlinien
+        m = _BRIEF_LIST_RE.match(raw)
+        text = _brief_inline(m.group(1) if m else raw)
+        if not text:
+            continue
+        if m:
+            items.append(text)
+        else:
+            if items:
+                parts.append("; ".join(items))
+                items = []
+            parts.append(text)
+    if items:
+        parts.append("; ".join(items))
+    return " ".join(parts)
+
+
+def extract_issue_brief(title, body) -> dict:
+    """Kurzfassung `{"title", "problem", "goal"}` aus Issue-Titel und -Text (#612). Pure.
+
+    Entfernt HTML-Kommentare und Code-Bloecke, zerlegt den Text an Markdown-
+    Ueberschriften, fetten Zeilen (`**Problem:**`) und `Schluessel:`-Zeilen
+    (hoechstens drei Woerter, Schluessel aus den Wortlisten). „Problem“ ist der
+    erste Abschnitt mit einer Problem-Ueberschrift, „Ziel“ der erste mit einer
+    Ziel-Ueberschrift; ohne Problem-Treffer gilt der Einstieg vor der ersten
+    Ueberschrift, ohne jede Ueberschrift der ganze Text. Jeder Wert hoechstens
+    `BRIEF_MAX_CHARS` Zeichen (dann „…“).
+    """
+    out = {"title": short_title(title, max_words=ISSUE_TITLE_MAX_WORDS),
+           "problem": "", "goal": ""}
+    if not isinstance(body, str) or not body.strip():
+        return out
+    text = _re.sub(r"<!--.*?-->", "", body, flags=_re.DOTALL)
+    text = _re.sub(r"(```|~~~).*?(\1|\Z)", "", text, flags=_re.DOTALL)
+    sections: "list[tuple[str, list[str]]]" = [("", [])]
+    for line in text.splitlines():
+        m = _BRIEF_MD_HEADING_RE.match(line)
+        if m:
+            sections.append((m.group(1), []))
+            continue
+        m = _BRIEF_BOLD_HEADING_RE.match(line)
+        if m and _brief_words(m.group(1)) is not None:
+            sections.append((m.group(1), [m.group(2)] if m.group(2).strip() else []))
+            continue
+        m = _BRIEF_KEY_LINE_RE.match(line)
+        if m and len(m.group(1).split()) <= 3 and _brief_words(m.group(1)) is not None:
+            sections.append((m.group(1), [m.group(2)]))
+            continue
+        sections[-1][1].append(line)
+    for heading, lines in sections:
+        kind = _brief_words(heading) if heading else None
+        if kind and not out[kind]:
+            out[kind] = _brief_clamp(_brief_join(lines))
+    if not out["problem"]:
+        lead = _brief_join(sections[0][1])
+        if not lead and len(sections) == 1:
+            lead = ""
+        out["problem"] = _brief_clamp(lead)
+    return out
+
+
+def _issue_briefs_file() -> Path:
+    """Cache der Issue-Kurzfassungen (#612): .claude/issue_briefs.json."""
+    return _workflows_dir().parent / "issue_briefs.json"
+
+
+def _read_issue_briefs() -> dict:
+    """Cache lesen; fehlend/kaputt gilt als leer. Wirft nie."""
+    try:
+        data = json.loads(_issue_briefs_file().read_text())
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def cached_issue_brief(issue) -> "dict | None":
+    """Kurzfassung aus dem Cache (dict mit title/problem/goal/source) oder None."""
+    try:
+        value = _read_issue_briefs().get(str(issue))
+        return value if isinstance(value, dict) else None
+    except Exception:
+        return None
+
+
+def _store_issue_brief(issue, brief: dict, replace_manual: bool = False) -> None:
+    """Eintrag unter `<cache>.lock` setzen (#612). Eine manuelle Fassung bleibt,
+    nur ihr Titel wird nachgezogen — ausser `replace_manual`."""
+    path = _issue_briefs_file()
+    fd = None
+    try:
+        import herdr_bridge
+        fd = herdr_bridge._pp_flock(path)
+    except Exception:
+        fd = None
+    try:
+        cache = _read_issue_briefs()
+        old = cache.get(str(issue))
+        if (isinstance(old, dict) and old.get("source") == "manual"
+                and brief.get("source") != "manual" and not replace_manual):
+            old["title"] = brief.get("title") or old.get("title", "")
+            cache[str(issue)] = old
+        else:
+            cache[str(issue)] = brief
+        atomic_write_json(path, cache)
+    finally:
+        if fd is not None:
+            os.close(fd)
+
+
+def fetch_issue_title(issue, timeout: float = 8, replace_manual: bool = False) -> "str | None":
+    """Titel und Text per `gh api` (REST, JSON) holen, Kurzfassung bilden, cachen
+    (#490/#492/#612). Eine reine Textantwort zaehlt als Titel ohne Text.
 
     Fail-open: None, wirft nie; Fehlschlaege landen in `.claude/issue_titles.log`.
     """
@@ -868,7 +1145,7 @@ def fetch_issue_title(issue, timeout: float = 8) -> "str | None":
             return None
         try:
             res = subprocess.run(
-                [gh, "api", f"repos/{{owner}}/{{repo}}/issues/{issue}", "--jq", ".title"],
+                [gh, "api", f"repos/{{owner}}/{{repo}}/issues/{issue}"],
                 capture_output=True, text=True, timeout=timeout,
                 cwd=str(find_project_root()), stdin=subprocess.DEVNULL,
             )
@@ -879,11 +1156,23 @@ def fetch_issue_title(issue, timeout: float = 8) -> "str | None":
             _log_issue_title_failure(
                 issue, f"gh api Exit {res.returncode}: {(res.stderr or '').strip()[:200]}")
             return None
-        title = short_title(res.stdout)
+        raw_title, body = res.stdout, ""
+        try:
+            payload = json.loads(res.stdout)
+            if isinstance(payload, dict):
+                raw_title = str(payload.get("title") or "")
+                body = payload.get("body") or ""
+        except ValueError:
+            pass  # Textantwort (alter Stub): nur Titel
+        title = short_title(raw_title, max_words=ISSUE_TITLE_MAX_WORDS)
         if not title:
             _log_issue_title_failure(issue, "gh api lieferte leeren Titel")
             return None
         _store_issue_title(issue, title)
+        brief = extract_issue_brief(title, body if isinstance(body, str) else "")
+        brief["source"] = "issue"
+        brief["at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+        _store_issue_brief(issue, brief, replace_manual=replace_manual)
         return title
     except Exception as exc:
         _log_issue_title_failure(issue, f"Fehler {type(exc).__name__}")
@@ -2293,8 +2582,8 @@ def cmd_start(args: list[str]) -> None:
     _set_active(name)
     _herdr("report", data)
     issue = workflow_issue_number(data)
-    if issue and cached_issue_title(issue) is None:
-        _spawn_issue_title_fetch(issue)  # #490: abgekoppelt, wartet nicht
+    if issue and (cached_issue_title(issue) is None or cached_issue_brief(issue) is None):
+        _spawn_issue_title_fetch(issue)  # #490/#612: abgekoppelt, wartet nicht
     if workflow_type == "feature-fast":
         type_note = " [FEATURE fast-track → phase3_spec]"
     else:
@@ -2335,24 +2624,29 @@ def _with_issue_title(data: dict) -> dict:
     """
     try:
         issue = workflow_issue_number(data)
-        title = short_title(cached_issue_title(issue)) if issue else None
+        title = short_title(cached_issue_title(issue),
+                            max_words=ISSUE_TITLE_MAX_WORDS) if issue else None
         if title:
             data["issue_title"] = title
+        brief = cached_issue_brief(issue) if issue else None
+        if brief:  # #612: Problem/Ziel fuer den Plan-Kopf
+            data["issue_brief"] = {"problem": str(brief.get("problem") or ""),
+                                   "goal": str(brief.get("goal") or "")}
     except Exception:
         pass
     return data
 
 
 def _plan_fetch_missing(data, tried: set) -> None:
-    """Fehlenden Titel hoechstens einmal je Issue und Prozess holen (#490)."""
+    """Fehlenden Titel/Kurzfassung hoechstens einmal je Issue und Prozess holen (#490/#612)."""
     try:
-        if not isinstance(data, dict) or data.get("issue_title"):
+        if not isinstance(data, dict):
             return
         issue = workflow_issue_number(data)
         if not issue or issue in tried:
             return
         tried.add(issue)
-        if cached_issue_title(issue) is None:
+        if cached_issue_title(issue) is None or cached_issue_brief(issue) is None:
             fetch_issue_title(issue)
     except Exception:
         pass
@@ -2517,10 +2811,56 @@ def cmd_plan(args: list[str]) -> None:
 
 
 def cmd_issue_title(args: list[str]) -> None:
-    """`issue-title <N>` (#490): Kurztitel holen und cachen; Exit immer 0."""
+    """`issue-title <N>` (#490): Titel (und Kurzfassung) holen und cachen; Exit immer 0."""
     title = fetch_issue_title(args[0]) if args else None
     if title:
         print(title)
+
+
+def cmd_issue_brief(args: list[str]) -> None:
+    """`issue-brief <N> [--problem T] [--ziel T] [--auto]` (#612); Exit immer 0.
+
+    Ohne Optionen: Kurzfassung zeigen, bei Bedarf aus dem Issue holen.
+    `--problem`/`--ziel`: handgeschriebene Fassung (`SOURCE=manual`), die ein
+    erneutes Holen nicht ueberschreibt. `--auto`: manuelle Fassung verwerfen und
+    wieder aus dem Issue lesen. Ausgabe ISSUE=, TITLE=, PROBLEM=, ZIEL=, SOURCE=.
+    """
+    if not args or not args[0].strip():
+        print('Usage: workflow.py issue-brief <N> [--problem "<Text>"] [--ziel "<Text>"] [--auto]',
+              file=sys.stderr)
+        return
+    issue = args[0].lstrip("#").strip()
+    manual: dict = {}
+    auto = "--auto" in args
+    for flag, key in (("--problem", "problem"), ("--ziel", "goal")):
+        if flag in args:
+            idx = args.index(flag)
+            if idx + 1 < len(args):
+                manual[key] = " ".join(args[idx + 1].split())
+    try:
+        if auto:
+            fetch_issue_title(issue, replace_manual=True)
+        elif cached_issue_brief(issue) is None or cached_issue_title(issue) is None:
+            fetch_issue_title(issue)
+        if manual and not auto:
+            entry = dict(cached_issue_brief(issue) or {})
+            entry.setdefault("title", short_title(cached_issue_title(issue) or "",
+                                                  max_words=ISSUE_TITLE_MAX_WORDS))
+            entry.setdefault("problem", "")
+            entry.setdefault("goal", "")
+            entry.update(manual)
+            entry["source"] = "manual"
+            entry["at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+            _store_issue_brief(issue, entry, replace_manual=True)
+    except Exception:
+        pass
+    brief = cached_issue_brief(issue) or {}
+    title = cached_issue_title(issue) or brief.get("title") or ""
+    print(f"ISSUE={issue}")
+    print(f"TITLE={short_title(title, max_words=ISSUE_TITLE_MAX_WORDS)}")
+    print(f"PROBLEM={brief.get('problem') or ''}")
+    print(f"ZIEL={brief.get('goal') or ''}")
+    print(f"SOURCE={brief.get('source') or 'none'}" if brief else "SOURCE=none")
 
 
 def cmd_switch(args: list[str]) -> None:
@@ -2631,7 +2971,8 @@ def _reset_approvals_on_backstep(data: dict, current: str, target: str) -> None:
     if tgt_idx < PHASES.index("phase6_implement"):
         data["green_approved"] = False
     if tgt_idx < PHASES.index("phase8_complete"):
-        for key in ("deploy_status", "deploy_at", "deploy_note"):
+        for key in ("deploy_status", "deploy_at", "deploy_note",
+                    "ship_status", "ship_at", "ship_note"):
             data.pop(key, None)
 
 
@@ -2658,6 +2999,8 @@ def cmd_phase(args: list[str]) -> None:
     _reset_approvals_on_backstep(data, current, target)
     exceeded = record_transition(data, target, trigger)
     data["current_phase"] = target
+    if target == "phase8_complete":
+        _mark_ship_open(data)  # #612: Code fertig, Auslieferung steht aus
     _save_active(data)
     print(f"Set phase to: {target}")
     _print_budget_question(exceeded)
@@ -3082,6 +3425,7 @@ def cmd_complete(args: list[str]) -> None:
         sys.exit(1)
     data["current_phase"] = "phase8_complete"
     data.pop("waiting_on", None)  # #550: Phasenwechsel leert den Wartezustand
+    _mark_ship_open(data)  # #612
     try:  # #250 B: Messung blockiert den Abschluss nie
         final = _final_loc(data)
         if final is not None:
@@ -3290,6 +3634,88 @@ def deploy_mode() -> str:
 DEPLOY_STATUS_VALUES = ("running", "done", "failed")
 
 
+def _mark_ship_open(data: dict) -> None:
+    """Auslieferung als offen vermerken (#612), einmalig beim Erreichen von Phase 8.
+
+    Ohne Build (`no_build_reason`) oder bei Abbruch gibt es nichts auszuliefern;
+    ein schon gesetzter Marker (z. B. `done` vor einem erneuten `complete`) bleibt.
+    """
+    if data.get("no_build_reason") or data.get("status") == "abandoned":
+        return
+    if "ship_status" not in data:
+        data["ship_status"] = "open"
+
+
+def _ship_fallback_target() -> "tuple[Path, dict, str] | None":
+    """Juengster archivierter Workflow mit nicht abgeschlossener Auslieferung (#612).
+
+    `complete` archiviert den Workflow, bevor Push, PR und CI durch sind;
+    `ship-status` ohne Nummer muss ihn trotzdem noch finden — auch nach einem
+    `failed`, damit ein erneuter `ship.py`-Lauf den Stand weiterfuehrt (F001).
+    """
+    folder = _archive_dir()
+    if not folder.is_dir():
+        return None
+    hits = []
+    for f in folder.glob("*.json"):
+        try:
+            data = _read_workflow(f)
+        except (Exception, SystemExit):
+            continue
+        if isinstance(data, dict) and data.get("ship_status") in SHIP_PENDING_VALUES:
+            hits.append((f.stat().st_mtime, f, data))
+    if not hits:
+        return None
+    _, path, data = max(hits, key=lambda t: t[0])
+    return path, data, data.get("name") or path.stem
+
+
+def cmd_ship_status(args: list[str]) -> None:
+    """`ship-status <running|done|failed|skipped> [<issue-nr|name>] [--note <Text>]` (#612).
+
+    Setzt `ship_status`/`ship_at` (und `ship_note`) im Workflow-State — ohne
+    zweites Argument im aktiven Workflow, ersatzweise im juengsten archivierten
+    mit offener Auslieferung, sonst im laufenden oder archivierten Treffer.
+    Solange der Stand `open`/`running`/`failed` ist, zeigen Plan, Fusszeile und
+    Seitenleiste ⏳ bzw. ❗ statt ✅. Rein informativ, keine Gate-Wirkung.
+    `scripts/ship.py` ruft den Befehl selbst auf.
+    """
+    split = _split_note_arg(args)
+    rest, note = split if split is not None else ([], None)
+    if not rest or rest[0] not in SHIP_STATUS_VALUES:
+        print("Usage: workflow.py ship-status <running|done|failed|skipped> [<issue-nr|name>]"
+              " [--note <Text>]", file=sys.stderr)
+        sys.exit(1)
+    value = rest[0]
+    if len(rest) > 1:
+        path, data, name = _status_target(rest[1])
+    else:
+        try:
+            data, name = _read_active()
+            path = _workflow_file(name)
+        except SystemExit:
+            found = _ship_fallback_target()
+            if found is None:
+                print("KEIN aktiver Workflow und kein archivierter mit offener Auslieferung"
+                      " — Issue-Nummer oder Name angeben.", file=sys.stderr)
+                sys.exit(1)
+            path, data, name = found
+    from datetime import timezone
+    data["ship_status"] = value
+    data["ship_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    note = " ".join((note or "").split())
+    if note:
+        data["ship_note"] = note
+    else:
+        data.pop("ship_note", None)
+    _atomic_write(path, data)
+    try:  # Seitenleiste zeigt den neuen Stand, fail-open (wie `waiting`, #555)
+        _herdr("report", {"name": name, **data})
+    except Exception:
+        pass
+    print(f"SHIP_STATUS={value} ({name})")
+
+
 def _deploy_status_target(ref: str) -> "Path | None":
     """Workflow-Datei zu Issue-Nummer oder Name (#510): erst laufend, dann Archiv."""
     ref = ref.lstrip("#")
@@ -3419,6 +3845,8 @@ def cmd_endstate(args: list[str]) -> None:
     state = end_state(data, **kw, **queue)
     print(f"ENDSTATE={state['kind']}")
     print(f"FOOTER={state['line']}")
+    if data.get("ship_status"):  # #612: nur mit Marker, sonst Ausgabe wie bisher
+        print(f"SHIP_STATUS={data['ship_status']}")
     suggest = queue.get("suggest")
     if suggest and state != end_state(data, **kw, **plain):
         print(f"SUGGEST_ISSUE={suggest['n']}")
@@ -4436,6 +4864,7 @@ COMMANDS = {
     "status": cmd_status,
     "plan": cmd_plan,
     "issue-title": cmd_issue_title,
+    "issue-brief": cmd_issue_brief,
     "phase": cmd_phase,
     "phase-log": cmd_phase_log,
     "set-field": cmd_set_field,
@@ -4458,6 +4887,7 @@ COMMANDS = {
     "approvals": cmd_approvals,
     "deploy-config": cmd_deploy_config,
     "deploy-status": cmd_deploy_status,
+    "ship-status": cmd_ship_status,
     "waiting": cmd_waiting,
     "endstate": cmd_endstate,
     "queue": cmd_queue,

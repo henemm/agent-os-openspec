@@ -210,6 +210,25 @@ blockiert solche Schreibzugriffe technisch, auch mit „override". Bewegliche Te
 $WF phase phase8_complete
 ```
 
+Phase 8 heißt nur **„Code fertig“**: Der Wechsel vermerkt `ship_status: open`, und Plan,
+Fußzeile und Seitenleiste zeigen ab jetzt den Schritt **Ausliefern** (Commit, Push, PR, CI,
+Merge) als offen — nicht ✅. Erst `ship-status done` (oder `skipped`) macht den Workflow
+fertig. `scripts/ship.py` meldet die Stände selbst (`running` beim Push, `done` nach dem
+Merge, `failed` bei roter CI oder Konflikt); wer die Schritte einzeln ausführt, meldet sie
+von Hand (`<N>` = Issue-Nummer, nach `complete` findet der Befehl den Workflow auch ohne
+Nummer, solange die Auslieferung offen ist):
+
+```bash
+$WF ship-status running <N> --note "PR <nr>: CI läuft"
+$WF ship-status done <N> --note "PR <nr> gemergt"
+$WF ship-status failed <N> --note "<Grund in Alltagssprache>"
+$WF ship-status skipped <N> --note "<warum nichts auszuliefern ist>"
+```
+
+`skipped` nur, wenn es wirklich nichts auszuliefern gibt (kein Remote, direkt auf dem
+Default-Branch committet bei `AUTO_SHIP=off`). Ein Turn, der mit `open` oder `running`
+endet, zeigt dem PO ⏳ (Auto-Modus) bzw. ❗ „Sichern freigeben“ — nie ein falsches ✅.
+
 ## Validation Report
 
 Erstelle eine Zusammenfassung:
@@ -444,12 +463,14 @@ Quelle wie Plan und Seitenleiste:
 $WF endstate <N>
 ```
 
-`ENDSTATE=done|waiting|you` nennt die Art, `FOOTER=` die fertige Zeile. Gib den Wert hinter
-`FOOTER=` **wörtlich** als Endzustand-Zeile aus — genau eine der drei Formen `✅ Erledigt: …`,
-`⏳ Läuft noch: …` oder `❗ Du: … — …`. Erfinde keine Aufgabe für den PO (keine „Abnahme“, kein
-„Deploy“, wenn `endstate` es nicht nennt) und keine zweite Abschlusszeile. Wartest du danach
-noch auf CI, einen Agenten oder einen Server: vorher `workflow.py waiting "<worauf>" <N>`, dann
-`endstate` erneut aufrufen.
+`ENDSTATE=done|waiting|you` nennt die Art, `FOOTER=` die fertige Zeile, `SHIP_STATUS=` den
+Stand der Auslieferung. Gib den Wert hinter `FOOTER=` **wörtlich** als Endzustand-Zeile aus —
+genau eine der drei Formen `✅ Erledigt: …`, `⏳ Läuft noch: …` oder `❗ Du: … — …`. Erfinde
+keine Aufgabe für den PO (keine „Abnahme“, kein „Deploy“, wenn `endstate` es nicht nennt) und
+keine zweite Abschlusszeile. Steht `SHIP_STATUS=open` oder `running`, obwohl Push, PR und
+Merge erledigt sind, fehlt dein `ship-status done` (Step 4) — erst melden, dann `endstate`
+erneut. Wartest du danach noch auf CI, einen Agenten oder einen Server: `ship-status running
+--note "<worauf>"` bzw. `workflow.py waiting "<worauf>" <N>`, dann `endstate` erneut aufrufen.
 
 Kette bei offenem Auftrag (#551, #555): Sie greift nur, wenn der Wert hinter `FOOTER=`
 „aus deinem Auftrag“ enthält; `M` ist die Nummer darin (dieselbe wie `NEXT=M` aus
@@ -479,7 +500,7 @@ Beende deine letzte Nachricht in diesem Befehl mit diesen Zeilen, in dieser Reih
 
 ❗ Du: `/<befehl> #<N>` — <ein Halbsatz, warum>
 ℹ️ Status: Workflow `<name>` · Phase `<x>` von 8
-⚙ /60-validate · agent-os-openspec 4.12.2
+⚙ /60-validate · agent-os-openspec 4.13.0
 
 Die erste Zeile sagt, wer am Zug ist — GENAU EINMAL, nur hier in der Fußzeile, nie zusätzlich als Vokabular mitten im Fließtext davor — und steht in genau einer von drei Formen (es gibt keine vierte):
 

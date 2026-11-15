@@ -486,10 +486,11 @@ def test_fetch_uses_rest_api_call(tmp_path):
     proj, log, env = _gh_case(tmp_path, "rest", GH_TITLE=long_title)
     res = _fetch(proj, env, "999")
     assert res.returncode == 0, res.stderr
-    expected = "Auto-/clear tippt Kurzbefehl ohne installierte Aliase…"
+    # #612: voller Titel (bis 24 Woerter) und ein Aufruf ohne --jq (Titel + Text als JSON)
+    expected = long_title
     assert _result(res) == repr(expected), res.stdout
     calls = _gh_calls(log)
-    assert calls == ["api repos/{owner}/{repo}/issues/999 --jq .title"], calls
+    assert calls == ["api repos/{owner}/{repo}/issues/999"], calls
     assert not any("issue view" in c for c in calls), calls
     assert json.loads(_cache(proj).read_text()) == {"999": expected}
 

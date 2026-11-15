@@ -49,6 +49,28 @@ python3 .claude/hooks/session_singleton_guard.py claim --issue <N>[,<M>...]
 Damit weiß jede andere Session, wer gerade an Issue #N arbeitet. Ohne Issue-Nummer
 (z.B. reiner Wartungs-Task) entfällt der Schritt.
 
+### 1c. Issue-Kurzfassung für den Plan prüfen
+
+Der Plan-Pane zeigt im Kopf den Issue-Titel und darunter „Problem: …“ / „Ziel: …“. Beides
+liest `workflow.py` selbst aus dem Issue-Text (Abschnitte wie *Problem*, *Beschreibung*,
+*Motivation* bzw. *Ziel*, *Expected*, *Lösung*; ohne Überschriften der erste Absatz):
+
+```bash
+python3 .claude/hooks/workflow.py issue-brief <N>
+```
+
+Ausgabe `TITLE=`, `PROBLEM=`, `ZIEL=`, `SOURCE=issue|manual|none`. Ist `PROBLEM=` oder `ZIEL=`
+leer, nichtssagend oder falsch (etwa weil das Issue nur Stichpunkte enthält), schreibe nach
+dem Lesen des Issues selbst je ein bis zwei Sätze in Alltagssprache — was heute stört und was
+danach gelten soll:
+
+```bash
+python3 .claude/hooks/workflow.py issue-brief <N> --problem "<was heute stört>" --ziel "<was danach gilt>"
+```
+
+Eine so gesetzte Fassung (`SOURCE=manual`) wird vom Issue nicht mehr überschrieben;
+`issue-brief <N> --auto` liest wieder aus dem Issue. Ohne Issue-Nummer entfällt der Schritt.
+
 ### 1a. Mehr-Issue-Auftrag sichern (#551)
 
 Erteilt der PO mehrere Issues in einem Auftrag („Setze 545, 547 und 548 um …“),
