@@ -56,6 +56,38 @@ def _note(text: str) -> None:
     print(text, file=sys.stderr)
 
 
+def _workflow_py() -> "str | None":
+    """`workflow.py` neben diesem Skript (4.13.0): Konsument `.claude/scripts/` ->
+    `.claude/hooks/`, Plugin-/Repo-Fassung `scripts/` -> `core/hooks/`."""
+    from pathlib import Path
+    here = Path(__file__).resolve().parent
+    for cand in (here.parent / "hooks" / "workflow.py",
+                 here.parent / "core" / "hooks" / "workflow.py"):
+        if cand.is_file():
+            return str(cand)
+    return None
+
+
+def ship_status(value: str, note: "str | None" = None) -> None:
+    """Auslieferungsstand im Workflow-State vermerken (4.13.0), fail-open.
+
+    `workflow.py ship-status <value> [--note ..]` findet den aktiven oder den
+    juengsten archivierten Workflow mit offener Auslieferung selbst. Plan,
+    Fusszeile und Seitenleiste zeigen danach ⏳/❗/✅ passend zum echten Stand.
+    Ohne `workflow.py` (z. B. Aufruf ausserhalb eines Projekts) passiert nichts.
+    """
+    wf = _workflow_py()
+    if not wf:
+        return
+    cmd = [sys.executable, wf, "ship-status", value]
+    if note:
+        cmd += ["--note", note]
+    try:
+        subprocess.run(cmd, capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL)
+    except Exception:
+        pass
+
+
 def current_branch() -> str:
     res = _git("rev-parse", "--abbrev-ref", "HEAD")
     return res.stdout.strip() if res.returncode == 0 else ""
@@ -251,43 +283,60 @@ def main(argv: "list[str] | None" = None) -> int:
         _note(f"dry-run: git push -u origin {branch}; gh pr create --base {base or '?'}; CI abwarten"
               + (f"; gh pr merge --{args.merge}" if args.merge else ""))
         return 0
+    ship_status("running", f"Branch {branch} wird gepusht")  # Plan-Schritt Ausliefern
     if not push(branch):
         print("PR=none")
+        ship_status("failed", "Push fehlgeschlagen")
         return 3
     if not shutil.which("gh"):
         print("PR=none")
         _note("gh fehlt: gepusht, PR und CI bleiben offen")
+        ship_status("running", "gepusht, PR und CI stehen noch aus")
         return 2
     if _gh("auth", "status").returncode != 0:
         print("PR=none")
         _note("gh nicht angemeldet: gepusht, PR und CI bleiben offen")
+        ship_status("running", "gepusht, PR und CI stehen noch aus")
         return 2
     pr = find_pr(branch) or create_pr(branch, base, args.title, args.body_file, args.draft)
     if not pr:
         print("PR=none")
+        ship_status("failed", "PR konnte nicht angelegt werden")
         return 1
     number = int(pr["number"])
     print(f"PR={pr.get('url', '')}")
     if args.no_wait:
         print("CI=skipped")
         print("MERGED=skipped")
+        ship_status("running", f"PR {number}: CI läuft")
         return 0
+    ship_status("running", f"PR {number}: CI läuft")
     state, failed, view = wait_ci(number, args.timeout, args.interval)
     print(f"CI={state}")
     if failed:
         print("FAILED_CHECKS=" + ",".join(failed))
     if state not in {"green", "none"}:
         print("MERGED=no")
+        if state == "red":
+            ship_status("failed", f"PR {number}: CI rot ({', '.join(failed) or 'Checks'})")
+        else:
+            ship_status("running", f"PR {number}: CI {state}")
         return 1
     if not args.merge:
         print("MERGED=skipped")
+        ship_status("running", f"PR {number} offen, CI grün, noch nicht gemergt")
         return 0
     if str(view.get("mergeable", "")).upper() == "CONFLICTING":
         _note("Merge-Konflikt mit dem Default-Branch: erst aufloesen")
         print("MERGED=no")
+        ship_status("failed", f"PR {number}: Merge-Konflikt mit dem Default-Branch")
         return 1
     merged = merge_pr(number, args.merge, bool(pr.get("isDraft") or view.get("isDraft")))
     print(f"MERGED={'yes' if merged else 'no'}")
+    if merged:
+        ship_status("done", f"PR {number} gemergt")
+    else:
+        ship_status("failed", f"PR {number}: Merge nicht möglich (Schutzregel oder Fehler)")
     return 0 if merged else 1
 
 
