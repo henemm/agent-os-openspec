@@ -964,7 +964,7 @@ def _store_issue_title(issue, title: str) -> None:
 ISSUE_TITLE_MAX_WORDS = 24  # voller Titel im Plan-Kopf (umbrochen), statt 6 Woerter
 BRIEF_MAX_CHARS = 260       # je Absatz Problem/Ziel, dann „…“
 BRIEF_PROBLEM_WORDS = (
-    "problem", "bug", "fehler", "beschreibung", "description", "summary",
+    "problem", "defekt", "fehler", "beschreibung", "description", "summary",
     "zusammenfassung", "kontext", "context", "motivation", "hintergrund", "background",
     "ist-zustand", "ist zustand", "aktuell", "symptom", "situation", "ausgangslage",
     "current behavior", "current behaviour", "beobachtung", "observed", "warum", "why",
@@ -3845,7 +3845,8 @@ def cmd_endstate(args: list[str]) -> None:
     state = end_state(data, **kw, **queue)
     print(f"ENDSTATE={state['kind']}")
     print(f"FOOTER={state['line']}")
-    print(f"SHIP_STATUS={data.get('ship_status') or 'none'}")  # #612
+    if data.get("ship_status"):  # #612: nur mit Marker, sonst Ausgabe wie bisher
+        print(f"SHIP_STATUS={data['ship_status']}")
     suggest = queue.get("suggest")
     if suggest and state != end_state(data, **kw, **plain):
         print(f"SUGGEST_ISSUE={suggest['n']}")
