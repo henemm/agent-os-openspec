@@ -466,7 +466,12 @@ ohne „aus deinem Auftrag“ (CI, Deploy, Agent) startet keine Kette.
 
 Vorschlag (#589): Ohne nächstes Issue aus dem Auftrag nennt die ✅-Zeile hinter `FOOTER=` oft
 schon die nächste Aufgabe („… mit /00-intake #M weitermachen (<Grund>).“); dann folgen
-`SUGGEST_ISSUE=M`, `SUGGEST_SOURCE=epic|milestone|related|priority` und `SUGGEST_REASON=`.
+`SUGGEST_ISSUE=M`, `SUGGEST_SOURCE=epic|milestone|spur|related|priority` und `SUGGEST_REASON=`.
+Im herdr-Workspace mit `#E` im Namen (#610) kommt der Vorschlag nur aus den offenen Kindern
+von Epic E (in Plan-Reihenfolge, ohne Issues anderer Sitzungen); ist keines frei, nennt die
+✅-Zeile keine Nummer und es folgen `SUGGEST_SOURCE=epic-leer`, `SUGGEST_EPIC=E` und
+`SUGGEST_REASON=`: dann prüfst du das Abschlusskriterium des Epics, schlägst aber nie ein
+Issue außerhalb vor.
 Das ist nur Auskunft für dich: gib die Zeile wörtlich aus und starte wegen eines bloßen
 Vorschlags nichts selbst — die Kette greift weiterhin nur bei „aus deinem Auftrag“ (bei einem
 autarken Auftrag hängt `endstate` Epic-/Meilenstein-Nachfolger selbst an und meldet dann ⏳).

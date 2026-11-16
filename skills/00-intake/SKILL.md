@@ -102,8 +102,12 @@ $WF queue add <N...> [--autark] [--note "<Wortlaut>"] [--spur <name>]
 oder die Aufgabe zu einer erkennbaren Reihe gehört (#591): nach „fertig“ schlägt `endstate`
 dann offene Issues mit dem GitHub-Label `spur:<name>` vor. Epic und Meilenstein haben Vorrang;
 die Spur wirkt als Stufe 3. Das Label muss an den Issues gesetzt sein.
-Die Datei `.claude/auftrag.json` liegt im Haupt-Repo; `workflow.py complete` hakt
-das Issue ab, `workflow.py queue` zeigt den Stand (`NEXT=`, `PROMPT=`). Ein
+Der Auftrag gehört dieser Sitzung (#613): Er liegt im Haupt-Repo unter
+`.claude/auftrag/<sitzung>.json` (herdr-Workspace, sonst Sitzungs-Id; ohne beides
+`.claude/auftrag.json`), andere Sitzungen sehen ihn nicht. `workflow.py complete` hakt
+das Issue ab, `workflow.py queue` zeigt den Stand (`NEXT=`, `PROMPT=`, `OWNER=`); meldet
+es `ALTAUFTRAG=`, liegt ein Auftrag ohne laufende Sitzung vor, den diese Sitzung nur
+übernimmt (`workflow.py queue claim`), wenn er nachweislich ihr gilt. Ein
 autarker Auftrag hält die Kette nicht für `/clear` an; menschliche Pflichtstopps
 (AMBIGUOUS, zweites BROKEN, Override, Deploy-Freigabe, Stop-Lock, Produktfragen)
 bleiben. Bei nur einem Issue entfällt der Schritt.

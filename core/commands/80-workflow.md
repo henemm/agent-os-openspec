@@ -54,9 +54,13 @@ python3 .claude/hooks/workflow.py queue add <N...> [--autark] [--note "<Wortlaut
 python3 .claude/hooks/workflow.py queue            # bzw. queue list
 python3 .claude/hooks/workflow.py queue done <N>
 python3 .claude/hooks/workflow.py queue clear
+python3 .claude/hooks/workflow.py queue claim      # verwaisten Auftrag übernehmen (#613)
 ```
-Sichert einen Mehr-Issue-Auftrag in `.claude/auftrag.json` im Haupt-Repo (überlebt `/clear`).
-Ausgabe `QUEUE=`, `AUTARK=`, `NEXT=` und bei offenem Auftrag `PROMPT=/00-intake #<NEXT>`;
+Sichert einen Mehr-Issue-Auftrag der laufenden Sitzung im Haupt-Repo (überlebt `/clear`):
+`.claude/auftrag/<sitzung>.json` (herdr-Workspace, sonst Sitzungs-Id), ohne beides
+`.claude/auftrag.json`; andere Sitzungen sehen ihn nicht (#613).
+Ausgabe `QUEUE=`, `AUTARK=`, `NEXT=` und bei offenem Auftrag `PROMPT=/00-intake #<NEXT>`,
+mit Sitzungskennung `OWNER=` und ggf. `ALTAUFTRAG=` (Auftrag ohne laufende Sitzung);
 `complete` hakt das Issue ab, `endstate` nennt danach das nächste Issue. Kill-Switch
 `auftrag.enabled: false` → `QUEUE=disabled`.
 
