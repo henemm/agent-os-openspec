@@ -38,7 +38,9 @@ from hook_utils import UnsafeStateError, atomic_write_json, read_state_json
 from hook_utils import issue_number_from_name, workflow_issue_number
 from hook_utils import (auftrag_settings, auftrag_path, read_auftrag, write_auftrag,
                         auftrag_open_issues, auftrag_autark_open, auftrag_mark_done,
-                        auftrag_note_text, auftrag_set_spur, normalize_spur)
+                        auftrag_note_text, auftrag_set_spur, normalize_spur,
+                        auftrag_owner_key, auftrag_clear, orphan_auftrag,
+                        auftrag_claim_orphans)
 setup_path()
 
 import hashlib as _hashlib
@@ -3848,10 +3850,34 @@ def cmd_endstate(args: list[str]) -> None:
     if data.get("ship_status"):  # #612: nur mit Marker, sonst Ausgabe wie bisher
         print(f"SHIP_STATUS={data['ship_status']}")
     suggest = queue.get("suggest")
-    if suggest and state != end_state(data, **kw, **plain):
+    if suggest and suggest.get("source") == "epic-leer" and state["kind"] == "done":
+        # #610: Sitzungs-Epic ohne freies Kind — keine Nummer, kein Ersatzvorschlag
+        print("SUGGEST_SOURCE=epic-leer")
+        print(f"SUGGEST_EPIC={suggest.get('epic')}")
+        print(f"SUGGEST_REASON={suggest['reason']}")
+    elif suggest and state != end_state(data, **kw, **plain):
         print(f"SUGGEST_ISSUE={suggest['n']}")
         print(f"SUGGEST_SOURCE={suggest['source']}")
         print(f"SUGGEST_REASON={suggest['reason']}")
+
+
+def _session_scope() -> "dict | None":
+    """Sitzungs-Epic und belegte Issues aus herdr (#610); None ausserhalb. Wirft nie."""
+    try:
+        import herdr_bridge
+        return herdr_bridge.session_scope()
+    except Exception:
+        return None
+
+
+def _in_herdr_session() -> bool:
+    """Aktive herdr-Sitzung mit Workspace (#610); jede Ausnahme -> False."""
+    try:
+        import herdr_bridge
+        return bool(os.environ.get("HERDR_WORKSPACE_ID", "").strip()) \
+            and herdr_bridge._pane() is not None
+    except Exception:
+        return False
 
 
 def _refresh_suggestion(data: dict, queue: dict) -> bool:
@@ -3870,7 +3896,12 @@ def _refresh_suggestion(data: dict, queue: dict) -> bool:
         root = find_project_root()
         raw = next_suggestion.read_cache(root, done, ttl_s=cfg["cache_ttl_s"])
         if raw is None:
-            raw = next_suggestion.fetch(root, done, timeout_s=cfg["timeout_s"])
+            scope = _session_scope()
+            if scope is None and _in_herdr_session():
+                # Adversary F002: in herdr ohne lesbaren Workspace ist das Sitzungs-Epic
+                # unbekannt — lieber kein Vorschlag als einer ausserhalb des Epics.
+                return False
+            raw = next_suggestion.fetch(root, done, timeout_s=cfg["timeout_s"], scope=scope)
             if raw is None:
                 return False
             next_suggestion.write_cache(root, done, raw)
@@ -4492,7 +4523,7 @@ def cmd_context(args: list[str]) -> None:
 
 
 QUEUE_USAGE = ('Usage: workflow.py queue [list | add <N...> [--autark] [--note "<text>"] '
-               '[--spur <name>] | done <N> | clear]')
+               '[--spur <name>] | done <N> | clear | claim]')
 SPUR_USAGE = ("Usage: workflow.py spur [<name> | --clear]  "
               "(Name aus a-z, 0-9, '-'; GitHub-Label spur:<name>)")
 QUEUE_AUTARK_SUFFIX = (" (autark: Auftrag aus .claude/auftrag.json weiter abarbeiten, "
@@ -4522,6 +4553,16 @@ def _print_queue(auftrag) -> None:
         suffix = QUEUE_AUTARK_SUFFIX if autark else ""
         print(f"PROMPT=/00-intake #{open_issues[0]}{suffix}")
     print(f"SPUR={(auftrag or {}).get('spur') or 'none'}")
+    # #613: nur mit Sitzungskennung (ohne bleibt die Ausgabe wie bisher): wem der
+    # Auftrag gehoert; verwaiste Auftraege nur als Hinweis, nie als eigener
+    key = auftrag_owner_key()
+    if key:
+        print(f"OWNER={key}")
+        orphans = auftrag_open_issues(orphan_auftrag())
+        if orphans:
+            print(f"ALTAUFTRAG={','.join(str(n) for n in orphans)}")
+            print("HINWEIS=Auftrag ohne laufende Sitzung (ältere Fassung oder beendete "
+                  "Sitzung); gehört er dieser Sitzung, übernimmt ihn `workflow.py queue claim`.")
 
 
 def _parse_queue_add(args: list[str]) -> "tuple[list[int], bool, str | None, str | None]":
@@ -4569,12 +4610,15 @@ def _queue_add(root: Path, args: list[str]) -> None:
 
 
 def cmd_queue(args: list[str]) -> None:
-    """`queue [list | add <N..> [--autark] [--note T] [--spur S] | done <N> | clear]` (#551).
+    """`queue [list | add <N..> [--autark] [--note T] [--spur S] | done <N> | clear | claim]`.
 
-    Auftragsliste `<Haupt-Repo>/.claude/auftrag.json`, wirkt ohne aktiven
-    Workflow. Ausgabe `QUEUE=`, `AUTARK=`, `NEXT=`, bei offenem Auftrag
-    `PROMPT=/00-intake #<NEXT>` und `SPUR=<name>|none` (#591). Kill-Switch `auftrag.enabled: false`: genau
-    `QUEUE=disabled`, Exit 0, keine Schreibung.
+    Auftragsliste (#551) der laufenden Sitzung (#613): `<Haupt-Repo>/.claude/auftrag/
+    <key>.json`, ohne Sitzungskennung `<Haupt-Repo>/.claude/auftrag.json`; wirkt ohne
+    aktiven Workflow. Ausgabe `QUEUE=`, `AUTARK=`, `NEXT=`, bei offenem Auftrag
+    `PROMPT=/00-intake #<NEXT>`, `SPUR=<name>|none` (#591); mit Sitzungskennung
+    zusaetzlich `OWNER=<key>` und bei verwaisten Auftraegen `ALTAUFTRAG=`/`HINWEIS=`;
+    `claim` uebernimmt sie.
+    Kill-Switch `auftrag.enabled: false`: genau `QUEUE=disabled`, Exit 0, keine Schreibung.
     """
     if not auftrag_settings()["enabled"]:
         print("QUEUE=disabled")
@@ -4592,10 +4636,11 @@ def cmd_queue(args: list[str]) -> None:
                   f"({auftrag_path(root)})", file=sys.stderr)
             sys.exit(1)
     elif sub == "clear":
-        try:
-            auftrag_path(root).unlink()
-        except FileNotFoundError:
-            pass
+        auftrag_clear(root)
+    elif sub == "claim" and not rest:
+        if not auftrag_claim_orphans(root):
+            print("queue claim: kein Auftrag ohne laufende Sitzung zu übernehmen",
+                  file=sys.stderr)
     elif sub != "list" or rest:
         _queue_usage_exit()
     _print_queue(read_auftrag(root))

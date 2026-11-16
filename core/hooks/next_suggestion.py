@@ -9,6 +9,9 @@ Utility fuer `workflow.py endstate`, Plan und Seitenleiste: Meldet ein Workflow
   Netz-, Datei- oder Config-Zugriff. Rangfolge Epic-Geschwister, gleicher
   Meilenstein, gleiche Spur (Label `spur:<name>`, #591), verwandte Aufgabe,
   wichtigste offene Aufgabe; Ergebnis `{"n", "source", "reason", "title"}` oder None.
+  Sitzungs-Epic (#610, `raw["session"]` aus dem herdr-Workspace-Namen): dann
+  allein dessen offene Kinder in Plan-Reihenfolge, sonst `n=None`/`epic-leer`;
+  von anderen herdr-Sitzungen bearbeitete Issues (Token `wf`) fallen immer weg.
 - `fetch(root, done_number, timeout_s)`: Rohdaten ausschliesslich per `gh api`
   (REST, nie GraphQL), fail-open: jeder Fehler ergibt None, nie eine Ausnahme.
 - `write_cache`/`read_cache`: Rohdaten in `<root>/.claude/next_suggestion.json`
@@ -22,6 +25,7 @@ nur den Cache.
 """
 
 import json
+import os
 import re
 import time
 from pathlib import Path
@@ -208,12 +212,45 @@ def short_title(title, limit: int = TITLE_MAX) -> str:
     return cut.rstrip(" .,;:-") + "…"
 
 
+def _part_of_re(epic: int):
+    return re.compile(rf"(?<!\w)(?:Teil von|Part of)\s+#{epic}(?!\d)", re.IGNORECASE)
+
+
+def _session_choice(session: dict, issues: list, done_n: int, claimed_set: set,
+                    prs: set) -> dict:
+    """Vorschlag aus dem Sitzungs-Epic (#610): erstes freies Kind in Plan-Reihenfolge.
+
+    Kandidaten sind die Sub-Issues in der Reihenfolge der Liste, danach offene
+    Issues mit „Teil von #E“ nach Nummer. Kein Kandidat: `epic-leer`, nie ein
+    Ersatz von ausserhalb.
+    """
+    epic = session["epic"]
+    subs = session.get("sub_issues") if isinstance(session.get("sub_issues"), list) else []
+    part_of = _part_of_re(epic)
+    texted = sorted((i for i in issues if isinstance(i, dict) and isinstance(i.get("body"), str)
+                     and part_of.search(i["body"]) and _num(i.get("number"))),
+                    key=lambda i: _num(i["number"]))
+    for issue in subs + texted:
+        if _num(issue.get("number") if isinstance(issue, dict) else None) == epic:
+            continue
+        if not _excluded(issue, done_n, claimed_set, prs):
+            n = _num(issue["number"])
+            title = short_title(issue.get("title")) or f"Aufgabe #{n}"
+            return {"n": n, "source": "epic", "title": title,
+                    "reason": f"{SOURCE_TEXT['epic']}: {title}"}
+    return {"n": None, "source": "epic-leer", "epic": epic, "title": "",
+            "reason": (f"Sammelaufgabe #{epic} hat keine freie offene Aufgabe mehr; "
+                       "Abschlusskriterium des Epics prüfen")}
+
+
 def choose(raw, done_number, claimed, spur=None, now=None) -> "dict | None":
     """Naechste Aufgabe aus den Rohdaten oder None. Rein, wirft nie.
 
     `spur` (#591): Stufe 3 nach dem Meilenstein, offene Issues mit Label
     `spur:<spur>` (case-insensitiv, getrimmt); None oder "" = keine Spur.
-    `now` ist ohne Wirkung.
+    `raw["session"]` (#610, `{"epic", "busy", "sub_issues"}`): `busy` zaehlt als
+    belegt; mit Epic gilt allein `_session_choice` (Ergebnis ggf. `n=None`,
+    Quelle `epic-leer`). `now` ist ohne Wirkung.
     """
     try:
         done_n = _num(done_number)
@@ -224,6 +261,11 @@ def choose(raw, done_number, claimed, spur=None, now=None) -> "dict | None":
         milestones = raw.get("milestones")
         issues = raw.get("issues") if isinstance(raw.get("issues"), list) else []
         done = raw.get("done") if isinstance(raw.get("done"), dict) else {}
+        session = raw.get("session") if isinstance(raw.get("session"), dict) else {}
+        claimed_set |= _claimed_set(session.get("busy"))
+        if _num(session.get("epic")) is not None:
+            return _session_choice({**session, "epic": _num(session["epic"])}, issues,
+                                   done_n, claimed_set, prs)
 
         stages = []
         if isinstance(raw.get("parent"), dict):
@@ -280,12 +322,52 @@ def _gh_json(gh: str, path: str, root, deadline: float):
     return json.loads(res.stdout)
 
 
-def fetch(root, done_number, timeout_s=DEFAULT_TIMEOUT_S) -> "dict | None":
+MAX_NESTED_EPICS = 10
+
+
+def _open_children(issue) -> bool:
+    summary = issue.get("sub_issues_summary") if isinstance(issue, dict) else None
+    if not isinstance(summary, dict):
+        return False
+    done = summary.get("completed")
+    done = done if isinstance(done, int) and not isinstance(done, bool) else 0
+    return (_num(summary.get("total")) or 0) - done > 0
+
+
+def _fetch_session(gh: str, root, deadline: float, scope) -> "dict | None":
+    """`raw["session"]` (#610) aus `herdr_bridge.session_scope()` oder None.
+
+    Mit Epic: dessen Sub-Issues in Listenreihenfolge; ein Kind mit offenen
+    Unter-Issues wird eine Ebene tief aufgeloest (Unter-Issues direkt dahinter).
+    """
+    if not isinstance(scope, dict):
+        return None
+    epic = _num(scope.get("epic"))
+    busy = sorted(_claimed_set(scope.get("busy")))
+    subs: list = []
+    if epic is not None:
+        try:
+            top = _gh_json(gh, f"issues/{epic}/sub_issues?per_page=100", root, deadline)
+        except _NotFound:
+            top = []
+        nested = 0
+        for child in top if isinstance(top, list) else []:
+            subs.append(child)
+            n = _num(child.get("number")) if isinstance(child, dict) else None
+            if n is not None and _open_children(child) and nested < MAX_NESTED_EPICS:
+                nested += 1
+                inner = _gh_json(gh, f"issues/{n}/sub_issues?per_page=100", root, deadline)
+                subs.extend(inner if isinstance(inner, list) else [])
+    return {"epic": epic, "busy": busy, "sub_issues": subs}
+
+
+def fetch(root, done_number, timeout_s=DEFAULT_TIMEOUT_S, scope=None) -> "dict | None":
     """Rohdaten fuer `choose` per `gh api` (REST) oder None. Wirft nie.
 
     `timeout_s` ist das Zeitbudget fuer alle Aufrufe zusammen. `issues/N/parent`
     mit HTTP 404 heisst "kein Eltern-Issue"; der PR-Abruf ist optional ([] bei
-    Fehler). Die Issue-Liste ist auf eine 100er-Seite gedeckelt.
+    Fehler). Die Issue-Liste ist auf eine 100er-Seite gedeckelt. `scope` (#610)
+    ist das Ergebnis von `herdr_bridge.session_scope()` und ergibt `raw["session"]`.
     """
     try:
         import shutil
@@ -309,12 +391,16 @@ def fetch(root, done_number, timeout_s=DEFAULT_TIMEOUT_S) -> "dict | None":
             pulls = _gh_json(gh, "pulls?state=open&per_page=100", root, deadline)
         except Exception:
             pulls = []
+        session = _fetch_session(gh, root, deadline, scope)
         if not isinstance(done, dict) or not isinstance(issues, list) \
                 or not isinstance(milestones, list) or not isinstance(subs, list):
             return None
-        return {"done": done, "parent": parent if isinstance(parent, dict) else None,
-                "sub_issues": subs, "issues": issues, "milestones": milestones,
-                "pulls": pulls if isinstance(pulls, list) else []}
+        raw = {"done": done, "parent": parent if isinstance(parent, dict) else None,
+               "sub_issues": subs, "issues": issues, "milestones": milestones,
+               "pulls": pulls if isinstance(pulls, list) else []}
+        if session is not None:
+            raw["session"] = session
+        return raw
     except Exception:
         return None
 
@@ -325,12 +411,22 @@ def cache_path(root) -> Path:
     return Path(root) / ".claude" / CACHE_FILENAME
 
 
+def _workspace() -> str:
+    """herdr-Workspace der laufenden Sitzung (#610), "" ausserhalb von herdr."""
+    return (os.environ.get("HERDR_WORKSPACE_ID") or "").strip()
+
+
 def write_cache(root, done_number, raw, now=None) -> bool:
-    """Rohdaten atomar nach `<root>/.claude/next_suggestion.json`. Wirft nie."""
+    """Rohdaten atomar nach `<root>/.claude/next_suggestion.json`. Wirft nie.
+
+    Der Cache traegt den herdr-Workspace (#610): Sitzungs-Epic und belegte Issues
+    gelten nur fuer diese Sitzung.
+    """
     try:
         from hook_utils import atomic_write_text
         stamp = float(now) if now is not None else time.time()
-        payload = {"done": _num(done_number), "ts": stamp, "raw": raw}
+        payload = {"done": _num(done_number), "ts": stamp, "workspace": _workspace(),
+                   "raw": raw}
         atomic_write_text(cache_path(root), json.dumps(payload, ensure_ascii=False),
                           root=Path(root))
         return True
@@ -339,11 +435,14 @@ def write_cache(root, done_number, raw, now=None) -> bool:
 
 
 def read_cache(root, done_number, ttl_s=DEFAULT_CACHE_TTL_S, now=None) -> "dict | None":
-    """Rohdaten aus dem Cache, wenn gueltig (gleiche Nummer, innerhalb TTL). Wirft nie."""
+    """Rohdaten aus dem Cache, wenn gueltig (gleiche Nummer, gleicher Workspace,
+    innerhalb TTL). Wirft nie."""
     try:
         from hook_utils import read_state_text
         data = json.loads(read_state_text(cache_path(root), Path(root)))
         if not isinstance(data, dict) or data.get("done") != _num(done_number):
+            return None
+        if str(data.get("workspace") or "") != _workspace():
             return None
         stamp = data.get("ts")
         if isinstance(stamp, bool) or not isinstance(stamp, (int, float)):

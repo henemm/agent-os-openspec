@@ -208,6 +208,58 @@ def _spur_token(workflow) -> str:
         return ""
 
 
+_HASH_NUM_RE = re.compile(r"#(\d+)(?!\d)")
+SCOPE_TIMEOUT_S = 3.0
+
+
+def parse_session_scope(payload, workspace: str) -> dict:
+    """Sitzungs-Epic und belegte Issues aus `herdr workspace list` (#610). Pure, wirft nie.
+
+    `epic`: erste `#N` im Label des eigenen Workspaces (`workspace_id == workspace`),
+    sonst None. `busy`: alle `#N` im Token `wf` der ANDEREN Workspaces (dort
+    bearbeitet gerade eine andere Sitzung), aufsteigend.
+    """
+    out = {"workspace": workspace, "epic": None, "busy": []}
+    try:
+        spaces = payload["result"]["workspaces"]
+        if not isinstance(spaces, list):
+            return out
+        busy = set()
+        for space in spaces:
+            if not isinstance(space, dict):
+                continue
+            if space.get("workspace_id") == workspace:
+                match = _HASH_NUM_RE.search(str(space.get("label") or ""))
+                out["epic"] = int(match.group(1)) if match else None
+                continue
+            tokens = space.get("tokens")
+            wf = tokens.get("wf") if isinstance(tokens, dict) else None
+            if isinstance(wf, str):
+                busy.update(int(n) for n in _HASH_NUM_RE.findall(wf))
+        out["busy"] = sorted(n for n in busy if n > 0)
+    except Exception:
+        pass
+    return out
+
+
+def session_scope(timeout: float = SCOPE_TIMEOUT_S) -> "dict | None":
+    """`parse_session_scope` fuer den eigenen Workspace per `herdr workspace list` (#610).
+
+    Nur in einer aktiven herdr-Sitzung (`_pane`, `HERDR_WORKSPACE_ID`); sonst und bei
+    jedem Fehler None. Wirft nie, schreibt nichts.
+    """
+    try:
+        workspace = os.environ.get("HERDR_WORKSPACE_ID", "").strip()
+        if not workspace or _pane() is None:
+            return None
+        res = _pp_quick(_binary(), ["workspace", "list"], timeout)
+        if res is None or res[0] != 0:
+            return None
+        return parse_session_scope(json.loads(res[1]), workspace)
+    except Exception:
+        return None
+
+
 def build_report(data) -> "dict | None":
     """Titel + Tokens fuer den Workflow-Stand; None = Clear statt Report."""
     if not isinstance(data, dict):

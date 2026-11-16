@@ -2821,13 +2821,45 @@ def context_cut_note(tokens: int, threshold: int, autark: bool = False) -> str:
     ) + _CONTEXT_SAVING_HINT
 
 
-# --- Auftragsliste auf der Platte (Issue #551) ------------------------------
-# Ein Mehr-Issue-Auftrag des PO als Datei `<Haupt-Repo>/.claude/auftrag.json`
-# (gitignoriert): ueberlebt `/clear` und Worktree-Wechsel. Genau ein Auftrag je
-# Projekt, kein Lock. Lesen nur aus echter eigener Datei (#416/#422), Schreiben
-# atomar. Alles fail-open; Kill-Switch `auftrag.enabled: false`.
+# --- Auftragsliste auf der Platte (Issue #551, je Sitzung #613) -------------
+# Ein Mehr-Issue-Auftrag des PO als Datei im Haupt-Repo: ueberlebt `/clear` und
+# Worktree-Wechsel. Seit #613 gehoert er der Sitzung, die ihn anlegt
+# (`auftrag_owner_key`): `.claude/auftrag/<key>.json`; nur ohne jede Kennung gilt
+# wie bisher `.claude/auftrag.json` je Projekt. Eine besitzerlose
+# `.claude/auftrag.json` (Altbestand) sehen Sitzungen mit Kennung nur ueber
+# `legacy_auftrag` und uebernehmen sie ausdruecklich (`queue claim`). Lesen nur
+# aus echter eigener Datei (#416/#422), Schreiben atomar. Alles fail-open;
+# Kill-Switch `auftrag.enabled: false`.
 
 AUFTRAG_FILENAME = "auftrag.json"
+AUFTRAG_DIRNAME = "auftrag"
+_OWNER_KEY_RE = re.compile(r"[^A-Za-z0-9_.-]")
+
+
+def auftrag_owner_key() -> str:
+    """Sitzungskennung fuer den Auftrag (#613); "" ohne Kennung.
+
+    `herdr-<HERDR_WORKSPACE_ID>` hat Vorrang (ueberdauert `/clear` und Neustarts der
+    Sitzung), sonst `session-<CLAUDE_CODE_SESSION_ID>`. Fremde Zeichen werden `_`.
+    """
+    for prefix, var in (("herdr", "HERDR_WORKSPACE_ID"), ("session", "CLAUDE_CODE_SESSION_ID")):
+        value = (os.environ.get(var) or "").strip()
+        if value:
+            return f"{prefix}-{_OWNER_KEY_RE.sub('_', value)}"[:80]
+    return ""
+
+
+def _boot_id() -> str:
+    try:
+        return Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+    except OSError:
+        return ""
+
+
+def _auftrag_owner_record(key: str) -> dict:
+    """Besitzer-Vermerk in der Datei (#613): Schluessel, Claude-Prozess, Boot-Id."""
+    return {"key": key, "pid": (os.environ.get("CLAUDE_PID") or "").strip(),
+            "boot": _boot_id()}
 
 
 def auftrag_settings(config: "dict | None" = None) -> dict:
@@ -2845,10 +2877,172 @@ def auftrag_settings(config: "dict | None" = None) -> dict:
     return {"enabled": enabled}
 
 
-def auftrag_path(root=None) -> Path:
-    """`<root>/.claude/auftrag.json`; ohne `root` das Haupt-Repo (`find_project_root`)."""
+def auftrag_path(root=None, owner: "str | None" = None) -> Path:
+    """Datei des Auftrags; ohne `root` das Haupt-Repo (`find_project_root`).
+
+    `owner=None` heisst Kennung der laufenden Sitzung (#613): mit Kennung
+    `<root>/.claude/auftrag/<key>.json`, ohne (bzw. `owner=""`) die projektweite
+    `<root>/.claude/auftrag.json`.
+    """
     base = Path(root) if root is not None else find_project_root()
-    return base / ".claude" / AUFTRAG_FILENAME
+    key = auftrag_owner_key() if owner is None else owner
+    if not key:
+        return base / ".claude" / AUFTRAG_FILENAME
+    return base / ".claude" / AUFTRAG_DIRNAME / f"{key}.json"
+
+
+def _session_files(base: Path, key: str) -> "list[tuple[Path, dict]]":
+    """Andere `session-*`-Auftraege als (Pfad, Besitzer-Vermerk); kaputte fallen weg."""
+    folder = base / ".claude" / AUFTRAG_DIRNAME
+    out = []
+    if not folder.is_dir():
+        return out
+    for path in sorted(folder.glob("session-*.json")):
+        if path.name == f"{key}.json":
+            continue
+        try:
+            owner = json.loads(read_state_text(path, base)).get("owner")
+        except Exception:
+            continue
+        out.append((path, owner if isinstance(owner, dict) else {}))
+    return out
+
+
+def _owner_process_alive(owner: dict) -> bool:
+    """Lebt der Claude-Prozess des Besitzers noch (gleicher Boot, PID lebt)?
+
+    Unbekannte PID (ohne `CLAUDE_PID` geschrieben) zaehlt als lebend: ohne Beleg,
+    dass die Sitzung endete, wird ihr Auftrag nie verwaist (Adversary F001).
+    """
+    theirs, boot = str(owner.get("boot") or ""), _boot_id()
+    if theirs and boot and theirs != boot:
+        return False
+    try:
+        pid = int(str(owner.get("pid") or ""))
+    except ValueError:
+        return True
+    if pid <= 0:
+        return True
+    try:
+        os.kill(pid, 0)
+        return True
+    except PermissionError:
+        return True
+    except Exception:
+        return False
+
+
+def _auftrag_predecessor(base: Path, key: str) -> "Path | None":
+    """Auftrag derselben Sitzung vor `/clear` (#613) oder None.
+
+    `/clear` vergibt eine neue `CLAUDE_CODE_SESSION_ID`, der Claude-Prozess
+    (`CLAUDE_PID`) bleibt: eine andere `session-*`-Datei mit gleichem `owner.pid`
+    (und passender Boot-Id, falls beide eine kennen) gehoert dieser Sitzung.
+    herdr-Kennungen brauchen das nicht.
+    """
+    pid = (os.environ.get("CLAUDE_PID") or "").strip()
+    if not key.startswith("session-") or not pid:
+        return None
+    boot = _boot_id()
+    for path, owner in _session_files(base, key):
+        theirs = str(owner.get("boot") or "")
+        if str(owner.get("pid") or "") == pid and (not boot or not theirs or theirs == boot):
+            return path
+    return None
+
+
+def _auftrag_orphans(base: Path, key: str) -> "list[Path]":
+    """Verwaiste Auftraege (#613): besitzerloser Altbestand `.claude/auftrag.json`
+    und `session-*`-Dateien, deren Claude-Prozess nicht mehr laeuft; neueste zuerst."""
+    found = [path for path, owner in _session_files(base, key)
+             if not _owner_process_alive(owner)]
+    legacy = auftrag_path(base, "")
+    if os.path.lexists(legacy):
+        found.append(legacy)
+
+    def mtime(path: Path) -> float:
+        try:
+            return path.lstat().st_mtime
+        except OSError:
+            return 0.0
+    return sorted(found, key=mtime, reverse=True)
+
+
+def _other_live_session(base: Path) -> bool:
+    """Steht im Session-Register eine andere lebende Claude-Sitzung? Im Zweifel True.
+
+    Andere Sitzung = weder eigene `CLAUDE_CODE_SESSION_ID` noch eigener `CLAUDE_PID`
+    (der Eintrag vor `/clear` gehoert zum selben Prozess).
+    """
+    try:
+        import session_singleton_guard as guard
+        own_sid = (os.environ.get("CLAUDE_CODE_SESSION_ID") or "").strip()
+        own_pid = (os.environ.get("CLAUDE_PID") or "").strip()
+        locks = base / ".claude" / "session-locks"
+        if not locks.is_dir():
+            return False
+        now = time.time()
+        for path in locks.glob("*.json"):
+            try:
+                entry = json.loads(read_state_text(path, base))
+            except Exception:
+                continue
+            if not isinstance(entry, dict) or not entry.get("session_id"):
+                continue
+            if entry["session_id"] == own_sid or (own_pid and str(entry.get("pid")) == own_pid):
+                continue
+            if guard._is_alive(entry, now):
+                return True
+        return False
+    except Exception:
+        return True
+
+
+def _auftrag_adopt_source(base: Path, key: str) -> "Path | None":
+    """Fremde Datei, die die Sitzung ohne eigene Datei als ihren Auftrag liest (#613).
+
+    1. Vorgaenger vor `/clear` (gleicher Claude-Prozess).
+    2. Laeuft sonst keine Sitzung im Projekt: der neueste verwaiste Auftrag
+       (Altbestand oder Sitzung, deren Prozess endete) — die einzige Sitzung
+       arbeitet wie bisher weiter. Mit anderen Sitzungen nie (nur `queue claim`).
+    """
+    if not key:
+        return None
+    predecessor = _auftrag_predecessor(base, key)
+    if predecessor is not None:
+        return predecessor
+    orphans = _auftrag_orphans(base, key)
+    if orphans and not _other_live_session(base):
+        return orphans[0]
+    return None
+
+
+def _auftrag_source(base: Path) -> Path:
+    """Datei, aus der die laufende Sitzung ihren Auftrag liest (#613)."""
+    key = auftrag_owner_key()
+    own = auftrag_path(base, key)
+    if key and not os.path.lexists(own):
+        return _auftrag_adopt_source(base, key) or own
+    return own
+
+
+def auftrag_clear(root=None) -> None:
+    """Eigenen Auftrag loeschen (samt uebernommener Quelle); fremde bleiben. Wirft nie."""
+    try:
+        base = Path(root) if root is not None else find_project_root()
+        key = auftrag_owner_key()
+        own = auftrag_path(base, key)
+        paths = [own]
+        if key and not os.path.lexists(own):
+            paths.append(_auftrag_adopt_source(base, key))
+        for path in paths:
+            if path is not None:
+                try:
+                    path.unlink()
+                except FileNotFoundError:
+                    pass
+    except Exception:
+        pass
 
 
 SPUR_MAX_LEN = 40
@@ -2896,20 +3090,105 @@ def read_auftrag(root=None, config: "dict | None" = None) -> "dict | None":
         if not auftrag_settings(config)["enabled"]:
             return None
         base = Path(root) if root is not None else find_project_root()
-        return _normalize_auftrag(json.loads(read_state_text(auftrag_path(base), base)))
+        return _normalize_auftrag(json.loads(read_state_text(_auftrag_source(base), base)))
     except Exception:
         return None
 
 
 def write_auftrag(root, auftrag: dict) -> None:
-    """Auftrag atomar schreiben (`atomic_write_text` mit Wurzel, #422); setzt Zeitstempel."""
+    """Auftrag atomar schreiben (`atomic_write_text` mit Wurzel, #422); setzt Zeitstempel.
+
+    Mit Sitzungskennung (#613) in die eigene Datei samt Besitzer-Vermerk; der
+    Ordner bekommt eine `.gitignore` (`*`). Las die Sitzung bisher eine fremde
+    Datei (Vorgaenger vor `/clear`, verwaister Auftrag), wird diese entfernt.
+    """
     base = Path(root) if root is not None else find_project_root()
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    key = auftrag_owner_key()
     data = dict(auftrag)
     data["created"] = data.get("created") or now
     data["updated"] = now
-    atomic_write_text(auftrag_path(base), json.dumps(data, indent=2, ensure_ascii=False),
+    adopted = None
+    if key:
+        data["owner"] = _auftrag_owner_record(key)
+        ignore = base / ".claude" / AUFTRAG_DIRNAME / ".gitignore"
+        if not os.path.lexists(ignore):
+            atomic_write_text(ignore, "*\n", root=base)
+        if not os.path.lexists(auftrag_path(base, key)):
+            adopted = _auftrag_adopt_source(base, key)
+    else:
+        data.pop("owner", None)
+    atomic_write_text(auftrag_path(base, key), json.dumps(data, indent=2, ensure_ascii=False),
                       root=base)
+    if adopted is not None:
+        try:
+            adopted.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _orphan_sources(base: Path, key: str) -> "list[Path]":
+    """Verwaiste Auftraege, die die Sitzung NICHT schon als eigenen liest."""
+    if not key:
+        return []
+    reading = _auftrag_source(base)
+    return [p for p in _auftrag_orphans(base, key) if p != reading]
+
+
+def orphan_auftrag(root=None) -> "dict | None":
+    """Verwaiste Auftraege (#613) fuer eine Sitzung MIT Kennung, zu einem zusammengefasst.
+
+    Gemeint sind besitzerloser Altbestand `.claude/auftrag.json` und Auftraege von
+    Sitzungen, deren Claude-Prozess endete — sofern die Sitzung sie nicht schon
+    selbst liest. None ohne Kennung, ohne Funde oder mit Kill-Switch. Wirft nie.
+    """
+    try:
+        if not auftrag_settings()["enabled"]:
+            return None
+        base = Path(root) if root is not None else find_project_root()
+        merged = None
+        for path in _orphan_sources(base, auftrag_owner_key()):
+            try:
+                found = _normalize_auftrag(json.loads(read_state_text(path, base)))
+            except Exception:
+                continue
+            if found is not None:
+                merged = _merge_auftrag(merged, found)
+        return merged
+    except Exception:
+        return None
+
+
+def _merge_auftrag(own, other: dict) -> dict:
+    """`other` hinten an `own` anhaengen; `autark`/`note`/`spur` nur, wo `own` leer ist."""
+    own = own or {"issues": [], "autark": False, "note": "", "spur": "",
+                  "created": "", "updated": ""}
+    known = {e["n"] for e in own["issues"]}
+    own["issues"] += [e for e in other["issues"] if e["n"] not in known]
+    own["autark"] = own["autark"] or other["autark"]
+    for field in ("note", "spur"):
+        own[field] = own[field] or other[field]
+    return own
+
+
+def auftrag_claim_orphans(root=None) -> bool:
+    """Verwaiste Auftraege in den eigenen uebernehmen und loeschen (#613, `queue claim`).
+
+    False ohne Kennung oder ohne verwaisten Auftrag.
+    """
+    base = Path(root) if root is not None else find_project_root()
+    key = auftrag_owner_key()
+    sources = _orphan_sources(base, key)
+    found = orphan_auftrag(base)
+    if found is None:
+        return False
+    write_auftrag(base, _merge_auftrag(read_auftrag(base), found))
+    for path in sources:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+    return True
 
 
 def auftrag_open_issues(auftrag) -> "list[int]":
