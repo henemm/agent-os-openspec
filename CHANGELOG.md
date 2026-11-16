@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Parallele Sitzungen eines Projekts haben jetzt jede ihren eigenen Backlog: Ein Mehr-Issue-Auftrag gehört der Sitzung, die ihn anlegt, und der Vorschlag nach „fertig“ setzt in herdr das Epic aus dem Workspace-Namen fort, statt irgendein wichtiges Issue zu nennen (#613, #610). Migration: keine Handarbeit; ein alter Auftrag ohne Sitzung wird von der einzigen laufenden Sitzung still weitergeführt, laufen mehrere, übernimmt ihn eine per `workflow.py queue claim`.
+## [4.14.0] - 2026-11-16
+
+Parallele Sitzungen eines Projekts haben jetzt jede ihren eigenen Backlog: Ein Mehr-Issue-Auftrag gehört der Sitzung, die ihn anlegt, und der Vorschlag nach „fertig“ setzt in herdr das Epic aus dem Workspace-Namen fort, statt irgendein wichtiges Issue zu nennen (#613, #610). Migration: keine Handarbeit; ein alter Auftrag ohne Sitzung wird von der einzigen laufenden Sitzung still weitergeführt, laufen mehrere, übernimmt ihn eine per `workflow.py queue claim`. Konsumenten erhalten die Fassung per `claude plugin update agent-os-openspec@henemm-private`; die neuen Hook-Fassungen wirken nach einem Neustart von Claude Code.
 
 ### Changed
 
