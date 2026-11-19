@@ -169,6 +169,13 @@ secret_egress_guard:
   # mitliefert (beide Pfad-Formen). Fehlt das Feld, gibt es keinen Fallback.
   extra_allowed_write_dirs: []
 
+# Mention Guard — blockt nackte @name in Texten, die per gh auf GitHub landen (Issue #617)
+# Used by mention_guard.py. allowed_users: gewollte Erwaehnungen (Gross-/Kleinschreibung egal).
+# Abschalten auch per Umgebungsvariable OPENSPEC_MENTION_GUARD=0.
+mention_guard:
+  enabled: true
+  allowed_users: []
+
 # Credentials Guard — Detects hardcoded secrets in bash commands
 # Used by bash_gate.py (step 4b). Empty patterns list = use built-in defaults.
 credentials_guard:

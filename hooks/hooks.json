@@ -72,6 +72,11 @@
           },
           {
             "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/mention_guard.py",
+            "timeout": 5
+          },
+          {
+            "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/core/hooks/bash_gate.py",
             "timeout": 300
           }

@@ -64,6 +64,7 @@ agent-os-openspec/
 │   │   ├── post_implementation_gate.py  # PreToolUse Edit|Write: erzwingt User-Review nach Implementierung
 │   │   ├── edit_verify.py               # PostToolUse Edit|Write: prueft ob Aenderung wirklich auf Disk landete
 │   │   ├── secrets_guard.py             # PreToolUse Bash+Read: blockt Zugriff auf .env/Credentials/Keys
+│   │   ├── mention_guard.py             # PreToolUse Bash: blockt nackte `@name` in gh-Texten (aus: OPENSPEC_MENTION_GUARD=0)
 │   │   ├── workflow.py                  # Workflow State CLI (isolierte JSON-Files)
 │   │   ├── qa_gate.py                   # QA-Gate: Test-Output validieren oder per --run konfigurierten Testbefehl selbst ausfuehren, Verdict setzen
 │   │   ├── adversary_dialog.py          # Adversary-Dialog: Spec-Checkliste, Tri-State-Verdict
