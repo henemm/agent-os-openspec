@@ -361,6 +361,8 @@ next_suggestion:
 # archivierten Workflows (Quantile der Restdauern, gleiche Score-Stufe, sonst
 # gleicher Typ); mit weniger als min_samples Workflows gelten die Startwerte
 # (Minuten, [low, high]). Reine Anzeige, kein Gate. Nur false schaltet ab.
+# Gezaehlt wird nur Arbeitszeit (#628): Wartezeit auf die Spec-Freigabe und Leerlauf
+# fallen heraus; der Heartbeat schreibt die Aktivitaet nach .claude/workflows/_activity/.
 time_estimate:
   enabled: true
   min_samples: 3
@@ -368,6 +370,11 @@ time_estimate:
   defaults:
     feature: [60, 240]
     feature-fast: [20, 60]
+  # Nur Arbeitszeit (#628): der Session-Heartbeat zaehlt Aktivminuten je Phase in
+  # .claude/workflows/_activity/<workflow>.json. Liegt der letzte Schlag hoechstens
+  # so viele Minuten zurueck, zaehlt die Luecke als Arbeit, sonst als Leerlauf.
+  # Zahl > 0, sonst gilt 15.
+  idle_gap_min: 15
 
 # Herdr-Sidebar (#466): Laeuft Claude in einem Herdr-Pane (HERDR_ENV=1), meldet
 # core/hooks/herdr_bridge.py den Workflow-Stand display-only per

@@ -295,7 +295,7 @@ python3 .claude/hooks/workflow.py set-field github_issue 42
 | `bash_gate.py` | Bash | Stop-lock, state integrity, secrets, commit gates (VERIFIED/AMBIGUOUS) *(core gate)* |
 | `post_bash.py` | Bash (post) | Test output detection, recorded as a hint in `last_test_run` (never sets the adversary verdict) |
 | `phase_listener.py` | UserPromptSubmit | Approval keyword, stop-lock, override token, GREEN signal |
-| `session_singleton_guard.py` | SessionStart / all tools (pre) / SessionEnd | Registers the session and blocks writes outside a worktree |
+| `session_singleton_guard.py` | SessionStart / all tools (pre) / SessionEnd | Registers the session, blocks writes outside a worktree, and records active minutes per phase for the time estimate (#628) |
 | `worktree_write_guard.py` | Edit/Write/MultiEdit | Blocks writes to the main repo while running in a worktree (split-brain prevention) |
 | `claude_md_protection.py` | Edit/Write/MultiEdit | Blocks disallowed patterns / doc bloat in CLAUDE.md |
 | `tdd_enforcement.py` | Edit/Write/MultiEdit | Deep RED-artifact validation, complements `edit_gate.py`'s boolean check |

@@ -593,6 +593,20 @@ def _reregister(own_file: Path, session_id: str, cwd: str) -> None:
         return
 
 
+def _note_activity(entry: dict) -> None:
+    """Aktivitaetsschlag fuer die Zeitschaetzung (#628), nur aus dem faelligen
+    Throttle-Zweig. Schreibt nur `.claude/workflows/_activity/<workflow>.json`,
+    nie das Workflow-JSON. Vollstaendig fail-open, keine Ausgabe."""
+    try:
+        name, phase = entry.get("workflow"), entry.get("phase")
+        if name and phase:
+            from datetime import datetime
+            import workflow
+            workflow.note_activity(name, phase, datetime.now())
+    except (Exception, SystemExit):
+        pass
+
+
 def _heartbeat(session_id: str, cwd: str) -> None:
     """Throttled Heartbeat + lazy agent_name-Nachfuehrung.
 
@@ -642,6 +656,7 @@ def _heartbeat(session_id: str, cwd: str) -> None:
             entry["cwd"] = cwd
             _apply_context_fields(entry, cwd)
             changed = True
+            _note_activity(entry)
 
         # Ein gemeinsamer Schreibvorgang fuer beide Zweige.
         if changed:
