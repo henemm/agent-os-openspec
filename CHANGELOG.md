@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.18.1] - 2026-11-21
+
+Uhrzeiten im Plan in deutscher Zeit, auch auf Servern mit Weltzeit; einstellbar über `time_estimate.display_timezone` (#637).
+
 ### Fixed
 
 - **Uhrzeiten der Zeitschätzung in deutscher Zeit (#637):** Auf Servern in UTC zeigten Plan-Pane und `workflow.py estimate` Start und Ende eine Stunde (im Sommer zwei) zu früh. Neue Einstellung `time_estimate.display_timezone` (IANA-Name, Standard `Europe/Berlin`; `local` = Systemzone wie bisher, ungültiger Name fällt ohne Fehler auf die Systemzone zurück). Umgerechnet wird nur die Anzeige (`Start`/`Ende`, `ESTIMATE_START`/`ESTIMATE_END_*` mit Zonen-Offset, „Ende ca.“ in `LINE=`), „heute“ gilt in der Anzeigezone; gespeicherte Zeitstempel bleiben unverändert.
