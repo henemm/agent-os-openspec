@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.19.0] - 2026-11-21
+
+Schnellere Auslieferung: Die Testsuite läuft parallel auf allen Kernen, und ein allein veröffentlichtes Issue braucht nur noch einen Testlauf bis zur Version (#640).
+
+### Changed
+
+- **Parallele Testsuite und Versions-Bump im Fix-PR bei Einzel-Auslieferung (#640):** Der Job `tests` in `ci.yml` installiert `pytest-xdist` und startet die Suite mit `python3 -m pytest tests/ -q -n auto` (lokal gemessen 192 s statt 708 s seriell). Die Rückfall-Suite des Release-Wächters baut ihr Kommando über `build_suite_command(xdist_available())` in `scripts/release_check.py`: mit installiertem Plugin parallel, ohne wie bisher seriell; `release.yml` installiert `pytest-xdist` mit. Neue Regel (`docs/arbeitsweise.md`, `CLAUDE.md`, `/60-validate`): Wird ein Issue allein und sofort veröffentlicht, enthält sein PR den Versions-Bump selbst; der Tested-Nachweis aus #633 greift dann unverändert und `release.yml` veröffentlicht ohne zweite Suite. Ein getrennter Release-PR bleibt nur beim Bündeln mehrerer Issues. Migration: keine. Tests: `tests/test_auslieferung_schneller_640.py`.
+
 ## [4.18.1] - 2026-11-21
 
 Uhrzeiten im Plan in deutscher Zeit, auch auf Servern mit Weltzeit; einstellbar über `time_estimate.display_timezone` (#637).

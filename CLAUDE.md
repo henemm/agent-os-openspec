@@ -2,7 +2,7 @@
 
 > **Meta-Projekt**: Dies ist das zentrale Framework-Repository, das abstraktes Projekt- und Workflow-Wissen konsolidiert. Alle Projekte können Improvements hierher zurückführen und von Verbesserungen aus anderen Projekten profitieren.
 
-**Version**: 4.18.1
+**Version**: 4.19.0
 
 ## Rollen und Zusammenarbeit (PO-Vorgabe 2026-11-08, gilt für jede Sitzung, auch Cloud)
 
@@ -17,7 +17,7 @@
 - Jede Aufgabe beginnt mit `/00-intake #<N>`. Vor jedem neuen Issue die offenen durchsuchen; vor Implementierung und Commit Issue-Status, offene PRs und `origin/main` prüfen (parallele Sitzungen).
 - Recherche und Reproduktion vor jedem Fix; Gate- und Sicherheits-Designfragen entscheidet Claude. Keine manuellen Tests für Henning, alles automatisiert.
 - Henning tippt im Workflow nur Freigabe-Wörter (`approved`, `go`, `override`); jede weitere Frage mit Kontextblock vorab.
-- Ausliefern: PR mit `Closes #<N>`, `gh pr checks <N> --watch`, Squash-Merge. CHANGELOG unter `[Unreleased]`, keine Versionsnummer in Fix-/Feature-PRs. Release als eigener PR direkt danach, ohne Rückfrage und ohne Erinnerung; „erledigt“ erst, wenn die Version veröffentlicht ist (Henning, 2026-11-21; `release.yml` taggt automatisch).
+- Ausliefern: PR mit `Closes #<N>`, `gh pr checks <N> --watch`, Squash-Merge. Einzel-Auslieferung: der Fix-/Feature-PR enthält den Versions-Bump selbst (ein Testlauf); nur beim Bündeln mehrerer Issues CHANGELOG unter `[Unreleased]` und Release als eigener PR direkt danach (#640). Ohne Rückfrage und ohne Erinnerung; „erledigt“ erst, wenn die Version veröffentlicht ist (Henning, 2026-11-21; `release.yml` taggt automatisch).
 - Tests lokal nur im venv mit `pytest` und `pyyaml`.
 
 ## Projektzweck
@@ -368,7 +368,7 @@ Reboot. Bestandsproblem, kein Regressionsschaden.
 
 1. **Keine Breaking Changes** ohne Migration-Pfad
 2. **CHANGELOG.md** bei jeder Änderung aktualisieren
-3. **Versionsnummer** (`.claude-plugin/plugin.json`) nur in eigenen Release-PRs erhöhen (`docs/arbeitsweise.md`)
+3. **Versionsnummer** (`.claude-plugin/plugin.json`): bei Einzel-Auslieferung im Fix-/Feature-PR erhöhen, eigener Release-PR nur beim Bündeln mehrerer Issues (`docs/arbeitsweise.md`)
 4. **Tests** für Hooks: Manuell in einem Test-Projekt validieren
 5. **`core/hooks/` und `core/agents/` sind Infrastruktur**: Ohne laufenden Workflow ab phase6 verlangt `edit_gate.py` dafür einen Override-Token — der User tippt **"override"** (gilt 1 h, wird in `.claude/user_override_token.json` protokolliert). Mit Workflow ab phase6 entfällt er (#322); Phase-, TDD- und Adversary-Prüfung gelten stattdessen. Der Override öffnet nie den freigegebenen Teil einer Spec (#439). Niemals per Bash/`sed` am Gate vorbeischreiben: der Umweg ist kein Freibrief, sondern ein Fehler.
 

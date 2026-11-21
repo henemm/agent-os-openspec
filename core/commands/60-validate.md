@@ -370,6 +370,11 @@ Bei `AUTONOMY=auto` (nach Step 4, also mit `phase8_complete`):
    umgehen, rote CI nie überbrücken. Auch ohne ausdrückliche Policy liegen PR und Merge beim Tech Lead
    (Claude), nie beim PO (PO-Vorgabe 2026-11-08): PR anlegen, CI abwarten, bei grün mergen und
    dem PO nur das Ergebnis melden.
+   **Versions-Bump bei Einzel-Auslieferung (#640):** Regelt das Projekt die Einzel-Auslieferung
+   (im Framework-Repo `docs/arbeitsweise.md`), gilt beim Ausliefern dessen Regel: Wird ein Issue
+   allein und sofort veröffentlicht, steckt der Versions-Bump schon im Fix- oder Feature-PR (ein
+   einziger Testlauf bis zur veröffentlichten Version); ein getrennter Release-PR folgt nur beim
+   Bündeln mehrerer Issues.
 6. **Automatische Freigaben auflisten** — für die Abschlussmeldung:
 
    ```bash

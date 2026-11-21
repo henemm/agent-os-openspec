@@ -42,7 +42,8 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install pytest pyyaml
+        # pytest-xdist: Rueckfall-Suite ohne Tested-Nachweis laeuft parallel (#640)
+        run: pip install pytest pyyaml pytest-xdist
 
       - name: Versionsstand ermitteln
         id: version

@@ -386,6 +386,11 @@ Bei `AUTONOMY=auto` (nach Step 4, also mit `phase8_complete`):
    umgehen, rote CI nie überbrücken. Auch ohne ausdrückliche Policy liegen PR und Merge beim Tech Lead
    (Claude), nie beim PO (PO-Vorgabe 2026-11-08): PR anlegen, CI abwarten, bei grün mergen und
    dem PO nur das Ergebnis melden.
+   **Versions-Bump bei Einzel-Auslieferung (#640):** Regelt das Projekt die Einzel-Auslieferung
+   (im Framework-Repo `docs/arbeitsweise.md`), gilt beim Ausliefern dessen Regel: Wird ein Issue
+   allein und sofort veröffentlicht, steckt der Versions-Bump schon im Fix- oder Feature-PR (ein
+   einziger Testlauf bis zur veröffentlichten Version); ein getrennter Release-PR folgt nur beim
+   Bündeln mehrerer Issues.
 6. **Automatische Freigaben auflisten** — für die Abschlussmeldung:
 
    ```bash
@@ -505,7 +510,7 @@ Beende deine letzte Nachricht in diesem Befehl mit diesen Zeilen, in dieser Reih
 
 ❗ Du: `/<befehl> #<N>` — <ein Halbsatz, warum>
 ℹ️ Status: Workflow `<name>` · Phase `<x>` von 8
-⚙ /60-validate · agent-os-openspec 4.18.1
+⚙ /60-validate · agent-os-openspec 4.19.0
 
 Die erste Zeile sagt, wer am Zug ist — GENAU EINMAL, nur hier in der Fußzeile, nie zusätzlich als Vokabular mitten im Fließtext davor — und steht in genau einer von drei Formen (es gibt keine vierte):
 
