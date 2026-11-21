@@ -1,3 +1,9 @@
+---
+spec_file: docs/specs/fix-642-zeitschaetzung.md
+spec_sha256: 0117eeea6be7a0cae6372cd8b8a4b05248ed6b0bd3513af8bfea530ca4dc9887
+spec_frozen_sha256: 3c83015582358d50c1b8c9e213d44cd6190f7da4ec15c7f1a662ee5a6698d78f
+---
+
 # PO-Briefing: fix-642-zeitschaetzung
 
 - **Spec:** docs/specs/fix-642-zeitschaetzung.md
