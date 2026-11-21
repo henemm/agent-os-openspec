@@ -1,0 +1,170 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.18, pytest-9.2.0, pluggy-1.7.0 -- /home/user/agent-os-openspec/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/user/agent-os-openspec
+collecting ... collected 10 items
+
+tests/test_config_additiv_622.py::test_display_only_change_pur_und_fail_closed FAILED [ 10%]
+tests/test_config_additiv_622.py::test_write_neuer_anzeige_abschnitt_erlaubt FAILED [ 20%]
+tests/test_config_additiv_622.py::test_edit_und_multiedit_aendern_entfernen_anzeige_abschnitt_erlaubt FAILED [ 30%]
+tests/test_config_additiv_622.py::test_gate_schluessel_aendern_blockiert PASSED [ 40%]
+tests/test_config_additiv_622.py::test_gate_schluessel_entfernen_oder_neu_einfuegen_blockiert PASSED [ 50%]
+tests/test_config_additiv_622.py::test_doppelte_schluessel_und_unlesbares_yaml_blockiert PASSED [ 60%]
+tests/test_config_additiv_622.py::test_app_config_ohne_plugin_block_und_anlegen_vorrangiger_config_blockiert PASSED [ 70%]
+tests/test_config_additiv_622.py::test_bash_schreibzugriff_bleibt_blockiert PASSED [ 80%]
+tests/test_config_additiv_622.py::test_override_wirkt_weiter PASSED      [ 90%]
+tests/test_config_additiv_622.py::test_planungshinweis_in_befehlstexten_und_skills_ohne_drift FAILED [100%]
+
+=================================== FAILURES ===================================
+_________________ test_display_only_change_pur_und_fail_closed _________________
+
+    def test_display_only_change_pur_und_fail_closed():
+        """Unit: `display_only_change` ist pur und gibt bei jedem Fehler False zurueck.
+    
+        True: gleiche Fassung (keine Aenderung zaehlt als „nur Anzeige“), nur
+        Kommentare/Formatierung anders, Anzeige-Abschnitt hinzu/geaendert/entfernt.
+        False: Gate-Wert geaendert, Gate-Abschnitt entfernt, neuer Nicht-Anzeige-
+        Schluessel, doppelter Schluessel (top-level und verschachtelt), unlesbares
+        YAML, Nicht-Mapping, None/Nicht-String. Wirft nie.
+        """
+        cl = _cl()
+        keys = getattr(cl, "DISPLAY_ONLY_CONFIG_KEYS", None)
+>       assert keys == ("next_suggestion", "time_estimate"), \
+            f"DISPLAY_ONLY_CONFIG_KEYS = {keys!r}"
+E       AssertionError: DISPLAY_ONLY_CONFIG_KEYS = None
+E       assert None == ('next_suggestion', 'time_estimate')
+
+tests/test_config_additiv_622.py:97: AssertionError
+__________________ test_write_neuer_anzeige_abschnitt_erlaubt __________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-464/test_write_neuer_anzeige_absch0')
+
+    def test_write_neuer_anzeige_abschnitt_erlaubt(tmp_path):
+        """AC-1: Write fuegt `time_estimate` (bzw. `next_suggestion`) zur wirksamen
+        Config hinzu, alle anderen Schluessel gleich -> Exit 0 ohne Token, keine
+        Config-Meldung. Geprueft fuer Root-`config.yaml` und Root-`openspec.yaml`."""
+        wrong = []
+        for i, rel in enumerate(("config.yaml", "openspec.yaml")):
+            for j, (label, content) in enumerate((
+                ("time_estimate hinzu", BASE + TIME_BLOCK),
+                ("next_suggestion hinzu", BASE + NEXT_BLOCK),
+                ("time_estimate hinzu, Kommentar anders", "# neu\n" + BASE + TIME_BLOCK),
+            )):
+                proj, home = _proj(tmp_path / f"s{i}{j}", {rel: BASE})
+                wrong += _check(f"{rel}: {label}", _write(proj / rel, content),
+                                proj, home, 0, forbid=CONFIG_MSG)
+>       _fail("AC-1", wrong)
+
+tests/test_config_additiv_622.py:200: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+ac = 'AC-1'
+wrong = ["  config.yaml: time_estimate hinzu [Write]: rc=2 (soll 0), stderr='BLOCKED: Schreibzugriff auf die wirksame Gate-Con...Config (Kill-Switches) oder Anlegen einer vorrangigen Config.\\n→ Aenderungen gehoeren in die Worktree-Kopie und wir'"]
+
+    def _fail(ac: str, wrong: list) -> None:
+>       assert not wrong, f"{ac}: {len(wrong)} Abweichungen:\n" + "\n".join(wrong)
+E       AssertionError: AC-1: 6 Abweichungen:
+E           config.yaml: time_estimate hinzu [Write]: rc=2 (soll 0), stderr='BLOCKED: Schreibzugriff auf die wirksame Gate-Config (Kill-Switches) oder Anlegen einer vorrangigen Config.\n→ Aenderungen gehoeren in die Worktree-Kopie und wir'
+E           config.yaml: next_suggestion hinzu [Write]: rc=2 (soll 0), stderr='BLOCKED: Schreibzugriff auf die wirksame Gate-Config (Kill-Switches) oder Anlegen einer vorrangigen Config.\n→ Aenderungen gehoeren in die Worktree-Kopie und wir'
+E           config.yaml: time_estimate hinzu, Kommentar anders [Write]: rc=2 (soll 0), stderr='BLOCKED: Schreibzugriff auf die wirksame Gate-Config (Kill-Switches) oder Anlegen einer vorrangigen Config.\n→ Aenderungen gehoeren in die Worktree-Kopie und wir'
+E           openspec.yaml: time_estimate hinzu [Write]: rc=2 (soll 0), stderr='BLOCKED: Schreibzugriff auf die wirksame Gate-Config (Kill-Switches) oder Anlegen einer vorrangigen Config.\n→ Aenderungen gehoeren in die Worktree-Kopie und wir'
+E           openspec.yaml: next_suggestion hinzu [Write]: rc=2 (soll 0), stderr='BLOCKED: Schreibzugriff auf die wirksame Gate-Config (Kill-Switches) oder Anlegen einer vorrangigen Config.\n→ Aenderungen gehoeren in die Worktree-Kopie und wir'
+E           openspec.yaml: time_estimate hinzu, Kommentar anders [Write]: rc=2 (soll 0), stderr='BLOCKED: Schreibzugriff auf die wirksame Gate-Config (Kill-Switches) oder Anlegen einer vorrangigen Config.\n→ Aenderungen gehoeren in die Worktree-Kopie und wir'
+E       assert not ["  config.yaml: time_estimate hinzu [Write]: rc=2 (soll 0), stderr='BLOCKED: Schreibzugriff auf die wirksame Gate-Config (Kill-Switches) oder Anlegen einer vorrangigen Config.\\n→ Aenderungen gehoeren in die Worktree-Kopie und wir'", "  config.yaml: next_suggestion hinzu [Write]: rc=2 (soll 0), stderr='BLOCKED: Schreibzugriff auf die wirksame Gate-Config (Kill-Switches) oder Anlegen einer vorrangigen Config.\\n→ Aenderungen gehoeren in die Worktree-Kopie und wir'", "  config.yaml: time_estimate hinzu, Kommentar anders [Write]: rc=2 (soll 0), stderr='BLOCKED: Schreibzugriff auf die wirksame Gate-Config (Kill-Switches) oder Anlegen einer vorrangigen Config.\\n→ Aenderungen gehoeren in die Worktree-Kopie und wir'", "  openspec.yaml: time_estimate hinzu [Write]: rc=2 (soll 0), stderr='BLOCKED: Schreibzugriff auf die wirksame Gate-Config (Kill-Switches) oder Anlegen einer vorrangigen Config.\\n→ Aenderungen gehoeren in die Worktree-Kopie und wir'", "  openspec.yaml: next_suggestion hinzu [Write]: rc=2 (soll 0), stderr='BLOCKED: Schreibzugriff auf die wirksame Gate-Config (Kill-Switches) oder Anlegen einer vorrangigen Config.\\n→ Aenderungen gehoeren in die Worktree-Kopie und wir'", "  openspec.yaml: time_estimate hinzu, Kommentar anders [Write]: rc=2 (soll 0), stderr='BLOCKED: Schreibzugriff auf die wirksame Gate-Config (Kill-Switches) oder Anlegen einer vorrangigen Config.\\n→ Aenderungen gehoeren in die Worktree-Kopie und wir'"]
+
+tests/test_config_edit_schutz_473.py:120: AssertionError
+_____ test_edit_und_multiedit_aendern_entfernen_anzeige_abschnitt_erlaubt ______
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-464/test_edit_und_multiedit_aender0')
+
+    def test_edit_und_multiedit_aendern_entfernen_anzeige_abschnitt_erlaubt(tmp_path):
+        """AC-2: Edit aendert einen Wert in `time_estimate`/`next_suggestion`,
+        MultiEdit entfernt einen der Abschnitte -> Exit 0 ohne Token."""
+        wrong = []
+        cases = (
+            ("Edit time_estimate", _edit, ("min_samples: 3", "min_samples: 5")),
+            ("Edit next_suggestion", _edit, ("timeout_s: 8", "timeout_s: 12")),
+            ("MultiEdit entfernt time_estimate", _multi, ((TIME_BLOCK, ""),)),
+            ("MultiEdit entfernt next_suggestion", _multi, ((NEXT_BLOCK, ""),)),
+            ("MultiEdit aendert beide",
+             _multi, (("min_samples: 3", "min_samples: 4"), ("timeout_s: 8", "timeout_s: 9"))),
+        )
+        for i, (label, fn, args) in enumerate(cases):
+            proj, home = _proj(tmp_path / f"s{i}", {"config.yaml": FULL})
+            target = proj / "config.yaml"
+            call = fn(target, *args)
+            wrong += _check(label, call, proj, home, 0, forbid=CONFIG_MSG)
+>       _fail("AC-2", wrong)
+
+tests/test_config_additiv_622.py:224: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+ac = 'AC-2'
+wrong = ["  Edit time_estimate [Edit]: rc=2 (soll 0), stderr='BLOCKED: Schreibzugriff auf die wirksame Gate-Config (Kill-Switc...Config (Kill-Switches) oder Anlegen einer vorrangigen Config.\\n→ Aenderungen gehoeren in die Worktree-Kopie und wir'"]
+
+    def _fail(ac: str, wrong: list) -> None:
+>       assert not wrong, f"{ac}: {len(wrong)} Abweichungen:\n" + "\n".join(wrong)
+E       AssertionError: AC-2: 5 Abweichungen:
+E           Edit time_estimate [Edit]: rc=2 (soll 0), stderr='BLOCKED: Schreibzugriff auf die wirksame Gate-Config (Kill-Switches) oder Anlegen einer vorrangigen Config.\n→ Aenderungen gehoeren in die Worktree-Kopie und wir'
+E           Edit next_suggestion [Edit]: rc=2 (soll 0), stderr='BLOCKED: Schreibzugriff auf die wirksame Gate-Config (Kill-Switches) oder Anlegen einer vorrangigen Config.\n→ Aenderungen gehoeren in die Worktree-Kopie und wir'
+E           MultiEdit entfernt time_estimate [MultiEdit]: rc=2 (soll 0), stderr='BLOCKED: Schreibzugriff auf die wirksame Gate-Config (Kill-Switches) oder Anlegen einer vorrangigen Config.\n→ Aenderungen gehoeren in die Worktree-Kopie und wir'
+E           MultiEdit entfernt next_suggestion [MultiEdit]: rc=2 (soll 0), stderr='BLOCKED: Schreibzugriff auf die wirksame Gate-Config (Kill-Switches) oder Anlegen einer vorrangigen Config.\n→ Aenderungen gehoeren in die Worktree-Kopie und wir'
+E           MultiEdit aendert beide [MultiEdit]: rc=2 (soll 0), stderr='BLOCKED: Schreibzugriff auf die wirksame Gate-Config (Kill-Switches) oder Anlegen einer vorrangigen Config.\n→ Aenderungen gehoeren in die Worktree-Kopie und wir'
+E       assert not ["  Edit time_estimate [Edit]: rc=2 (soll 0), stderr='BLOCKED: Schreibzugriff auf die wirksame Gate-Config (Kill-Switches) oder Anlegen einer vorrangigen Config.\\n→ Aenderungen gehoeren in die Worktree-Kopie und wir'", "  Edit next_suggestion [Edit]: rc=2 (soll 0), stderr='BLOCKED: Schreibzugriff auf die wirksame Gate-Config (Kill-Switches) oder Anlegen einer vorrangigen Config.\\n→ Aenderungen gehoeren in die Worktree-Kopie und wir'", "  MultiEdit entfernt time_estimate [MultiEdit]: rc=2 (soll 0), stderr='BLOCKED: Schreibzugriff auf die wirksame Gate-Config (Kill-Switches) oder Anlegen einer vorrangigen Config.\\n→ Aenderungen gehoeren in die Worktree-Kopie und wir'", "  MultiEdit entfernt next_suggestion [MultiEdit]: rc=2 (soll 0), stderr='BLOCKED: Schreibzugriff auf die wirksame Gate-Config (Kill-Switches) oder Anlegen einer vorrangigen Config.\\n→ Aenderungen gehoeren in die Worktree-Kopie und wir'", "  MultiEdit aendert beide [MultiEdit]: rc=2 (soll 0), stderr='BLOCKED: Schreibzugriff auf die wirksame Gate-Config (Kill-Switches) oder Anlegen einer vorrangigen Config.\\n→ Aenderungen gehoeren in die Worktree-Kopie und wir'"]
+
+tests/test_config_edit_schutz_473.py:120: AssertionError
+_________ test_planungshinweis_in_befehlstexten_und_skills_ohne_drift __________
+
+    def test_planungshinweis_in_befehlstexten_und_skills_ohne_drift():
+        """AC-9: Planungshinweis fuer autarke Auftraege in 00-intake und 30-write-spec
+        (Quelle `core/commands/` und Generat `skills/`), `sync_skills.py --check` Exit 0.
+    
+        Pruefregel: In jeder der vier Dateien gibt es mindestens EINEN Absatz (Block
+        zwischen Leerzeilen), der alle Begriffe aus PLAN_TERMS enthaelt, ohne
+        Gross-/Kleinschreibung: „autark“ (auch „autarken“/„autarker“), „override“,
+        „Gate-Config“, `next_suggestion` und `time_estimate`. Das entspricht dem
+        Spec-Wortlaut (autarker Auftrag, keine Override-Schritte, Gate-Config-
+        Aenderungen vermeiden, Anzeige-Abschnitte ausgenommen). Nur „autark“ +
+        „override“ reicht bewusst nicht: 00-intake hat schon heute einen Absatz
+        mit „autarker Auftrag … Override“ (Pflichtstopps), der den Hinweis nicht
+        enthaelt.
+        """
+        wrong = []
+        for rel in PLAN_FILES:
+            path = REPO_ROOT / rel
+            if not path.is_file():
+                wrong.append(f"  {rel}: fehlt")
+                continue
+            paras = _paragraphs(path.read_text(encoding="utf-8"))
+            if not any(all(t in p.lower() for t in PLAN_TERMS) for p in paras):
+                wrong.append(f"  {rel}: kein Absatz mit allen Begriffen {PLAN_TERMS}")
+        proc = subprocess.run([sys.executable, str(REPO_ROOT / "scripts" / "sync_skills.py"),
+                               "--check"], cwd=str(REPO_ROOT), capture_output=True,
+                              text=True, timeout=120)
+        if proc.returncode != 0:
+            wrong.append(f"  sync_skills.py --check: rc={proc.returncode}, "
+                         f"{(proc.stdout + proc.stderr).strip()[-300:]!r}")
+>       _fail("AC-9", wrong)
+
+tests/test_config_additiv_622.py:433: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+ac = 'AC-9'
+wrong = ["  core/commands/00-intake.md: kein Absatz mit allen Begriffen ('autark', 'override', 'gate-config', 'next_suggestion...c/SKILL.md: kein Absatz mit allen Begriffen ('autark', 'override', 'gate-config', 'next_suggestion', 'time_estimate')"]
+
+    def _fail(ac: str, wrong: list) -> None:
+>       assert not wrong, f"{ac}: {len(wrong)} Abweichungen:\n" + "\n".join(wrong)
+E       AssertionError: AC-9: 4 Abweichungen:
+E           core/commands/00-intake.md: kein Absatz mit allen Begriffen ('autark', 'override', 'gate-config', 'next_suggestion', 'time_estimate')
+E           core/commands/30-write-spec.md: kein Absatz mit allen Begriffen ('autark', 'override', 'gate-config', 'next_suggestion', 'time_estimate')
+E           skills/00-intake/SKILL.md: kein Absatz mit allen Begriffen ('autark', 'override', 'gate-config', 'next_suggestion', 'time_estimate')
+E           skills/30-write-spec/SKILL.md: kein Absatz mit allen Begriffen ('autark', 'override', 'gate-config', 'next_suggestion', 'time_estimate')
+E       assert not ["  core/commands/00-intake.md: kein Absatz mit allen Begriffen ('autark', 'override', 'gate-config', 'next_suggestion', 'time_estimate')", "  core/commands/30-write-spec.md: kein Absatz mit allen Begriffen ('autark', 'override', 'gate-config', 'next_suggestion', 'time_estimate')", "  skills/00-intake/SKILL.md: kein Absatz mit allen Begriffen ('autark', 'override', 'gate-config', 'next_suggestion', 'time_estimate')", "  skills/30-write-spec/SKILL.md: kein Absatz mit allen Begriffen ('autark', 'override', 'gate-config', 'next_suggestion', 'time_estimate')"]
+
+tests/test_config_edit_schutz_473.py:120: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_config_additiv_622.py::test_display_only_change_pur_und_fail_closed
+FAILED tests/test_config_additiv_622.py::test_write_neuer_anzeige_abschnitt_erlaubt
+FAILED tests/test_config_additiv_622.py::test_edit_und_multiedit_aendern_entfernen_anzeige_abschnitt_erlaubt
+FAILED tests/test_config_additiv_622.py::test_planungshinweis_in_befehlstexten_und_skills_ohne_drift
+========================= 4 failed, 6 passed in 3.38s ==========================
