@@ -791,7 +791,9 @@ def _plan_deploy_line(status, done_all: bool) -> str:
 # --- Zeitschätzung (#620) ----------------------------------------------------
 # Erfahrungswerte aus dem Archiv (`phase_log`), reine Anzeige, fail-open.
 TIME_ESTIMATE_DEFAULTS = {"enabled": True, "min_samples": 3, "quantiles": [0.25, 0.75],
-                          "defaults": {"feature": [60, 240], "feature-fast": [20, 60]}}
+                          "defaults": {"feature": [60, 240], "feature-fast": [20, 60]},
+                          "idle_gap_min": 15}
+WAIT_SUFFIX = " + Wartezeit auf dich"
 
 
 def _estimate_now() -> datetime:
@@ -810,18 +812,148 @@ def _score_stage(score) -> "str | None":
     return "0" if score == 0 else ("1-3" if score <= 3 else "4-6")
 
 
+def _po_wait_span(data) -> "tuple[datetime, datetime] | None":
+    """Wartezeit auf die Spec-Freigabe (#628): [po_briefing.created, Freigabe].
+
+    Nur bei einem Übergang nach phase4_approved mit trigger "approval"; sonst
+    (auto, kein Briefing, kein Übergang, ungültige Zeitstempel) None. Wirft nie.
+    """
+    try:
+        brief = _parse_time(data["po_briefing"]["created"])
+        for tr in data.get("phase_transitions") or []:
+            if not isinstance(tr, dict) or tr.get("to") != "phase4_approved":
+                continue
+            try:
+                at = _parse_time(tr.get("at"))
+            except Exception:
+                continue
+            if at >= brief:
+                return (brief, at) if tr.get("trigger") == "approval" else None
+    except Exception:
+        pass
+    return None
+
+
+def _overlap_min(span, start: datetime, end: datetime) -> float:
+    """Überschneidung der Spanne mit [start, end] in Minuten (nie negativ)."""
+    if span is None:
+        return 0.0
+    return max(0.0, (min(span[1], end) - max(span[0], start)).total_seconds() / 60)
+
+
+def po_wait_minutes(data, now: "datetime | None" = None) -> dict:
+    """PO-Wartezeit je Phase (#628): Überschneidung der Wartespanne mit den
+    `phase_log`-Segmenten; offene Segmente nur mit `now`. {} bei Fehler."""
+    out: dict = {}
+    try:
+        span = _po_wait_span(data)
+        if span is None:
+            return {}
+        for entry in data.get("phase_log") or []:
+            try:
+                end = entry.get("exited_at")
+                end = _parse_time(end) if end is not None else now
+                if end is None:
+                    continue
+                wait = _overlap_min(span, _parse_time(entry["entered_at"]), end)
+            except Exception:
+                continue
+            if wait > 0:
+                out[entry["phase"]] = out.get(entry["phase"], 0.0) + wait
+    except Exception:
+        return {}
+    return out
+
+
+def _activity_path(name) -> "Path | None":
+    if not isinstance(name, str) or not _NAME_RE.fullmatch(name):
+        return None
+    return _workflows_dir() / "_activity" / f"{name}.json"
+
+
+def load_activity(name) -> "dict | None":
+    """Aktivitätsdatei des Workflows (#628) als `{last, phases}` mit nur
+    gültigen Minuten; None, wenn fehlend oder kaputt. Wirft nie."""
+    try:
+        path = _activity_path(name)
+        if path is None or path.is_symlink() or not path.is_file():
+            return None
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            return None
+        phases = raw.get("phases") if isinstance(raw.get("phases"), dict) else {}
+        return {"last": raw.get("last") if isinstance(raw.get("last"), str) else None,
+                "phases": {k: float(v) for k, v in phases.items()
+                           if isinstance(k, str) and _is_num(v) and v >= 0}}
+    except Exception:
+        return None
+
+
+def _idle_gap_min() -> float:
+    """`time_estimate.idle_gap_min` (Zahl > 0), sonst Standard 15 (#628)."""
+    try:
+        from config_loader import load_config
+        value = (load_config().get("time_estimate") or {}).get("idle_gap_min")
+        if _is_num(value) and value > 0:
+            return float(value)
+    except Exception:
+        pass
+    return float(TIME_ESTIMATE_DEFAULTS["idle_gap_min"])
+
+
+def note_activity(name, phase, now) -> None:
+    """Aktivitätsschlag (#628): liegt `last` höchstens `idle_gap_min` zurück,
+    zählt die Differenz für `phase`; sonst wird nur `last` gesetzt. Schreibt
+    atomar `.claude/workflows/_activity/<name>.json`, nie das Workflow-JSON.
+    Wirft nie."""
+    try:
+        path = _activity_path(name)
+        if path is None or not isinstance(phase, str) or not isinstance(now, datetime):
+            return
+        now = _parse_time(now)
+        current = load_activity(name) or {}
+        phases = dict(current.get("phases") or {})
+        try:
+            gap = (now - _parse_time(current["last"])).total_seconds() / 60
+        except Exception:
+            gap = None
+        if gap is not None and 0 < gap <= _idle_gap_min():
+            phases[phase] = round(phases.get(phase, 0.0) + gap, 2)
+        from hook_utils import atomic_write_text
+        atomic_write_text(path, json.dumps(
+            {"last": now.isoformat(timespec="seconds"), "phases": phases}, indent=2))
+    except Exception:
+        pass
+
+
+def _activity_phases(name) -> dict:
+    """Aktivminuten je Phase, {} ohne brauchbare Aktivitätsdatei."""
+    return (load_activity(name) or {}).get("phases") or {}
+
+
 def _archive_phase_entry(data) -> "dict | None":
-    """Ein Archiv-Workflow als `{type, stage, phases}`, oder None, wenn er nicht zählt."""
+    """Ein Archiv-Workflow als `{type, stage, phases}`, oder None, wenn er nicht zählt.
+
+    #628: Arbeitszeit. Aktivminuten aus der Aktivitätsdatei, sonst `phase_log`
+    je Segment abzüglich PO-Wartezeit (nie unter 0).
+    """
     if not isinstance(data, dict) or data.get("status") == "abandoned":
         return None
+    phases: dict = dict(_activity_phases(data.get("name")))
     log = data.get("phase_log")
-    phases: dict = {}
-    for entry in log if isinstance(log, list) else []:
+    span = _po_wait_span(data) if not phases else None
+    for entry in log if isinstance(log, list) and not phases else []:
         if not isinstance(entry, dict) or entry.get("exited_at") is None:
             continue
         dur, phase = entry.get("duration_min"), entry.get("phase")
         if _is_num(dur) and isinstance(phase, str):
-            phases[phase] = phases.get(phase, 0.0) + float(dur)  # Wiedereintritte summiert
+            try:
+                wait = _overlap_min(span, _parse_time(entry["entered_at"]),
+                                    _parse_time(entry["exited_at"]))
+            except Exception:
+                wait = 0.0
+            # Wiedereintritte summiert
+            phases[phase] = phases.get(phase, 0.0) + max(0.0, float(dur) - wait)
     if not phases:
         return None
     return {"type": data.get("workflow_type") or "feature",
@@ -907,11 +1039,17 @@ def _estimate_steps(data: dict) -> "tuple[list, int]":
     return phases, running
 
 
-def _minutes_in_phase(data: dict, phase: str, now: datetime) -> float:
-    """Verstrichene Minuten im offenen `phase_log`-Eintrag der Phase, sonst 0."""
+def _minutes_in_phase(data: dict, phase: str, now: datetime,
+                      activity: "dict | None" = None) -> float:
+    """Arbeitsminuten der laufenden Phase (#628): aus der Aktivität, sonst
+    offener `phase_log`-Eintrag abzüglich PO-Wartezeit, sonst 0."""
+    if activity:
+        return float(activity.get(phase, 0.0))
     for entry in reversed(data.get("phase_log") or []):
         if entry.get("phase") == phase and entry.get("exited_at") is None:
-            return max(0.0, (now - _parse_time(entry["entered_at"])).total_seconds() / 60)
+            entered = _parse_time(entry["entered_at"])
+            wait = _overlap_min(_po_wait_span(data), entered, now)
+            return max(0.0, (now - entered).total_seconds() / 60 - wait)
     return 0.0
 
 
@@ -927,11 +1065,12 @@ def _estimate_group(data: dict, history: list, min_samples: int) -> list:
     return same if len(same) >= min_samples else []
 
 
-def _estimate_rests(data, history, config, now) -> "tuple[list, int]":
+def _estimate_rests(data, history, config, now,
+                    activity: "dict | None" = None) -> "tuple[list, int]":
     """Restdauern (Minuten, sortiert) und Zahl der Vergleichs-Workflows; n=0 = Startwerte."""
     phases, running = _estimate_steps(data)
     current = phases[running]
-    in_phase = _minutes_in_phase(data, current, now) if current == data.get(
+    in_phase = _minutes_in_phase(data, current, now, activity) if current == data.get(
         "current_phase") else 0.0
     group = _estimate_group(data, history, config["min_samples"])
     if not group:
@@ -946,11 +1085,16 @@ def _estimate_rests(data, history, config, now) -> "tuple[list, int]":
     return sorted(rests), len(group)
 
 
-def estimate_remaining(data, history, config, now) -> "dict | None":
-    """Restdauer-Schätzung (#620), pure. None bei ungültigen Eingaben (fail-open)."""
+def estimate_remaining(data, history, config, now,
+                       activity: "dict | None" = None) -> "dict | None":
+    """Restdauer-Schätzung (#620), pure. None bei ungültigen Eingaben (fail-open).
+
+    #628: verstrichen = Arbeitszeit, aus `activity` (Aktivminuten je Phase),
+    sonst Wanduhr abzüglich PO-Wartezeit.
+    """
     try:
         start = _parse_time(data["created"])
-        rests, n = _estimate_rests(data, history, config, now)
+        rests, n = _estimate_rests(data, history, config, now, activity)
         q_low, q_high = config["quantiles"]
         if n:
             low, mid, high = (_quantile(rests, q_low), _quantile(rests, 0.5),
@@ -958,7 +1102,11 @@ def estimate_remaining(data, history, config, now) -> "dict | None":
         else:
             low, high = rests
             mid = (low + high) / 2
-        elapsed = max(0.0, (now - start).total_seconds() / 60)
+        if activity:
+            elapsed = sum(float(v) for v in activity.values())
+        else:
+            elapsed = max(0.0, (now - start).total_seconds() / 60
+                          - _overlap_min(_po_wait_span(data), start, now))
     except Exception:
         return None
     return {"low_min": low, "mid_min": mid, "high_min": high, "elapsed_min": elapsed,
@@ -998,7 +1146,8 @@ def current_estimate(data, archived: bool = False,
             if "history" not in cache or cache.get("key") != key:
                 cache["key"], cache["history"] = key, load_archive_phase_durations()
             history = cache["history"]
-        return estimate_remaining(data, history, cfg, now)
+        return estimate_remaining(data, history, cfg, now,
+                                  _activity_phases(data.get("name")))
     except Exception:
         return None
 
@@ -1029,6 +1178,27 @@ def _finished_span(data: dict) -> "tuple[datetime, datetime] | None":
     return _parse_time(data["created"]), _parse_time(end)
 
 
+def _finished_work_min(data: dict, end: datetime, total: float) -> float:
+    """Arbeitszeit eines fertigen Workflows (#628): Aktivminuten, sonst
+    `phase_log` abzüglich PO-Wartezeit plus offenes letztes Segment bis `end`."""
+    try:
+        activity = _activity_phases(data.get("name"))
+        if activity:
+            return sum(activity.values())
+        entry = _archive_phase_entry(data)
+        if entry is None:
+            return total
+        work = sum(entry["phases"].values())
+        last = (data.get("phase_log") or [{}])[-1]
+        if isinstance(last, dict) and last.get("exited_at") is None and last.get("entered_at"):
+            entered = _parse_time(last["entered_at"])
+            work += max(0.0, (end - entered).total_seconds() / 60
+                        - _overlap_min(_po_wait_span(data), entered, end))
+        return work
+    except Exception:
+        return total
+
+
 def _plan_time_lines(data: dict, estimate) -> "list[str]":
     """Zeit-Block des Plans (#620): Prognose oder Ist-Werte; [] bei Fehler."""
     try:
@@ -1041,15 +1211,41 @@ def _plan_time_lines(data: dict, estimate) -> "list[str]":
             if span is None:
                 return []
             start, end = span
-            dur = format_duration(max(0.0, (end - start).total_seconds() / 60))
+            total = max(0.0, (end - start).total_seconds() / 60)
+            work = min(total, _finished_work_min(data, end, total))
+            dur = format_duration(work)
+            if round(work) != round(total):
+                dur += f" (gesamt {format_duration(total)})"
             return ["", f"Start  {_format_clock(start, today)}", f"Dauer  {dur}",
                     f"Ende  {_format_clock(end, today)}"]
+        wait = WAIT_SUFFIX if awaiting_human_approval(data) else ""
         return ["", f"Start  {_format_clock(estimate['start'], today)}",
-                f"Dauer  ca. {_estimate_span_text(estimate)} {_estimate_basis(estimate)}",
+                f"Dauer  ca. {_estimate_span_text(estimate)} {_estimate_basis(estimate)}{wait}",
                 f"Ende  ca. {_format_clock(estimate['end_low'], today)}–"
                 f"{_format_clock(estimate['end_high'], today)}"]
     except Exception:
         return []
+
+
+def awaiting_human_approval(data) -> bool:
+    """Wartet der Workflow auf eine menschliche Freigabe (#628)? Wirft nie.
+
+    phase3_spec mit registriertem Briefing ohne greifende Auto-Freigabe
+    („approved“), oder phase6_implement mit grünem Testlauf, ohne GREEN und
+    im Modus manual („go“).
+    """
+    try:
+        phase = data.get("current_phase")
+        if phase == "phase3_spec":
+            return bool(isinstance(data.get("po_briefing"), dict)
+                        and data["po_briefing"] and not _auto_approval_pending(data))
+        if phase == "phase6_implement":
+            run = data.get("last_test_run")
+            return bool(isinstance(run, dict) and run.get("result") == "passed"
+                        and not data.get("green_approved") and autonomy_mode() != "auto")
+    except Exception:
+        pass
+    return False
 
 
 def _estimate_span_text(estimate: dict) -> str:
@@ -4831,12 +5027,13 @@ def cmd_context(args: list[str]) -> None:
         pass
 
 
-def _estimate_kv_lines(est: dict) -> "list[str]":
-    """KEY=value-Zeilen von `workflow.py estimate` (#620)."""
+def _estimate_kv_lines(est: dict, waiting: bool = False) -> "list[str]":
+    """KEY=value-Zeilen von `workflow.py estimate` (#620); `waiting` (#628)
+    hängt „ + Wartezeit auf dich“ an `LINE=` und gibt `ESTIMATE_WAITING=po` aus."""
     today = est["now"].date()
     end = (f"{_format_clock(est['end_low'], today)}–"
            f"{_format_clock(est['end_high'], today)}")
-    return ["ESTIMATE=on",
+    return ["ESTIMATE=on"] + (["ESTIMATE_WAITING=po"] if waiting else []) + [
             f"ESTIMATE_LOW_MIN={round(est['total_low_min'])}",
             f"ESTIMATE_HIGH_MIN={round(est['total_high_min'])}",
             f"ESTIMATE_START={est['start'].isoformat(timespec='minutes')}",
@@ -4844,7 +5041,7 @@ def _estimate_kv_lines(est: dict) -> "list[str]":
             f"ESTIMATE_END_HIGH={est['end_high'].isoformat(timespec='minutes')}",
             f"ESTIMATE_BASIS={est['n'] if est['source'] == 'archive' else 'default'}",
             f"LINE=Grobe Schätzung: {_estimate_span_text(est)}, Ende ca. {end} "
-            f"{_estimate_basis(est)}"]
+            f"{_estimate_basis(est)}{WAIT_SUFFIX if waiting else ''}"]
 
 
 def cmd_estimate(args: list[str]) -> None:
@@ -4859,7 +5056,7 @@ def cmd_estimate(args: list[str]) -> None:
         found = read_active_workflow_fast()
         est = current_estimate(found[1]) if found else None
         if est and not est.get("actual"):
-            lines = _estimate_kv_lines(est)
+            lines = _estimate_kv_lines(est, awaiting_human_approval(found[1]))
     except (Exception, SystemExit):
         lines = ["ESTIMATE=off"]
     print("\n".join(lines))
