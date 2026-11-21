@@ -80,6 +80,10 @@ einzelner Rechner standen. Stand: PO-Vorgaben Hennings bis 2026-11-08.
   `.claude/commands/` (`python3 setup.py . --refresh-aliases`) und einen abgeschlossenen
   CHANGELOG-Abschnitt mit. Liegt eine neue Version auf `main`, setzt `release.yml` Tag und Release
   automatisch (der Workflow pusht nur Tags, nie `main`).
+- **Release gehört zum Ausliefern** (Henning, 2026-11-21: „Warum muss ich dich daran erinnern?“): Nach dem
+  Merge eines Fix- oder Feature-PRs folgt der Release-PR sofort im selben Auftrag, ohne Rückfrage. Ein
+  Auftrag gilt erst als erledigt, wenn die neue Version veröffentlicht ist; mehrere Issues eines
+  Auftrags dürfen in einem Release gebündelt werden.
 - Konsumenten-Projekte erhalten die neue Version per Plugin-Update
   (`claude plugin update agent-os-openspec@henemm-private`); das führt Claude aus, nie Henning.
 - Hook-Dateien (`core/hooks/`) nie per Bash oder Skript schreiben, nur per Edit über die Gates.
