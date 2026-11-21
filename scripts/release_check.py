@@ -18,6 +18,7 @@ main veroeffentlicht ist.
     python3 scripts/release_check.py --no-tests # ohne Testlauf (schneller)
     python3 scripts/release_check.py --notes    # CHANGELOG-Abschnitt ausgeben
     python3 scripts/release_check.py --tag      # Tag-Namen ausgeben
+    python3 scripts/release_check.py --tested-proof <sha>  # PROOF=yes|no (#633)
 
 Exit-Code 0 = alle Pruefungen bestanden, 1 = mindestens eine gescheitert.
 
@@ -27,7 +28,9 @@ Wird ueblicherweise nicht von Hand aufgerufen, sondern von
 
 import argparse
 import json
+import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -259,6 +262,134 @@ def check_tests() -> "tuple[bool, str]":
     return True, f"Testsuite gruen — {summary[0]}"
 
 
+# Name des Check-Runs aus .github/workflows/ci.yml, der als Nachweis dient (#633).
+TESTED_CHECK_NAME = "tests"
+
+
+def decide_tested_proof(sha, prs, check_runs, head_tree, merge_tree) -> "tuple[bool, str]":
+    """Pure Entscheidung, ob der Baum von `sha` im PR schon gruen getestet ist (#633).
+
+    yes nur, wenn genau ein gemergter PR `sha` als Merge-Commit hat, jeder
+    Check-Run `tests` auf dessen Head abgeschlossen und erfolgreich ist (und es
+    mindestens einen gibt) und die Baeume von Head und Merge-Commit gleich und
+    nicht leer sind. Kennt weder Netz noch Git; fail-closed.
+    """
+    matching = [pr for pr in (prs or []) if isinstance(pr, dict)
+                and pr.get("merged_at") and pr.get("merge_commit_sha") == sha]
+    if not matching:
+        return False, f"kein gemergter PR mit Merge-Commit {str(sha)[:7]}"
+    if len(matching) > 1:
+        numbers = ", ".join(f"#{pr.get('number')}" for pr in matching)
+        return False, f"mehrere gemergte PRs mit diesem Merge-Commit ({numbers})"
+    pr = matching[0]
+    number = pr.get("number")
+    head_sha = (pr.get("head") or {}).get("sha") or ""
+    if not head_sha:
+        return False, f"PR #{number} nennt keinen Head-Commit"
+    runs = [r for r in (check_runs or []) if isinstance(r, dict)
+            and r.get("name") == TESTED_CHECK_NAME and r.get("head_sha") == head_sha]
+    if not runs:
+        return False, f"kein Check-Run '{TESTED_CHECK_NAME}' auf {head_sha[:7]} (PR #{number})"
+    bad = [r for r in runs
+           if r.get("status") != "completed" or r.get("conclusion") != "success"]
+    if bad:
+        states = ", ".join(f"{r.get('status')}/{r.get('conclusion')}" for r in bad)
+        return False, f"Check-Run '{TESTED_CHECK_NAME}' auf {head_sha[:7]} nicht gruen ({states})"
+    if not head_tree or not merge_tree:
+        return False, "Baum von Head oder Merge-Commit unbekannt"
+    if head_tree != merge_tree:
+        return False, (f"Baum von Merge-Commit {str(sha)[:7]} weicht vom getesteten "
+                       f"Head {head_sha[:7]} ab (PR #{number})")
+    return True, f"PR #{number}, {TESTED_CHECK_NAME} gruen auf {head_sha[:7]}, Baum identisch"
+
+
+def _gh_api_json(path: str):
+    """`gh api <path>` als JSON; wirft RuntimeError mit Grund bei jedem Fehler."""
+    try:
+        result = subprocess.run(["gh", "api", path], cwd=str(REPO_ROOT),
+                                capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError(f"gh api nicht ausfuehrbar ({type(exc).__name__})")
+    if result.returncode != 0:
+        detail = (result.stderr.strip().splitlines() or ["ohne Meldung"])[-1]
+        raise RuntimeError(f"gh api {path} fehlgeschlagen: {detail[:200]}")
+    try:
+        return json.loads(result.stdout)
+    except ValueError:
+        raise RuntimeError(f"gh api {path}: Antwort ist kein JSON")
+
+
+def _tree_of(rev: str) -> str:
+    result = _git("rev-parse", "--verify", "--quiet", f"{rev}^{{tree}}")
+    if result.returncode != 0:
+        raise RuntimeError(f"Baum von {rev[:7]} nicht lesbar")
+    return result.stdout.strip()
+
+
+def fetch_tested_proof_inputs(sha: str) -> "tuple[dict | None, str]":
+    """Rohdaten fuer `decide_tested_proof` holen: (Eingaben, '') oder (None, Grund).
+
+    PR-Liste und Check-Runs per `gh api`, Head des PR per
+    `git fetch origin refs/pull/<N>/head`, Baum-SHAs per `git rev-parse`.
+    Jeder Fehler wird als Grund zurueckgegeben, nie als Ausnahme.
+    """
+    try:
+        if not shutil.which("gh"):
+            return None, "gh (GitHub CLI) nicht gefunden"
+        if not (os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")):
+            return None, "kein Token (GH_TOKEN/GITHUB_TOKEN) gesetzt"
+        repo = os.environ.get("GITHUB_REPOSITORY") or "{owner}/{repo}"
+        prs = _gh_api_json(f"repos/{repo}/commits/{sha}/pulls")
+        if not isinstance(prs, list):
+            return None, "PR-Liste der API ist keine Liste"
+        inputs = {"prs": prs, "check_runs": [], "head_tree": "", "merge_tree": ""}
+        matching = [pr for pr in prs if isinstance(pr, dict)
+                    and pr.get("merged_at") and pr.get("merge_commit_sha") == sha]
+        if len(matching) != 1:
+            return inputs, ""  # die Entscheidung nennt den Grund
+        number = matching[0].get("number")
+        head_sha = str((matching[0].get("head") or {}).get("sha") or "")
+        if not isinstance(number, int) or not re.fullmatch(r"[0-9a-f]{40}", head_sha):
+            return None, "PR-Nummer oder Head-Commit der API unbrauchbar"
+        checks = _gh_api_json(f"repos/{repo}/commits/{head_sha}/check-runs"
+                              f"?check_name={TESTED_CHECK_NAME}&per_page=100")
+        runs = checks.get("check_runs") if isinstance(checks, dict) else None
+        if not isinstance(runs, list):
+            return None, "Check-Runs der API ohne Liste 'check_runs'"
+        if isinstance(checks.get("total_count"), int) and checks["total_count"] > len(runs):
+            return None, "Check-Runs der API unvollstaendig"
+        inputs["check_runs"] = runs
+        fetch = _git("fetch", "--quiet", "origin", f"refs/pull/{number}/head")
+        if fetch.returncode != 0:
+            return None, f"git fetch origin refs/pull/{number}/head fehlgeschlagen"
+        inputs["head_tree"] = _tree_of(head_sha)
+        inputs["merge_tree"] = _tree_of(sha)
+        # Geprueft wird der ausgecheckte Stand (release.yml checkt main aus);
+        # weicht sein Baum von dem des Commits ab, gilt der Nachweis nicht.
+        if _tree_of("HEAD") != inputs["merge_tree"]:
+            return None, f"ausgecheckter Stand weicht ab: Baum von HEAD ist nicht der von {sha[:7]}"
+        return inputs, ""
+    except Exception as exc:  # fail-closed: jede Unsicherheit ist ein Nein
+        return None, str(exc) or type(exc).__name__
+
+
+def run_tested_proof(sha: str) -> int:
+    """Modus `--tested-proof`: genau `PROOF=yes|no` und `REASON=...`, Exit immer 0."""
+    try:
+        inputs, error = fetch_tested_proof_inputs(sha)
+        if inputs is None:
+            ok, reason = False, error
+        else:
+            ok, reason = decide_tested_proof(sha, inputs["prs"], inputs["check_runs"],
+                                             inputs["head_tree"], inputs["merge_tree"])
+    except Exception as exc:
+        ok, reason = False, f"Nachweis fehlgeschlagen ({type(exc).__name__})"
+    reason = " ".join(str(reason).split()) or "ohne Grund"
+    print(f"PROOF={'yes' if ok else 'no'}")
+    print(f"REASON={reason}")
+    return 0
+
+
 def base_plugin_version(base_ref: str) -> "str | None":
     """Version aus `plugin.json` am Basis-Ref, oder None (Ref/Datei fehlt)."""
     result = _git("show", f"{base_ref}:.claude-plugin/plugin.json")
@@ -335,7 +466,13 @@ def main() -> int:
                         help="Nur pruefen, ob ein Versions-Bump gegenueber --base "
                              "release-bereit waere (fuer CI auf pull_request, Issue #204)")
     parser.add_argument("--base", help="Basis-Ref fuer --pr-gate, z.B. origin/main")
+    parser.add_argument("--tested-proof", metavar="SHA",
+                        help="Nachweis, dass der Baum von SHA im PR gruen getestet ist; "
+                             "druckt PROOF=yes|no und REASON=, Exit immer 0 (Issue #633)")
     args = parser.parse_args()
+
+    if args.tested_proof is not None:
+        return run_tested_proof(args.tested_proof)
 
     if args.pr_gate:
         if not args.base:

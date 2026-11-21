@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Release ohne Doppeltest (#633):** Nach dem Merge eines Release-PRs wiederholte `release.yml` die volle Testsuite (rund 11 min), obwohl derselbe Stand im PR schon grün war. Der neue Modus `release_check.py --tested-proof <sha>` weist nach, dass der veröffentlichte Baum exakt der im PR getestete ist: genau ein gemergter PR mit diesem Merge-Commit, jeder Check-Run `tests` auf dessen Head abgeschlossen und erfolgreich, und gleiche Baum-SHAs von PR-Head (per `git fetch origin refs/pull/<N>/head`) und Merge-Commit. Er druckt genau `PROOF=yes|no` und `REASON=…`, Exit immer 0; jeder Fehler (kein `gh`, kein Token, unlesbare Antwort, gescheiterter Fetch) ergibt `PROOF=no`. `release.yml` führt bei `yes` nur `release_check.py --no-tests` aus, sonst wie bisher die volle Suite; alle inhaltlichen Prüfungen (Branch, Arbeitsbaum, Abgleich, Version, README, CLAUDE.md, Tag, Skills, Cloud-Hooks, Cloud-Agenten) laufen in beiden Fällen. Neue Berechtigungen `checks: read` und `pull-requests: read`. Migration: keine. Tests: `tests/test_release_tested_proof_633.py`.
+
 ## [4.17.0] - 2026-11-21
 
 Zeitschätzung zählt nur Arbeitszeit: Wartezeit auf die Spec-Freigabe und Leerlauf fallen heraus, „+ Wartezeit auf dich“ nur bei ausstehender menschlicher Freigabe (#628).
