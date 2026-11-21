@@ -197,14 +197,16 @@ export OPENSPEC_ACTIVE_WORKFLOW=[name]
 → Summe 1–3: weiter mit `/10-context` (Context + Analyse in einem Durchgang kombinieren)
 → Summe 4–6: weiter mit `/10-context`, dann `/20-analyse` (getrennt, 3x parallele Agenten), dann `/30-write-spec`
 
-**Zeitschätzung (#620), direkt nach dem Start:**
+**Zeitschätzung (#620, #642), direkt nach dem Start:**
 ```bash
 $WF estimate
 ```
 Meldet `workflow.py estimate` `ESTIMATE=on`, den Satz aus `LINE=` als letzte Zeile der Intake-Bewertung nennen, z.B.
-„Grobe Schätzung: 1 h 10 min–2 h 30 min, Ende ca. 15:40–17:00 (aus 7 Workflows)“; „(Startwert)“
-heißt: noch zu wenige abgeschlossene Workflows. Bei `ESTIMATE=off` die Schätzung weglassen. Dieselbe
-Spanne steht im Plan-Pane und wird mit jeder Phase enger.
+„Start 21:41, Freigabe ca. 22:15 (aus 7 Workflows)“ (#642: vor der Spec-Freigabe nur deren
+ungefährer Zeitpunkt, danach „Ende ca. 22:15–23:15 (80 % sicher, aus 12 Workflows)“, Prozent erst ab
+10 Vergleichen); „Noch keine Zeitschätzung: zu wenig Vergleichsdaten“ heißt: noch zu wenige
+abgeschlossene Workflows mit gemessener Arbeitszeit. Bei `ESTIMATE=off` die Schätzung weglassen.
+Dieselben Zeiten stehen im Plan-Pane und werden mit jeder Phase genauer.
 
 ## Modell-Empfehlung
 
@@ -276,7 +278,7 @@ Beende deine letzte Nachricht in diesem Befehl mit diesen Zeilen, in dieser Reih
 
 ❗ Du: `/<befehl> #<N>` — <ein Halbsatz, warum>
 ℹ️ Status: Workflow `<name>` · Phase `<x>` von 8
-⚙ /00-intake · agent-os-openspec 4.19.0
+⚙ /00-intake · agent-os-openspec 4.20.0
 
 Die erste Zeile sagt, wer am Zug ist — GENAU EINMAL, nur hier in der Fußzeile, nie zusätzlich als Vokabular mitten im Fließtext davor — und steht in genau einer von drei Formen (es gibt keine vierte):
 

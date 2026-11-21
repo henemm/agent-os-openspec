@@ -1,0 +1,245 @@
+FFFFFFFF                                                                 [100%]
+=================================== FAILURES ===================================
+___________________ test_gruppe_nur_workflows_mit_aktivitaet ___________________
+
+proj = PosixPath('/tmp/pytest-of-root/pytest-802/test_gruppe_nur_workflows_mit_0/inproc/proj')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f3288dc22c0>
+
+    def test_gruppe_nur_workflows_mit_aktivitaet(proj, monkeypatch):
+        wf = _wf()
+        for name, phases in CLEAN_A.items():
+            _clean(proj, name, phases)
+        old = {P1: 10, P2: 10, P3: 15, P4: 1, P5: 10, P6: 30, P6B: 10, P7: 5}
+        for i in range(4):
+            _dirty(proj, f"wf-alt-{i}", old)
+        # Alt-Workflow mit 10-h-Nachtsegment in phase6 (600 min Leerlauf)
+        _dirty(proj, "wf-alt-nacht", dict(old, **{P6: 600}))
+    
+        history = wf.load_archive_phase_durations(_archive(proj))
+        assert len(history) == 8, history
+>       assert sum(1 for h in history if h.get("clean") is True) == 3, history
+E       AssertionError: [{'type': 'feature', 'stage': None, 'phases': {'phase1_context': 10.0, 'phase2_analyse': 10.0, 'phase3_spec': 15.0, 'p...ne, 'phases': {'phase1_context': 10.0, 'phase2_analyse': 10.0, 'phase3_spec': 15.0, 'phase4_approved': 1.0, ...}}, ...]
+E       assert 0 == 3
+E        +  where 0 = sum(<generator object test_gruppe_nur_workflows_mit_aktivitaet.<locals>.<genexpr> at 0x7f32889a9150>)
+
+/home/user/agent-os-openspec/tests/test_zeitschaetzung_642.py:265: AssertionError
+______________________ test_ohne_saubere_daten_keine_zahl ______________________
+
+proj = PosixPath('/tmp/pytest-of-root/pytest-802/test_ohne_saubere_daten_keine_0/inproc/proj')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f3288dc1a70>
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-802/test_ohne_saubere_daten_keine_0')
+
+    def test_ohne_saubere_daten_keine_zahl(proj, monkeypatch, tmp_path):
+        wf = _wf()
+        # 2 saubere (< min_samples 3) und 5 alte ohne Aktivitätsdatei
+        for name in ("wf-clean-1", "wf-clean-2"):
+            _clean(proj, name, CLEAN_A[name])
+        for i in range(5):
+            _dirty(proj, f"wf-alt-{i}", CLEAN_A["wf-clean-1"])
+    
+        data = _running("wf-642-leer", P6, NOW - timedelta(minutes=50), NOW - timedelta(minutes=10))
+        out, est = _plan(wf, monkeypatch, data)
+>       assert est["n"] == 0, est
+E       AssertionError: {'low_min': 35.0, 'mid_min': 35.0, 'high_min': 35.0, 'elapsed_min': 50.0, ...}
+E       assert 7 == 0
+
+/home/user/agent-os-openspec/tests/test_zeitschaetzung_642.py:307: AssertionError
+_________________ test_vor_freigabe_nur_start_und_freigabezeit _________________
+
+proj = PosixPath('/tmp/pytest-of-root/pytest-802/test_vor_freigabe_nur_start_un0/inproc/proj')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f3288c07ad0>
+
+    def test_vor_freigabe_nur_start_und_freigabezeit(proj, monkeypatch):
+        wf = _wf()
+        for name, phases in CLEAN_PRE.items():
+            _clean(proj, name, phases)
+    
+        data = _running("wf-642-p2", P2, PRE_CREATED, NOW - timedelta(minutes=5))
+        out, est = _plan(wf, monkeypatch, data)
+        times = _time_lines(out)
+        assert "Start  13:41" in times, out
+>       assert "Freigabe  ca. 14:45" in times, out
+E       AssertionError: Workflow
+E         wf-642-p2
+E         
+E         ✔ 1 Kontext
+E         ▶ 2 Analyse  (läuft)
+E         ○ 3 Spec
+E         ○ 4 Freigabe
+E         ○ 5 TDD-RED
+E         ○ 6 Implement
+E         ○ 6b Adversary
+E         ○ 7 Validierung
+E         ○ 8 Code fertig
+E         ○ Ausliefern
+E         
+E         Start  13:41
+E         Dauer  ca. 1 h 57 min–2 h 47 min (aus 3 Workflows)
+E         Ende  ca. 15:38–16:28
+E         
+E         ❗ Du: /20-analyse — als Nächstes werden die Anforderungen analysiert
+E       assert 'Freigabe  ca. 14:45' in ['Start  13:41', 'Dauer  ca. 1 h 57 min–2 h 47 min (aus 3 Workflows)', 'Ende  ca. 15:38–16:28']
+
+/home/user/agent-os-openspec/tests/test_zeitschaetzung_642.py:368: AssertionError
+___________________ test_ende_spanne_viertelstunden_quantile ___________________
+
+proj = PosixPath('/tmp/pytest-of-root/pytest-802/test_ende_spanne_viertelstunde0/inproc/proj')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f32889bd370>
+
+    def test_ende_spanne_viertelstunden_quantile(proj, monkeypatch):
+        wf = _wf()
+        # Neuer Standard ohne Override und in der Projekt-config.yaml: [0.1, 0.9]
+>       assert wf.time_estimate_config()["quantiles"] in ([0.1, 0.9], (0.1, 0.9))
+E       assert [0.25, 0.75] in ([0.1, 0.9], (0.1, 0.9))
+
+/home/user/agent-os-openspec/tests/test_zeitschaetzung_642.py:410: AssertionError
+_____________________ test_basiszeile_prozent_erst_ab_zehn _____________________
+
+proj = PosixPath('/tmp/pytest-of-root/pytest-802/test_basiszeile_prozent_erst_a0/inproc/proj')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f32889be250>
+
+    def test_basiszeile_prozent_erst_ab_zehn(proj, monkeypatch):
+        wf = _wf()
+        assert _loo_hits(RESTS_8_OF_10) == 8
+        assert _loo_hits(RESTS_7_OF_10) == 7
+    
+        data = _running("wf-642-p5", P5, datetime(2026, 11, 21, 13, 30), NOW)
+    
+        def render(rests):
+            _clear_history(proj)
+            for i, rest in enumerate(rests):
+                _clean(proj, f"wf-loo-{i:02d}", _phases_rest(rest))
+            out, _est = _plan(wf, monkeypatch, data)
+            return out
+    
+        out8 = render(RESTS_8_OF_10)
+>       assert "80 % sicher, aus 10 Workflows" in _stripped(out8), out8
+E       AssertionError: Workflow
+E         wf-642-p5
+E         
+E         ✔ 1 Kontext
+E         ✔ 2 Analyse
+E         ✔ 3 Spec
+E         ✔ 4 Freigabe
+E         ▶ 5 TDD-RED  (läuft)
+E         ○ 6 Implement
+E         ○ 6b Adversary
+E         ○ 7 Validierung
+E         ○ 8 Code fertig
+E         ○ Ausliefern
+E         
+E         Start  13:30
+E         Dauer  ca. 1 h 10 min–1 h 54 min (aus 10 Workflows)
+E         Ende  ca. 14:40–15:24
+E         
+E         ❗ Du: /40-tdd-red — als Nächstes entstehen die fehlschlagenden Tests
+E       assert '80 % sicher, aus 10 Workflows' in ['Workflow', 'wf-642-p5', '', '✔ 1 Kontext', '✔ 2 Analyse', '✔ 3 Spec', ...]
+E        +  where ['Workflow', 'wf-642-p5', '', '✔ 1 Kontext', '✔ 2 Analyse', '✔ 3 Spec', ...] = _stripped('Workflow\nwf-642-p5\n\n✔ 1 Kontext\n✔ 2 Analyse\n✔ 3 Spec\n✔ 4 Freigabe\n▶ 5 TDD-RED  (läuft)\n○ 6 Implement\n○ 6b Ad... min (aus 10 Workflows)\nEnde  ca. 14:40–15:24\n\n❗ Du: /40-tdd-red — als Nächstes entstehen die fehlschlagenden Tests')
+
+/home/user/agent-os-openspec/tests/test_zeitschaetzung_642.py:480: AssertionError
+____________________ test_zeitblock_umbrochen_nicht_gekappt ____________________
+
+proj = PosixPath('/tmp/pytest-of-root/pytest-802/test_zeitblock_umbrochen_nicht0/inproc/proj')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f32889d2a50>
+
+    def test_zeitblock_umbrochen_nicht_gekappt(proj, monkeypatch):
+        wf = _wf()
+        for i in range(32):
+            _clean(proj, f"wf-w-{i:02d}", _phases_rest(20 + 3 * i))
+        data = _running("wf-642-schmal", P5, datetime(2026, 11, 21, 13, 30), NOW,
+                        issue_title="Zeitschätzung: verlässlich statt früh")
+        out, est = _plan(wf, monkeypatch, data, width=34)
+        assert est["n"] == 32, est
+        too_long = [ln for ln in out.splitlines() if len(ln) > 34]
+        assert not too_long, too_long
+        joined = " ".join(out.split())
+>       assert "aus 32 Workflows" in joined, out
+E       AssertionError: Workflow
+E         wf-642-schmal
+E         Zeitschätzung: verlässlich statt
+E         früh
+E         
+E         ✔ 1 Kontext
+E         ✔ 2 Analyse
+E         ✔ 3 Spec
+E         ✔ 4 Freigabe
+E         ▶ 5 TDD-RED  (läuft)
+E         ○ 6 Implement
+E         ○ 6b Adversary
+E         ○ 7 Validierung
+E         ○ 8 Code fertig
+E         ○ Ausliefern
+E         
+E         Start  13:30
+E         Dauer  ca. 1 h 20 min–2 h 7 min (a
+E         Ende  ca. 14:50–15:36
+E         
+E         ❗ Du:
+E         /40-tdd-red — als Nächstes
+E         entstehen die fehlschlagenden
+E         Tests
+E       assert 'aus 32 Workflows' in 'Workflow wf-642-schmal Zeitschätzung: verlässlich statt früh ✔ 1 Kontext ✔ 2 Analyse ✔ 3 Spec ✔ 4 Freigabe ▶ 5 TDD-RE... ca. 1 h 20 min–2 h 7 min (a Ende ca. 14:50–15:36 ❗ Du: /40-tdd-red — als Nächstes entstehen die fehlschlagenden Tests'
+
+/home/user/agent-os-openspec/tests/test_zeitschaetzung_642.py:505: AssertionError
+____________________ test_estimate_cli_line_und_schluessel _____________________
+
+proj = PosixPath('/tmp/pytest-of-root/pytest-802/test_estimate_cli_line_und_sch0/inproc/proj')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f32889d2e50>
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-802/test_estimate_cli_line_und_sch0')
+
+    def test_estimate_cli_line_und_schluessel(proj, monkeypatch, tmp_path):
+        wf = _wf()
+    
+        # (a) vor der Freigabe, in-process mit fester Uhr (Daten aus AC-3)
+        for name, phases in CLEAN_PRE.items():
+            _clean(proj, name, phases)
+        pre = _running("wf-642-p2", P2, PRE_CREATED, NOW - timedelta(minutes=5))
+        _out, est = _plan(wf, monkeypatch, pre)
+        kv = _kv_lines(wf, est)
+        assert _kv(kv, "ESTIMATE") == "on", kv
+>       assert _kv(kv, "ESTIMATE_APPROVAL") is not None, kv
+E       AssertionError: ESTIMATE=on
+E         ESTIMATE_LOW_MIN=117
+E         ESTIMATE_HIGH_MIN=167
+E         ESTIMATE_START=2026-11-21T13:41
+E         ESTIMATE_END_LOW=2026-11-21T15:38
+E         ESTIMATE_END_HIGH=2026-11-21T16:28
+E         ESTIMATE_BASIS=3
+E         LINE=Grobe Schätzung: 1 h 57 min–2 h 47 min, Ende ca. 15:38–16:28 (aus 3 Workflows)
+E       assert None is not None
+E        +  where None = _kv('ESTIMATE=on\nESTIMATE_LOW_MIN=117\nESTIMATE_HIGH_MIN=167\nESTIMATE_START=2026-11-21T13:41\nESTIMATE_END_LOW=2026-11-2...026-11-21T16:28\nESTIMATE_BASIS=3\nLINE=Grobe Schätzung: 1 h 57 min–2 h 47 min, Ende ca. 15:38–16:28 (aus 3 Workflows)', 'ESTIMATE_APPROVAL')
+
+/home/user/agent-os-openspec/tests/test_zeitschaetzung_642.py:524: AssertionError
+__________________ test_fail_open_und_ist_block_unveraendert ___________________
+
+proj = PosixPath('/tmp/pytest-of-root/pytest-802/test_fail_open_und_ist_block_u0/inproc/proj')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f3288c414f0>
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-802/test_fail_open_und_ist_block_u0')
+
+    def test_fail_open_und_ist_block_unveraendert(proj, monkeypatch, tmp_path):
+        wf = _wf()
+        monkeypatch.setattr(wf, "_estimate_now", lambda: NOW)
+    
+        # (1) Leeres Archiv: keine Ausnahme, keine Zahl
+        data = _running("wf-642-kaputt", P6, NOW - timedelta(minutes=50),
+                        NOW - timedelta(minutes=10))
+        est = wf.current_estimate(dict(data))
+        assert isinstance(est, dict), est
+>       assert est["n"] == 0 and est["source"] == "none", est
+E       AssertionError: {'low_min': 26.666666666666664, 'mid_min': 66.66666666666666, 'high_min': 106.66666666666666, 'elapsed_min': 50.0, ...}
+E       assert (0 == 0 and 'default' == 'none'
+E         
+E         - none
+E         + default)
+
+/home/user/agent-os-openspec/tests/test_zeitschaetzung_642.py:618: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_zeitschaetzung_642.py::test_gruppe_nur_workflows_mit_aktivitaet
+FAILED tests/test_zeitschaetzung_642.py::test_ohne_saubere_daten_keine_zahl
+FAILED tests/test_zeitschaetzung_642.py::test_vor_freigabe_nur_start_und_freigabezeit
+FAILED tests/test_zeitschaetzung_642.py::test_ende_spanne_viertelstunden_quantile
+FAILED tests/test_zeitschaetzung_642.py::test_basiszeile_prozent_erst_ab_zehn
+FAILED tests/test_zeitschaetzung_642.py::test_zeitblock_umbrochen_nicht_gekappt
+FAILED tests/test_zeitschaetzung_642.py::test_estimate_cli_line_und_schluessel
+FAILED tests/test_zeitschaetzung_642.py::test_fail_open_und_ist_block_unveraendert
+8 failed in 0.34s

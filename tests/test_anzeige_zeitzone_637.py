@@ -4,6 +4,10 @@ Spec: docs/specs/fast/fix-637-anzeige-zeitzone.md (AC-1 bis AC-4).
 Der Prozess läuft in der Systemzone UTC (`TZ=UTC` + `time.tzset()`), die
 Anzeige soll in `time_estimate.display_timezone` erfolgen (Standard
 `Europe/Berlin`, `local` = Systemzone, Ungültiges = Systemzone).
+
+#642: Eine Ende-Spanne gibt es nur mit sauberer Vergleichsgruppe (Archiv plus
+Aktivitätsdatei, `_write_history`); sie ist in der Anzeigezone auf
+Viertelstunden gerundet.
 """
 
 import json
@@ -86,6 +90,24 @@ def utc_proc(tmp_path, monkeypatch):
     _reset_config_cache()
 
 
+def _write_history(proj: Path) -> None:
+    """Drei saubere Archiv-Workflows (#642): Restarbeit ab phase6 (seit 5 min)
+    45, 75, 105 min -> Quantile 0.25/0.75 = 60/90 min, also eine echte Spanne."""
+    act_dir = proj / ".claude" / "workflows" / "_activity"
+    act_dir.mkdir(parents=True, exist_ok=True)
+    for i, p6 in enumerate((30, 60, 90)):
+        name = f"zone-hist-{i}"
+        phases = {"phase1_context": 10.0, "phase6_implement": float(p6),
+                  "phase7_validate": 20.0}
+        archived = {"name": name, "workflow_type": "feature",
+                    "current_phase": "phase8_complete", "created": "2026-11-01T09:00:00",
+                    "phase_transitions": [], "phase_log": []}
+        (proj / ".claude" / "workflows" / "_archive" / f"{name}.json").write_text(
+            json.dumps(archived))
+        (act_dir / f"{name}.json").write_text(json.dumps(
+            {"last": "2026-11-01T18:00:00", "phases": phases}))
+
+
 def _set_config(proj: Path, text: str) -> None:
     (proj / "openspec.yaml").write_text(text)
     _reset_config_cache()
@@ -133,12 +155,14 @@ def test_ac1_aware_timestamp_converted(utc_proc, monkeypatch):
 
 def test_ac1_end_in_german_time(utc_proc, monkeypatch):
     wf = _wf()
+    _write_history(utc_proc)
     monkeypatch.setattr(wf, "_estimate_now", lambda: NOW)
     est = wf.current_estimate(_state(START))
     lines = wf.render_plan(_state(START), estimate=est)
     end_low = (est["end_low"].replace(tzinfo=timezone.utc).astimezone(BERLIN))
     end_line = next(ln for ln in lines.splitlines() if ln.startswith("Ende  "))
     assert end_line.startswith(f"Ende  ca. {end_low:%H:%M}–"), end_line
+    assert end_line == "Ende  ca. 19:00–19:30", end_line  # #642: 18:00/18:30 UTC
 
 
 def test_ac1_today_is_decided_in_display_zone(utc_proc, monkeypatch):
@@ -219,6 +243,7 @@ def _estimate_cli(tmp_path, label, config):
     now_utc = datetime.now(timezone.utc).replace(tzinfo=None, second=0, microsecond=0)
     created = now_utc - timedelta(minutes=60)
     data = _state(created, now=now_utc)
+    _write_history(proj)  # #642: ohne saubere Vergleichsgruppe keine Ende-Spanne
     (proj / ".claude" / "workflows" / f"{data['name']}.json").write_text(json.dumps(data))
     (proj / ".claude" / "active_workflow").write_text(data["name"])
     res = subprocess.run([sys.executable, str(WORKFLOW_PY), "estimate"], capture_output=True,
@@ -242,6 +267,7 @@ def test_ac4_estimate_cli_in_german_time(tmp_path):
         end = datetime.fromisoformat(kv[key])
         assert end.tzinfo is not None, (key, kv[key])
         assert end.utcoffset() == end.astimezone(BERLIN).utcoffset(), (key, kv[key])
+        assert end.minute % 15 == 0, (key, kv[key])  # #642: Viertelstunde
     end_low = datetime.fromisoformat(kv["ESTIMATE_END_LOW"])
     clock = (end_low.strftime("%H:%M") if end_low.date() == now_be.date()
              else end_low.strftime("%d.%m. %H:%M"))

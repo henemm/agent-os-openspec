@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.20.0] - 2026-11-21
+
+Verlässliche Zeitschätzung im Plan: nur noch aus Workflows mit gemessener Arbeitszeit, vor der Spec-Freigabe nur deren ungefährer Zeitpunkt, danach eine Ende-Spanne auf Viertelstunden, die 80 % der Vergleichs-Workflows abdeckt (#642).
+
+### Changed
+
+- **Zeitschätzung verlässlich statt früh (#642):** Die Vergleichsgruppe besteht nur noch aus Archiv-Workflows mit Aktivitätsdatei (`_archive_phase_entry` markiert sie `clean`); Alt-Workflows, deren `phase_log` Nacht und Pausen als Arbeit zählt, verzerren die Spanne nicht mehr. Ohne genug solche Workflows zeigt der Plan „Ende  offen“ und „zu wenig Vergleichsdaten“, die Startwerte `time_estimate.defaults` werden nicht mehr angezeigt (Schlüssel bleibt gültig). Vor `phase4_approved` steht nur „Start“ und „Freigabe  ca. HH:MM“ (Median der Restarbeit bis einschließlich `phase3_spec`, nächste Viertelstunde) bzw. „Freigabe  wartet auf dich“; ab der Freigabe „Ende  ca. A–B“ aus den Quantilen, neuer Standard `quantiles: [0.1, 0.9]`, A auf die Viertelstunde ab-, B aufgerundet (in der Anzeigezone), bei A = B eine Uhrzeit. Die „Dauer“-Zeile und der Zusatz „+ Wartezeit auf dich“ entfallen in der Prognose; die Basis steht in einer eigenen Zeile, „P % sicher, aus N Workflows“ erst ab 10 Vergleichen und mit nachgemessener Leave-one-out-Trefferquote (`_measured_hit_rate`). Der Zeitblock wird im schmalen Pane umbrochen statt gekappt. `workflow.py estimate`: `ESTIMATE_APPROVAL` vor der Freigabe, Minuten und `ESTIMATE_END_*` nur mit Ende-Spanne, `ESTIMATE_BASIS=none` ohne Daten, `LINE=` im Format des Plans. Der Ist-Block fertiger Workflows bleibt unverändert. Migration: keine (wer `quantiles` selbst gesetzt hat, behält seinen Wert). Tests: `tests/test_zeitschaetzung_642.py`, angepasst `tests/test_zeitschaetzung_620.py`, `tests/test_arbeitszeit_628.py`, `tests/test_anzeige_zeitzone_637.py`.
+
 ## [4.19.0] - 2026-11-21
 
 Schnellere Auslieferung: Die Testsuite läuft parallel auf allen Kernen, und ein allein veröffentlichtes Issue braucht nur noch einen Testlauf bis zur Version (#640).
