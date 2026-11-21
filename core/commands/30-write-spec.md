@@ -59,6 +59,13 @@ python3 .claude/hooks/workflow.py status
 
 Lies die Analyse-Ergebnisse aus `docs/context/[workflow-name].md` und das Template aus `docs/specs/_template.md`.
 
+**Autarker Auftrag (#622):** Läuft der Auftrag autark (`workflow.py queue` meldet `AUTARK=on`),
+plane in der Spec keine Schritte ein, die eine menschliche Sperre (override) brauchen, wenn
+eingebaute Standardwerte oder ein anderer Weg genügen. Vermeide insbesondere Änderungen an
+der wirksamen Gate-Config; nur die reinen Anzeige-Abschnitte `next_suggestion` und
+`time_estimate` sind per Edit ohne override änderbar. Reiche diesen Hinweis im Spec-Auftrag
+an den spec-writer weiter.
+
 ### Hängende Subagenten
 
 Primärer Schutz gegen einen hängenden Subagenten: Die Sitzung wird automatisch erneut aufgerufen,

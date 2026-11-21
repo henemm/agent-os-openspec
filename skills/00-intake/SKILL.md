@@ -112,6 +112,12 @@ autarker Auftrag hält die Kette nicht für `/clear` an; menschliche Pflichtstop
 (AMBIGUOUS, zweites BROKEN, Override, Deploy-Freigabe, Stop-Lock, Produktfragen)
 bleiben. Bei nur einem Issue entfällt der Schritt.
 
+**Planung autarker Aufträge (#622):** Bei einem autarken Auftrag keine Schritte
+einplanen, die eine menschliche Sperre (override) brauchen, wenn eingebaute
+Standardwerte oder ein anderer Weg genügen. Änderungen an der wirksamen Gate-Config
+vermeiden; nur die reinen Anzeige-Abschnitte `next_suggestion` und `time_estimate`
+sind per Edit ohne override änderbar (Bash-Schreibzugriffe auf die Config bleiben gesperrt).
+
 ### 1c. Bugs: Vorprüfung vor dem Scoring
 
 Bei einem Fehlerbericht, noch bevor bewertet wird:

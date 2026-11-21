@@ -1,0 +1,18 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.18, pytest-9.2.0, pluggy-1.7.0 -- /home/user/agent-os-openspec/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/user/agent-os-openspec
+collecting ... collected 10 items
+
+tests/test_config_additiv_622.py::test_display_only_change_pur_und_fail_closed PASSED [ 10%]
+tests/test_config_additiv_622.py::test_write_neuer_anzeige_abschnitt_erlaubt PASSED [ 20%]
+tests/test_config_additiv_622.py::test_edit_und_multiedit_aendern_entfernen_anzeige_abschnitt_erlaubt PASSED [ 30%]
+tests/test_config_additiv_622.py::test_gate_schluessel_aendern_blockiert PASSED [ 40%]
+tests/test_config_additiv_622.py::test_gate_schluessel_entfernen_oder_neu_einfuegen_blockiert PASSED [ 50%]
+tests/test_config_additiv_622.py::test_doppelte_schluessel_und_unlesbares_yaml_blockiert PASSED [ 60%]
+tests/test_config_additiv_622.py::test_app_config_ohne_plugin_block_und_anlegen_vorrangiger_config_blockiert PASSED [ 70%]
+tests/test_config_additiv_622.py::test_bash_schreibzugriff_bleibt_blockiert PASSED [ 80%]
+tests/test_config_additiv_622.py::test_override_wirkt_weiter PASSED      [ 90%]
+tests/test_config_additiv_622.py::test_planungshinweis_in_befehlstexten_und_skills_ohne_drift PASSED [100%]
+
+============================== 10 passed in 2.69s ==============================
