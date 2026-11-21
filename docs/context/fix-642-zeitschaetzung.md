@@ -36,3 +36,12 @@ Die Zeitschätzung im Plan-Pane ist trotz #628 unbrauchbar (gregor_zwanzig #3208
 - „Dauer“ (Arbeitszeit) und „Ende“ (Wanduhr) sind verschiedene Größen; die Anzeige muss das auflösen, ohne zu lügen.
 - `_estimate_span_text`/`_estimate_basis` werden auch im Chat (`LINE=`) genutzt — dort kein Pane-Umbruch nötig.
 - Tests der Specs #620/#628/#637 prüfen konkrete Zeilenformate; Änderungen am Format müssen diese mitziehen.
+
+## Analyse (Summe 2: Kontext und Analyse in einem Durchgang)
+
+PO-Entscheidungen (2026-11-21, Issue-Kommentar): verlässlich vor früh, laufend nachgeschliffen; Viertelstunden-Genauigkeit; vor der Freigabe nur Start + „Freigabe ca.“; danach Ende-Spanne mit 80 % Sicherheit, Prozent nur nachgemessen; keine Wartezeit-Prognose.
+
+Gewählt (A): nur Archiv-Workflows mit Aktivitätsdatei; Quantile 0.1/0.9 (80 % der Vergleichsgruppe in der Spanne); Prozentangabe erst ab 10 Vergleichen; Uhrzeiten auf Viertelstunde (unten ab-, oben aufgerundet); keine „Dauer“-Zeile in der Prognose; Zeit-Block umbrechen statt kappen; ohne saubere Vergleichsgruppe keine Zahl statt Startwert.
+
+Alternative B (verworfen): Alt-Workflows behalten und Segmente über einer Schwelle kappen. Willkürlicher Grenzwert, verfälscht lange Phasen (iOS-Builds) — bereits in ADR-0628 verworfen; fiele für ADR „Alt-Daten bleiben mit Lückenkappung“.
+Alternative C (verworfen): Kalibrierung per Leave-one-out-Trefferquote statt Quantil. Genauer bei schiefen Verteilungen, aber bei kleinen Gruppen instabil und deutlich mehr Code; das Quantil der Gruppe ist per Konstruktion die Trefferquote der Vergleichsgruppe.
