@@ -13,6 +13,11 @@ Schnittstellen (Spec docs/specs/feat-628-schaetzung-arbeitszeit.md):
   `ESTIMATE_WAITING=po`
 - `session_singleton_guard._heartbeat` ruft `note_activity` nur im fälligen
   Throttle-Zweig, fail-open
+
+#642 (docs/specs/fix-642-zeitschaetzung.md): nur Archiv-Workflows mit
+Aktivitätsdatei bilden die Vergleichsgruppe (`_write_clean`), vor der Freigabe
+gibt es statt eines Endes `approval`, und statt „ + Wartezeit auf dich“ zeigt
+der Plan „Freigabe  wartet auf dich“ (keine Prognose der Wartezeit).
 """
 
 import hashlib
@@ -48,8 +53,8 @@ CONFIG_ON = """time_estimate:
     feature: [60, 240]
     feature-fast: [20, 60]
 """
-WAIT_SUFFIX = " + Wartezeit auf dich"
-TIME_PREFIXES = ("Start  ", "Dauer  ", "Ende  ")
+WAIT_SUFFIX = " + Wartezeit auf dich"   # seit #642 nie mehr angezeigt
+TIME_PREFIXES = ("Start  ", "Dauer  ", "Ende  ", "Freigabe  ")
 NOW = datetime(2026, 11, 21, 14, 0, 0)
 
 
@@ -206,6 +211,15 @@ def _write_archived(project: Path, data: dict) -> Path:
     path = _archive(project) / f"{data['name']}.json"
     path.write_text(json.dumps(data))
     return path
+
+
+def _write_hist(project: Path, name: str, phases: dict) -> Path:
+    """Sauberer Archiv-Workflow (#642): Archivdatei plus Aktivitätsdatei."""
+    act = _activity_file(project, name)
+    act.parent.mkdir(parents=True, exist_ok=True)
+    act.write_text(json.dumps({"last": "2026-11-01T18:00:00",
+                               "phases": {k: float(v) for k, v in phases.items()}}))
+    return _write_archived(project, _archived(name, phases))
 
 
 # =============================================================================
@@ -440,7 +454,7 @@ HIST_PHASES = {P1: 10, P2: 10, P3: 30, P4: 1, P5: 10, P6: 30, P6B: 10, P7: 5}
 def test_laufender_workflow_nutzt_arbeitszeit(proj, monkeypatch):
     wf = _wf()
     for i in range(3):
-        _write_archived(proj, _archived(f"wf-hist-{i}", HIST_PHASES))
+        _write_hist(proj, f"wf-hist-{i}", HIST_PHASES)
     cfg = wf.time_estimate_config()
     assert cfg is not None
     history = wf.load_archive_phase_durations(_archive(proj))
@@ -470,8 +484,10 @@ def test_laufender_workflow_nutzt_arbeitszeit(proj, monkeypatch):
     assert est["low_min"] == pytest.approx(66.0, abs=0.5), est
     assert est["high_min"] == pytest.approx(66.0, abs=0.5), est
     assert est["total_low_min"] == pytest.approx(104.0, abs=1.0), est
-    assert _close(est["end_low"], NOW + timedelta(minutes=66)), est["end_low"]
-    assert _close(est["end_high"], NOW + timedelta(minutes=66)), est["end_high"]
+    # #642: vor der Freigabe kein Ende, sondern die Freigabezeit: Rest bis
+    # einschließlich phase3 = 30 - 20 = 10 min -> 14:10 -> nächste Viertelstunde 14:15
+    assert est["end_low"] is None and est["end_high"] is None, est
+    assert est["approval"] == NOW + timedelta(minutes=15), est["approval"]
 
     # (b) Ohne Aktivitätsdatei: Wanduhr minus PO-Wartezeit (Freigabe per approval)
     start = datetime(2026, 11, 20, 21, 0)
@@ -579,22 +595,29 @@ def test_wartezeit_zusatz_nur_bei_ausstehender_menschlicher_freigabe(tmp_path, m
         elif bool(awaiting(data)) is not expected:
             failures.append((label, "awaiting_human_approval", expected))
 
+        for i in range(3):  # #642: saubere Vergleichsgruppe, sonst keine Zahl
+            _write_hist(project, f"wf-hist-{i}", HIST_PHASES)
         plan = _workflow(["plan"], env, project)
         assert plan.returncode == 0, (label, plan.stderr)
-        dauer = _dauer(plan.stdout)
-        assert dauer is not None, (label, plan.stdout)
+        assert _dauer(plan.stdout) is None, (label, plan.stdout)  # #642: keine Dauer
         est = _workflow(["estimate"], env, project)
         assert est.returncode == 0, (label, est.stderr)
         line = _kv(est.stdout, "LINE") or ""
         waiting = _kv(est.stdout, "ESTIMATE_WAITING")
-        if expected:
-            ok = (dauer.endswith(WAIT_SUFFIX) and line.endswith(WAIT_SUFFIX)
+        # #642: keine Prognose der Wartezeit; vor der Freigabe „wartet auf dich“
+        if expected and phase == P3:
+            ok = ("Freigabe  wartet auf dich" in _time_lines(plan.stdout)
+                  and line.startswith("Start ") and "Freigabe wartet auf dich" in line
                   and waiting == "po")
+        elif expected:
+            ok = (waiting == "po" and line.startswith("Ende ca. ")
+                  and "wartet auf dich" not in plan.stdout)
         else:
-            ok = ("Wartezeit auf dich" not in plan.stdout
-                  and "Wartezeit auf dich" not in est.stdout and waiting is None)
+            ok = ("wartet auf dich" not in plan.stdout
+                  and "wartet auf dich" not in est.stdout and waiting is None)
+        ok = ok and WAIT_SUFFIX.strip() not in plan.stdout + est.stdout
         if not ok:
-            failures.append((label, dauer, line, waiting, expected))
+            failures.append((label, _time_lines(plan.stdout), line, waiting, expected))
     assert not failures, failures
 
 
@@ -639,7 +662,7 @@ def test_ist_block_arbeitszeit_mit_gesamtzeit():
 def test_fail_open_und_rueckfall(proj, monkeypatch, tmp_path):
     wf = _wf()
     for i in range(3):
-        _write_archived(proj, _archived(f"wf-hist-{i}", HIST_PHASES))
+        _write_hist(proj, f"wf-hist-{i}", HIST_PHASES)
     monkeypatch.setattr(wf, "_estimate_now", lambda: NOW)
     created = NOW - timedelta(minutes=90)
     entered = NOW - timedelta(minutes=20)
@@ -724,7 +747,7 @@ def test_fail_open_und_rueckfall(proj, monkeypatch, tmp_path):
     plan = _workflow(["plan"], env, project)
     assert plan.returncode == 0 and "Traceback" not in plan.stderr, plan.stderr
     assert [ln.split("  ")[0] for ln in _time_lines(plan.stdout)] == \
-        ["Start", "Dauer", "Ende"], plan.stdout
+        ["Start", "Ende"], plan.stdout  # #642: keine Dauer-Zeile, ohne Archiv „Ende  offen“
     est = _workflow(["estimate"], env, project)
     assert est.returncode == 0 and "Traceback" not in est.stderr, est.stderr
     assert _kv(est.stdout, "ESTIMATE") == "on", est.stdout
@@ -745,7 +768,7 @@ def test_laufende_wartezeit_auf_freigabe_zaehlt_nicht(proj, monkeypatch):
     6 h auf „approved“: verstrichen ≈ Zeit bis zum Briefing, nicht 6 h mehr."""
     wf = _wf()
     for i in range(3):
-        _write_archived(proj, _archived(f"wf-hist-{i}", HIST_PHASES))
+        _write_hist(proj, f"wf-hist-{i}", HIST_PHASES)
     cfg = wf.time_estimate_config()
     history = wf.load_archive_phase_durations(_archive(proj))
     created = NOW - timedelta(minutes=400)
@@ -765,7 +788,10 @@ def test_laufende_wartezeit_auf_freigabe_zaehlt_nicht(proj, monkeypatch):
     assert est["elapsed_min"] == pytest.approx(40.0, abs=0.5), est
     # laufende Phase: 10 min Arbeit -> Rest 20 + 56 = 76, Ende = jetzt + Rest
     assert est["low_min"] == pytest.approx(76.0, abs=0.5), est
-    assert _close(est["end_low"], NOW + timedelta(minutes=76)), est["end_low"]
+    # #642: vor der Freigabe Freigabezeit statt Ende: Rest bis zur Freigabe
+    # 30 - 10 = 20 min -> 14:20 -> nächste Viertelstunde 14:15
+    assert est["end_low"] is None, est
+    assert est["approval"] == NOW + timedelta(minutes=15), est["approval"]
     assert wf._minutes_in_phase(waiting, P3, NOW) == pytest.approx(10.0, abs=0.5)
     monkeypatch.setattr(wf, "_estimate_now", lambda: NOW)
     assert wf.current_estimate(dict(waiting))["elapsed_min"] == \
@@ -815,7 +841,7 @@ def test_note_activity_uhr_rueckwaerts_und_unsinnige_minuten(proj, monkeypatch):
     assert _phases(proj, "wf-unsinn") == {P6: 14.0}
 
     for i in range(3):
-        _write_archived(proj, _archived(f"wf-hist-{i}", HIST_PHASES))
+        _write_hist(proj, f"wf-hist-{i}", HIST_PHASES)
     monkeypatch.setattr(wf, "_estimate_now", lambda: NOW)
     created = NOW - timedelta(minutes=90)
     base = {"name": "wf-unsinn", "workflow_type": "feature", "current_phase": P6,

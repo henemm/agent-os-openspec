@@ -356,17 +356,21 @@ next_suggestion:
   timeout_s: 8        # Zeitbudget fuer alle gh-Aufrufe zusammen (Sekunden)
   cache_ttl_s: 300    # Gueltigkeit des Rohdaten-Caches (Sekunden)
 
-# Zeitschaetzung (#620): Intake (`workflow.py estimate`) und Plan-Pane zeigen
-# Start, Dauer als Spanne und Prognose-Ende. Gelernt aus dem `phase_log` der
-# archivierten Workflows (Quantile der Restdauern, gleiche Score-Stufe, sonst
-# gleicher Typ); mit weniger als min_samples Workflows gelten die Startwerte
-# (Minuten, [low, high]). Reine Anzeige, kein Gate. Nur false schaltet ab.
+# Zeitschaetzung (#620, #642): Intake (`workflow.py estimate`) und Plan-Pane zeigen
+# Start, vor der Spec-Freigabe deren ungefaehren Zeitpunkt, danach eine Ende-Spanne
+# auf Viertelstunden. Gelernt nur aus archivierten Workflows MIT Aktivitaetsdatei
+# (Quantile der Restarbeit, gleiche Score-Stufe, sonst gleicher Typ); mit weniger
+# als min_samples solchen Workflows keine Zahl ("zu wenig Vergleichsdaten").
+# quantiles [0.1, 0.9] = 80 % der Vergleichsgruppe in der Spanne; eine Prozentzahl
+# erscheint erst ab 10 Vergleichen und ist nachgemessen (Leave-one-out).
+# `defaults` bleibt gueltig, wird seit #642 aber nicht mehr angezeigt.
+# Reine Anzeige, kein Gate. Nur false schaltet ab.
 # Gezaehlt wird nur Arbeitszeit (#628): Wartezeit auf die Spec-Freigabe und Leerlauf
 # fallen heraus; der Heartbeat schreibt die Aktivitaet nach .claude/workflows/_activity/.
 time_estimate:
   enabled: true
   min_samples: 3
-  quantiles: [0.25, 0.75]
+  quantiles: [0.1, 0.9]
   defaults:
     feature: [60, 240]
     feature-fast: [20, 60]

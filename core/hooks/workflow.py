@@ -681,20 +681,33 @@ def render_plan(data, archived: bool = False, width: "int | None" = None,
     Zeit-Block an; ohne `estimate` bleibt die Ausgabe unveraendert.
     """
     if not isinstance(data, dict):
-        lines, tail = ["Kein aktiver Workflow"], None
+        lines, times, tail = ["Kein aktiver Workflow"], None, None
     else:
-        lines = _plan_lines(data, archived, deploy, width) + [""]
-        if estimate is not None:
-            lines[-1:-1] = _plan_time_lines(data, estimate)
+        lines = _plan_lines(data, archived, deploy, width)
+        times = _plan_time_lines(data, estimate) if estimate is not None else []
         tail = end_state(data, archived=archived, deploy=deploy,
                          autonomous=autonomous, **(queue or {}))["line"]
-    if isinstance(width, int) and width > 0:
+    narrow = isinstance(width, int) and width > 0
+    if narrow:  # #642: Zeit-Block umbrechen, alle anderen Zeilen wie bisher kappen
         lines = [line[:width] for line in lines]
-        if tail:
-            lines += _wrap_plan_tail(tail, width)
-    elif tail:
-        lines.append(tail)
+        times = None if times is None else [
+            part for line in times for part in _wrap_time_line(line, width)]
+    if times is not None:
+        lines += times + [""]
+    if tail:
+        lines += _wrap_plan_tail(tail, width) if narrow else [tail]
     return "\n".join(lines)
+
+
+def _wrap_time_line(line: str, width: int) -> "list[str]":
+    """Zeile des Zeit-Blocks bei `width` umbrechen statt kappen (#642);
+    Folgezeilen mit 6 Leerzeichen eingerückt."""
+    if len(line) <= width:
+        return [line]
+    if width <= len(TIME_INDENT):
+        return [line[:width]]
+    import textwrap
+    return textwrap.wrap(line, width, subsequent_indent=TIME_INDENT) or [line[:width]]
 
 
 def _plan_lines(data: dict, archived: bool, deploy,
@@ -790,10 +803,14 @@ def _plan_deploy_line(status, done_all: bool) -> str:
 
 # --- Zeitschätzung (#620) ----------------------------------------------------
 # Erfahrungswerte aus dem Archiv (`phase_log`), reine Anzeige, fail-open.
-TIME_ESTIMATE_DEFAULTS = {"enabled": True, "min_samples": 3, "quantiles": [0.25, 0.75],
+# #642: `defaults` bleibt gültiger Schlüssel, wird aber nicht mehr angezeigt.
+TIME_ESTIMATE_DEFAULTS = {"enabled": True, "min_samples": 3, "quantiles": [0.1, 0.9],
                           "defaults": {"feature": [60, 240], "feature-fast": [20, 60]},
                           "idle_gap_min": 15, "display_timezone": "Europe/Berlin"}
-WAIT_SUFFIX = " + Wartezeit auf dich"
+APPROVAL_PHASE = "phase4_approved"
+PERCENT_MIN_SAMPLES = 10   # #642: Prozentangabe erst ab so vielen Vergleichs-Workflows
+TIME_INDENT = " " * 6      # #642: Einzug der Basiszeile und umbrochener Zeilen
+NO_DATA = "zu wenig Vergleichsdaten"
 
 
 def _estimate_now() -> datetime:
@@ -936,14 +953,16 @@ def _activity_phases(name) -> dict:
 
 
 def _archive_phase_entry(data) -> "dict | None":
-    """Ein Archiv-Workflow als `{type, stage, phases}`, oder None, wenn er nicht zählt.
+    """Ein Archiv-Workflow als `{type, stage, phases, clean}`, oder None, wenn er nicht zählt.
 
     #628: Arbeitszeit. Aktivminuten aus der Aktivitätsdatei, sonst `phase_log`
-    je Segment abzüglich PO-Wartezeit (nie unter 0).
+    je Segment abzüglich PO-Wartezeit (nie unter 0). #642: `clean` nur mit
+    lesbarer Aktivitätsdatei; nur solche Einträge bilden die Vergleichsgruppe.
     """
     if not isinstance(data, dict) or data.get("status") == "abandoned":
         return None
     phases: dict = dict(_activity_phases(data.get("name")))
+    clean = bool(phases)
     log = data.get("phase_log")
     span = _po_wait_span(data) if not phases else None
     for entry in log if isinstance(log, list) and not phases else []:
@@ -961,7 +980,7 @@ def _archive_phase_entry(data) -> "dict | None":
     if not phases:
         return None
     return {"type": data.get("workflow_type") or "feature",
-            "stage": _score_stage(data.get("intake_score")), "phases": phases}
+            "stage": _score_stage(data.get("intake_score")), "phases": phases, "clean": clean}
 
 
 def load_archive_phase_durations(archive_dir=None) -> list:
@@ -1060,9 +1079,13 @@ def _minutes_in_phase(data: dict, phase: str, now: datetime,
 
 
 def _estimate_group(data: dict, history: list, min_samples: int) -> list:
-    """Vergleichsgruppe (#620): gleiche Score-Stufe, sonst gleicher Typ, sonst leer."""
+    """Vergleichsgruppe (#620): gleiche Score-Stufe, sonst gleicher Typ, sonst leer.
+
+    #642: nur saubere Einträge (`clean is True`, mit Aktivitätsdatei).
+    """
     wtype = data.get("workflow_type") or "feature"
-    same = [h for h in history if isinstance(h, dict) and h.get("type") == wtype]
+    same = [h for h in history if isinstance(h, dict) and h.get("type") == wtype
+            and h.get("clean") is True]
     stage = _score_stage(data.get("intake_score"))
     if stage is not None:
         staged = [h for h in same if h.get("stage") == stage]
@@ -1071,24 +1094,63 @@ def _estimate_group(data: dict, history: list, min_samples: int) -> list:
     return same if len(same) >= min_samples else []
 
 
-def _estimate_rests(data, history, config, now,
-                    activity: "dict | None" = None) -> "tuple[list, int]":
-    """Restdauern (Minuten, sortiert) und Zahl der Vergleichs-Workflows; n=0 = Startwerte."""
+def _estimate_rests(data, history, config, now, activity: "dict | None" = None,
+                    until: "str | None" = None) -> "tuple[list, list, list]":
+    """Restarbeit je Vergleichs-Workflow (Minuten, sortiert), Gruppe und Planphasen.
+
+    #642: leere Gruppe = keine Schätzung (keine Startwerte); `until` = letzte
+    mitgezählte Planphase (einschließlich), z. B. phase3_spec bis zur Freigabe.
+    """
     phases, running = _estimate_steps(data)
     current = phases[running]
     in_phase = _minutes_in_phase(data, current, now, activity) if current == data.get(
         "current_phase") else 0.0
     group = _estimate_group(data, history, config["min_samples"])
-    if not group:
-        low, high = config["defaults"][data.get("workflow_type") or "feature"]
-        share = (len(phases) - running) / len(phases)
-        return [low * share, high * share], 0
+    later = phases[running + 1:(phases.index(until) + 1 if until in phases else None)]
     rests = []
     for item in group:
         dur = item["phases"]
-        later = sum(float(dur.get(p, 0) or 0) for p in phases[running + 1:])
-        rests.append(max(0.0, float(dur.get(current, 0) or 0) - in_phase) + later)
-    return sorted(rests), len(group)
+        rests.append(max(0.0, float(dur.get(current, 0) or 0) - in_phase)
+                     + sum(float(dur.get(p, 0) or 0) for p in later))
+    return sorted(rests), group, phases
+
+
+def _measured_hit_rate(group: list, phases: list, quantiles) -> "int | None":
+    """Nachgemessene Trefferquote der Ende-Spanne in Prozent (#642), pure.
+
+    Leave-one-out über die Restarbeit ab phase4_approved: je Workflow die Spanne
+    (Quantile `quantiles`) aus den übrigen; Treffer, wenn seine Restarbeit
+    darin lag. None unter zwei Workflows oder bei Fehler.
+    """
+    try:
+        later = phases[phases.index(APPROVAL_PHASE):]
+        rests = [sum(float(g["phases"].get(p, 0) or 0) for p in later) for g in group]
+        if len(rests) < 2:
+            return None
+        hits = 0
+        for i, rest in enumerate(rests):
+            others = sorted(rests[:i] + rests[i + 1:])
+            hits += _quantile(others, quantiles[0]) <= rest <= _quantile(others, quantiles[1])
+        return round(100 * hits / len(rests))
+    except Exception:
+        return None
+
+
+def _quarter_floor(value: datetime, zone=None) -> datetime:
+    """Auf die Viertelstunde abrunden, in der Anzeigezone (#637, #642); naive Ortszeit."""
+    dt = _display_time(value, zone)
+    return _parse_time(dt.replace(minute=dt.minute // 15 * 15, second=0, microsecond=0))
+
+
+def _quarter_ceil(value: datetime, zone=None) -> datetime:
+    """Auf die Viertelstunde aufrunden (#642); nie früher als `value`."""
+    low = _quarter_floor(value, zone)
+    return low if low >= _parse_time(value) else low + timedelta(minutes=15)
+
+
+def _before_approval(data: dict) -> bool:
+    """Steht der Workflow vor phase4_approved (#642)? Wirft bei unbekannter Phase."""
+    return PHASES.index(data.get("current_phase")) < PHASES.index(APPROVAL_PHASE)
 
 
 def estimate_remaining(data, history, config, now,
@@ -1096,30 +1158,41 @@ def estimate_remaining(data, history, config, now,
     """Restdauer-Schätzung (#620), pure. None bei ungültigen Eingaben (fail-open).
 
     #628: verstrichen = Arbeitszeit, aus `activity` (Aktivminuten je Phase),
-    sonst Wanduhr abzüglich PO-Wartezeit.
+    sonst Wanduhr abzüglich PO-Wartezeit. #642: ohne saubere Gruppe `n=0`,
+    `source="none"`, keine Uhrzeiten; vor der Freigabe nur `approval` (Median
+    bis einschließlich phase3_spec, nächste Viertelstunde); danach `end_low`
+    ab- und `end_high` aufgerundet, ab PERCENT_MIN_SAMPLES mit `hit_rate`.
     """
     try:
         start = _parse_time(data["created"])
-        rests, n = _estimate_rests(data, history, config, now, activity)
-        q_low, q_high = config["quantiles"]
-        if n:
-            low, mid, high = (_quantile(rests, q_low), _quantile(rests, 0.5),
-                              _quantile(rests, q_high))
-        else:
-            low, high = rests
-            mid = (low + high) / 2
         if activity:
             elapsed = sum(float(v) for v in activity.values())
         else:
             elapsed = max(0.0, (now - start).total_seconds() / 60
                           - _overlap_min(_po_wait_span(data, now), start, now))
+        est = {"n": 0, "source": "none", "start": start, "now": now, "elapsed_min": elapsed,
+               "approval": None, "end_low": None, "end_high": None, "hit_rate": None}
+        rests, group, phases = _estimate_rests(data, history, config, now, activity)
+        if not group:
+            return est
+        zone = config.get("display_timezone")
+        q_low, q_high = config["quantiles"]
+        low, mid, high = (_quantile(rests, q) for q in (q_low, 0.5, q_high))
+        est.update(n=len(group), source="archive", low_min=low, mid_min=mid, high_min=high,
+                   total_low_min=elapsed + low, total_high_min=elapsed + high)
+        if _before_approval(data):
+            to_approval = _estimate_rests(data, history, config, now, activity,
+                                          until="phase3_spec")[0]
+            est["approval"] = _quarter_floor(
+                now + timedelta(minutes=_quantile(to_approval, 0.5) + 7.5), zone)
+        else:
+            est["end_low"] = _quarter_floor(now + timedelta(minutes=low), zone)
+            est["end_high"] = _quarter_ceil(now + timedelta(minutes=high), zone)
+            if len(group) >= PERCENT_MIN_SAMPLES:
+                est["hit_rate"] = _measured_hit_rate(group, phases, config["quantiles"])
     except Exception:
         return None
-    return {"low_min": low, "mid_min": mid, "high_min": high, "elapsed_min": elapsed,
-            "total_low_min": elapsed + low, "total_high_min": elapsed + high,
-            "n": n, "source": "archive" if n else "default", "start": start,
-            "end_low": now + timedelta(minutes=low),
-            "end_high": now + timedelta(minutes=high), "now": now}
+    return est
 
 
 def _archive_cache_key():
@@ -1250,11 +1323,17 @@ def _plan_time_lines(data: dict, estimate) -> "list[str]":
                 dur += f" (gesamt {format_duration(total)})"
             return ["", f"Start  {_format_clock(start, today, zone)}", f"Dauer  {dur}",
                     f"Ende  {_format_clock(end, today, zone)}"]
-        wait = WAIT_SUFFIX if awaiting_human_approval(data) else ""
-        return ["", f"Start  {_format_clock(estimate['start'], today, zone)}",
-                f"Dauer  ca. {_estimate_span_text(estimate)} {_estimate_basis(estimate)}{wait}",
-                f"Ende  ca. {_format_clock(estimate['end_low'], today, zone)}–"
-                f"{_format_clock(estimate['end_high'], today, zone)}"]
+        # #642: keine Dauer-Zeile; Freigabe vor phase4, danach Ende, Basis eigene Zeile
+        if _before_approval(data) and awaiting_human_approval(data):
+            middle = "Freigabe  wartet auf dich"
+        elif estimate.get("n") and estimate.get("approval") is not None:
+            middle = f"Freigabe  ca. {_format_clock(estimate['approval'], today, zone)}"
+        elif estimate.get("n") and estimate.get("end_low") is not None:
+            middle = f"Ende  ca. {_estimate_end_text(estimate, today, zone)}"
+        else:
+            middle = "Ende  offen"
+        return ["", f"Start  {_format_clock(estimate['start'], today, zone)}", middle,
+                TIME_INDENT + _estimate_basis(estimate)]
     except Exception:
         return []
 
@@ -1280,16 +1359,22 @@ def awaiting_human_approval(data) -> bool:
     return False
 
 
-def _estimate_span_text(estimate: dict) -> str:
-    return (f"{format_duration(estimate['total_low_min'])}–"
-            f"{format_duration(estimate['total_high_min'])}")
+def _estimate_end_text(estimate: dict, today, zone=None) -> str:
+    """Ende-Spanne „A–B“ (#642), bei A = B eine einzige Uhrzeit."""
+    low = _format_clock(estimate["end_low"], today, zone)
+    high = _format_clock(estimate["end_high"], today, zone)
+    return low if low == high else f"{low}–{high}"
 
 
 def _estimate_basis(estimate: dict) -> str:
+    """Basiszeile (#642): „P % sicher, aus N Workflows“ (P nachgemessen, ab
+    PERCENT_MIN_SAMPLES), sonst „aus N Workflows“, ohne Daten NO_DATA."""
     n = estimate.get("n") or 0
-    if estimate.get("source") == "default" or not n:
-        return "(Startwert)"
-    return f"(aus {n} Workflow{'' if n == 1 else 's'})"
+    if estimate.get("source") != "archive" or not n:
+        return NO_DATA
+    base = f"aus {n} Workflow{'' if n == 1 else 's'}"
+    rate = estimate.get("hit_rate")
+    return f"{rate} % sicher, {base}" if rate is not None and n >= PERCENT_MIN_SAMPLES else base
 
 
 def status_note(data: dict) -> "str | None":
@@ -3047,7 +3132,7 @@ def _stamp_intake_estimate(data: dict, score: int) -> None:
     """`intake_score` und `estimate_initial` stempeln (#620). Schätzung fail-open."""
     data["intake_score"] = score
     est = current_estimate(data)
-    if est and not est.get("actual"):
+    if est and not est.get("actual") and est.get("n"):  # #642: ohne Daten keine Zahl
         data["estimate_initial"] = {
             "low": round(est["total_low_min"], 1),
             "mid": round(est["elapsed_min"] + est["mid_min"], 1),
@@ -5064,28 +5149,38 @@ def cmd_context(args: list[str]) -> None:
 
 
 def _estimate_kv_lines(est: dict, waiting: bool = False) -> "list[str]":
-    """KEY=value-Zeilen von `workflow.py estimate` (#620); `waiting` (#628)
-    hängt „ + Wartezeit auf dich“ an `LINE=` und gibt `ESTIMATE_WAITING=po` aus."""
+    """KEY=value-Zeilen von `workflow.py estimate` (#620); `waiting` (#628) gibt
+    `ESTIMATE_WAITING=po` aus. #642: Minuten und Ende nur mit Ende-Spanne,
+    `ESTIMATE_APPROVAL` vor der Freigabe, `LINE=` wie der Plan."""
     zone = est.get("display_tz")
     today = _display_time(est["now"], zone).date()
-    start, low, high = (_display_time(est[k], zone) for k in ("start", "end_low", "end_high"))
-    end = f"{_format_clock(low, today, zone)}–{_format_clock(high, today, zone)}"
-    return ["ESTIMATE=on"] + (["ESTIMATE_WAITING=po"] if waiting else []) + [
-            f"ESTIMATE_LOW_MIN={round(est['total_low_min'])}",
-            f"ESTIMATE_HIGH_MIN={round(est['total_high_min'])}",
-            f"ESTIMATE_START={start.isoformat(timespec='minutes')}",
-            f"ESTIMATE_END_LOW={low.isoformat(timespec='minutes')}",
-            f"ESTIMATE_END_HIGH={high.isoformat(timespec='minutes')}",
-            f"ESTIMATE_BASIS={est['n'] if est['source'] == 'archive' else 'default'}",
-            f"LINE=Grobe Schätzung: {_estimate_span_text(est)}, Ende ca. {end} "
-            f"{_estimate_basis(est)}{WAIT_SUFFIX if waiting else ''}"]
+    iso = lambda key: _display_time(est[key], zone).isoformat(timespec="minutes")  # noqa: E731
+    clock = lambda key: _format_clock(est[key], today, zone)  # noqa: E731
+    span = est.get("n") and est.get("end_low") is not None and est.get("end_high") is not None
+    approval = est.get("n") and est.get("approval") is not None
+    basis = _estimate_basis(est)
+    out = ["ESTIMATE=on"] + (["ESTIMATE_WAITING=po"] if waiting else [])
+    if span:
+        out += [f"ESTIMATE_LOW_MIN={round(est['total_low_min'])}",
+                f"ESTIMATE_HIGH_MIN={round(est['total_high_min'])}"]
+    out.append(f"ESTIMATE_START={iso('start')}")
+    if approval:
+        out.append(f"ESTIMATE_APPROVAL={iso('approval')}")
+        when = "wartet auf dich" if waiting else f"ca. {clock('approval')}"
+        line = f"Start {clock('start')}, Freigabe {when} ({basis})"
+    elif span:
+        out += [f"ESTIMATE_END_LOW={iso('end_low')}", f"ESTIMATE_END_HIGH={iso('end_high')}"]
+        line = f"Ende ca. {_estimate_end_text(est, today, zone)} ({basis})"
+    else:
+        line = f"Noch keine Zeitschätzung: {NO_DATA}"
+    return out + [f"ESTIMATE_BASIS={est.get('n') or 'none'}", f"LINE={line}"]
 
 
 def cmd_estimate(args: list[str]) -> None:
     """Zeitschätzung des aktiven Workflows (#620), Auskunft, kein Gate, Exit immer 0.
 
-    `ESTIMATE=on` mit Spanne (Gesamtdauer in Minuten), Start, Prognose-Ende,
-    Basis (Zahl der Vergleichs-Workflows oder `default`) und `LINE=` fuer die
+    `ESTIMATE=on` mit Start, vor der Freigabe Freigabezeit, danach Ende-Spanne
+    (#642), Basis (Zahl der Vergleichs-Workflows oder `none`) und `LINE=` fuer die
     Intake-Bewertung; bei `time_estimate.enabled: false` oder Fehler nur `ESTIMATE=off`.
     """
     lines = ["ESTIMATE=off"]

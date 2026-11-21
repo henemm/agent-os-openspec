@@ -14,6 +14,12 @@ Schnittstellen (Spec docs/specs/feat-620-zeitschaetzung.md):
 - `_estimate_now()`; `_plan_watch` rechnet je Runde neu, Archiv-Cache über
   (mtime, Dateizahl)
 - CLI: `start <name> --score N`, `estimate`, `retro <name>` ("Schätzung vs. Ist")
+
+#642 (docs/specs/fix-642-zeitschaetzung.md) ändert das Anzeigeformat: nur
+Archiv-Workflows mit Aktivitätsdatei zählen (`clean`), ohne sie keine Zahl
+(keine Startwerte mehr), keine „Dauer“-Zeile in der Prognose, Ende auf
+Viertelstunden. Die Rechenlogik (Restdauer, Quantile, Median) prüft diese
+Datei weiterhin; die Startwert-Tests sind durch #642 ersetzt.
 """
 
 import json
@@ -94,8 +100,25 @@ def _state(phase: str, now: datetime = NOW, in_phase_min: float = 0.0,
 
 
 def _h(phases: dict, wtype: str = "feature", stage=None) -> dict:
-    """Ein Eintrag der geladenen Historie (Format von load_archive_phase_durations)."""
-    return {"type": wtype, "stage": stage, "phases": dict(phases)}
+    """Ein Eintrag der geladenen Historie (Format von load_archive_phase_durations).
+
+    #642: `clean` = mit Aktivitätsdatei; nur solche bilden die Vergleichsgruppe.
+    """
+    return {"type": wtype, "stage": stage, "phases": dict(phases), "clean": True}
+
+
+def _activity(proj: Path, name: str, phases: dict) -> None:
+    """Aktivitätsdatei (#628) zum Archiv-Workflow: macht ihn „sauber“ (#642)."""
+    folder = proj / ".claude" / "workflows" / "_activity"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"{name}.json").write_text(json.dumps(
+        {"last": "2026-11-01T18:00:00", "phases": {k: float(v) for k, v in phases.items()}}))
+
+
+def _write_clean(proj: Path, data: dict, phases: dict) -> Path:
+    """Archiv-Workflow mit passender Aktivitätsdatei (#642)."""
+    _activity(proj, data["name"], phases)
+    return _write_archived(proj, data)
 
 
 def _closed_log(phases: dict, start: datetime) -> list:
@@ -287,8 +310,9 @@ def test_ac2_estimate_exact_values_phase6():
     assert est["total_low_min"] == pytest.approx(131.25, abs=0.01)
     assert est["total_high_min"] == pytest.approx(155.0, abs=0.01)
     assert est["start"] == NOW - timedelta(minutes=90)
-    assert _close(est["end_low"], NOW + timedelta(minutes=41.25)), est["end_low"]
-    assert _close(est["end_high"], NOW + timedelta(minutes=65)), est["end_high"]
+    # #642: Ende auf die Viertelstunde, 14:41:15 ab- und 15:05 aufgerundet
+    assert est["end_low"] == NOW + timedelta(minutes=30), est["end_low"]
+    assert est["end_high"] == NOW + timedelta(minutes=75), est["end_high"]
 
 
 def test_ac2_fast_track_uses_fast_plan_steps():
@@ -392,31 +416,24 @@ def test_ac4_without_score_uses_type_group():
     assert est["n"] == 4
 
 
-def test_ac4_defaults_scaled_by_open_steps():
+def test_ac4_without_clean_group_no_numbers():
+    """#642 ersetzt die Startwerte: ohne saubere Gruppe keine Zahl."""
     wf = _wf()
     hist = [_h({P7: 10}) for _ in range(2)] + \
-        [_h({P7: 10}, wtype="feature-fast") for _ in range(5)]
-    first = wf.estimate_remaining(_state(P1, elapsed_min=0), hist, CFG, NOW)
-    assert first["source"] == "default" and first["n"] == 0
-    # Phase 1: 9 von 9 Schritten offen
-    assert first["low_min"] == pytest.approx(60.0, abs=0.01)
-    assert first["high_min"] == pytest.approx(240.0, abs=0.01)
-
-    later = wf.estimate_remaining(_state(P6, in_phase_min=5, elapsed_min=120), hist, CFG, NOW)
-    assert later["source"] == "default" and later["n"] == 0
-    # Phase 6: offen 6, 6b, 7, 8 -> 4 von 9
-    assert later["low_min"] < first["low_min"] and later["high_min"] < first["high_min"]
-    assert later["low_min"] / 60 == pytest.approx(later["high_min"] / 240, rel=1e-3)
-    assert later["low_min"] == pytest.approx(60 * 4 / 9, rel=1e-3)
-    assert later["high_min"] == pytest.approx(240 * 4 / 9, rel=1e-3)
+        [_h({P7: 10}, wtype="feature-fast") for _ in range(5)] + \
+        [dict(_h({P7: 10}), clean=False) for _ in range(5)]
+    for data in (_state(P1, elapsed_min=0), _state(P6, in_phase_min=5, elapsed_min=120)):
+        est = wf.estimate_remaining(data, hist, CFG, NOW)
+        assert est["source"] == "none" and est["n"] == 0, est
+        assert est["end_low"] is None and est["end_high"] is None and est["approval"] is None
+        assert "low_min" not in est and "total_low_min" not in est, est
 
 
-def test_ac4_defaults_fast_track():
+def test_ac4_fast_track_without_history_no_numbers():
     wf = _wf()
     est = wf.estimate_remaining(_state(P3, elapsed_min=0, wtype="feature-fast"), [], CFG, NOW)
-    assert est["source"] == "default" and est["n"] == 0
-    assert est["low_min"] == pytest.approx(20.0, abs=0.01)
-    assert est["high_min"] == pytest.approx(60.0, abs=0.01)
+    assert est["source"] == "none" and est["n"] == 0
+    assert est["end_low"] is None and est["approval"] is None
 
 
 # =============================================================================
@@ -449,9 +466,9 @@ def test_ac5_render_with_estimate_block_after_steps():
     plain = wf.render_plan(data)
     out = wf.render_plan(data, estimate=_est())
     lines = out.splitlines()
-    block = ["Start  12:30", "Dauer  ca. 1 h 10 min–2 h 30 min (aus 7 Workflows)",
-             "Ende  ca. 15:40–17:00"]
-    assert _time_lines(out) == block, lines
+    # #642: keine Dauer-Zeile, Basis in eigener, eingerückter Zeile
+    block = ["Start  12:30", "Ende  ca. 15:40–17:00", "      aus 7 Workflows"]
+    assert _time_lines(out) == block[:2], lines
     i = lines.index(block[0])
     assert lines[i:i + 3] == block
     ship = next(k for k, ln in enumerate(lines) if "Ausliefern" in ln)
@@ -463,12 +480,15 @@ def test_ac5_render_with_estimate_block_after_steps():
     assert rest == [ln for ln in plain.splitlines() if ln]
 
 
-def test_ac5_duration_formats_and_startwert():
+def test_ac5_duration_formats_and_no_startwert():
+    """Dauerformat (Ist-Block); #642: ohne Daten „Ende  offen“ statt Startwert."""
     wf = _wf()
+    assert [wf.format_duration(m) for m in (45, 120, 70)] == ["45 min", "2 h", "1 h 10 min"]
     out = wf.render_plan(_state(P1, elapsed_min=0),
-                         estimate=_est(total_low_min=45.0, total_high_min=120.0, n=0,
-                                       source="default"))
-    assert "Dauer  ca. 45 min–2 h (Startwert)" in out.splitlines(), out
+                         estimate=_est(n=0, source="none", end_low=None, end_high=None))
+    assert "Ende  offen" in out.splitlines(), out
+    assert "      zu wenig Vergleichsdaten" in out.splitlines(), out
+    assert "Startwert" not in out and "Dauer" not in out, out
 
 
 def test_ac5_dates_when_not_today():
@@ -552,7 +572,8 @@ def test_ac7_watch_caches_archive_and_recomputes(tmp_path, monkeypatch, capsys):
     try:
         archive = _archive(proj)
         for i, p6 in enumerate((15, 60, 90)):
-            _write_archived(proj, _archived(f"zeit-arch-{i}", {P1: 10, P6: p6, P7: 20}))
+            _write_clean(proj, _archived(f"zeit-arch-{i}", {P1: 10, P6: p6, P7: 20}),
+                         {P1: 10, P6: p6, P7: 20})
         monkeypatch.setattr(wf, "_archive_dir", lambda: archive)
 
         base = datetime(2026, 11, 21, 10, 0)
@@ -564,9 +585,9 @@ def test_ac7_watch_caches_archive_and_recomputes(tmp_path, monkeypatch, capsys):
 
         ticks = [0]
 
-        def fake_now():
+        def fake_now():  # #642: 20-min-Takt, das Ende ist auf Viertelstunden gerundet
             ticks[0] += 1
-            return base + timedelta(minutes=7 * ticks[0])
+            return base + timedelta(minutes=20 * ticks[0])
 
         monkeypatch.setattr(wf, "_estimate_now", fake_now)
 
@@ -575,7 +596,8 @@ def test_ac7_watch_caches_archive_and_recomputes(tmp_path, monkeypatch, capsys):
         def fake_sleep(_s):
             sleeps[0] += 1
             if sleeps[0] == 2:  # nach Runde 2: neuer Messpunkt im Archiv
-                _write_archived(proj, _archived("zeit-arch-neu", {P6: 200, P7: 50}))
+                _write_clean(proj, _archived("zeit-arch-neu", {P6: 200, P7: 50}),
+                             {P6: 200, P7: 50})
                 st = archive.stat().st_mtime + 100
                 os.utime(archive, (st, st))
 
@@ -635,12 +657,8 @@ def test_ac8_start_with_score_stamps_estimate(tmp_path):
     assert res.returncode == 0, res.stderr
     state = _state_file(proj, "zeit-a")
     assert state["intake_score"] == 5 and isinstance(state["intake_score"], int)
-    init = state["estimate_initial"]
-    assert set(init) >= {"low", "mid", "high", "n", "source", "at"}, init
-    assert init["source"] == "default" and init["n"] == 0
-    assert init["low"] == pytest.approx(60, abs=1)
-    assert init["high"] == pytest.approx(240, abs=1)
-    assert isinstance(init["at"], str) and init["at"]
+    # #642: ohne Vergleichsdaten keine Zahl, also kein `estimate_initial` aus Startwerten
+    assert "estimate_initial" not in state, state
 
 
 def test_ac8_start_score_zero_and_fast_track(tmp_path):
@@ -649,19 +667,21 @@ def test_ac8_start_score_zero_and_fast_track(tmp_path):
     assert res.returncode == 0, res.stderr
     state = _state_file(proj, "zeit-b")
     assert state["intake_score"] == 0
-    assert state["estimate_initial"]["low"] == pytest.approx(20, abs=1)
-    assert state["estimate_initial"]["high"] == pytest.approx(60, abs=1)
+    assert "estimate_initial" not in state, state  # #642: keine Startwerte
 
 
 def test_ac8_start_score_uses_archive(tmp_path):
     proj, env = _case(tmp_path, "score-arch")
     for i, p1 in enumerate((30, 60, 90)):
-        _write_archived(proj, _archived(f"zeit-arch-{i}", {P1: p1, P3: 20, P7: 10}, score=4))
+        _write_clean(proj, _archived(f"zeit-arch-{i}", {P1: p1, P3: 20, P7: 10}, score=4),
+                     {P1: p1, P3: 20, P7: 10})
     res = _workflow(["start", "zeit-f", "--score", "5"], env, proj)
     assert res.returncode == 0, res.stderr
     init = _state_file(proj, "zeit-f")["estimate_initial"]
+    assert set(init) >= {"low", "mid", "high", "n", "source", "at"}, init
     assert init["source"] == "archive" and init["n"] == 3, init
     assert init["low"] <= init["mid"] <= init["high"]
+    assert isinstance(init["at"], str) and init["at"]
 
 
 @pytest.mark.parametrize("bad", ["9", "x", "-1"])
@@ -686,7 +706,8 @@ def test_ac8_start_without_score_unchanged(tmp_path):
 def test_ac9_estimate_cli_archive(tmp_path):
     proj, env = _case(tmp_path, "est")
     for i, p6 in enumerate((30, 60, 90)):
-        _write_archived(proj, _archived(f"zeit-arch-{i}", {P1: 10, P6: p6, P7: 20}))
+        _write_clean(proj, _archived(f"zeit-arch-{i}", {P1: 10, P6: p6, P7: 20}),
+                     {P1: 10, P6: p6, P7: 20})
     _write_active(proj, _state(P6, now=datetime.now(), in_phase_min=10, elapsed_min=60))
     res = _workflow(["estimate"], env, proj)
     assert res.returncode == 0, res.stderr
@@ -698,17 +719,19 @@ def test_ac9_estimate_cli_archive(tmp_path):
     for key in ("ESTIMATE_START", "ESTIMATE_END_LOW", "ESTIMATE_END_HIGH"):
         assert _kv(out, key), (key, out)
     assert _kv(out, "ESTIMATE_BASIS") == "3", out
-    assert _kv(out, "LINE").startswith("Grobe Schätzung:"), out
+    assert _kv(out, "LINE").startswith("Ende ca. "), out  # #642: Format wie der Plan
+    assert _kv(out, "LINE").endswith("(aus 3 Workflows)"), out
 
 
-def test_ac9_estimate_cli_default_basis(tmp_path):
+def test_ac9_estimate_cli_no_data_basis(tmp_path):
+    """#642: ohne saubere Vergleichsdaten Basis `none` und keine Zahl."""
     proj, env = _case(tmp_path, "estdef")
     _write_active(proj, _state(P1, now=datetime.now(), elapsed_min=0))
     res = _workflow(["estimate"], env, proj)
     assert res.returncode == 0, res.stderr
     assert _kv(res.stdout, "ESTIMATE") == "on", res.stdout
-    assert _kv(res.stdout, "ESTIMATE_BASIS") == "default", res.stdout
-    assert "(Startwert)" in _kv(res.stdout, "LINE"), res.stdout
+    assert _kv(res.stdout, "ESTIMATE_BASIS") == "none", res.stdout
+    assert _kv(res.stdout, "LINE") == "Noch keine Zeitschätzung: zu wenig Vergleichsdaten"
 
 
 def test_ac9_estimate_cli_disabled(tmp_path):
@@ -773,8 +796,8 @@ def test_ac11_plan_shows_block_when_enabled(tmp_path):
     res = _workflow(["plan"], env, proj)
     assert res.returncode == 0, res.stderr
     prefixes = [ln.split("  ")[0] for ln in _time_lines(res.stdout)]
-    assert prefixes == ["Start", "Dauer", "Ende"], res.stdout
-    assert "(Startwert)" in res.stdout
+    assert prefixes == ["Start", "Ende"], res.stdout  # #642: keine Dauer-Zeile
+    assert "zu wenig Vergleichsdaten" in res.stdout and "Startwert" not in res.stdout
 
 
 def test_ac11_plan_kill_switch_no_time_lines(tmp_path):
