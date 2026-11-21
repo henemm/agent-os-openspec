@@ -467,7 +467,7 @@ def test_ac5_render_with_estimate_block_after_steps():
     out = wf.render_plan(data, estimate=_est())
     lines = out.splitlines()
     # #642: keine Dauer-Zeile, Basis in eigener, eingerückter Zeile
-    block = ["Start  12:30", "Ende  ca. 15:40–17:00", "      aus 7 Workflows"]
+    block = ["Start  12:30", "Ende  ca. 15:40–17:00", "  aus 7 Workflows"]
     assert _time_lines(out) == block[:2], lines
     i = lines.index(block[0])
     assert lines[i:i + 3] == block
@@ -487,7 +487,7 @@ def test_ac5_duration_formats_and_no_startwert():
     out = wf.render_plan(_state(P1, elapsed_min=0),
                          estimate=_est(n=0, source="none", end_low=None, end_high=None))
     assert "Ende  offen" in out.splitlines(), out
-    assert "      zu wenig Vergleichsdaten" in out.splitlines(), out
+    assert "  zu wenig Vergleichsdaten" in out.splitlines(), out
     assert "Startwert" not in out and "Dauer" not in out, out
 
 

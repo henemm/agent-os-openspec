@@ -505,6 +505,13 @@ def test_zeitblock_umbrochen_nicht_gekappt(proj, monkeypatch):
     assert "aus 32 Workflows" in joined, out
     assert "% sicher, aus 32 Workflows" in joined, out
     assert _line(out, "Ende  ca. ") is not None, out
+    # Das Plan-Pane ist ~34 Zeichen breit: die Basiszeile steht dort als EINE Zeile
+    basis = [ln for ln in out.splitlines()
+             if re.fullmatch(r" *\d{1,3} % sicher, aus 32 Workflows", ln)]
+    assert len(basis) == 1, out
+    # Auch der breiteste Fall (3-stellige Prozent- und Workflow-Zahl) passt
+    widest = wf._wrap_time_line(wf.TIME_INDENT + "100 % sicher, aus 120 Workflows", 34)
+    assert len(widest) == 1, widest
 
 
 # =============================================================================

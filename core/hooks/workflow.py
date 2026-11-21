@@ -701,7 +701,7 @@ def render_plan(data, archived: bool = False, width: "int | None" = None,
 
 def _wrap_time_line(line: str, width: int) -> "list[str]":
     """Zeile des Zeit-Blocks bei `width` umbrechen statt kappen (#642);
-    Folgezeilen mit 6 Leerzeichen eingerückt."""
+    Folgezeilen mit TIME_INDENT eingerückt."""
     if len(line) <= width:
         return [line]
     if width <= len(TIME_INDENT):
@@ -809,7 +809,7 @@ TIME_ESTIMATE_DEFAULTS = {"enabled": True, "min_samples": 3, "quantiles": [0.1, 
                           "idle_gap_min": 15, "display_timezone": "Europe/Berlin"}
 APPROVAL_PHASE = "phase4_approved"
 PERCENT_MIN_SAMPLES = 10   # #642: Prozentangabe erst ab so vielen Vergleichs-Workflows
-TIME_INDENT = " " * 6      # #642: Einzug der Basiszeile und umbrochener Zeilen
+TIME_INDENT = "  "         # #642: Einzug Basiszeile und Umbruch, passt in 34 Zeichen
 NO_DATA = "zu wenig Vergleichsdaten"
 
 
