@@ -361,6 +361,8 @@ next_suggestion:
 # archivierten Workflows (Quantile der Restdauern, gleiche Score-Stufe, sonst
 # gleicher Typ); mit weniger als min_samples Workflows gelten die Startwerte
 # (Minuten, [low, high]). Reine Anzeige, kein Gate. Nur false schaltet ab.
+# Gezaehlt wird nur Arbeitszeit (#628): Wartezeit auf die Spec-Freigabe und Leerlauf
+# fallen heraus; der Heartbeat schreibt die Aktivitaet nach .claude/workflows/_activity/.
 time_estimate:
   enabled: true
   min_samples: 3
