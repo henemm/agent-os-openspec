@@ -305,11 +305,11 @@ def _guard_env(monkeypatch, project: Path, name: str, phase: str):
     return ssg, locks, state
 
 
-def _lock(ssg, locks: Path, sid: str, last_seen: float) -> Path:
+def _lock(ssg, locks: Path, sid: str, last_seen: float, **extra) -> Path:
     path = locks / f"{ssg._safe_sid(sid)}.json"
     path.write_text(json.dumps({"session_id": sid, "cwd": "/x", "pid": 999999999,
                                 "started_at": last_seen, "last_seen": last_seen,
-                                "agent_name": "agent-628"}))
+                                "agent_name": "agent-628", **extra}))
     return path
 
 
@@ -328,9 +328,10 @@ def test_heartbeat_schreibt_aktivitaet_nur_im_faelligen_zweig(proj, monkeypatch)
 
     monkeypatch.setattr(os, "replace", spy_replace)
 
-    # Innerhalb des Throttle-Fensters: kein Schreiben der Aktivität
+    # Innerhalb des Throttle-Fensters: kein Schreiben der Aktivität. Der Eintrag
+    # trägt schon workflow/phase, sonst wäre `_note_activity` ohnehin ein No-op (F001).
     now = time.time()
-    _lock(ssg, locks, "sess-throttled", now - 10)
+    _lock(ssg, locks, "sess-throttled", now - 10, workflow=name, phase=P6)
     ssg._heartbeat("sess-throttled", str(proj))
     assert not activity.exists(), "Aktivität außerhalb des fälligen Zweigs geschrieben"
 
@@ -546,6 +547,10 @@ WAIT_CASES = [
     ("p6-gruen-auto", "auto", P6, None,
      {"last_test_run": {"result": "passed", "runner": "pytest", "at": "x"},
       "green_approved": False}, False),
+    # „go“ schon erteilt: wartet nicht mehr (F004, M6c)
+    ("p6-go-erteilt-manual", "manual", P6, None,
+     {"last_test_run": {"result": "passed", "runner": "pytest", "at": "x"},
+      "green_approved": True}, False),
 ]
 
 
@@ -729,6 +734,128 @@ def test_fail_open_und_rueckfall(proj, monkeypatch, tmp_path):
                           str(REPO_ROOT / "tests" / "test_zeitschaetzung_620.py")],
                          capture_output=True, text=True, cwd=str(REPO_ROOT), timeout=300)
     assert res.returncode == 0, res.stdout[-2000:] + res.stderr[-2000:]
+
+
+# =============================================================================
+# Nachschärfung nach Adversary-Runde 1 (F002, F003, F004, F005)
+# =============================================================================
+
+def test_laufende_wartezeit_auf_freigabe_zaehlt_nicht(proj, monkeypatch):
+    """F002/AC-5: ohne Aktivitätsdatei und ohne Freigabe wartet phase3_spec seit
+    6 h auf „approved“: verstrichen ≈ Zeit bis zum Briefing, nicht 6 h mehr."""
+    wf = _wf()
+    for i in range(3):
+        _write_archived(proj, _archived(f"wf-hist-{i}", HIST_PHASES))
+    cfg = wf.time_estimate_config()
+    history = wf.load_archive_phase_durations(_archive(proj))
+    created = NOW - timedelta(minutes=400)
+    entered = created + timedelta(minutes=30)
+    brief = created + timedelta(minutes=40)       # 6 h vor NOW
+    waiting = {"name": "wf-wartet-jetzt", "workflow_type": "feature",
+               "current_phase": P3, "created": _iso(created),
+               "last_updated": _iso(brief), "phase_transitions": [],
+               "phase_log": [_seg(P1, created, created + timedelta(minutes=20)),
+                             _seg(P2, created + timedelta(minutes=20), entered),
+                             _seg(P3, entered, None)],
+               "po_briefing": {"created": brief.isoformat(timespec="seconds"),
+                               "ampel": "red", "file": "docs/briefings/x.md"}}
+    assert wf.awaiting_human_approval(waiting) is True
+    est = wf.estimate_remaining(dict(waiting), history, cfg, NOW)
+    assert isinstance(est, dict), est
+    assert est["elapsed_min"] == pytest.approx(40.0, abs=0.5), est
+    # laufende Phase: 10 min Arbeit -> Rest 20 + 56 = 76, Ende = jetzt + Rest
+    assert est["low_min"] == pytest.approx(76.0, abs=0.5), est
+    assert _close(est["end_low"], NOW + timedelta(minutes=76)), est["end_low"]
+    assert wf._minutes_in_phase(waiting, P3, NOW) == pytest.approx(10.0, abs=0.5)
+    monkeypatch.setattr(wf, "_estimate_now", lambda: NOW)
+    assert wf.current_estimate(dict(waiting))["elapsed_min"] == \
+        pytest.approx(40.0, abs=0.5)
+
+    # Gegenprobe: in phase5 (keine Freigabe offen) zählt die Wanduhr voll
+    other = dict(waiting, current_phase=P5,
+                 phase_log=waiting["phase_log"][:2] + [_seg(P5, entered, None)])
+    assert wf.awaiting_human_approval(other) is False
+    est5 = wf.estimate_remaining(other, history, cfg, NOW)
+    assert est5["elapsed_min"] == pytest.approx(400.0, abs=0.5), est5
+
+
+def test_start_setzt_aktivitaet_zurueck(tmp_path):
+    """F003: `start <name>` erbt keine Aktivminuten eines früheren Laufs."""
+    project, env = _case(tmp_path, "neustart")
+    act = _activity_file(project, "wf-neu")
+    act.parent.mkdir(parents=True, exist_ok=True)
+    act.write_text(json.dumps({"last": "2026-11-01T09:00:00",
+                               "phases": {P1: 300.0, P6: 120.0}}))
+    res = _workflow(["start", "wf-neu"], env, project)
+    assert res.returncode == 0, res.stderr
+    assert (_workflows(project) / "wf-neu.json").is_file()
+    left = json.loads(act.read_text()).get("phases") if act.exists() else {}
+    assert not left, left
+
+
+def test_note_activity_uhr_rueckwaerts_und_unsinnige_minuten(proj, monkeypatch):
+    """F005/F004 (M21): Rücksprung der Uhr schreibt nichts gut; negative und
+    nicht-endliche Minuten aus der Datei gehen nie in die Schätzung ein."""
+    wf = _wf()
+    name = "wf-uhr"
+    t0 = datetime(2026, 11, 21, 9, 0)
+    wf.note_activity(name, P6, t0)
+    wf.note_activity(name, P6, t0 + timedelta(minutes=5))
+    wf.note_activity(name, P6, t0 - timedelta(minutes=3))  # Uhr springt zurück
+    data = json.loads(_activity_file(proj, name).read_text())
+    assert float(data["phases"][P6]) == pytest.approx(5.0, abs=0.05), data
+    assert wf._parse_time(data["last"]) == t0 - timedelta(minutes=3), data
+
+    act = _activity_file(proj, "wf-unsinn")
+    act.write_text('{"last": "2026-11-21T09:00:00", "phases": {"%s": -50, '
+                   '"%s": Infinity, "%s": NaN, "%s": 10}}' % (P1, P2, P5, P6))
+    res = wf.load_activity("wf-unsinn")
+    assert res["phases"] == {P6: 10.0}, res
+    wf.note_activity("wf-unsinn", P6, datetime(2026, 11, 21, 9, 4))
+    assert _phases(proj, "wf-unsinn") == {P6: 14.0}
+
+    for i in range(3):
+        _write_archived(proj, _archived(f"wf-hist-{i}", HIST_PHASES))
+    monkeypatch.setattr(wf, "_estimate_now", lambda: NOW)
+    created = NOW - timedelta(minutes=90)
+    base = {"name": "wf-unsinn", "workflow_type": "feature", "current_phase": P6,
+            "created": _iso(created), "phase_transitions": [],
+            "phase_log": [_seg(P1, created, NOW - timedelta(minutes=20)),
+                          _seg(P6, NOW - timedelta(minutes=20), None)]}
+    est = wf.current_estimate(base)
+    assert est["elapsed_min"] == pytest.approx(14.0, abs=0.01), est
+
+
+def test_ist_block_nutzt_aktivitaet(proj):
+    """F004 (M7): fertiger Workflow mit Aktivitätsdatei zeigt deren Minuten."""
+    wf = _wf()
+    data = _archived("wf-ist-akt", {P1: 60, P3: 60, P6: 60}, ship_status="done",
+                     start=datetime(2026, 11, 20, 9, 0),
+                     last_updated=_iso(datetime(2026, 11, 20, 12, 40)))
+    # offenes Schluss-Segment: mit Aktivitätsdatei kommt keine Wanduhr dazu
+    data["phase_log"].append(_seg(P8, datetime(2026, 11, 20, 12, 0), None))
+    act = _activity_file(proj, "wf-ist-akt")
+    act.parent.mkdir(parents=True, exist_ok=True)
+    act.write_text(json.dumps({"last": "2026-11-20T12:00:00",
+                               "phases": {P1: 20.0, P3: 15.0, P6: 35.0}}))
+    out = wf.render_plan(data, archived=True,
+                         estimate={"actual": True, "now": datetime(2026, 11, 20, 13, 0)})
+    assert _dauer(out) == "Dauer  1 h 10 min (gesamt 3 h 40 min)", out
+
+
+def test_guard_schluckt_systemexit(proj, monkeypatch):
+    """F004 (M18): ein SystemExit aus note_activity bricht den Guard nie ab."""
+    wf = _wf()
+    name = "feat-628-exit"
+    ssg, locks, _state = _guard_env(monkeypatch, proj, name, P6)
+
+    def leave(*_a, **_k):
+        raise SystemExit(2)
+
+    monkeypatch.setattr(wf, "note_activity", leave)
+    lock = _lock(ssg, locks, "sess-exit", time.time() - 120)
+    ssg._heartbeat("sess-exit", str(proj))
+    assert json.loads(lock.read_text())["last_seen"] >= time.time() - 5
 
 
 # =============================================================================

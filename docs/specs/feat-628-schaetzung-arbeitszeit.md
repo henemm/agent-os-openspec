@@ -87,6 +87,7 @@ Entscheidung PO (2026-11-21, #628): Die Anzeige schätzt nur Arbeitszeit; „+ W
 - Wartezeit auf „go“ (nur Modus manual; im Auto-Modus setzt `auto-green` die Freigabe sofort): Mit Aktivitätsdatei zählt sie automatisch nicht, weil währenddessen kein Werkzeug läuft. Archiv-Workflows ohne Aktivitätsdatei haben keinen Zeitstempel für eine menschliche GREEN-Freigabe; dort bleibt sie enthalten. Alle 11 vorhandenen Archiv-Workflows haben GREEN automatisch bekommen, betroffen ist also keiner.
 - Bestehende Archiv-Workflows haben keine Aktivitätsdatei; dort wird nur die PO-Wartezeit der Freigabe abgezogen. Leerlauf wie in fix-566 (automatische Freigabe, danach Pause) bleibt in diesen Altdaten enthalten; die Quantile dämpfen das.
 - Aktivität wird auf eine Minute genau und nur bei Tool-Aufrufen erkannt; reines Nachdenken ohne Tool-Aufruf länger als `idle_gap_min` zählt nicht als Arbeit.
+- Ein einzelner Werkzeugaufruf, der länger als `idle_gap_min` läuft (langer Build, Teilagent ohne eigene Werkzeugaufrufe in dieser Sitzung), zählt bis zum nächsten Heartbeat nicht als Arbeit: die Lücke zwischen zwei Schlägen gilt dann als Leerlauf.
 - Die Aktivitätsdateien sind rechnerlokal wie das Archiv.
 
 ## Definition of Done

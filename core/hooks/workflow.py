@@ -812,11 +812,12 @@ def _score_stage(score) -> "str | None":
     return "0" if score == 0 else ("1-3" if score <= 3 else "4-6")
 
 
-def _po_wait_span(data) -> "tuple[datetime, datetime] | None":
+def _po_wait_span(data, now=None) -> "tuple[datetime, datetime] | None":
     """Wartezeit auf die Spec-Freigabe (#628): [po_briefing.created, Freigabe].
 
-    Nur bei einem Übergang nach phase4_approved mit trigger "approval"; sonst
-    (auto, kein Briefing, kein Übergang, ungültige Zeitstempel) None. Wirft nie.
+    Nur bei einem Übergang nach phase4_approved mit trigger "approval"; ohne
+    Übergang mit `now` [Briefing, now], solange phase3_spec auf die menschliche
+    Freigabe wartet; sonst (auto, kein Briefing, ungültige Zeitstempel) None.
     """
     try:
         brief = _parse_time(data["po_briefing"]["created"])
@@ -829,6 +830,9 @@ def _po_wait_span(data) -> "tuple[datetime, datetime] | None":
                 continue
             if at >= brief:
                 return (brief, at) if tr.get("trigger") == "approval" else None
+        if now is not None and data.get("current_phase") == "phase3_spec" \
+                and awaiting_human_approval(data):
+            return (brief, now)
     except Exception:
         pass
     return None
@@ -846,7 +850,7 @@ def po_wait_minutes(data, now: "datetime | None" = None) -> dict:
     `phase_log`-Segmenten; offene Segmente nur mit `now`. {} bei Fehler."""
     out: dict = {}
     try:
-        span = _po_wait_span(data)
+        span = _po_wait_span(data, now)
         if span is None:
             return {}
         for entry in data.get("phase_log") or []:
@@ -884,7 +888,7 @@ def load_activity(name) -> "dict | None":
         phases = raw.get("phases") if isinstance(raw.get("phases"), dict) else {}
         return {"last": raw.get("last") if isinstance(raw.get("last"), str) else None,
                 "phases": {k: float(v) for k, v in phases.items()
-                           if isinstance(k, str) and _is_num(v) and v >= 0}}
+                           if isinstance(k, str) and _is_num(v) and 0 <= v < float("inf")}}
     except Exception:
         return None
 
@@ -1048,7 +1052,7 @@ def _minutes_in_phase(data: dict, phase: str, now: datetime,
     for entry in reversed(data.get("phase_log") or []):
         if entry.get("phase") == phase and entry.get("exited_at") is None:
             entered = _parse_time(entry["entered_at"])
-            wait = _overlap_min(_po_wait_span(data), entered, now)
+            wait = _overlap_min(_po_wait_span(data, now), entered, now)
             return max(0.0, (now - entered).total_seconds() / 60 - wait)
     return 0.0
 
@@ -1106,7 +1110,7 @@ def estimate_remaining(data, history, config, now,
             elapsed = sum(float(v) for v in activity.values())
         else:
             elapsed = max(0.0, (now - start).total_seconds() / 60
-                          - _overlap_min(_po_wait_span(data), start, now))
+                          - _overlap_min(_po_wait_span(data, now), start, now))
     except Exception:
         return None
     return {"low_min": low, "mid_min": mid, "high_min": high, "elapsed_min": elapsed,
@@ -3066,6 +3070,10 @@ def cmd_start(args: list[str]) -> None:
         sys.exit(1)
     data = _new_workflow(name)
     data["workflow_type"] = workflow_type
+    try:  # #628: ein Neustart unter gleichem Namen erbt keine Aktivminuten
+        _activity_path(name).unlink(missing_ok=True)
+    except OSError:
+        pass
     if issue_arg is not None:
         data["issue_number"] = issue_arg  # #513: echte Nummer statt Namensregel
     data["base_commit"] = _start_base_commit()  # #259: Basis-Kandidat fuer Phase 8
