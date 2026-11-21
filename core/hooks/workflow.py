@@ -51,6 +51,7 @@ import sys
 import tempfile
 import time
 from datetime import datetime
+from datetime import timedelta
 from pathlib import Path
 
 _NAME_RE = _re.compile(r'^[a-zA-Z0-9_-]{1,64}$')
@@ -667,7 +668,7 @@ def queue_end_args(data) -> dict:
 
 def render_plan(data, archived: bool = False, width: "int | None" = None,
                 deploy=False, autonomous: bool = False,
-                queue: "dict | None" = None) -> str:
+                queue: "dict | None" = None, estimate: "dict | None" = None) -> str:
     """Workflow-Plan als Text (#476): ✔ erledigt, ▶ laeuft, ○ offen. Pure.
 
     `deploy` (#478, #510, #550): nur Modus "configured" (siehe
@@ -676,11 +677,15 @@ def render_plan(data, archived: bool = False, width: "int | None" = None,
     Schlusszeile ist immer `end_state(...)["line"]` — dieselbe Zeile wie
     `workflow.py endstate` im Chat. `queue` (#551) ist das Ergebnis von
     `queue_end_args(data)`; die Aufrufer lesen den Auftrag, damit dies rein bleibt.
+    `estimate` (#620, aus `current_estimate`) haengt nach den Schritten den
+    Zeit-Block an; ohne `estimate` bleibt die Ausgabe unveraendert.
     """
     if not isinstance(data, dict):
         lines, tail = ["Kein aktiver Workflow"], None
     else:
         lines = _plan_lines(data, archived, deploy, width) + [""]
+        if estimate is not None:
+            lines[-1:-1] = _plan_time_lines(data, estimate)
         tail = end_state(data, archived=archived, deploy=deploy,
                          autonomous=autonomous, **(queue or {}))["line"]
     if isinstance(width, int) and width > 0:
@@ -781,6 +786,282 @@ def _plan_deploy_line(status, done_all: bool) -> str:
         return "○ Deploy"
     return {"done": "✔ Deploy", "running": "▶ Deploy  (läuft)",
             "failed": "✘ Deploy  (fehlgeschlagen)"}.get(status, "▶ Deploy  (offen)")
+
+
+# --- Zeitschätzung (#620) ----------------------------------------------------
+# Erfahrungswerte aus dem Archiv (`phase_log`), reine Anzeige, fail-open.
+TIME_ESTIMATE_DEFAULTS = {"enabled": True, "min_samples": 3, "quantiles": [0.25, 0.75],
+                          "defaults": {"feature": [60, 240], "feature-fast": [20, 60]}}
+
+
+def _estimate_now() -> datetime:
+    """Uhr der Zeitschätzung (#620); eigene Funktion, damit Tests sie ersetzen."""
+    return datetime.now()
+
+
+def _is_num(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _score_stage(score) -> "str | None":
+    """Score-Stufe aus `intake_score` (#620): "0", "1-3", "4-6", sonst None."""
+    if not _is_num(score) or int(score) != score or not 0 <= score <= 6:
+        return None
+    return "0" if score == 0 else ("1-3" if score <= 3 else "4-6")
+
+
+def _archive_phase_entry(data) -> "dict | None":
+    """Ein Archiv-Workflow als `{type, stage, phases}`, oder None, wenn er nicht zählt."""
+    if not isinstance(data, dict) or data.get("status") == "abandoned":
+        return None
+    log = data.get("phase_log")
+    phases: dict = {}
+    for entry in log if isinstance(log, list) else []:
+        if not isinstance(entry, dict) or entry.get("exited_at") is None:
+            continue
+        dur, phase = entry.get("duration_min"), entry.get("phase")
+        if _is_num(dur) and isinstance(phase, str):
+            phases[phase] = phases.get(phase, 0.0) + float(dur)  # Wiedereintritte summiert
+    if not phases:
+        return None
+    return {"type": data.get("workflow_type") or "feature",
+            "stage": _score_stage(data.get("intake_score")), "phases": phases}
+
+
+def load_archive_phase_durations(archive_dir=None) -> list:
+    """Phasendauern der archivierten Workflows (#620). Kaputte Dateien werden übersprungen."""
+    try:
+        folder = Path(archive_dir) if archive_dir is not None else _archive_dir()
+        files = sorted(folder.glob("*.json")) if folder.is_dir() else []
+    except Exception:
+        return []
+    history = []
+    for path in files:
+        try:
+            if path.is_symlink():
+                continue
+            entry = _archive_phase_entry(json.loads(path.read_text(encoding="utf-8")))
+        except Exception:
+            continue
+        if entry:
+            history.append(entry)
+    return history
+
+
+def _valid_estimate_config(raw) -> "dict | None":
+    """Abschnitt `time_estimate` geprüft; None = aus (Kill-Switch oder ungültig)."""
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
+        return None
+    cfg = dict(TIME_ESTIMATE_DEFAULTS, **raw)
+    defaults = cfg.get("defaults")
+    if cfg.get("enabled") is False or not isinstance(defaults, dict):  # nur false = aus
+        return None
+    cfg["defaults"] = dict(TIME_ESTIMATE_DEFAULTS["defaults"], **defaults)
+    q, n = cfg.get("quantiles"), cfg.get("min_samples")
+    if not (isinstance(n, int) and not isinstance(n, bool) and n >= 1):
+        return None
+    if not (isinstance(q, (list, tuple)) and len(q) == 2 and all(_is_num(v) for v in q)
+            and 0 <= q[0] <= q[1] <= 1):
+        return None
+    for pair in cfg["defaults"].values():
+        if not (isinstance(pair, (list, tuple)) and len(pair) == 2
+                and all(_is_num(v) for v in pair) and 0 <= pair[0] <= pair[1]):
+            return None
+    return cfg
+
+
+def time_estimate_config() -> "dict | None":
+    """`time_estimate` aus der Projekt-Config (#620); None bei aus oder Fehler."""
+    try:
+        from config_loader import load_config
+        return _valid_estimate_config(load_config().get("time_estimate"))
+    except Exception:
+        return None
+
+
+def _parse_time(value) -> datetime:
+    """ISO-Zeitstempel oder datetime als naive Ortszeit; wirft bei Ungültigem."""
+    dt = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
+    return dt.astimezone().replace(tzinfo=None) if dt.tzinfo else dt
+
+
+def _quantile(values: list, q: float) -> float:
+    """Quantil sortierter Werte mit linearer Interpolation."""
+    pos = (len(values) - 1) * q
+    lo = int(pos)
+    hi = min(lo + 1, len(values) - 1)
+    return values[lo] + (values[hi] - values[lo]) * (pos - lo)
+
+
+def _estimate_steps(data: dict) -> "tuple[list, int]":
+    """Phasen des Plans und Index des laufenden Schritts (wie `_plan_lines`)."""
+    steps = PLAN_STEPS_FAST if data.get("workflow_type") == "feature-fast" else PLAN_STEPS
+    phases = [s[2] for s in steps]
+    pos = PHASES.index(data.get("current_phase"))
+    running = 0
+    for i, step_phase in enumerate(phases):
+        if PHASES.index(step_phase) <= pos:
+            running = i
+    return phases, running
+
+
+def _minutes_in_phase(data: dict, phase: str, now: datetime) -> float:
+    """Verstrichene Minuten im offenen `phase_log`-Eintrag der Phase, sonst 0."""
+    for entry in reversed(data.get("phase_log") or []):
+        if entry.get("phase") == phase and entry.get("exited_at") is None:
+            return max(0.0, (now - _parse_time(entry["entered_at"])).total_seconds() / 60)
+    return 0.0
+
+
+def _estimate_group(data: dict, history: list, min_samples: int) -> list:
+    """Vergleichsgruppe (#620): gleiche Score-Stufe, sonst gleicher Typ, sonst leer."""
+    wtype = data.get("workflow_type") or "feature"
+    same = [h for h in history if isinstance(h, dict) and h.get("type") == wtype]
+    stage = _score_stage(data.get("intake_score"))
+    if stage is not None:
+        staged = [h for h in same if h.get("stage") == stage]
+        if len(staged) >= min_samples:
+            return staged
+    return same if len(same) >= min_samples else []
+
+
+def _estimate_rests(data, history, config, now) -> "tuple[list, int]":
+    """Restdauern (Minuten, sortiert) und Zahl der Vergleichs-Workflows; n=0 = Startwerte."""
+    phases, running = _estimate_steps(data)
+    current = phases[running]
+    in_phase = _minutes_in_phase(data, current, now) if current == data.get(
+        "current_phase") else 0.0
+    group = _estimate_group(data, history, config["min_samples"])
+    if not group:
+        low, high = config["defaults"][data.get("workflow_type") or "feature"]
+        share = (len(phases) - running) / len(phases)
+        return [low * share, high * share], 0
+    rests = []
+    for item in group:
+        dur = item["phases"]
+        later = sum(float(dur.get(p, 0) or 0) for p in phases[running + 1:])
+        rests.append(max(0.0, float(dur.get(current, 0) or 0) - in_phase) + later)
+    return sorted(rests), len(group)
+
+
+def estimate_remaining(data, history, config, now) -> "dict | None":
+    """Restdauer-Schätzung (#620), pure. None bei ungültigen Eingaben (fail-open)."""
+    try:
+        start = _parse_time(data["created"])
+        rests, n = _estimate_rests(data, history, config, now)
+        q_low, q_high = config["quantiles"]
+        if n:
+            low, mid, high = (_quantile(rests, q_low), _quantile(rests, 0.5),
+                              _quantile(rests, q_high))
+        else:
+            low, high = rests
+            mid = (low + high) / 2
+        elapsed = max(0.0, (now - start).total_seconds() / 60)
+    except Exception:
+        return None
+    return {"low_min": low, "mid_min": mid, "high_min": high, "elapsed_min": elapsed,
+            "total_low_min": elapsed + low, "total_high_min": elapsed + high,
+            "n": n, "source": "archive" if n else "default", "start": start,
+            "end_low": now + timedelta(minutes=low),
+            "end_high": now + timedelta(minutes=high), "now": now}
+
+
+def _archive_cache_key():
+    """(mtime, Dateizahl) des Archivordners; None, wenn nicht lesbar."""
+    try:
+        folder = _archive_dir()
+        return folder.stat().st_mtime_ns, sum(1 for _ in folder.glob("*.json"))
+    except Exception:
+        return None
+
+
+def current_estimate(data, archived: bool = False,
+                     cache: "dict | None" = None) -> "dict | None":
+    """Schätzung für Plan/CLI (#620); None bei Kill-Switch oder Fehler. Wirft nie.
+
+    Abgeschlossene/archivierte Workflows bekommen `{"actual": True}` (Ist-Block).
+    `cache` (plan --watch): Archiv nur neu laden, wenn sich mtime/Dateizahl ändern.
+    """
+    try:
+        cfg = time_estimate_config()
+        if cfg is None or not isinstance(data, dict):
+            return None
+        now = _estimate_now()
+        if archived or data.get("current_phase") == "phase8_complete":
+            return {"actual": True, "now": now}
+        if cache is None:
+            history = load_archive_phase_durations()
+        else:
+            key = _archive_cache_key()
+            if "history" not in cache or cache.get("key") != key:
+                cache["key"], cache["history"] = key, load_archive_phase_durations()
+            history = cache["history"]
+        return estimate_remaining(data, history, cfg, now)
+    except Exception:
+        return None
+
+
+def format_duration(minutes) -> str:
+    """Lesbare Dauer (#620): "45 min", "2 h", "1 h 10 min"."""
+    total = int(round(float(minutes)))
+    if total < 60:
+        return f"{total} min"
+    hours, rest = divmod(total, 60)
+    return f"{hours} h" if rest == 0 else f"{hours} h {rest} min"
+
+
+def _format_clock(value, today) -> str:
+    """Uhrzeit HH:MM, an einem anderen Tag als `today` mit Datum DD.MM."""
+    dt = _parse_time(value)
+    return dt.strftime("%H:%M") if dt.date() == today else dt.strftime("%d.%m. %H:%M")
+
+
+def _finished_span(data: dict) -> "tuple[datetime, datetime] | None":
+    """Tatsächlicher Start und Ende eines fertigen Workflows, sonst None."""
+    log = data.get("phase_log")
+    last = log[-1] if isinstance(log, list) and log else {}
+    end = (last.get("exited_at") if isinstance(last, dict) else None) \
+        or data.get("last_updated")
+    if not data.get("created") or not end:
+        return None
+    return _parse_time(data["created"]), _parse_time(end)
+
+
+def _plan_time_lines(data: dict, estimate) -> "list[str]":
+    """Zeit-Block des Plans (#620): Prognose oder Ist-Werte; [] bei Fehler."""
+    try:
+        if not isinstance(estimate, dict) or data.get("status") == "abandoned":
+            return []
+        now = estimate.get("now") or _estimate_now()
+        today = _parse_time(now).date()
+        if estimate.get("actual"):
+            span = _finished_span(data)
+            if span is None:
+                return []
+            start, end = span
+            dur = format_duration(max(0.0, (end - start).total_seconds() / 60))
+            return ["", f"Start  {_format_clock(start, today)}", f"Dauer  {dur}",
+                    f"Ende  {_format_clock(end, today)}"]
+        return ["", f"Start  {_format_clock(estimate['start'], today)}",
+                f"Dauer  ca. {_estimate_span_text(estimate)} {_estimate_basis(estimate)}",
+                f"Ende  ca. {_format_clock(estimate['end_low'], today)}–"
+                f"{_format_clock(estimate['end_high'], today)}"]
+    except Exception:
+        return []
+
+
+def _estimate_span_text(estimate: dict) -> str:
+    return (f"{format_duration(estimate['total_low_min'])}–"
+            f"{format_duration(estimate['total_high_min'])}")
+
+
+def _estimate_basis(estimate: dict) -> str:
+    n = estimate.get("n") or 0
+    if estimate.get("source") == "default" or not n:
+        return "(Startwert)"
+    return f"(aus {n} Workflow{'' if n == 1 else 's'})"
 
 
 def status_note(data: dict) -> "str | None":
@@ -2530,9 +2811,26 @@ def _final_loc(data: dict) -> "tuple[int, int] | None":
 
 # --- Commands ---
 
+START_USAGE = ("Usage: workflow.py start <name> [--type feature|feature-fast] [--issue N] "
+               "[--score 0-6]")
+
+
+def _stamp_intake_estimate(data: dict, score: int) -> None:
+    """`intake_score` und `estimate_initial` stempeln (#620). Schätzung fail-open."""
+    data["intake_score"] = score
+    est = current_estimate(data)
+    if est and not est.get("actual"):
+        data["estimate_initial"] = {
+            "low": round(est["total_low_min"], 1),
+            "mid": round(est["elapsed_min"] + est["mid_min"], 1),
+            "high": round(est["total_high_min"], 1), "n": est["n"],
+            "source": est["source"], "at": est["now"].isoformat()}
+
+
 def cmd_start(args: list[str]) -> None:
     workflow_type = "feature"
     issue_arg = None
+    score_arg = None
     name_args = []
     i = 0
     while i < len(args):
@@ -2542,12 +2840,14 @@ def cmd_start(args: list[str]) -> None:
         elif args[i] == "--issue" and i + 1 < len(args):
             issue_arg = args[i + 1]
             i += 2
+        elif args[i] == "--score":
+            score_arg = args[i + 1] if i + 1 < len(args) else ""
+            i += 2
         else:
             name_args.append(args[i])
             i += 1
-    if not name_args:
-        print("Usage: workflow.py start <name> [--type feature|feature-fast] [--issue N]",
-              file=sys.stderr)
+    if not name_args or (score_arg is not None and not _re.fullmatch(r"[0-6]", score_arg)):
+        print(START_USAGE, file=sys.stderr)
         sys.exit(1)
     if issue_arg is not None:
         issue_arg = issue_arg[1:] if issue_arg.startswith("#") else issue_arg
@@ -2580,6 +2880,8 @@ def cmd_start(args: list[str]) -> None:
         _log_phase_transition(data, "phase3_spec")
     else:
         _log_phase_transition(data, "phase1_context")
+    if score_arg is not None:
+        _stamp_intake_estimate(data, int(score_arg))  # #620
     _atomic_write(wf_file, data)
     _set_active(name)
     _herdr("report", data)
@@ -2746,6 +3048,7 @@ def _plan_watch(target: "str | None" = None) -> None:
     last_out = None
     done = 0
     tried: set = set()  # #490: Issue-Nummern, deren Titel schon geholt wurde
+    est_cache: dict = {}  # #620: Archiv-Dauern, neu nur bei geaendertem Archivordner
     pane_file = _plan_pane_file() if target else None
     try:
         while True:
@@ -2761,13 +3064,15 @@ def _plan_watch(target: "str | None" = None) -> None:
                 if found:
                     last_name, data = found
                     out = render_plan(data, width=width, deploy=deploy, autonomous=auto,
-                                      queue=queue_end_args(data))
+                                      queue=queue_end_args(data),
+                                      estimate=current_estimate(data, cache=est_cache))
                 elif last_name and _archive_file(last_name).exists():
                     data = dict(_read_workflow(_archive_file(last_name)))
                     data.setdefault("name", last_name)
                     _with_issue_title(data)
                     out = render_plan(data, archived=True, width=width, deploy=deploy,
-                                      autonomous=auto, queue=queue_end_args(data))
+                                      autonomous=auto, queue=queue_end_args(data),
+                                      estimate=current_estimate(data, archived=True))
                 else:
                     out = render_plan(None, width=width)
                 if out != last_out:
@@ -2809,7 +3114,8 @@ def cmd_plan(args: list[str]) -> None:
         found = None
     data = found[1] if found else None
     print(render_plan(data, deploy=deploy_mode(), autonomous=deploy_autonomous(),
-                      queue=queue_end_args(data) if data is not None else None))
+                      queue=queue_end_args(data) if data is not None else None,
+                      estimate=current_estimate(data) if data is not None else None))
 
 
 def cmd_issue_title(args: list[str]) -> None:
@@ -4151,6 +4457,9 @@ def cmd_retro(args: list[str]) -> None:
         print(f"  |  Laengste Phase: {longest_phase} ({longest_dur:.1f} min) ▲")
     else:
         print()
+    estimate_line = _retro_estimate_line(data)  # #620: Lernnachweis
+    if estimate_line:
+        print(estimate_line)
 
     # Quality signals
     verdict = data.get("adversary_verdict") or log.get("adversary_verdict") or "–"
@@ -4520,6 +4829,58 @@ def cmd_context(args: list[str]) -> None:
             print(f"CONTEXT_THRESHOLD={threshold}")
     except Exception:
         pass
+
+
+def _estimate_kv_lines(est: dict) -> "list[str]":
+    """KEY=value-Zeilen von `workflow.py estimate` (#620)."""
+    today = est["now"].date()
+    end = (f"{_format_clock(est['end_low'], today)}–"
+           f"{_format_clock(est['end_high'], today)}")
+    return ["ESTIMATE=on",
+            f"ESTIMATE_LOW_MIN={round(est['total_low_min'])}",
+            f"ESTIMATE_HIGH_MIN={round(est['total_high_min'])}",
+            f"ESTIMATE_START={est['start'].isoformat(timespec='minutes')}",
+            f"ESTIMATE_END_LOW={est['end_low'].isoformat(timespec='minutes')}",
+            f"ESTIMATE_END_HIGH={est['end_high'].isoformat(timespec='minutes')}",
+            f"ESTIMATE_BASIS={est['n'] if est['source'] == 'archive' else 'default'}",
+            f"LINE=Grobe Schätzung: {_estimate_span_text(est)}, Ende ca. {end} "
+            f"{_estimate_basis(est)}"]
+
+
+def cmd_estimate(args: list[str]) -> None:
+    """Zeitschätzung des aktiven Workflows (#620), Auskunft, kein Gate, Exit immer 0.
+
+    `ESTIMATE=on` mit Spanne (Gesamtdauer in Minuten), Start, Prognose-Ende,
+    Basis (Zahl der Vergleichs-Workflows oder `default`) und `LINE=` fuer die
+    Intake-Bewertung; bei `time_estimate.enabled: false` oder Fehler nur `ESTIMATE=off`.
+    """
+    lines = ["ESTIMATE=off"]
+    try:
+        found = read_active_workflow_fast()
+        est = current_estimate(found[1]) if found else None
+        if est and not est.get("actual"):
+            lines = _estimate_kv_lines(est)
+    except (Exception, SystemExit):
+        lines = ["ESTIMATE=off"]
+    print("\n".join(lines))
+
+
+def _retro_estimate_line(data: dict) -> "str | None":
+    """Retro-Zeile „Schätzung vs. Ist“ (#620), nur mit `estimate_initial`."""
+    init = data.get("estimate_initial")
+    try:
+        if not isinstance(init, dict):
+            return None
+        low, high = float(init["low"]), float(init["high"])
+        span = _finished_span(data)
+        actual = (span[1] - span[0]).total_seconds() / 60 if span else None
+        if actual is None:
+            return None
+        verdict = "darunter" if actual < low else ("darüber" if actual > high else "innerhalb")
+        return (f"  Schätzung vs. Ist: geschätzt {format_duration(low)}–"
+                f"{format_duration(high)}, tatsächlich {format_duration(actual)} ({verdict})")
+    except Exception:
+        return None
 
 
 QUEUE_USAGE = ('Usage: workflow.py queue [list | add <N...> [--autark] [--note "<text>"] '
@@ -4946,6 +5307,7 @@ COMMANDS = {
     "auto-approve": cmd_auto_approve,
     "auto-green": cmd_auto_green,
     "context": cmd_context,
+    "estimate": cmd_estimate,
     "batch": cmd_batch,
     "retro": cmd_retro,
     "cleanup-stale-locks": cmd_cleanup_stale_locks,

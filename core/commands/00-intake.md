@@ -158,21 +158,31 @@ Immer menschlich bleiben — auch bei `AUTONOMY=auto`: AMBIGUOUS-Verdict, zweite
 
 `--issue <N>` nur, wenn die Issue-Nummer bekannt ist — sonst weglassen (die Nummer kommt dann
 aus dem Namen).
+`--score <S>` immer mit der Summe aus Step 2 (0–6): daraus lernt die Zeitschätzung (#620).
 
 **Fast Track:**
 ```bash
-python3 .claude/hooks/workflow.py start [name] --type feature-fast --issue <N>
+python3 .claude/hooks/workflow.py start [name] --type feature-fast --issue <N> --score <S>
 export OPENSPEC_ACTIVE_WORKFLOW=[name]
 ```
 → Weiter mit `/30-write-spec` (Mini-Spec-Format, siehe unten)
 
 **Voller Prozess:**
 ```bash
-python3 .claude/hooks/workflow.py start [name] --type feature --issue <N>
+python3 .claude/hooks/workflow.py start [name] --type feature --issue <N> --score <S>
 export OPENSPEC_ACTIVE_WORKFLOW=[name]
 ```
 → Summe 1–3: weiter mit `/10-context` (Context + Analyse in einem Durchgang kombinieren)
 → Summe 4–6: weiter mit `/10-context`, dann `/20-analyse` (getrennt, 3x parallele Agenten), dann `/30-write-spec`
+
+**Zeitschätzung (#620), direkt nach dem Start:**
+```bash
+python3 .claude/hooks/workflow.py estimate
+```
+Meldet `workflow.py estimate` `ESTIMATE=on`, den Satz aus `LINE=` als letzte Zeile der Intake-Bewertung nennen, z.B.
+„Grobe Schätzung: 1 h 10 min–2 h 30 min, Ende ca. 15:40–17:00 (aus 7 Workflows)“; „(Startwert)“
+heißt: noch zu wenige abgeschlossene Workflows. Bei `ESTIMATE=off` die Schätzung weglassen. Dieselbe
+Spanne steht im Plan-Pane und wird mit jeder Phase enger.
 
 ## Modell-Empfehlung
 

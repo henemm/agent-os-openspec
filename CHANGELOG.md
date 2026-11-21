@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Zeitschätzung im Intake und Plan-Pane (#620):** Zu Beginn eines Workflows nennt `/00-intake` jetzt eine grobe Dauer als Spanne mit voraussichtlichem Ende, z.B. „Grobe Schätzung: 1 h 10 min–2 h 30 min, Ende ca. 15:40–17:00 (aus 7 Workflows)“. Der Plan-Pane zeigt unter den Schritten `Start`, `Dauer ca.` und `Ende ca.`; das Ende wird je Runde mit der Uhr und dem Fortschritt neu berechnet. Grundlage sind die abgeschlossenen Workflows im Archiv (`phase_log`): Je Vergleichs-Workflow zählt die Restdauer ab der aktuellen Phase, die Spanne sind die Quantile 0.25/0.75, verglichen wird zuerst mit Workflows derselben Score-Stufe, sonst desselben Typs. Mit jeder Phase wird die Spanne enger, mit jedem archivierten Workflow beruht sie auf mehr Messpunkten; mit weniger als drei passenden Workflows gelten Startwerte (Anzeige „(Startwert)“). Abgeschlossene Workflows zeigen tatsächlichen Start, Ende und Dauer. Neu: `workflow.py start … --score N` (speichert `intake_score` und die Anfangsschätzung `estimate_initial`), `workflow.py estimate` (KEY=value-Zeilen, Exit immer 0), in `workflow.py retro` die Zeile „Schätzung vs. Ist“. Reine Anzeige, kein Gate; jeder Fehler ergibt keine Zeit-Zeilen. Einstellungen und Kill-Switch in `config.yaml` → `time_estimate` (`enabled: false` schaltet ab). Migration: keine. Tests: `tests/test_zeitschaetzung_620.py`.
+
 ## [4.15.0] - 2026-11-19
 
 Neue Erwähnungs-Sperre: Texte, die Claude per `gh` auf GitHub veröffentlicht, dürfen keine nackte Erwähnung (`@name` außerhalb von Code-Angaben) mehr enthalten, damit keine fremden Personen ungewollt benachrichtigt werden (#617). Migration: keine; gewollte Erwähnungen in `mention_guard.allowed_users`, abschalten per `OPENSPEC_MENTION_GUARD=0`. Konsumenten erhalten die Fassung per `claude plugin update agent-os-openspec@henemm-private`; der neue Hook wirkt nach einem Neustart von Claude Code.
