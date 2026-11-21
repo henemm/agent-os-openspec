@@ -1,0 +1,713 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.18, pytest-9.2.0, pluggy-1.7.0 -- /home/user/agent-os-openspec/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/user/agent-os-openspec
+collecting ... collected 45 items
+
+tests/test_zeitschaetzung_620.py::test_ac1_load_archive_counts_valid_and_sums_reentries FAILED [  2%]
+tests/test_zeitschaetzung_620.py::test_ac1_load_archive_default_dir FAILED [  4%]
+tests/test_zeitschaetzung_620.py::test_ac1_load_archive_missing_dir_is_empty FAILED [  6%]
+tests/test_zeitschaetzung_620.py::test_ac2_estimate_exact_values_phase6 FAILED [  8%]
+tests/test_zeitschaetzung_620.py::test_ac2_fast_track_uses_fast_plan_steps FAILED [ 11%]
+tests/test_zeitschaetzung_620.py::test_ac2_configured_quantiles_are_used FAILED [ 13%]
+tests/test_zeitschaetzung_620.py::test_ac2_invalid_created_gives_no_estimate FAILED [ 15%]
+tests/test_zeitschaetzung_620.py::test_ac3_span_narrows_in_later_phase FAILED [ 17%]
+tests/test_zeitschaetzung_620.py::test_ac3_additional_archive_workflow_changes_result FAILED [ 20%]
+tests/test_zeitschaetzung_620.py::test_ac4_stage_group_used_when_enough FAILED [ 22%]
+tests/test_zeitschaetzung_620.py::test_ac4_stage_zero_is_its_own_group FAILED [ 24%]
+tests/test_zeitschaetzung_620.py::test_ac4_falls_back_to_type_group FAILED [ 26%]
+tests/test_zeitschaetzung_620.py::test_ac4_without_score_uses_type_group FAILED [ 28%]
+tests/test_zeitschaetzung_620.py::test_ac4_defaults_scaled_by_open_steps FAILED [ 31%]
+tests/test_zeitschaetzung_620.py::test_ac4_defaults_fast_track FAILED    [ 33%]
+tests/test_zeitschaetzung_620.py::test_ac5_render_without_estimate_is_unchanged FAILED [ 35%]
+tests/test_zeitschaetzung_620.py::test_ac5_render_with_estimate_block_after_steps FAILED [ 37%]
+tests/test_zeitschaetzung_620.py::test_ac5_duration_formats_and_startwert FAILED [ 40%]
+tests/test_zeitschaetzung_620.py::test_ac5_dates_when_not_today FAILED   [ 42%]
+tests/test_zeitschaetzung_620.py::test_ac6_archived_shows_actual_values FAILED [ 44%]
+tests/test_zeitschaetzung_620.py::test_ac6_phase8_falls_back_to_last_updated FAILED [ 46%]
+tests/test_zeitschaetzung_620.py::test_ac6_abandoned_and_missing_timestamps_no_block FAILED [ 48%]
+tests/test_zeitschaetzung_620.py::test_ac7_watch_caches_archive_and_recomputes FAILED [ 51%]
+tests/test_zeitschaetzung_620.py::test_estimate_now_returns_current_time FAILED [ 53%]
+tests/test_zeitschaetzung_620.py::test_ac8_start_with_score_stamps_estimate FAILED [ 55%]
+tests/test_zeitschaetzung_620.py::test_ac8_start_score_zero_and_fast_track FAILED [ 57%]
+tests/test_zeitschaetzung_620.py::test_ac8_start_score_uses_archive FAILED [ 60%]
+tests/test_zeitschaetzung_620.py::test_ac8_start_invalid_score_usage[9] FAILED [ 62%]
+tests/test_zeitschaetzung_620.py::test_ac8_start_invalid_score_usage[x] FAILED [ 64%]
+tests/test_zeitschaetzung_620.py::test_ac8_start_invalid_score_usage[-1] FAILED [ 66%]
+tests/test_zeitschaetzung_620.py::test_ac8_start_without_score_unchanged PASSED [ 68%]
+tests/test_zeitschaetzung_620.py::test_ac9_estimate_cli_archive FAILED   [ 71%]
+tests/test_zeitschaetzung_620.py::test_ac9_estimate_cli_default_basis FAILED [ 73%]
+tests/test_zeitschaetzung_620.py::test_ac9_estimate_cli_disabled FAILED  [ 75%]
+tests/test_zeitschaetzung_620.py::test_ac9_estimate_cli_broken_state FAILED [ 77%]
+tests/test_zeitschaetzung_620.py::test_ac9_estimate_cli_broken_archive_file FAILED [ 80%]
+tests/test_zeitschaetzung_620.py::test_ac10_retro_shows_estimate_vs_actual FAILED [ 82%]
+tests/test_zeitschaetzung_620.py::test_ac10_retro_without_estimate_unchanged PASSED [ 84%]
+tests/test_zeitschaetzung_620.py::test_ac11_plan_shows_block_when_enabled FAILED [ 86%]
+tests/test_zeitschaetzung_620.py::test_ac11_plan_kill_switch_no_time_lines PASSED [ 88%]
+tests/test_zeitschaetzung_620.py::test_ac11_plan_broken_inputs_no_abort PASSED [ 91%]
+tests/test_zeitschaetzung_620.py::test_ac11_start_with_broken_archive FAILED [ 93%]
+tests/test_zeitschaetzung_620.py::test_ac12_intake_command_and_skill_mention_score_and_estimate FAILED [ 95%]
+tests/test_zeitschaetzung_620.py::test_ac12_repo_config_has_time_estimate FAILED [ 97%]
+tests/test_zeitschaetzung_620.py::test_ac12_sync_skills_no_drift PASSED  [100%]
+
+=================================== FAILURES ===================================
+____________ test_ac1_load_archive_counts_valid_and_sums_reentries _____________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-435/test_ac1_load_archive_counts_v0')
+
+    def test_ac1_load_archive_counts_valid_and_sums_reentries(tmp_path):
+        wf = _wf()
+        archive = tmp_path / "_archive"
+        archive.mkdir()
+        _ac1_archive(archive)
+>       history = wf.load_archive_phase_durations(archive)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'workflow' has no attribute 'load_archive_phase_durations'
+
+tests/test_zeitschaetzung_620.py:253: AttributeError
+______________________ test_ac1_load_archive_default_dir _______________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-435/test_ac1_load_archive_default_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f867e63cb00>
+
+    def test_ac1_load_archive_default_dir(tmp_path, monkeypatch):
+        wf = _wf()
+        archive = tmp_path / "_archive"
+        archive.mkdir()
+        _ac1_archive(archive)
+        monkeypatch.setattr(wf, "_archive_dir", lambda: archive)
+>       assert _norm_history(wf.load_archive_phase_durations()) == AC1_EXPECTED
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'workflow' has no attribute 'load_archive_phase_durations'
+
+tests/test_zeitschaetzung_620.py:264: AttributeError
+__________________ test_ac1_load_archive_missing_dir_is_empty __________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-435/test_ac1_load_archive_missing_0')
+
+    def test_ac1_load_archive_missing_dir_is_empty(tmp_path):
+        wf = _wf()
+>       assert wf.load_archive_phase_durations(tmp_path / "gibt-es-nicht") == []
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'workflow' has no attribute 'load_archive_phase_durations'
+
+tests/test_zeitschaetzung_620.py:269: AttributeError
+____________________ test_ac2_estimate_exact_values_phase6 _____________________
+
+    def test_ac2_estimate_exact_values_phase6():
+        wf = _wf()
+        data = _state(P6, in_phase_min=10, elapsed_min=90)
+>       est = wf.estimate_remaining(data, HIST_AC2, CFG, NOW)
+              ^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'workflow' has no attribute 'estimate_remaining'
+
+tests/test_zeitschaetzung_620.py:279: AttributeError
+___________________ test_ac2_fast_track_uses_fast_plan_steps ___________________
+
+    def test_ac2_fast_track_uses_fast_plan_steps():
+        """Fast Track: nach Phase 6 folgen nur 7 und 8 — 6b zaehlt nicht."""
+        wf = _wf()
+        hist = [_h({P3: 10, P6: 20, P6B: 50, P7: 10}, wtype="feature-fast") for _ in range(3)]
+        data = _state(P6, in_phase_min=5, elapsed_min=30, wtype="feature-fast")
+>       est = wf.estimate_remaining(data, hist, CFG, NOW)
+              ^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'workflow' has no attribute 'estimate_remaining'
+
+tests/test_zeitschaetzung_620.py:299: AttributeError
+____________________ test_ac2_configured_quantiles_are_used ____________________
+
+    def test_ac2_configured_quantiles_are_used():
+        wf = _wf()
+        data = _state(P6, in_phase_min=10, elapsed_min=90)
+>       est = wf.estimate_remaining(data, HIST_AC2, dict(CFG, quantiles=[0.0, 1.0]), NOW)
+              ^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'workflow' has no attribute 'estimate_remaining'
+
+tests/test_zeitschaetzung_620.py:310: AttributeError
+__________________ test_ac2_invalid_created_gives_no_estimate __________________
+
+    def test_ac2_invalid_created_gives_no_estimate():
+        wf = _wf()
+        data = _state(P6, in_phase_min=10, elapsed_min=90, created="kaputt")
+>       assert wf.estimate_remaining(data, HIST_AC2, CFG, NOW) is None
+               ^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'workflow' has no attribute 'estimate_remaining'
+
+tests/test_zeitschaetzung_620.py:320: AttributeError
+_____________________ test_ac3_span_narrows_in_later_phase _____________________
+
+    def test_ac3_span_narrows_in_later_phase():
+        wf = _wf()
+>       early = wf.estimate_remaining(_state(P3, elapsed_min=60), HIST_AC3, CFG, NOW)
+                ^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'workflow' has no attribute 'estimate_remaining'
+
+tests/test_zeitschaetzung_620.py:329: AttributeError
+_____________ test_ac3_additional_archive_workflow_changes_result ______________
+
+    def test_ac3_additional_archive_workflow_changes_result():
+        wf = _wf()
+        data = _state(P7, elapsed_min=200)
+>       before = wf.estimate_remaining(data, HIST_AC3, CFG, NOW)
+                 ^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'workflow' has no attribute 'estimate_remaining'
+
+tests/test_zeitschaetzung_620.py:343: AttributeError
+____________________ test_ac4_stage_group_used_when_enough _____________________
+
+    def test_ac4_stage_group_used_when_enough():
+        wf = _wf()
+        hist = ([_h({P7: 100}, stage="4-6") for _ in range(3)]
+                + [_h({P7: 10}, stage="1-3") for _ in range(3)]
+                + [_h({P7: 10}) for _ in range(2)])
+>       est = wf.estimate_remaining(_state(P7, score=5), hist, CFG, NOW)
+              ^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'workflow' has no attribute 'estimate_remaining'
+
+tests/test_zeitschaetzung_620.py:359: AttributeError
+_____________________ test_ac4_stage_zero_is_its_own_group _____________________
+
+    def test_ac4_stage_zero_is_its_own_group():
+        wf = _wf()
+        hist = [_h({P7: 7}, stage="0") for _ in range(3)] + [_h({P7: 70}) for _ in range(3)]
+>       est = wf.estimate_remaining(_state(P7, score=0), hist, CFG, NOW)
+              ^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'workflow' has no attribute 'estimate_remaining'
+
+tests/test_zeitschaetzung_620.py:368: AttributeError
+______________________ test_ac4_falls_back_to_type_group _______________________
+
+    def test_ac4_falls_back_to_type_group():
+        wf = _wf()
+        hist = ([_h({P7: 10}, stage="1-3") for _ in range(2)]
+                + [_h({P7: 100}, stage="4-6") for _ in range(2)]
+                + [_h({P7: 50})]
+                + [_h({P7: 999}, wtype="feature-fast") for _ in range(3)])
+>       est = wf.estimate_remaining(_state(P7, score=2), hist, CFG, NOW)
+              ^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'workflow' has no attribute 'estimate_remaining'
+
+tests/test_zeitschaetzung_620.py:379: AttributeError
+____________________ test_ac4_without_score_uses_type_group ____________________
+
+    def test_ac4_without_score_uses_type_group():
+        wf = _wf()
+        hist = [_h({P7: 100}, stage="4-6") for _ in range(3)] + [_h({P7: 10})]
+>       est = wf.estimate_remaining(_state(P7), hist, CFG, NOW)
+              ^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'workflow' has no attribute 'estimate_remaining'
+
+tests/test_zeitschaetzung_620.py:391: AttributeError
+____________________ test_ac4_defaults_scaled_by_open_steps ____________________
+
+    def test_ac4_defaults_scaled_by_open_steps():
+        wf = _wf()
+        hist = [_h({P7: 10}) for _ in range(2)] + \
+            [_h({P7: 10}, wtype="feature-fast") for _ in range(5)]
+>       first = wf.estimate_remaining(_state(P1, elapsed_min=0), hist, CFG, NOW)
+                ^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'workflow' has no attribute 'estimate_remaining'
+
+tests/test_zeitschaetzung_620.py:399: AttributeError
+_________________________ test_ac4_defaults_fast_track _________________________
+
+    def test_ac4_defaults_fast_track():
+        wf = _wf()
+>       est = wf.estimate_remaining(_state(P3, elapsed_min=0, wtype="feature-fast"), [], CFG, NOW)
+              ^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'workflow' has no attribute 'estimate_remaining'
+
+tests/test_zeitschaetzung_620.py:416: AttributeError
+________________ test_ac5_render_without_estimate_is_unchanged _________________
+
+    def test_ac5_render_without_estimate_is_unchanged():
+        wf = _wf()
+        for data, kwargs in (
+            (_state(P6, in_phase_min=10), {}),
+            (_state(P1, elapsed_min=0), {"deploy": "configured"}),
+            (_state(P6, wtype="feature-fast"), {"width": 30}),
+            (_archived("zeit-alt", {P1: 10}, ship_status="done"), {"archived": True}),
+        ):
+>           assert wf.render_plan(data, estimate=None, **kwargs) == wf.render_plan(data, **kwargs)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           TypeError: render_plan() got an unexpected keyword argument 'estimate'
+
+tests/test_zeitschaetzung_620.py:443: TypeError
+_______________ test_ac5_render_with_estimate_block_after_steps ________________
+
+    def test_ac5_render_with_estimate_block_after_steps():
+        wf = _wf()
+        data = _state(P6, in_phase_min=10)
+        plain = wf.render_plan(data)
+>       out = wf.render_plan(data, estimate=_est())
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: render_plan() got an unexpected keyword argument 'estimate'
+
+tests/test_zeitschaetzung_620.py:450: TypeError
+___________________ test_ac5_duration_formats_and_startwert ____________________
+
+    def test_ac5_duration_formats_and_startwert():
+        wf = _wf()
+>       out = wf.render_plan(_state(P1, elapsed_min=0),
+                             estimate=_est(total_low_min=45.0, total_high_min=120.0, n=0,
+                                           source="default"))
+E       TypeError: render_plan() got an unexpected keyword argument 'estimate'
+
+tests/test_zeitschaetzung_620.py:468: TypeError
+________________________ test_ac5_dates_when_not_today _________________________
+
+    def test_ac5_dates_when_not_today():
+        wf = _wf()
+        est = _est(start=datetime(2026, 11, 20, 16, 5), end_low=datetime(2026, 11, 21, 23, 30),
+                   end_high=datetime(2026, 11, 22, 1, 10))
+>       out = wf.render_plan(_state(P6, in_phase_min=10), estimate=est)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: render_plan() got an unexpected keyword argument 'estimate'
+
+tests/test_zeitschaetzung_620.py:478: TypeError
+____________________ test_ac6_archived_shows_actual_values _____________________
+
+    def test_ac6_archived_shows_actual_values():
+        wf = _wf()
+>       out = wf.render_plan(_done_data(), archived=True, estimate=dict(ACTUAL))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: render_plan() got an unexpected keyword argument 'estimate'
+
+tests/test_zeitschaetzung_620.py:500: TypeError
+__________________ test_ac6_phase8_falls_back_to_last_updated __________________
+
+    def test_ac6_phase8_falls_back_to_last_updated():
+        wf = _wf()
+        data = _done_data(last_updated="2026-11-20T11:20:00")
+        data["phase_log"].append({"phase": P8, "entered_at": "2026-11-20T10:45:00",
+                                  "exited_at": None, "duration_min": None})
+>       out = wf.render_plan(data, estimate=dict(ACTUAL))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: render_plan() got an unexpected keyword argument 'estimate'
+
+tests/test_zeitschaetzung_620.py:510: TypeError
+______________ test_ac6_abandoned_and_missing_timestamps_no_block ______________
+
+    def test_ac6_abandoned_and_missing_timestamps_no_block():
+        wf = _wf()
+>       abandoned = wf.render_plan(_done_data(status="abandoned"), archived=True,
+                                   estimate=dict(ACTUAL))
+E       TypeError: render_plan() got an unexpected keyword argument 'estimate'
+
+tests/test_zeitschaetzung_620.py:516: TypeError
+_________________ test_ac7_watch_caches_archive_and_recomputes _________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-435/test_ac7_watch_caches_archive_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f867dea01a0>
+capsys = <_pytest.capture.CaptureFixture object at 0x7f867e533a10>
+
+    def test_ac7_watch_caches_archive_and_recomputes(tmp_path, monkeypatch, capsys):
+        wf = _wf()
+        proj = _project(tmp_path)
+        for k in list(os.environ):
+            if k.startswith(("OPENSPEC_", "HERDR_")):
+                monkeypatch.delenv(k, raising=False)
+        monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(proj))
+        monkeypatch.setenv("HOME", str(proj / "_home"))
+        monkeypatch.setenv("OPENSPEC_PLAN_WATCH_ROUNDS", "3")
+        monkeypatch.setenv("OPENSPEC_PLAN_WATCH_INTERVAL", "0")
+        monkeypatch.chdir(proj)
+        _reset_config_cache()
+        try:
+            archive = _archive(proj)
+            for i, p6 in enumerate((30, 60, 90)):
+                _write_archived(proj, _archived(f"zeit-arch-{i}", {P1: 10, P6: p6, P7: 20}))
+            monkeypatch.setattr(wf, "_archive_dir", lambda: archive)
+    
+            base = datetime(2026, 11, 21, 10, 0)
+            data = _state(P6, now=base, in_phase_min=10, elapsed_min=60)
+            monkeypatch.setattr(wf, "_plan_active", lambda: (data["name"], dict(data)))
+            monkeypatch.setattr(wf, "_plan_watch_should_end", lambda *a, **k: False)
+            monkeypatch.setattr(wf, "_plan_follow_target", lambda *a, **k: None)
+            monkeypatch.setattr(wf, "_plan_fetch_missing", lambda *a, **k: None)
+    
+            ticks = [0]
+    
+            def fake_now():
+                ticks[0] += 1
+                return base + timedelta(minutes=7 * ticks[0])
+    
+>           monkeypatch.setattr(wf, "_estimate_now", fake_now)
+E           AttributeError: <module 'workflow' from '/home/user/agent-os-openspec/core/hooks/workflow.py'> has no attribute '_estimate_now'
+
+tests/test_zeitschaetzung_620.py:568: AttributeError
+____________________ test_estimate_now_returns_current_time ____________________
+
+    def test_estimate_now_returns_current_time():
+        wf = _wf()
+        before = datetime.now()
+>       value = wf._estimate_now()
+                ^^^^^^^^^^^^^^^^
+E       AttributeError: module 'workflow' has no attribute '_estimate_now'
+
+tests/test_zeitschaetzung_620.py:616: AttributeError
+__________________ test_ac8_start_with_score_stamps_estimate ___________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-435/test_ac8_start_with_score_stam0')
+
+    def test_ac8_start_with_score_stamps_estimate(tmp_path):
+        proj, env = _case(tmp_path, "score5")
+        res = _workflow(["start", "zeit-a", "--score", "5"], env, proj)
+        assert res.returncode == 0, res.stderr
+        state = _state_file(proj, "zeit-a")
+>       assert state["intake_score"] == 5 and isinstance(state["intake_score"], int)
+               ^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'intake_score'
+
+tests/test_zeitschaetzung_620.py:634: KeyError
+___________________ test_ac8_start_score_zero_and_fast_track ___________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-435/test_ac8_start_score_zero_and_0')
+
+    def test_ac8_start_score_zero_and_fast_track(tmp_path):
+        proj, env = _case(tmp_path, "score0")
+        res = _workflow(["start", "zeit-b", "--type", "feature-fast", "--score", "0"], env, proj)
+        assert res.returncode == 0, res.stderr
+        state = _state_file(proj, "zeit-b")
+>       assert state["intake_score"] == 0
+               ^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'intake_score'
+
+tests/test_zeitschaetzung_620.py:648: KeyError
+______________________ test_ac8_start_score_uses_archive _______________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-435/test_ac8_start_score_uses_arch0')
+
+    def test_ac8_start_score_uses_archive(tmp_path):
+        proj, env = _case(tmp_path, "score-arch")
+        for i, p1 in enumerate((30, 60, 90)):
+            _write_archived(proj, _archived(f"zeit-arch-{i}", {P1: p1, P3: 20, P7: 10}, score=4))
+        res = _workflow(["start", "zeit-f", "--score", "5"], env, proj)
+        assert res.returncode == 0, res.stderr
+>       init = _state_file(proj, "zeit-f")["estimate_initial"]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'estimate_initial'
+
+tests/test_zeitschaetzung_620.py:659: KeyError
+____________________ test_ac8_start_invalid_score_usage[9] _____________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-435/test_ac8_start_invalid_score_u0')
+bad = '9'
+
+    @pytest.mark.parametrize("bad", ["9", "x", "-1"])
+    def test_ac8_start_invalid_score_usage(tmp_path, bad):
+        proj, env = _case(tmp_path, f"bad{bad}")
+        res = _workflow(["start", "zeit-c", "--score", bad], env, proj)
+>       assert res.returncode == 1, (res.stdout, res.stderr)
+E       AssertionError: ('Started workflow: zeit-c
+E         
+E         OPENSPEC_ACTIVE_WORKFLOW=zeit-c written to all settings.local.json files.
+E         Hooks read this directly — no session restart required.
+E         Shell (for manual workflow.py calls in terminal):
+E           export OPENSPEC_ACTIVE_WORKFLOW=zeit-c
+E         Agent spawns:
+E           Agent(prompt="... ## Required\
+E         export OPENSPEC_ACTIVE_WORKFLOW=zeit-c\
+E         ...")
+E         ', '')
+E       assert 0 == 1
+E        +  where 0 = CompletedProcess(args=['/home/user/agent-os-openspec/.venv/bin/python', '/home/user/agent-os-openspec/core/hooks/workflow.py', 'start', 'zeit-c', '--score', '9'], returncode=0, stdout='Started workflow: zeit-c\n\nOPENSPEC_ACTIVE_WORKFLOW=zeit-c written to all settings.local.json files.\nHooks read this directly — no session restart required.\nShell (for manual workflow.py calls in terminal):\n  export OPENSPEC_ACTIVE_WORKFLOW=zeit-c\nAgent spawns:\n  Agent(prompt="... ## Required\\nexport OPENSPEC_ACTIVE_WORKFLOW=zeit-c\\n...")\n', stderr='').returncode
+
+tests/test_zeitschaetzung_620.py:668: AssertionError
+____________________ test_ac8_start_invalid_score_usage[x] _____________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-435/test_ac8_start_invalid_score_u1')
+bad = 'x'
+
+    @pytest.mark.parametrize("bad", ["9", "x", "-1"])
+    def test_ac8_start_invalid_score_usage(tmp_path, bad):
+        proj, env = _case(tmp_path, f"bad{bad}")
+        res = _workflow(["start", "zeit-c", "--score", bad], env, proj)
+>       assert res.returncode == 1, (res.stdout, res.stderr)
+E       AssertionError: ('Started workflow: zeit-c
+E         
+E         OPENSPEC_ACTIVE_WORKFLOW=zeit-c written to all settings.local.json files.
+E         Hooks read this directly — no session restart required.
+E         Shell (for manual workflow.py calls in terminal):
+E           export OPENSPEC_ACTIVE_WORKFLOW=zeit-c
+E         Agent spawns:
+E           Agent(prompt="... ## Required\
+E         export OPENSPEC_ACTIVE_WORKFLOW=zeit-c\
+E         ...")
+E         ', '')
+E       assert 0 == 1
+E        +  where 0 = CompletedProcess(args=['/home/user/agent-os-openspec/.venv/bin/python', '/home/user/agent-os-openspec/core/hooks/workflow.py', 'start', 'zeit-c', '--score', 'x'], returncode=0, stdout='Started workflow: zeit-c\n\nOPENSPEC_ACTIVE_WORKFLOW=zeit-c written to all settings.local.json files.\nHooks read this directly — no session restart required.\nShell (for manual workflow.py calls in terminal):\n  export OPENSPEC_ACTIVE_WORKFLOW=zeit-c\nAgent spawns:\n  Agent(prompt="... ## Required\\nexport OPENSPEC_ACTIVE_WORKFLOW=zeit-c\\n...")\n', stderr='').returncode
+
+tests/test_zeitschaetzung_620.py:668: AssertionError
+____________________ test_ac8_start_invalid_score_usage[-1] ____________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-435/test_ac8_start_invalid_score_u2')
+bad = '-1'
+
+    @pytest.mark.parametrize("bad", ["9", "x", "-1"])
+    def test_ac8_start_invalid_score_usage(tmp_path, bad):
+        proj, env = _case(tmp_path, f"bad{bad}")
+        res = _workflow(["start", "zeit-c", "--score", bad], env, proj)
+>       assert res.returncode == 1, (res.stdout, res.stderr)
+E       AssertionError: ('Started workflow: zeit-c
+E         
+E         OPENSPEC_ACTIVE_WORKFLOW=zeit-c written to all settings.local.json files.
+E         Hooks read this directly — no session restart required.
+E         Shell (for manual workflow.py calls in terminal):
+E           export OPENSPEC_ACTIVE_WORKFLOW=zeit-c
+E         Agent spawns:
+E           Agent(prompt="... ## Required\
+E         export OPENSPEC_ACTIVE_WORKFLOW=zeit-c\
+E         ...")
+E         ', '')
+E       assert 0 == 1
+E        +  where 0 = CompletedProcess(args=['/home/user/agent-os-openspec/.venv/bin/python', '/home/user/agent-os-openspec/core/hooks/workflow.py', 'start', 'zeit-c', '--score', '-1'], returncode=0, stdout='Started workflow: zeit-c\n\nOPENSPEC_ACTIVE_WORKFLOW=zeit-c written to all settings.local.json files.\nHooks read this directly — no session restart required.\nShell (for manual workflow.py calls in terminal):\n  export OPENSPEC_ACTIVE_WORKFLOW=zeit-c\nAgent spawns:\n  Agent(prompt="... ## Required\\nexport OPENSPEC_ACTIVE_WORKFLOW=zeit-c\\n...")\n', stderr='').returncode
+
+tests/test_zeitschaetzung_620.py:668: AssertionError
+________________________ test_ac9_estimate_cli_archive _________________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-435/test_ac9_estimate_cli_archive0')
+
+    def test_ac9_estimate_cli_archive(tmp_path):
+        proj, env = _case(tmp_path, "est")
+        for i, p6 in enumerate((30, 60, 90)):
+            _write_archived(proj, _archived(f"zeit-arch-{i}", {P1: 10, P6: p6, P7: 20}))
+        _write_active(proj, _state(P6, now=datetime.now(), in_phase_min=10, elapsed_min=60))
+        res = _workflow(["estimate"], env, proj)
+>       assert res.returncode == 0, res.stderr
+E       AssertionError: Unknown command: estimate
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['/home/user/agent-os-openspec/.venv/bin/python', '/home/user/agent-os-openspec/core/hooks/workflow.py', 'estimate'], returncode=1, stdout='', stderr='Unknown command: estimate\n').returncode
+
+tests/test_zeitschaetzung_620.py:689: AssertionError
+_____________________ test_ac9_estimate_cli_default_basis ______________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-435/test_ac9_estimate_cli_default_0')
+
+    def test_ac9_estimate_cli_default_basis(tmp_path):
+        proj, env = _case(tmp_path, "estdef")
+        _write_active(proj, _state(P1, now=datetime.now(), elapsed_min=0))
+        res = _workflow(["estimate"], env, proj)
+>       assert res.returncode == 0, res.stderr
+E       AssertionError: Unknown command: estimate
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['/home/user/agent-os-openspec/.venv/bin/python', '/home/user/agent-os-openspec/core/hooks/workflow.py', 'estimate'], returncode=1, stdout='', stderr='Unknown command: estimate\n').returncode
+
+tests/test_zeitschaetzung_620.py:705: AssertionError
+________________________ test_ac9_estimate_cli_disabled ________________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-435/test_ac9_estimate_cli_disabled0')
+
+    def test_ac9_estimate_cli_disabled(tmp_path):
+        proj, env = _case(tmp_path, "estoff", config=CONFIG_OFF)
+        _write_active(proj, _state(P6, now=datetime.now(), in_phase_min=10))
+        res = _workflow(["estimate"], env, proj)
+>       assert res.returncode == 0, res.stderr
+E       AssertionError: Unknown command: estimate
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['/home/user/agent-os-openspec/.venv/bin/python', '/home/user/agent-os-openspec/core/hooks/workflow.py', 'estimate'], returncode=1, stdout='', stderr='Unknown command: estimate\n').returncode
+
+tests/test_zeitschaetzung_620.py:715: AssertionError
+______________________ test_ac9_estimate_cli_broken_state ______________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-435/test_ac9_estimate_cli_broken_s0')
+
+    def test_ac9_estimate_cli_broken_state(tmp_path):
+        proj, env = _case(tmp_path, "estbroken")
+        _write_active(proj, _state(P6, now=datetime.now(), in_phase_min=10, created="kaputt"))
+        res = _workflow(["estimate"], env, proj)
+>       assert res.returncode == 0, res.stderr
+E       AssertionError: Unknown command: estimate
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['/home/user/agent-os-openspec/.venv/bin/python', '/home/user/agent-os-openspec/core/hooks/workflow.py', 'estimate'], returncode=1, stdout='', stderr='Unknown command: estimate\n').returncode
+
+tests/test_zeitschaetzung_620.py:723: AssertionError
+__________________ test_ac9_estimate_cli_broken_archive_file ___________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-435/test_ac9_estimate_cli_broken_a0')
+
+    def test_ac9_estimate_cli_broken_archive_file(tmp_path):
+        proj, env = _case(tmp_path, "estbrokenarch")
+        (_archive(proj) / "kaputt.json").write_text("{kaputt")
+        _write_active(proj, _state(P6, now=datetime.now(), in_phase_min=10))
+        res = _workflow(["estimate"], env, proj)
+>       assert res.returncode == 0, res.stderr
+E       AssertionError: Unknown command: estimate
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['/home/user/agent-os-openspec/.venv/bin/python', '/home/user/agent-os-openspec/core/hooks/workflow.py', 'estimate'], returncode=1, stdout='', stderr='Unknown command: estimate\n').returncode
+
+tests/test_zeitschaetzung_620.py:733: AssertionError
+___________________ test_ac10_retro_shows_estimate_vs_actual ___________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-435/test_ac10_retro_shows_estimate0')
+
+    def test_ac10_retro_shows_estimate_vs_actual(tmp_path):
+        proj, env = _case(tmp_path, "retro")
+        _write_archived(proj, _archived(
+            "zeit-retro", {P1: 20, P2: 30, P3: 50},
+            estimate_initial={"low": 60, "mid": 90, "high": 120, "n": 5, "source": "archive",
+                              "at": "2026-11-01T09:00:00"}))
+        res = _workflow(["retro", "zeit-retro"], env, proj)
+        assert res.returncode == 0, res.stderr
+        lines = [ln for ln in res.stdout.splitlines() if "Schätzung vs. Ist" in ln]
+>       assert len(lines) == 1, res.stdout
+E       AssertionError: ════════════════════════════════════════════════════
+E           RETRO: zeit-retro
+E           Typ: feature  |  Gestartet: 2026-11-01
+E         ════════════════════════════════════════════════════
+E         
+E         PHASEN-TIMELINE
+E         ────────────────────────────────────────────────────
+E           Phase                           Dauer  Status
+E         ────────────────────────────────────────────────────
+E           phase1_context               20.0 min  ✓
+E           phase2_analyse               30.0 min  ✓
+E           phase3_spec                  50.0 min  ✓
+E         ────────────────────────────────────────────────────
+E           Gesamt: 100.0 min  |  Laengste Phase: phase3_spec (50.0 min) ▲
+E         
+E         QUALITAETS-SIGNALE
+E         ────────────────────────────────────────────────────
+E           TDD RED Artefakte:     ✗ fehlend
+E           Adversary-Verdict:     –
+E           Fix-Loop-Iterationen:  0
+E           Adversary-Findings:    0
+E           Override genutzt:      Nein
+E           Scope:                 0 Datei(en), – LoC
+E           Ergebnis:              –
+E         
+E         OPTIMIERUNGS-HINWEISE
+E         ────────────────────────────────────────────────────
+E           ⚠  phase3_spec war mit 50.0 min die laengste Phase (50% der Gesamtzeit).
+E           ⚠  Kein TDD-RED-Artefakt registriert — TDD-Disziplin nicht nachweisbar.
+E         
+E         
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_zeitschaetzung_620.py:751: AssertionError
+___________________ test_ac11_plan_shows_block_when_enabled ____________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-435/test_ac11_plan_shows_block_whe0')
+
+    def test_ac11_plan_shows_block_when_enabled(tmp_path):
+        proj, env = _case(tmp_path, "plan-on")
+        _write_active(proj, _state(P6, now=datetime.now(), in_phase_min=10, elapsed_min=30))
+        res = _workflow(["plan"], env, proj)
+        assert res.returncode == 0, res.stderr
+        prefixes = [ln.split("  ")[0] for ln in _time_lines(res.stdout)]
+>       assert prefixes == ["Start", "Dauer", "Ende"], res.stdout
+E       AssertionError: Workflow
+E         zeit-aktuell
+E         
+E         ✔ 1 Kontext
+E         ✔ 2 Analyse
+E         ✔ 3 Spec
+E         ✔ 4 Freigabe
+E         ✔ 5 TDD-RED
+E         ▶ 6 Implement  (läuft)
+E         ○ 6b Adversary
+E         ○ 7 Validierung
+E         ○ 8 Code fertig
+E         ○ Ausliefern
+E         
+E         ❗ Du: /50-implement — als Nächstes wird umgesetzt
+E         
+E       assert [] == ['Start', 'Dauer', 'Ende']
+E         
+E         Right contains 3 more items, first extra item: 'Start'
+E         
+E         Full diff: (-: missing in left side, +: extra in left side)
+E         + []
+E         - [
+E         -     'Start',...
+E         
+E         ...Full output truncated, use '-vv' to show
+
+tests/test_zeitschaetzung_620.py:773: AssertionError
+_____________________ test_ac11_start_with_broken_archive ______________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-435/test_ac11_start_with_broken_ar0')
+
+    def test_ac11_start_with_broken_archive(tmp_path):
+        proj, env = _case(tmp_path, "start-broken")
+        (_archive(proj) / "kaputt.json").write_text("{kaputt")
+        res = _workflow(["start", "zeit-e", "--score", "3"], env, proj)
+        assert res.returncode == 0, res.stderr
+        assert "Traceback" not in res.stderr
+        state = _state_file(proj, "zeit-e")
+>       assert state["intake_score"] == 3
+               ^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'intake_score'
+
+tests/test_zeitschaetzung_620.py:802: KeyError
+________ test_ac12_intake_command_and_skill_mention_score_and_estimate _________
+
+    def test_ac12_intake_command_and_skill_mention_score_and_estimate():
+        for path in (REPO_ROOT / "core" / "commands" / "00-intake.md",
+                     REPO_ROOT / "skills" / "00-intake" / "SKILL.md"):
+            text = path.read_text(encoding="utf-8")
+>           assert "--score" in text, path
+E           AssertionError: PosixPath('/home/user/agent-os-openspec/core/commands/00-intake.md')
+E           assert '--score' in '# Intake: Aufgaben-Klassifikation\n\n**Immer der erste Schritt** — vor jedem Feature-Workflow. Auch Bugs starten hier.\nBestimmt den Track und verhindert, dass ein 10-Minuten-Fix 8 Phasen durchläuft.\n\n## Scoring\n\nBewerte die Aufgabe anhand von 3 Kriterien:\n\n| Kriterium | Low (0) | Medium (1) | High (2) |\n|-----------|---------|------------|---------|\n| **Scope** | 1–3 Dateien, ≤30 LoC | 4–8 Dateien, ≤100 LoC | Neue Architektur, neue Dateien |\n| **Blast Radius** | Internes Utility, isoliert | Service-Schnittstelle | Infra, Auth, kritischer Pfad, Breaking Change |\n| **Unsicherheit** | Bekanntes Pattern, vertrauter Code | Teilweise bekannt | Neue Technologie, unbekannter Bereich |\n\n**Summe 0**: Fast Track (`feature-fast`) — Phasen 3→4→6→8\n**Summe ≥ 1**: Voller Prozess (`feature`) — alle Phasen 1→8, Adversary: mindestens 2 Dialog-Runden bei hohem Risiko, eine Runde bei niedrigem Risiko\n(`MIN_ROUNDS` in `adversary_dialog.py`). Das Risiko folgt mechanisch aus der Dateiliste der Änderung\n(Hook-/Gate-Code, Guards, Konfiguration = hoch; nur Anweisungstext, Doku, Tests = niedrig; im Zweifel hoch) —\n`python3 .claude/hooks/adversary_dialog.py risk` zeigt Stufe, Grund und gef...ck schreibt der Hauptkontext direkt (kein Sonnet-Agent) eine Mini-Spec.\nDatei: `docs/specs/fast/[name].md`\n\n```markdown\n# Mini-Spec: [Name]\n\n## Was ändert sich\n- [Änderung 1]\n- [Änderung 2]\n\n## Was darf sich nicht ändern\n- [Invariante]\n\n## Manuelle Test-Schritte\n1. [Schritt]\n2. [Schritt]\n\n## Inline-Test (wird während Implementierung geschrieben)\n- [ ] Test für [Hauptverhalten]\n```\n\nNach User-Freigabe ("approved") direkt zu `/50-implement`.\n\n**Auto-Modus (`autonomy.mode: auto`, #470):** Auch der Fast Track braucht dann ein\nunabhängiges PO-Briefing mit `## Ampel` — die Ausnahme `skip_fast_track` gilt im\nAuto-Modus nicht. Also nach der Mini-Spec den `po-briefer` laufen lassen\n(`/30-write-spec` Step 3b), `workflow.py set-briefing <pfad>` und danach\n`workflow.py auto-approve`: `AUTO_APPROVE=done` → direkt weiter zu `/50-implement`,\n`AUTO_APPROVE=human` → der PO gibt wie bisher mit "approved" frei.\n\n## Was beim Fast Track IMMER aktiv bleibt\n\n- **Spec + User-Freigabe** — keine Implementierung ohne "approved"\n- **Rebase-Gate** — Branch muss auf `origin/main` stehen\n- **Secrets Guard** — nie Credentials im Code\n- **Stop-Lock** — "stopp" pausiert sofort\n'
+
+tests/test_zeitschaetzung_620.py:813: AssertionError
+___________________ test_ac12_repo_config_has_time_estimate ____________________
+
+    def test_ac12_repo_config_has_time_estimate():
+        import yaml  # noqa: PLC0415
+        cfg = yaml.safe_load((REPO_ROOT / "config.yaml").read_text(encoding="utf-8"))
+        section = cfg.get("time_estimate")
+>       assert isinstance(section, dict), section
+E       AssertionError: None
+E       assert False
+E        +  where False = isinstance(None, dict)
+
+tests/test_zeitschaetzung_620.py:821: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_zeitschaetzung_620.py::test_ac1_load_archive_counts_valid_and_sums_reentries
+FAILED tests/test_zeitschaetzung_620.py::test_ac1_load_archive_default_dir - ...
+FAILED tests/test_zeitschaetzung_620.py::test_ac1_load_archive_missing_dir_is_empty
+FAILED tests/test_zeitschaetzung_620.py::test_ac2_estimate_exact_values_phase6
+FAILED tests/test_zeitschaetzung_620.py::test_ac2_fast_track_uses_fast_plan_steps
+FAILED tests/test_zeitschaetzung_620.py::test_ac2_configured_quantiles_are_used
+FAILED tests/test_zeitschaetzung_620.py::test_ac2_invalid_created_gives_no_estimate
+FAILED tests/test_zeitschaetzung_620.py::test_ac3_span_narrows_in_later_phase
+FAILED tests/test_zeitschaetzung_620.py::test_ac3_additional_archive_workflow_changes_result
+FAILED tests/test_zeitschaetzung_620.py::test_ac4_stage_group_used_when_enough
+FAILED tests/test_zeitschaetzung_620.py::test_ac4_stage_zero_is_its_own_group
+FAILED tests/test_zeitschaetzung_620.py::test_ac4_falls_back_to_type_group - ...
+FAILED tests/test_zeitschaetzung_620.py::test_ac4_without_score_uses_type_group
+FAILED tests/test_zeitschaetzung_620.py::test_ac4_defaults_scaled_by_open_steps
+FAILED tests/test_zeitschaetzung_620.py::test_ac4_defaults_fast_track - Attri...
+FAILED tests/test_zeitschaetzung_620.py::test_ac5_render_without_estimate_is_unchanged
+FAILED tests/test_zeitschaetzung_620.py::test_ac5_render_with_estimate_block_after_steps
+FAILED tests/test_zeitschaetzung_620.py::test_ac5_duration_formats_and_startwert
+FAILED tests/test_zeitschaetzung_620.py::test_ac5_dates_when_not_today - Type...
+FAILED tests/test_zeitschaetzung_620.py::test_ac6_archived_shows_actual_values
+FAILED tests/test_zeitschaetzung_620.py::test_ac6_phase8_falls_back_to_last_updated
+FAILED tests/test_zeitschaetzung_620.py::test_ac6_abandoned_and_missing_timestamps_no_block
+FAILED tests/test_zeitschaetzung_620.py::test_ac7_watch_caches_archive_and_recomputes
+FAILED tests/test_zeitschaetzung_620.py::test_estimate_now_returns_current_time
+FAILED tests/test_zeitschaetzung_620.py::test_ac8_start_with_score_stamps_estimate
+FAILED tests/test_zeitschaetzung_620.py::test_ac8_start_score_zero_and_fast_track
+FAILED tests/test_zeitschaetzung_620.py::test_ac8_start_score_uses_archive - ...
+FAILED tests/test_zeitschaetzung_620.py::test_ac8_start_invalid_score_usage[9]
+FAILED tests/test_zeitschaetzung_620.py::test_ac8_start_invalid_score_usage[x]
+FAILED tests/test_zeitschaetzung_620.py::test_ac8_start_invalid_score_usage[-1]
+FAILED tests/test_zeitschaetzung_620.py::test_ac9_estimate_cli_archive - Asse...
+FAILED tests/test_zeitschaetzung_620.py::test_ac9_estimate_cli_default_basis
+FAILED tests/test_zeitschaetzung_620.py::test_ac9_estimate_cli_disabled - Ass...
+FAILED tests/test_zeitschaetzung_620.py::test_ac9_estimate_cli_broken_state
+FAILED tests/test_zeitschaetzung_620.py::test_ac9_estimate_cli_broken_archive_file
+FAILED tests/test_zeitschaetzung_620.py::test_ac10_retro_shows_estimate_vs_actual
+FAILED tests/test_zeitschaetzung_620.py::test_ac11_plan_shows_block_when_enabled
+FAILED tests/test_zeitschaetzung_620.py::test_ac11_start_with_broken_archive
+FAILED tests/test_zeitschaetzung_620.py::test_ac12_intake_command_and_skill_mention_score_and_estimate
+FAILED tests/test_zeitschaetzung_620.py::test_ac12_repo_config_has_time_estimate
+========================= 40 failed, 5 passed in 2.47s =========================

@@ -356,6 +356,19 @@ next_suggestion:
   timeout_s: 8        # Zeitbudget fuer alle gh-Aufrufe zusammen (Sekunden)
   cache_ttl_s: 300    # Gueltigkeit des Rohdaten-Caches (Sekunden)
 
+# Zeitschaetzung (#620): Intake (`workflow.py estimate`) und Plan-Pane zeigen
+# Start, Dauer als Spanne und Prognose-Ende. Gelernt aus dem `phase_log` der
+# archivierten Workflows (Quantile der Restdauern, gleiche Score-Stufe, sonst
+# gleicher Typ); mit weniger als min_samples Workflows gelten die Startwerte
+# (Minuten, [low, high]). Reine Anzeige, kein Gate. Nur false schaltet ab.
+time_estimate:
+  enabled: true
+  min_samples: 3
+  quantiles: [0.25, 0.75]
+  defaults:
+    feature: [60, 240]
+    feature-fast: [20, 60]
+
 # Herdr-Sidebar (#466): Laeuft Claude in einem Herdr-Pane (HERDR_ENV=1), meldet
 # core/hooks/herdr_bridge.py den Workflow-Stand display-only per
 # `herdr pane report-metadata` (Tokens workflow, issue, phase, step, next).
