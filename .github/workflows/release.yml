@@ -19,6 +19,8 @@ on:
 
 permissions:
   contents: write           # Tag und Release anlegen
+  checks: read              # Tested-Nachweis: Check-Run 'tests' des PR lesen (#633)
+  pull-requests: read       # Tested-Nachweis: PR zum Merge-Commit finden (#633)
 
 concurrency:
   group: release
@@ -54,8 +56,29 @@ jobs:
             echo "needed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Release-Vorbedingungen pruefen
+      # Tested-Nachweis (#633): Ist der Baum dieses Commits exakt der im PR
+      # gruen getestete, entfaellt die Wiederholung der Suite. Fail-closed:
+      # jeder Fehler ergibt proof=no und damit die volle Suite.
+      - name: Tested-Nachweis
+        id: proof
         if: steps.version.outputs.needed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          OUT=$(python3 scripts/release_check.py --tested-proof ${{ github.sha }}) || OUT="PROOF=no"
+          echo "$OUT"
+          if printf '%s\n' "$OUT" | grep -qx 'PROOF=yes'; then
+            echo "proof=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "proof=no" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Release-Vorbedingungen pruefen (Suite im PR schon gruen)
+        if: steps.version.outputs.needed == 'true' && steps.proof.outputs.proof == 'yes'
+        run: python3 scripts/release_check.py --no-tests
+
+      - name: Release-Vorbedingungen pruefen (mit voller Suite)
+        if: steps.version.outputs.needed == 'true' && steps.proof.outputs.proof != 'yes'
         run: python3 scripts/release_check.py
 
       - name: Release-Notiz aus CHANGELOG erzeugen
