@@ -102,6 +102,91 @@ def is_plugin_config_text(text) -> bool:
     return bool(keys & PLUGIN_CONFIG_KEYS)
 
 
+# Issue #622: Reine Anzeige-Abschnitte der wirksamen Config — per Edit/Write ohne
+# Override aenderbar (edit_gate 0a). Bewusst eine FESTE Liste statt „jeder neue
+# Abschnitt“: ein beliebiger neuer Abschnitt (etwa `adversary_coverage_gate:
+# {enabled: false}`) koennte ein Gate abschalten; ob ein Schluessel gate-fremd ist,
+# laesst sich nicht aus dem Namen erraten. `herdr`, `autonomy`, `auftrag` und
+# `context_budget` steuern Ablaeufe (Auto-/clear, Autonomie, Auto-Kette,
+# Kontext-Schnitt) und gehoeren NICHT hierher. Neue Eintraege nur per
+# Code-Aenderung mit Workflow (Spec + Test).
+DISPLAY_ONLY_CONFIG_KEYS = ("next_suggestion", "time_estimate")
+
+
+class _StrictConfigError(Exception):
+    """Strenger Config-Loader (#622): doppelter Schluessel oder Alias."""
+
+
+if yaml is not None:
+    class _StrictConfigLoader(yaml.SafeLoader):
+        """SafeLoader ohne doppelte Schluessel (jede Ebene) und ohne Aliase (#622).
+
+        PyYAML nimmt bei doppelten Schluesseln still den letzten Wert — ein
+        verdeckter Schutzschalter fiele so nicht auf. Aliase sind verboten, damit
+        der rekursive Vergleich nie geteilte/zyklische Strukturen durchlaeuft.
+        """
+
+        def compose_node(self, parent, index):
+            if self.check_event(yaml.events.AliasEvent):
+                raise _StrictConfigError("Alias")
+            return super().compose_node(parent, index)
+
+        def construct_mapping(self, node, deep=False):
+            if isinstance(node, yaml.MappingNode):
+                self.flatten_mapping(node)
+                seen = set()
+                for key_node, _value in node.value:
+                    key = self.construct_object(key_node, deep=True)
+                    if key in seen:
+                        raise _StrictConfigError("doppelter Schluessel")
+                    seen.add(key)
+            return super().construct_mapping(node, deep=deep)
+
+
+def _typed_items(mapping: dict) -> dict:
+    """Schluessel typstrikt machen: 1, True und "1" bleiben verschieden (#622)."""
+    return {(type(k), k): v for k, v in mapping.items()}
+
+
+def _strict_equal(a, b) -> bool:
+    """Rekursiver Vergleich mit Typ-Gleichheit (1 ≠ True, "true" ≠ True) (#622)."""
+    if type(a) is not type(b):
+        return False
+    if isinstance(a, dict):
+        ta, tb = _typed_items(a), _typed_items(b)
+        return ta.keys() == tb.keys() and all(_strict_equal(ta[k], tb[k]) for k in ta)
+    if isinstance(a, list):
+        return len(a) == len(b) and all(_strict_equal(x, y) for x, y in zip(a, b))
+    return a == b
+
+
+def display_only_change(old_text, new_text) -> bool:
+    """True, wenn `new_text` gegenueber `old_text` nur Anzeige-Abschnitte aendert (#622).
+
+    Beide Fassungen muessen mit dem strengen Loader (keine doppelten Schluessel,
+    keine Aliase) als Mapping lesbar sein; jeder Top-Level-Schluessel ausserhalb
+    von DISPLAY_ONLY_CONFIG_KEYS ist in beiden gleich vorhanden und typstrikt
+    gleich im Wert. Anzeige-Abschnitte duerfen dazukommen, sich aendern oder
+    wegfallen; Kommentare/Formatierung zaehlen nicht. Pur; wirft nie — jeder
+    Zweifel heisst False (fail-closed).
+    """
+    try:
+        if yaml is None or not isinstance(old_text, str) or not isinstance(new_text, str):
+            return False
+        old = yaml.load(old_text, Loader=_StrictConfigLoader)  # noqa: S506 (SafeLoader-Basis)
+        new = yaml.load(new_text, Loader=_StrictConfigLoader)  # noqa: S506
+        if not isinstance(old, dict) or not isinstance(new, dict):
+            return False
+
+        def gate_part(data: dict) -> dict:
+            return {k: v for k, v in data.items()
+                    if not (type(k) is str and k in DISPLAY_ONLY_CONFIG_KEYS)}
+
+        return _strict_equal(gate_part(old), gate_part(new))
+    except Exception:
+        return False
+
+
 def _is_root_app_config(root: Path, candidate: Path) -> bool:
     """True fuer eine `config.yaml` direkt im Root ohne Plugin-Block (#372)."""
     return candidate == root / "config.yaml" and not is_plugin_config(candidate)

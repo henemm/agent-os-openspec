@@ -640,10 +640,48 @@ def _user_settings_hit(file_path: str) -> bool:
         return False
 
 
+def _display_only_config_edit(file_path: str, tool_input: dict, deadline: float) -> bool:
+    """Schritt 0a (#622): aendert Edit/Write/MultiEdit nur Anzeige-Abschnitte der WIRKSAMEN Config?
+
+    Nur fuer die bestehende Datei `find_config_file(_root)` (Anlegen einer
+    vorrangigen Config, App-config.yaml ohne Plugin-Block: nie). JEDE simulierte
+    Fassung muss `display_only_change` bestehen; die Root-`config.yaml` muss
+    zudem Plugin-Config bleiben, sonst wuerde eine nachrangige Config wirksam.
+    Jeder Zweifel (Simulation, Groessen-/Edit-/Varianten-/Zeitdeckel, Lesefehler,
+    Ausnahme) → False, d.h. Treffer wie bisher (fail-closed).
+    """
+    try:
+        from config_loader import (config_path_hit, display_only_change,
+                                   find_config_file, is_plugin_config_text)
+        effective = find_config_file(_root)
+        if effective is None or not effective.is_file() \
+                or not config_path_hit(file_path, [effective]):
+            return False
+        if effective.stat().st_size > _CONFIG_MAX_BYTES:
+            return False
+        edits = tool_input.get("edits")
+        if isinstance(edits, list) and len(edits) > _CONFIG_MAX_EDITS:
+            return False
+        old, contents = _simulate_spec_write(str(effective), tool_input, deadline)
+        must_stay_plugin = effective == _root / "config.yaml"
+        for content in contents:
+            if not isinstance(content, str) \
+                    or len(content.encode("utf-8", "surrogatepass")) > _CONFIG_MAX_BYTES:
+                return False
+            if time.monotonic() > deadline or not display_only_change(old, content):
+                return False
+            if must_stay_plugin and not is_plugin_config_text(content):
+                return False
+        return bool(contents) and time.monotonic() <= deadline
+    except Exception:
+        return False
+
+
 def _config_edit_hit(file_path: str, tool_input: dict) -> "bool | str":
     """Schritt 0a (#473): trifft das Ziel die geschuetzte Config-Pfadmenge?
 
-    Ziel in der Menge ohne neuen Inhalt → True. Sonst zaehlt der Inhalt nur
+    Ziel in der Menge → True, ausser alle Fassungen aendern an der bereits
+    wirksamen Config nur Anzeige-Abschnitte (#622, `_display_only_config_edit`). Sonst zaehlt der Inhalt nur
     fuer die Root-`config.yaml` ohne Plugin-Block (#372): Write → `content`,
     Edit/MultiEdit → simulierte Fassungen, jede Variante zaehlt. Simulation
     scheitert → Edit scheitert ohnehin → kein Treffer. Nicht sicher pruefbar
@@ -656,7 +694,8 @@ def _config_edit_hit(file_path: str, tool_input: dict) -> "bool | str":
         from config_loader import protected_config_paths, config_path_hit, is_plugin_config_text
         deadline = _sim_deadline()
         if config_path_hit(file_path, protected_config_paths(_root)):
-            return True
+            # #622: nur Anzeige-Abschnitte der bereits wirksamen Config → kein Treffer.
+            return not _display_only_config_edit(file_path, tool_input, deadline)
         app_config = _root / "config.yaml"
         if not config_path_hit(file_path, [app_config]):
             return False
