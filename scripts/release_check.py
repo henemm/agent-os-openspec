@@ -364,6 +364,10 @@ def fetch_tested_proof_inputs(sha: str) -> "tuple[dict | None, str]":
             return None, f"git fetch origin refs/pull/{number}/head fehlgeschlagen"
         inputs["head_tree"] = _tree_of(head_sha)
         inputs["merge_tree"] = _tree_of(sha)
+        # Geprueft wird der ausgecheckte Stand (release.yml checkt main aus);
+        # weicht sein Baum von dem des Commits ab, gilt der Nachweis nicht.
+        if _tree_of("HEAD") != inputs["merge_tree"]:
+            return None, f"ausgecheckter Stand weicht ab: Baum von HEAD ist nicht der von {sha[:7]}"
         return inputs, ""
     except Exception as exc:  # fail-closed: jede Unsicherheit ist ein Nein
         return None, str(exc) or type(exc).__name__

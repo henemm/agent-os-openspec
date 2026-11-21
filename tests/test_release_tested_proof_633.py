@@ -124,7 +124,7 @@ def _make_scenario(tmp_path: Path, main_moved: bool, pr_number: int = 7) -> dict
     merge_sha = _git(["rev-parse", "HEAD"], dev)
 
     release = tmp_path / "release"
-    _git(["clone", str(origin), str(release)], tmp_path)
+    _git(["clone", "--no-local", str(origin), str(release)], tmp_path)
     _init_identity(release)
 
     return {
@@ -414,6 +414,27 @@ def test_cli_fail_closed_bei_abruffehler(tmp_path, monkeypatch, capsys):
     assert "PROOF=no" in lines, proc.stdout
     assert any(ln.startswith("REASON=") and len(ln) > len("REASON=") for ln in lines), proc.stdout
     assert "Traceback" not in proc.stderr, proc.stderr
+
+
+def test_cli_no_wenn_ausgecheckter_stand_abweicht(tmp_path, monkeypatch, capsys):
+    """AC-5 (fail-closed, Orchestrator-Entscheidung): Der Baum des ausgecheckten
+    HEAD muss der Baum des geprueften Commits sein. Steht HEAD auf einem anderen
+    Baum (z.B. main ging zwischen Push und Lauf weiter), ist es no, obwohl PR,
+    Check-Run und PR-Baum passen."""
+    scn = _make_scenario(tmp_path / "repo", main_moved=False)
+    release = scn["release"]
+    (release / "spaeter.txt").write_text("nach dem geprueften Commit\n")
+    _git(["add", "-A"], release)
+    _git(["commit", "-m", "main ging nach dem Push weiter"], release)
+    assert _git(["rev-parse", "HEAD^{tree}"], release) != scn["merge_tree"]
+
+    api = tmp_path / "api"
+    api.mkdir()
+    _setup_cli_env(monkeypatch, api, scn)
+    code, proof, reason, _ = _run_cli(monkeypatch, capsys, release, scn["merge_sha"])
+    assert code == 0
+    assert proof == "no", f"abweichender ausgecheckter Stand muss no ergeben: {reason}"
+    assert "ausgecheckter Stand weicht ab" in reason, reason
 
 
 # --------------------------------------------------------------------------

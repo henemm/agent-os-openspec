@@ -64,6 +64,8 @@ Entscheidung PO (2026-11-21, #633): „Muss das sein oder können wir nicht verz
 
 Jede nicht erfüllte Bedingung liefert `False` mit einem Grund in einem Satz.
 
+Zusätzlich verlangt `--tested-proof <sha>`, dass der Baum des ausgecheckten `HEAD` (`REPO_ROOT`) gleich dem Baum von `<sha>` ist, sonst `PROOF=no` mit Grund „ausgecheckter Stand weicht ab“ (fail-closed, weil `release.yml` `main` auscheckt und nicht `github.sha`).
+
 **2. Abruf (getrennt).** `fetch_tested_proof_inputs(sha)` ruft `gh api` für die PR-Liste und die Check-Runs, holt per `git fetch origin refs/pull/<N>/head` den Head und liest `git rev-parse <head>^{tree}` und `<sha>^{tree}`. Es gibt die Rohdaten an die pure Funktion; jeder Abruf-, Parse- oder Git-Fehler, fehlendes `gh` oder fehlendes Token wird als Fehlergrund zurückgegeben statt als Ausnahme.
 
 **3. Modus.** `release_check.py --tested-proof <sha>` druckt genau `PROOF=yes|no` und `REASON=<Grund>`, Exit-Code immer 0 (das Ergebnis steht in der Ausgabe, nie im Exit-Code, damit ein Fehler im Nachweis den Workflow nicht abbricht). Fail-closed: Jede Unsicherheit ergibt `PROOF=no`.
