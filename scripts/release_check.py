@@ -252,8 +252,25 @@ def check_cloud_agents(root: "Path | None" = None) -> "tuple[bool, str]":
                                    else sync_cloud_agents.REPO_ROOT)
 
 
+def xdist_available() -> bool:
+    """True, wenn das Plugin pytest-xdist importierbar ist (#640)."""
+    import importlib.util
+    try:
+        return importlib.util.find_spec("xdist") is not None
+    except (ImportError, ValueError):
+        return False
+
+
+def build_suite_command(xdist: bool) -> "list[str]":
+    """Kommando der Rueckfall-Suite; mit xdist parallel auf allen Kernen (#640)."""
+    command = [sys.executable, "-m", "pytest", "tests/", "-q"]
+    if xdist:
+        command += ["-n", "auto"]
+    return command
+
+
 def check_tests() -> "tuple[bool, str]":
-    result = subprocess.run([sys.executable, "-m", "pytest", "tests/", "-q"],
+    result = subprocess.run(build_suite_command(xdist_available()),
                             cwd=str(REPO_ROOT), capture_output=True, text=True)
     if result.returncode != 0:
         tail = result.stdout.strip().splitlines()[-1:] or ["(keine Ausgabe)"]

@@ -14,9 +14,10 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install dependencies
-        run: pip install pytest pyyaml
+        run: pip install pytest pyyaml pytest-xdist
       - name: Run test suite
-        run: python3 -m pytest tests/ -q
+        # parallel auf allen Kernen (pytest-xdist, #640)
+        run: python3 -m pytest tests/ -q -n auto
 
   spec-gate:
     # Serverseitige Nachpruefung: lokale Hooks sind abschaltbar, und

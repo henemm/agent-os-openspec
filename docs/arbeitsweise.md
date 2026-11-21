@@ -74,16 +74,21 @@ einzelner Rechner standen. Stand: PO-Vorgaben Hennings bis 2026-11-08.
 - **Spec-Gate:** Reine Doku-Änderungen (`.md`, `.txt`) sind ausgenommen. Alles andere braucht eine
   committete Spec unter `docs/specs/` (Fast Track: `docs/specs/fast/`) samt Briefing, oder den
   sichtbaren Commit-Trailer `Spec-Gate: skip <Grund>`.
-- **CHANGELOG:** jede Änderung unter `## [Unreleased]`, ohne Versionsnummer.
-- **Keine Versionsnummer in Fix- oder Feature-PRs.** Der Bump in `.claude-plugin/plugin.json` ist eine
-  eigene Release-Aufgabe: Er zieht README, `CLAUDE.md` (`**Version**:`), die Kurzbefehle unter
-  `.claude/commands/` (`python3 setup.py . --refresh-aliases`) und einen abgeschlossenen
-  CHANGELOG-Abschnitt mit. Liegt eine neue Version auf `main`, setzt `release.yml` Tag und Release
-  automatisch (der Workflow pusht nur Tags, nie `main`).
-- **Release gehört zum Ausliefern** (Henning, 2026-11-21: „Warum muss ich dich daran erinnern?“): Nach dem
-  Merge eines Fix- oder Feature-PRs folgt der Release-PR sofort im selben Auftrag, ohne Rückfrage. Ein
-  Auftrag gilt erst als erledigt, wenn die neue Version veröffentlicht ist; mehrere Issues eines
-  Auftrags dürfen in einem Release gebündelt werden.
+- **CHANGELOG:** jede Änderung unter `## [Unreleased]`; bei Einzel-Auslieferung direkt im Abschnitt der
+  neuen Version (siehe nächster Punkt).
+- **Versions-Bump bei Einzel-Auslieferung im Fix- oder Feature-PR** (#640): Wird ein Issue allein und
+  sofort veröffentlicht, enthält sein PR den Bump selbst: `.claude-plugin/plugin.json`, README,
+  `CLAUDE.md` (`**Version**:`), einen abgeschlossenen CHANGELOG-Abschnitt der neuen Version statt
+  `[Unreleased]`, `python3 scripts/sync_skills.py` und die Kurzbefehle unter `.claude/commands/`
+  (`python3 setup.py . --refresh-aliases`). So genügt ein einziger Testlauf: `release-readiness` prüft
+  den Bump schon im PR, und `release.yml` veröffentlicht per Tested-Nachweis (#633) ohne zweite Suite.
+  Nur beim Bündeln mehrerer Issues bleibt keine Versionsnummer in den einzelnen PRs; dann folgt ein
+  eigener Release-PR mit dem Bump. Liegt eine neue Version auf `main`, setzt `release.yml` Tag und
+  Release automatisch (der Workflow pusht nur Tags, nie `main`).
+- **Release gehört zum Ausliefern** (Henning, 2026-11-21: „Warum muss ich dich daran erinnern?“): Ein
+  Auftrag gilt erst als erledigt, wenn die neue Version veröffentlicht ist, ohne Rückfrage. Bei
+  Einzel-Auslieferung geschieht das mit dem Merge des Fix- oder Feature-PRs selbst; nur wenn mehrere
+  Issues eines Auftrags gebündelt werden, folgt nach ihren Merges sofort ein gemeinsamer Release-PR.
 - Konsumenten-Projekte erhalten die neue Version per Plugin-Update
   (`claude plugin update agent-os-openspec@henemm-private`); das führt Claude aus, nie Henning.
 - Hook-Dateien (`core/hooks/`) nie per Bash oder Skript schreiben, nur per Edit über die Gates.
