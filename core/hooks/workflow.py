@@ -792,7 +792,7 @@ def _plan_deploy_line(status, done_all: bool) -> str:
 # Erfahrungswerte aus dem Archiv (`phase_log`), reine Anzeige, fail-open.
 TIME_ESTIMATE_DEFAULTS = {"enabled": True, "min_samples": 3, "quantiles": [0.25, 0.75],
                           "defaults": {"feature": [60, 240], "feature-fast": [20, 60]},
-                          "idle_gap_min": 15}
+                          "idle_gap_min": 15, "display_timezone": "Europe/Berlin"}
 WAIT_SUFFIX = " + Wartezeit auf dich"
 
 
@@ -995,6 +995,8 @@ def _valid_estimate_config(raw) -> "dict | None":
     if cfg.get("enabled") is False or not isinstance(defaults, dict):  # nur false = aus
         return None
     cfg["defaults"] = dict(TIME_ESTIMATE_DEFAULTS["defaults"], **defaults)
+    if not isinstance(cfg.get("display_timezone"), str):  # #637: sonst Standard
+        cfg["display_timezone"] = TIME_ESTIMATE_DEFAULTS["display_timezone"]
     q, n = cfg.get("quantiles"), cfg.get("min_samples")
     if not (isinstance(n, int) and not isinstance(n, bool) and n >= 1):
         return None
@@ -1135,14 +1137,16 @@ def current_estimate(data, archived: bool = False,
 
     Abgeschlossene/archivierte Workflows bekommen `{"actual": True}` (Ist-Block).
     `cache` (plan --watch): Archiv nur neu laden, wenn sich mtime/Dateizahl ändern.
+    `display_tz` (#637) trägt `time_estimate.display_timezone` zur Anzeige.
     """
     try:
         cfg = time_estimate_config()
         if cfg is None or not isinstance(data, dict):
             return None
         now = _estimate_now()
+        zone = cfg.get("display_timezone")
         if archived or data.get("current_phase") == "phase8_complete":
-            return {"actual": True, "now": now}
+            return {"actual": True, "now": now, "display_tz": zone}
         if cache is None:
             history = load_archive_phase_durations()
         else:
@@ -1150,8 +1154,10 @@ def current_estimate(data, archived: bool = False,
             if "history" not in cache or cache.get("key") != key:
                 cache["key"], cache["history"] = key, load_archive_phase_durations()
             history = cache["history"]
-        return estimate_remaining(data, history, cfg, now,
-                                  _activity_phases(data.get("name")))
+        est = estimate_remaining(data, history, cfg, now, _activity_phases(data.get("name")))
+        if est is not None:
+            est["display_tz"] = zone
+        return est
     except Exception:
         return None
 
@@ -1165,9 +1171,30 @@ def format_duration(minutes) -> str:
     return f"{hours} h" if rest == 0 else f"{hours} h {rest} min"
 
 
-def _format_clock(value, today) -> str:
-    """Uhrzeit HH:MM, an einem anderen Tag als `today` mit Datum DD.MM."""
-    dt = _parse_time(value)
+def _display_time(value, zone=None) -> datetime:
+    """Zeit in der Anzeigezone (#637); naiv = Systemzeit des Prozesses.
+
+    `zone` = IANA-Name aus `display_timezone`; None, `local`, ungültiger Name
+    oder fehlende Zonendaten -> naive Systemzeit wie `_parse_time`. Wirft nur
+    bei ungültigem `value` (wie `_parse_time`).
+    """
+    dt = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
+    target = None
+    if isinstance(zone, str) and zone and zone != "local":
+        try:
+            from zoneinfo import ZoneInfo
+            target = ZoneInfo(zone)
+        except Exception:
+            target = None
+    if target is None:
+        return _parse_time(dt)
+    return (dt if dt.tzinfo else dt.astimezone()).astimezone(target)
+
+
+def _format_clock(value, today, zone=None) -> str:
+    """Uhrzeit HH:MM, an einem anderen Tag als `today` mit Datum DD.MM;
+    in der Anzeigezone `zone` (#637), `today` muss dort bestimmt sein."""
+    dt = _display_time(value, zone)
     return dt.strftime("%H:%M") if dt.date() == today else dt.strftime("%d.%m. %H:%M")
 
 
@@ -1209,7 +1236,8 @@ def _plan_time_lines(data: dict, estimate) -> "list[str]":
         if not isinstance(estimate, dict) or data.get("status") == "abandoned":
             return []
         now = estimate.get("now") or _estimate_now()
-        today = _parse_time(now).date()
+        zone = estimate.get("display_tz")
+        today = _display_time(now, zone).date()
         if estimate.get("actual"):
             span = _finished_span(data)
             if span is None:
@@ -1220,13 +1248,13 @@ def _plan_time_lines(data: dict, estimate) -> "list[str]":
             dur = format_duration(work)
             if round(work) != round(total):
                 dur += f" (gesamt {format_duration(total)})"
-            return ["", f"Start  {_format_clock(start, today)}", f"Dauer  {dur}",
-                    f"Ende  {_format_clock(end, today)}"]
+            return ["", f"Start  {_format_clock(start, today, zone)}", f"Dauer  {dur}",
+                    f"Ende  {_format_clock(end, today, zone)}"]
         wait = WAIT_SUFFIX if awaiting_human_approval(data) else ""
-        return ["", f"Start  {_format_clock(estimate['start'], today)}",
+        return ["", f"Start  {_format_clock(estimate['start'], today, zone)}",
                 f"Dauer  ca. {_estimate_span_text(estimate)} {_estimate_basis(estimate)}{wait}",
-                f"Ende  ca. {_format_clock(estimate['end_low'], today)}–"
-                f"{_format_clock(estimate['end_high'], today)}"]
+                f"Ende  ca. {_format_clock(estimate['end_low'], today, zone)}–"
+                f"{_format_clock(estimate['end_high'], today, zone)}"]
     except Exception:
         return []
 
@@ -5038,15 +5066,16 @@ def cmd_context(args: list[str]) -> None:
 def _estimate_kv_lines(est: dict, waiting: bool = False) -> "list[str]":
     """KEY=value-Zeilen von `workflow.py estimate` (#620); `waiting` (#628)
     hängt „ + Wartezeit auf dich“ an `LINE=` und gibt `ESTIMATE_WAITING=po` aus."""
-    today = est["now"].date()
-    end = (f"{_format_clock(est['end_low'], today)}–"
-           f"{_format_clock(est['end_high'], today)}")
+    zone = est.get("display_tz")
+    today = _display_time(est["now"], zone).date()
+    start, low, high = (_display_time(est[k], zone) for k in ("start", "end_low", "end_high"))
+    end = f"{_format_clock(low, today, zone)}–{_format_clock(high, today, zone)}"
     return ["ESTIMATE=on"] + (["ESTIMATE_WAITING=po"] if waiting else []) + [
             f"ESTIMATE_LOW_MIN={round(est['total_low_min'])}",
             f"ESTIMATE_HIGH_MIN={round(est['total_high_min'])}",
-            f"ESTIMATE_START={est['start'].isoformat(timespec='minutes')}",
-            f"ESTIMATE_END_LOW={est['end_low'].isoformat(timespec='minutes')}",
-            f"ESTIMATE_END_HIGH={est['end_high'].isoformat(timespec='minutes')}",
+            f"ESTIMATE_START={start.isoformat(timespec='minutes')}",
+            f"ESTIMATE_END_LOW={low.isoformat(timespec='minutes')}",
+            f"ESTIMATE_END_HIGH={high.isoformat(timespec='minutes')}",
             f"ESTIMATE_BASIS={est['n'] if est['source'] == 'archive' else 'default'}",
             f"LINE=Grobe Schätzung: {_estimate_span_text(est)}, Ende ca. {end} "
             f"{_estimate_basis(est)}{WAIT_SUFFIX if waiting else ''}"]
