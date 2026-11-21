@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.17.0] - 2026-11-21
+
+Zeitschätzung zählt nur Arbeitszeit: Wartezeit auf die Spec-Freigabe und Leerlauf fallen heraus, „+ Wartezeit auf dich“ nur bei ausstehender menschlicher Freigabe (#628).
+
 ### Changed
 
 - **Zeitschätzung zeigt nur Arbeitszeit (#628):** Spannen wie „1 h 43 min–8 h 37 min“ entstanden, weil die Wanduhr die Nacht und das Warten auf die Spec-Freigabe mitzählte. Jetzt wird die Wartezeit auf eine menschliche Freigabe (`po_briefing.created` bis zum Übergang nach `phase4_approved` mit `trigger: approval`) von den Phasendauern abgezogen, und der Session-Heartbeat zählt im fälligen Throttle-Zweig Aktivminuten je Phase in eine eigene Datei `.claude/workflows/_activity/<workflow>.json` (nie ins Workflow-JSON); Lücken über `time_estimate.idle_gap_min` (Standard 15) zählen als Leerlauf. Archiv-Einträge und laufende Workflows nutzen die Aktivminuten, sonst `phase_log` abzüglich Wartezeit. Wartet eine Spec auf „approved“ oder (Modus manual) die Implementierung auf „go“, steht hinter der Dauer „ + Wartezeit auf dich“, und `workflow.py estimate` gibt `ESTIMATE_WAITING=po` aus. Fertige Workflows zeigen die Arbeitszeit und, wenn abweichend, die Gesamtzeit in Klammern. Reine Anzeige, fail-open, kein Gate. Migration: keine. Tests: `tests/test_arbeitszeit_628.py`.
