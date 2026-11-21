@@ -106,6 +106,10 @@ def _mini_suite(root: Path) -> Path:
 def test_check_tests_faellt_ohne_xdist_auf_seriell_zurueck(tmp_path, monkeypatch):
     marker = _mini_suite(tmp_path)
     monkeypatch.setattr(release_check, "REPO_ROOT", tmp_path)
+    # Laeuft diese Datei selbst unter xdist, erbt der Unterprozess sonst die
+    # Worker-Kennung des aeusseren Laufs.
+    for var in ("PYTEST_XDIST_WORKER", "PYTEST_XDIST_WORKER_COUNT", "PYTEST_XDIST_TESTRUNUID"):
+        monkeypatch.delenv(var, raising=False)
 
     # Ohne xdist: serielles Kommando, keine Ausnahme, Suite gruen.
     monkeypatch.setattr(release_check, "xdist_available", lambda: False)
