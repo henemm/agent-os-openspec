@@ -9,7 +9,7 @@ cross-session drift. Always set: export OPENSPEC_ACTIVE_WORKFLOW=<name>
 Atomic writes via tempfile + rename (no file locks).
 
 Usage:
-    python3 workflow.py start <name> [--type feature|feature-fast] [--issue N]
+    python3 workflow.py start <name> [--type feature|feature-fast] [--issue N] [--uebernehmen]
     python3 workflow.py switch <name>
     python3 workflow.py status
     python3 workflow.py phase <phase>
@@ -30,6 +30,7 @@ Usage:
     python3 workflow.py list
     python3 workflow.py deploy-status <running|done|failed> [<issue-nr|name>] [--note <Grund>]
     python3 workflow.py sessions [--json]
+    python3 workflow.py claim status|nachholen [<name>] [--uebernehmen]
     python3 workflow.py observable-surface
 """
 
@@ -3171,7 +3172,7 @@ def _final_loc(data: dict) -> "tuple[int, int] | None":
 # --- Commands ---
 
 START_USAGE = ("Usage: workflow.py start <name> [--type feature|feature-fast] [--issue N] "
-               "[--score 0-6]")
+               "[--score 0-6] [--uebernehmen]")
 
 
 def _stamp_intake_estimate(data: dict, score: int) -> None:
@@ -3186,10 +3187,194 @@ def _stamp_intake_estimate(data: dict, score: int) -> None:
             "source": est["source"], "at": est["now"].isoformat()}
 
 
+# --- Registrierung je Issue (#461) -----------------------------------------
+# Die Logik liegt in issue_claim.py; hier nur die Einhaengepunkte. Jeder Pfad ist
+# fail-open bis auf den einen gewollten Abbruch: fremder gueltiger Eintrag beim Start.
+CLAIM_CATCH_UP = (None, "pending")
+
+
+def _claim_ctx(data: dict) -> "tuple[object, dict, str] | None":
+    """(Modul, Einstellungen, Issue) wenn die Registrierung fuer `data` gilt, sonst None."""
+    try:
+        import issue_claim
+        cfg = issue_claim.settings()
+        if not cfg["enabled"]:
+            return None
+        issue = workflow_issue_number(data)
+        return (issue_claim, cfg, issue) if issue else None
+    except Exception:
+        return None
+
+
+def _claim_warn(issue, reason: str) -> None:
+    print(f"⚠ WARNUNG: Registrierung an Issue #{issue} nicht moeglich ({reason}). "
+          "Die Arbeit laeuft weiter; nachgeholt wird bei `switch`, `claim nachholen` "
+          "oder dem naechsten Phasenwechsel.", file=sys.stderr)
+
+
+def _claim_on_start(data: dict, take_over: bool) -> None:
+    """Pflicht-Registrierung beim Start; Exit 1 ohne Workflow-Datei bei fremdem Eintrag."""
+    try:
+        import issue_claim
+        if not issue_claim.settings()["enabled"]:
+            return
+    except Exception:
+        return
+    ctx = _claim_ctx(data)
+    if ctx is None:
+        print("Hinweis: kein Issue im Workflow-Namen, daher keine Registrierung am Issue.")
+        return
+    mod, cfg, issue = ctx
+    res = mod.register(issue, data["name"], data.get("current_phase", ""),
+                       take_over=take_over, cfg=cfg)
+    if res["result"] == "conflict":
+        print(mod.conflict_text(issue, res["winner"], data["name"]), file=sys.stderr)
+        sys.exit(1)
+    data["issue_claim"] = res["claim"]
+    if res["result"] == "pending":
+        _claim_warn(issue, res.get("error") or "unbekannt")
+    else:
+        claim = res["claim"]
+        print(f"Registriert an Issue #{issue}: Ort {claim.get('place')}, "
+              f"erreichbar ueber {claim.get('reach')}.")
+
+
+def _claim_store(name: str, claim: dict) -> None:
+    """Nur `issue_claim` im laufenden Workflow-State ersetzen (frisch gelesen)."""
+    path = _workflow_file(name)
+    if not path.exists():
+        return
+    data = _read_workflow(path)
+    data["issue_claim"] = claim
+    _atomic_write(path, data)
+
+
+def _claim_refresh(mod, cfg, issue, name: str, claim: dict, phase: str, quiet: bool) -> None:
+    """Phase nachtragen, aber nie einen fremd geaenderten Eintrag ueberschreiben (F003).
+    Lesefehler: nichts patchen (fail-open)."""
+    try:
+        remote = mod.remote_status(claim, cfg=cfg)
+        if remote and remote != mod.ACTIVE:
+            _claim_store(name, {**claim, "status": remote})
+            if remote == mod.TAKEN and not quiet:
+                print(f"⚠ WARNUNG: Der Eintrag an Issue #{issue} wurde von einer anderen "
+                      "Sitzung übernommen; diese Sitzung arbeitet dort nicht mehr "
+                      "registriert.", file=sys.stderr)
+            return
+        mod.refresh(claim, name, phase, cfg=cfg)
+    except Exception as exc:
+        mod._log(f"refresh #{issue} {name}: {exc}")
+
+
+def _claim_catch_up(name: str, take_over: bool = False, quiet: bool = False) -> int:
+    """Registrierung nachholen bzw. Stand (Phase) nachtragen. Exit-Code zurueck."""
+    try:
+        data = _read_workflow(_workflow_file(name))
+    except Exception:
+        return 0
+    ctx = _claim_ctx(data)
+    if ctx is None:
+        return 0
+    mod, cfg, issue = ctx
+    claim = data.get("issue_claim") if isinstance(data.get("issue_claim"), dict) else {}
+    status = claim.get("status")
+    phase = data.get("current_phase", "")
+    if status == mod.ACTIVE and not take_over:
+        _claim_refresh(mod, cfg, issue, name, claim, phase, quiet)
+        return 0
+    if status not in CLAIM_CATCH_UP and not take_over:
+        if not quiet:
+            print(f"Registrierung an Issue #{issue}: {status} (nichts nachzuholen).")
+        return 0
+    res = mod.register(issue, name, phase, take_over=take_over, existing=claim, cfg=cfg)
+    _claim_store(name, res["claim"])
+    if res["result"] == "conflict":
+        text = mod.conflict_text(issue, res["winner"], name)
+        print(text.replace(f"workflow.py start {name} --uebernehmen",
+                           f"workflow.py claim nachholen {name} --uebernehmen"), file=sys.stderr)
+        return 1
+    if res["result"] == "pending":
+        _claim_warn(issue, res.get("error") or "unbekannt")
+    elif not quiet:
+        print(f"Registriert an Issue #{issue} ({res['claim'].get('place')}).")
+    return 0
+
+
+def _spawn_claim_sync(name: str, data: dict) -> None:
+    """Phasenwechsel: Stand abgekoppelt nachtragen (Muster #490), wartet nie."""
+    try:
+        if _claim_ctx(data) is None:
+            return
+        claim = data.get("issue_claim") if isinstance(data.get("issue_claim"), dict) else {}
+        if claim.get("status") not in CLAIM_CATCH_UP + ("aktiv",):
+            return
+        import subprocess
+        subprocess.Popen(
+            [sys.executable, str(Path(__file__).resolve()), "claim", "nachholen", name, "--still"],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, start_new_session=True,
+            cwd=str(find_project_root()),
+        )
+    except Exception:
+        pass
+
+
+def _claim_release(data: dict, name: str) -> None:
+    """Eintrag am Issue freigeben (`ship-status done|skipped`, `abandon`). Fail-open."""
+    ctx = _claim_ctx(data)
+    claim = data.get("issue_claim")
+    if ctx is None or not isinstance(claim, dict):
+        return
+    status = claim.get("status")  # F001: pending mit ID kann am Issue aktiv stehen
+    if not (status == "aktiv" or (status == "pending" and claim.get("comment_id"))):
+        return
+    mod, cfg, issue = ctx
+    new_claim, error = mod.release(claim, name, data.get("current_phase", ""), cfg=cfg)
+    data["issue_claim"] = new_claim
+    if error:
+        print(f"⚠ WARNUNG: Eintrag an Issue #{issue} nicht freigegeben ({error}).",
+              file=sys.stderr)
+
+
+def cmd_claim(args: list[str]) -> None:
+    """`claim status [<name>]` zeigt die Eintraege am Issue samt offenen Pull Requests;
+    `claim nachholen [<name>] [--uebernehmen]` holt die Registrierung nach (#461)."""
+    flags = {a for a in args if a.startswith("--")}
+    rest = [a for a in args if not a.startswith("--")]
+    if not rest or rest[0] not in ("status", "nachholen"):
+        print("Usage: workflow.py claim status|nachholen [<name>] [--uebernehmen]",
+              file=sys.stderr)
+        sys.exit(1)
+    if len(rest) > 1:
+        _validate_name(rest[1])
+        name = rest[1]
+        data = _read_workflow(_workflow_file(name)) if _workflow_file(name).exists() else None
+        if data is None:
+            print(f"Workflow {name} not found.", file=sys.stderr)
+            sys.exit(1)
+    else:
+        data, name = _read_active()
+    if rest[0] == "nachholen":
+        sys.exit(_claim_catch_up(name, "--uebernehmen" in flags, quiet="--still" in flags))
+    ctx = _claim_ctx(data)
+    if ctx is None:
+        print("Keine Registrierung: abgeschaltet oder kein Issue im Workflow-Namen.")
+        return
+    mod, cfg, issue = ctx
+    try:
+        lines = mod.status_lines(issue, data.get("issue_claim"), cfg=cfg)
+    except Exception as exc:
+        print(f"⚠ WARNUNG: Eintraege an Issue #{issue} nicht lesbar ({exc}).", file=sys.stderr)
+        sys.exit(1)
+    print("\n".join(lines))
+
+
 def cmd_start(args: list[str]) -> None:
     workflow_type = "feature"
     issue_arg = None
     score_arg = None
+    take_over = "--uebernehmen" in args  # #461: fremden Eintrag am Issue uebernehmen
+    args = [a for a in args if a != "--uebernehmen"]
     name_args = []
     i = 0
     while i < len(args):
@@ -3245,6 +3430,7 @@ def cmd_start(args: list[str]) -> None:
         _log_phase_transition(data, "phase1_context")
     if score_arg is not None:
         _stamp_intake_estimate(data, int(score_arg))  # #620
+    _claim_on_start(data, take_over)  # #461: vor dem Schreiben, Abbruch bei fremdem Eintrag
     _atomic_write(wf_file, data)
     _set_active(name)
     _herdr("report", data)
@@ -3566,6 +3752,12 @@ def cmd_switch(args: list[str]) -> None:
         _herdr("report", _read_workflow(wf_file))
     except Exception:
         pass
+    try:  # #461: ausstehende Registrierung nachholen; ein aktiver Eintrag bleibt unberuehrt
+        claim = _read_workflow(wf_file).get("issue_claim")
+        if (claim.get("status") if isinstance(claim, dict) else None) in CLAIM_CATCH_UP:
+            _claim_catch_up(name)
+    except Exception:
+        pass
 
     env_name = _active_name_from_env()
     if env_name and env_name != name:
@@ -3699,6 +3891,7 @@ def cmd_phase(args: list[str]) -> None:
     if target == "phase8_complete":
         _mark_ship_open(data)  # #612: Code fertig, Auslieferung steht aus
     _save_active(data)
+    _spawn_claim_sync(name, data)  # #461: Stand am Issue abgekoppelt nachtragen
     print(f"Set phase to: {target}")
     _print_budget_question(exceeded)
 
@@ -4184,6 +4377,7 @@ def cmd_abandon(args: list[str]) -> None:
     data["status"] = "abandoned"
     data["abandon_reason"] = reason
     data["abandoned_at"] = datetime.now().isoformat()
+    _claim_release(data, name)  # #461: Abbruch gibt das Issue frei
     archive = _archive_dir()
     archive.mkdir(parents=True, exist_ok=True)
     _atomic_write(archive / f"{name}.json", data)
@@ -4408,6 +4602,8 @@ def cmd_ship_status(args: list[str]) -> None:
         data["ship_note"] = note
     else:
         data.pop("ship_note", None)
+    if value in ("done", "skipped"):
+        _claim_release(data, name)  # #461: Ende der Auslieferung gibt das Issue frei
     _atomic_write(path, data)
     try:  # Seitenleiste zeigt den neuen Stand, fail-open (wie `waiting`, #555)
         _herdr("report", {"name": name, **data})
@@ -5700,6 +5896,23 @@ def cmd_sessions(args: list[str]) -> None:
         )
     print(SEP)
     print(f"  {len(entries)} Session(s) registriert.")
+    _print_claim_states(entries)
+
+
+def _print_claim_states(entries: list) -> None:
+    """#461: Registrierungsstand am Issue je Workflow (unter der Tabelle, Breiten fix)."""
+    seen = set()
+    for entry in entries:
+        name = entry.get("workflow")
+        if not isinstance(name, str) or name in seen or not _NAME_RE.match(name):
+            continue
+        seen.add(name)
+        try:
+            claim = _read_workflow(_workflow_file(name)).get("issue_claim")
+        except Exception:
+            continue
+        if isinstance(claim, dict) and claim.get("status"):
+            print(f"Registrierung {name}: {claim['status']} an Issue #{claim.get('issue', '?')}")
 
 
 COMMANDS = {
@@ -5738,6 +5951,7 @@ COMMANDS = {
     "spur": cmd_spur,
     "retro-list": cmd_retro_list,
     "sessions": cmd_sessions,
+    "claim": cmd_claim,
     "observable-surface": cmd_observable_surface,
     "autonomy": cmd_autonomy,
     "autoclear": cmd_autoclear,

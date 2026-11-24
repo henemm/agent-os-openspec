@@ -182,6 +182,13 @@ Immer menschlich bleiben — auch bei `AUTONOMY=auto`: AMBIGUOUS-Verdict, zweite
 aus dem Namen).
 `--score <S>` immer mit der Summe aus Step 2 (0–6): daraus lernt die Zeitschätzung (#620).
 
+**Registrierung am Issue (#461):** `start` trägt die Sitzung als Kommentar am Issue ein (Ort,
+Name, Beginn, Phase). Bricht `start` mit `ABGEBROCHEN: An Issue #N arbeitet bereits eine andere
+Sitzung` ab, entsteht kein Workflow: nicht weiterarbeiten, dem PO in einfachen Worten sagen, wer
+wo seit wann daran arbeitet. `workflow.py claim status` zeigt Alter des Eintrags und offene Pull
+Requests; `start <name> --uebernehmen` nur, wenn die andere Sitzung nachweislich nicht mehr
+arbeitet oder der PO zustimmt. Eine Warnung ohne Netz blockiert nicht (wird nachgeholt).
+
 **Fast Track:**
 ```bash
 $WF start [name] --type feature-fast --issue <N> --score <S>
@@ -278,7 +285,7 @@ Beende deine letzte Nachricht in diesem Befehl mit diesen Zeilen, in dieser Reih
 
 ❗ Du: `/<befehl> #<N>` — <ein Halbsatz, warum>
 ℹ️ Status: Workflow `<name>` · Phase `<x>` von 8
-⚙ /00-intake · agent-os-openspec 4.20.3
+⚙ /00-intake · agent-os-openspec 4.21.0
 
 Die erste Zeile sagt, wer am Zug ist — GENAU EINMAL, nur hier in der Fußzeile, nie zusätzlich als Vokabular mitten im Fließtext davor — und steht in genau einer von drei Formen (es gibt keine vierte):
 

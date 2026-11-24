@@ -166,6 +166,13 @@ Immer menschlich bleiben — auch bei `AUTONOMY=auto`: AMBIGUOUS-Verdict, zweite
 aus dem Namen).
 `--score <S>` immer mit der Summe aus Step 2 (0–6): daraus lernt die Zeitschätzung (#620).
 
+**Registrierung am Issue (#461):** `start` trägt die Sitzung als Kommentar am Issue ein (Ort,
+Name, Beginn, Phase). Bricht `start` mit `ABGEBROCHEN: An Issue #N arbeitet bereits eine andere
+Sitzung` ab, entsteht kein Workflow: nicht weiterarbeiten, dem PO in einfachen Worten sagen, wer
+wo seit wann daran arbeitet. `workflow.py claim status` zeigt Alter des Eintrags und offene Pull
+Requests; `start <name> --uebernehmen` nur, wenn die andere Sitzung nachweislich nicht mehr
+arbeitet oder der PO zustimmt. Eine Warnung ohne Netz blockiert nicht (wird nachgeholt).
+
 **Fast Track:**
 ```bash
 python3 .claude/hooks/workflow.py start [name] --type feature-fast --issue <N> --score <S>

@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.21.0] - 2026-11-24
+
+Jede Sitzung trägt sich beim Workflow-Start als Kommentar am Issue ein (Ort, Name, Beginn, Phase, Erreichbarkeit); ein zweiter Start auf demselben Issue bricht mit Klartext ab, auch über Rechner und Claude-Konten hinweg (#461).
+
+### Added
+
+- **Registrierung je Issue (#461):** neues Utility `core/hooks/issue_claim.py` (kein Hook). `workflow.py start` legt vor dem Schreiben der Workflow-Datei einen Kommentar mit Marker `openspec-claim v1` an (Status, Sitzung, Ort, Erreichbarkeit, Beginn in UTC, Phase; kein `@`, keine Pfade, keine Links), liest die Kommentare neu und lässt den frühesten gültigen Eintrag gewinnen (nur `authorAssociation == OWNER`, Status `aktiv`, offenes Issue; Gleichstand nach Kommentar-ID). Der Verlierer setzt seinen Eintrag auf `zurückgezogen`, bricht mit Exit 1 ohne Workflow-Datei ab und nennt Sitzung, Ort, Beginn und Erreichbarkeit des Gewinners. Ausweg `start <name> --uebernehmen` (fremder Eintrag wird `übernommen`).
+- Ort: `CLAUDE_CODE_REMOTE=true` → „Cloud“, sonst `issue_claim.location_label`, ersatzweise „Mac“/„Linux-Rechner“; Erreichbarkeit „herdr“ (`HERDR_ENV=1`), in der Cloud „Sitzungsliste des Claude-Kontos, Antwort am Issue“, sonst „Terminal“.
+- Kommentar-ID und Stand im Workflow-State unter `issue_claim` (überlebt `/clear` und `switch`). Phasenwechsel (`workflow.py phase`) tragen die Phase abgekoppelt per PATCH nach. Freigabe (`freigegeben`) bei `ship-status done|skipped` und `abandon`, nicht bei `complete`.
+- Ohne `gh`, bei Fehler oder Zeitlimit (`issue_claim.timeout_seconds`, Standard 8 s je Aufruf): Start mit Warnung, `issue_claim.status=pending`; `switch`, `claim nachholen` oder der nächste Phasenwechsel holen nach. Fehler in `.claude/issue_claim.log`. Ohne Issue-Nummer: einzeilige Notiz, keine Registrierung.
+- Neuer Befehl `workflow.py claim status|nachholen [<name>] [--uebernehmen]`: `status` zeigt die Einträge am Issue mit Alter und die offenen Pull Requests zum Issue, ändert nichts. `sessions` zeigt unter der Tabelle den Registrierungsstand je Workflow.
+- Abschaltung: `issue_claim.enabled: false` oder `OPENSPEC_ISSUE_CLAIM=0`; `tests/conftest.py` setzt die Variable per autouse.
+- Befehlstexte `/00-intake`, `/10-context`, `/80-workflow` nennen den Abbruch und `--uebernehmen`.
+
+### Known Limitations
+
+- Ein Start ohne Netz umgeht den Doppelstart-Schutz, bis nachgeholt wird; ein Konflikt beim Nachholen (`switch`, `claim nachholen`) bricht nicht ab, sondern warnt (Ausweg `claim nachholen <name> --uebernehmen`); beim abgekoppelten Nachholen im Phasenwechsel steht er nur im State und in `claim status`.
+- Nur `workflow.py phase` trägt die Phase nach; die Freigabe über das Approval-Wort aktualisiert den Kommentar erst beim nächsten Phasenbefehl.
+- Cloud-Sitzungen ohne `gh`/Token bekommen nur die Warnung; Nachweis in einer echten Cloud-Sitzung steht aus.
+
+Migration: keine; laufende Workflows ohne Eintrag werden beim nächsten `switch` oder Phasenwechsel registriert. Ort je Rechner optional per `issue_claim.location_label` (lokal in `settings.local.json`). Tests: `tests/test_issue_claim_461.py`.
+
 ## [4.20.3] - 2026-11-24
 
 bash_gate 1c: Befehle, die einen Symlink im eigenen Worktree selbst bearbeiten (rm, unlink, mv, touch -h, ln -sfn/-T, git rm/checkout/restore), werden nicht mehr als Schreibzugriff auf den Haupt-Ordner geblockt; Schreiben durch den Link blockt weiter (#435).
