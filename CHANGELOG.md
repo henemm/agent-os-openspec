@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.20.2] - 2026-11-24
+
+Ein Rücksprung auf Analyse oder Spec verwirft das alte PO-Briefing: Danach ist wieder `/30-write-spec` dran, und die Auto-Freigabe gibt eine widerlegte Spec nicht erneut frei (#647, #648, Schnitt 2 von Epic #649).
+
+### Fixed
+
+- **Rücksprung verwirft die Freigabe-Grundlage (#647, #648):** `workflow.py phase` auf ein Ziel vor `phase4_approved` ließ `po_briefing` stehen; `next_step()` meldete deshalb die (Auto-)Freigabe statt `/30-write-spec`, und `auto-approve` hätte eine unveränderte, widerlegte Spec mit dem alten grünen Briefing erneut freigegeben. Jetzt verschiebt `_reset_approvals_on_backstep` ein vorhandenes Briefing nach `po_briefing_history` (`entry`, `reason` „backstep <von>-><nach>“, `at` in UTC; höchstens 5 Einträge, älteste fallen weg) und setzt `spec_rework`. In `phase3_spec` meldet `next_step()` bei gesetztem Flag `/30-write-spec` (Fußzeile `/30-write-spec #N`); `auto-approve` liefert `human`. `set-briefing` und die Spec-Freigabe löschen das Flag, die Freigabe auf jedem Weg (`phase_listener`, `workflow.py phase`, Auto-Freigabe), weil `record_transition` es bei jedem Ziel ab `phase4_approved` entfernt. Ohne vorheriges Briefing (Fast Track, Kill-Switch), bei Vorwärtswechseln und bei Rücksprüngen auf Ziele ab `phase4_approved` bleibt alles wie bisher. `po_briefing_history` und `spec_rework` sind per `set-field` gesperrt. `/30-write-spec` sagt, dass nach einem Rücksprung ein neues Briefing Pflicht ist.
+- **`endstate <N>` bevorzugt den aktiven Workflow:** Bei mehreren laufenden Treffern derselben Nummer gewann der alphabetisch erste, oft ein abgeschlossener Vorgänger. Die Rangfolge in `_deploy_status_target` (auch für `deploy-status`/`ship-status` mit Nummer) ist jetzt: exakter Name, aktiver Workflow, nicht `phase8_complete`, jüngster nach Änderungszeit; ohne aktiven Workflow bricht die Auflösung nicht ab, das Archiv bleibt unverändert.
+
+Migration: keine; Workflows, die vor dieser Fassung zurückgesprungen sind, behalten das bisherige Verhalten. Tests: `tests/test_ruecksprung_briefing_647.py`.
+
 ## [4.20.1] - 2026-11-24
 
 Der Zeitblock im Plan friert beim Eintritt in Phase 8 nicht mehr ein: Solange ausgeliefert wird, zeigt er, seit wann, und erst danach das Ende (#645).

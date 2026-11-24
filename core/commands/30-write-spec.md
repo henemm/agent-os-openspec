@@ -155,6 +155,10 @@ Der Befehl bindet das Briefing per SHA-256 an die gelesene Spec-Fassung. **Ände
 du die Spec danach noch, wird das Briefing ungültig** — dann Step 3b wiederholen,
 nicht die Registrierung von Hand nachziehen.
 
+Nach einem Rücksprung auf Analyse oder Spec ist das alte Briefing verworfen
+(`po_briefing_history`, #647): Ein neues Briefing nach Step 3b ist Pflicht, vorher
+gibt es weder Freigabe noch Auto-Freigabe.
+
 Das Briefing wird dem User **wörtlich** ausgegeben (siehe unten). Du fasst es nicht
 zusammen, kürzt es nicht und glättest seine kritischen Anmerkungen nicht — sonst ist
 die Unabhängigkeit wieder weg.

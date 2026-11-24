@@ -193,9 +193,12 @@ def inproc(monkeypatch):
     def use(proj: Path):
         monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(proj))
         monkeypatch.delenv("OPENSPEC_ACTIVE_WORKFLOW", raising=False)
+        # Modus nur aus der Projekt-Config, nie aus der Umgebung des Testlaufs
+        monkeypatch.delenv("OPENSPEC_AUTONOMY", raising=False)
         reset()
         return workflow
 
+    monkeypatch.delenv("OPENSPEC_AUTONOMY", raising=False)
     reset()
     yield use
     reset()
@@ -367,6 +370,43 @@ def test_set_briefing_and_approval_clear_rework(tmp_path, inproc):
     )
 
 
+def _run_listener(proj: Path, prompt: str) -> subprocess.CompletedProcess:
+    return subprocess.run([sys.executable, str(HOOKS_DIR / "phase_listener.py")],
+                          input=json.dumps({"prompt": prompt}), capture_output=True,
+                          text=True, env=_env(proj), cwd=str(proj), timeout=60)
+
+
+def test_listener_approval_clears_rework(tmp_path, inproc):
+    """AC-5 (F001): Die Freigabe ueber den echten phase_listener (record_transition
+    nach phase4_approved) loescht `spec_rework`; ein folgender Ruecksprung ohne
+    Briefing meldet den Freigabe-Schritt, nicht /30-write-spec.
+
+    Kill-Switch aus: der Listener gibt ohne neues Briefing frei, das Flag aus dem
+    ersten Ruecksprung (mit Briefing) steht also noch, wenn die Freigabe wirkt."""
+    proj = _make_project(tmp_path / "proj", "phase4_approved", config=KILL_SWITCH_CFG)
+    _jump(proj, "phase3_spec")
+    assert _state(proj).get("spec_rework") is True, "Testaufbau: Flag nach Ruecksprung erwartet"
+
+    approval = _run_listener(proj, "approved")
+    assert approval.returncode == 0, approval.stderr
+    data = _state(proj)
+    assert data["current_phase"] == "phase4_approved", (
+        f"Freigabe wirkte nicht: {data['current_phase']} {approval.stdout.strip()[:300]!r}"
+    )
+    assert "spec_rework" not in data, (
+        f"Freigabe ueber phase_listener hat spec_rework nicht geloescht: "
+        f"{data.get('spec_rework')!r}"
+    )
+
+    _jump(proj, "phase3_spec")
+    data = _state(proj)
+    assert "spec_rework" not in data, data.get("spec_rework")
+    wf = inproc(proj)
+    assert wf.next_step(data) == APPROVAL_STEP, (
+        f"Ruecksprung ohne Briefing nach Listener-Freigabe: {wf.next_step(data)!r}"
+    )
+
+
 # --- AC-6 ------------------------------------------------------------------
 
 def test_no_rework_without_briefing_and_no_change_on_forward(tmp_path, inproc):
@@ -516,3 +556,40 @@ def test_endstate_prefers_active_workflow(tmp_path):
     res = _cli(arch, "deploy-status", "done", "647", active=None)
     assert res.returncode == 0, (res.stdout, res.stderr)
     assert "fix-647-x" in res.stdout, res.stdout
+
+
+def _deploy_marked(proj: Path, *names: str) -> "list[str]":
+    """Namen der Workflows, die nach deploy-status ein `deploy_status` tragen."""
+    return [n for n in names if "deploy_status" in _state(proj, n)]
+
+
+def test_endstate_active_beats_younger_open_hit(tmp_path):
+    """AC-8 (F002a): aktiver, offener, AELTERER Workflow neben einem JUENGEREN
+    fremden offenen Treffer gleicher Nummer -> der aktive gewinnt."""
+    now = time.time()
+    proj = _base_project(tmp_path / "proj")
+    _put_wf(proj, "fix-647-neu", "phase6_implement", mtime=now - 100)
+    _put_wf(proj, "fix-647-zweit", "phase5_tdd_red", mtime=now)
+    (proj / ".claude" / "active_workflow").write_text("fix-647-neu")
+
+    res = _cli(proj, "deploy-status", "running", "647", active="fix-647-neu")
+    assert res.returncode == 0, (res.stdout, res.stderr)
+    assert _deploy_marked(proj, "fix-647-neu", "fix-647-zweit") == ["fix-647-neu"], (
+        f"aktiver Workflow soll vor dem juengeren fremden Treffer gewinnen: {res.stdout!r}"
+    )
+
+
+def test_endstate_exact_name_beats_active(tmp_path):
+    """AC-8 (F002b): exakter Name (ref == Dateiname) neben einem aktiven anderen
+    Treffer -> der exakte Name gewinnt, auch wenn er aelter ist."""
+    now = time.time()
+    proj = _base_project(tmp_path / "proj")
+    _put_wf(proj, "647", "phase5_tdd_red", mtime=now - 100)
+    _put_wf(proj, "fix-647-neu", "phase6_implement", mtime=now)
+    (proj / ".claude" / "active_workflow").write_text("fix-647-neu")
+
+    res = _cli(proj, "deploy-status", "running", "647", active="fix-647-neu")
+    assert res.returncode == 0, (res.stdout, res.stderr)
+    assert _deploy_marked(proj, "647", "fix-647-neu") == ["647"], (
+        f"exakter Name soll vor dem aktiven Workflow gewinnen: {res.stdout!r}"
+    )
