@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.20.1] - 2026-11-24
+
+Der Zeitblock im Plan friert beim Eintritt in Phase 8 nicht mehr ein: Solange ausgeliefert wird, zeigt er, seit wann, und erst danach das Ende (#645).
+
+### Fixed
+
+- **Zeitblock während der Auslieferung (#645):** Der Ist-Block im Plan-Pane zeigte ab `phase8_complete` „Start · Dauer · Ende“ mit dem Phase-8-Eintritt als Ende, obwohl die Auslieferung (`ship_status` `open`/`running`/`failed`) noch lief; „Ende 09:03“ las sich wie ein Fertig-Zeitpunkt. Jetzt steht während der Auslieferung „Start  HH:MM“, „Ausliefern  seit HH:MM (<Dauer>)“ mit laufender Wanduhr-Dauer und „Ende  offen“, ohne „Dauer“-Zeile. Der Beginn ist der `entered_at` des letzten `phase8_complete`-Eintrags im `phase_log` (neuer Helfer `_ship_start`, Rückfall: Ende aus `_finished_span`), nie `ship_at`, das bei jedem `running` überschrieben wird. Bei `done`/`skipped` mit gültigem `ship_at` nicht vor dem Start ist `ship_at` das Ende, „Dauer“ und Arbeitszeit-/Gesamt-Logik (#628) wie bisher. Ohne `ship_status` oder ohne lesbares `ship_at` bleibt die Ausgabe unverändert; `_finished_span` und die Retro-Zeile „Schätzung vs. Ist“ messen weiter bis Phase 8, Anzeigezone (#637) und Umbruch (#642) gelten auch für die neue Zeile. Migration: keine. Tests: `tests/test_plan_zeit_auslieferung_645.py`.
+
 ## [4.20.0] - 2026-11-21
 
 Verlässliche Zeitschätzung im Plan: nur noch aus Workflows mit gemessener Arbeitszeit, vor der Spec-Freigabe nur deren ungefährer Zeitpunkt, danach eine Ende-Spanne auf Viertelstunden, die 80 % der Vergleichs-Workflows abdeckt (#642).

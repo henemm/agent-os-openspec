@@ -1303,6 +1303,57 @@ def _finished_work_min(data: dict, end: datetime, total: float) -> float:
         return total
 
 
+def _ship_start(data: dict) -> "datetime | None":
+    """Beginn der Auslieferung (#645): `entered_at` des letzten
+    `phase8_complete`-Eintrags im `phase_log`, sonst das Ende aus
+    `_finished_span`; nie `ship_at` (wird bei jedem `running` überschrieben)."""
+    log = data.get("phase_log")
+    for entry in reversed(log if isinstance(log, list) else []):
+        if isinstance(entry, dict) and entry.get("phase") == "phase8_complete" \
+                and entry.get("entered_at"):
+            return _parse_time(entry["entered_at"])
+    span = _finished_span(data)
+    return span[1] if span else None
+
+
+def _shipped_at(data: dict) -> "datetime | None":
+    """`ship_at` einer abgeschlossenen Auslieferung (#645), None wenn
+    `ship_status` nicht done/skipped ist oder `ship_at` fehlt/unlesbar ist."""
+    if data.get("ship_status") not in ("done", "skipped") or not data.get("ship_at"):
+        return None
+    try:
+        return _parse_time(data["ship_at"])
+    except Exception:
+        return None
+
+
+def _actual_time_lines(data: dict, now, today, zone) -> "list[str]":
+    """Ist-Block des Plans (#620, #628); während der Auslieferung
+    „Ausliefern  seit“ und „Ende  offen“, danach Ende = `ship_at` (#645)."""
+    span = _finished_span(data)
+    if span is None:
+        return []
+    start, end = span
+    if data.get("ship_status") in SHIP_PENDING_VALUES:
+        since = _ship_start(data)
+        if since is None:
+            return []
+        running = max(0.0, (_parse_time(now) - since).total_seconds() / 60)
+        return ["", f"Start  {_format_clock(start, today, zone)}",
+                f"Ausliefern  seit {_format_clock(since, today, zone)} "
+                f"({format_duration(running)})", "Ende  offen"]
+    shipped = _shipped_at(data)
+    if shipped is not None and shipped >= start:
+        end = shipped
+    total = max(0.0, (end - start).total_seconds() / 60)
+    work = min(total, _finished_work_min(data, end, total))
+    dur = format_duration(work)
+    if round(work) != round(total):
+        dur += f" (gesamt {format_duration(total)})"
+    return ["", f"Start  {_format_clock(start, today, zone)}", f"Dauer  {dur}",
+            f"Ende  {_format_clock(end, today, zone)}"]
+
+
 def _plan_time_lines(data: dict, estimate) -> "list[str]":
     """Zeit-Block des Plans (#620): Prognose oder Ist-Werte; [] bei Fehler."""
     try:
@@ -1312,17 +1363,7 @@ def _plan_time_lines(data: dict, estimate) -> "list[str]":
         zone = estimate.get("display_tz")
         today = _display_time(now, zone).date()
         if estimate.get("actual"):
-            span = _finished_span(data)
-            if span is None:
-                return []
-            start, end = span
-            total = max(0.0, (end - start).total_seconds() / 60)
-            work = min(total, _finished_work_min(data, end, total))
-            dur = format_duration(work)
-            if round(work) != round(total):
-                dur += f" (gesamt {format_duration(total)})"
-            return ["", f"Start  {_format_clock(start, today, zone)}", f"Dauer  {dur}",
-                    f"Ende  {_format_clock(end, today, zone)}"]
+            return _actual_time_lines(data, now, today, zone)
         # #642: keine Dauer-Zeile; Freigabe vor phase4, danach Ende, Basis eigene Zeile
         if _before_approval(data) and awaiting_human_approval(data):
             middle = "Freigabe  wartet auf dich"

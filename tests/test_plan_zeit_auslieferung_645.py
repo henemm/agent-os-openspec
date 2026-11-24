@@ -169,7 +169,8 @@ def test_abgeschlossene_auslieferung_ende_ist_ship_at(no_activity, ship_status):
     assert _time_lines(out) == ["Start  08:07",
                                 f"Dauer  {wf.format_duration(213)}",
                                 "Ende  11:40"], out
-    assert "Ausliefern  " not in out and "Ende  offen" not in out, out
+    # Schrittliste zeigt bei skipped legitim „○ Ausliefern  (entfällt)“ (#612)
+    assert "Ausliefern  seit" not in out and "Ende  offen" not in out, out
 
 
 # =============================================================================
