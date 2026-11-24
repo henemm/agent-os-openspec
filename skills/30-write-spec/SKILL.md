@@ -171,6 +171,10 @@ Der Befehl bindet das Briefing per SHA-256 an die gelesene Spec-Fassung. **Ände
 du die Spec danach noch, wird das Briefing ungültig** — dann Step 3b wiederholen,
 nicht die Registrierung von Hand nachziehen.
 
+Nach einem Rücksprung auf Analyse oder Spec ist das alte Briefing verworfen
+(`po_briefing_history`, #647): Ein neues Briefing nach Step 3b ist Pflicht, vorher
+gibt es weder Freigabe noch Auto-Freigabe.
+
 Das Briefing wird dem User **wörtlich** ausgegeben (siehe unten). Du fasst es nicht
 zusammen, kürzt es nicht und glättest seine kritischen Anmerkungen nicht — sonst ist
 die Unabhängigkeit wieder weg.
@@ -225,7 +229,7 @@ Die Ausgabe besteht aus genau diesen Teilen, in dieser Reihenfolge:
    insgesamt. Stimmst du allen Anmerkungen zu: nichts schreiben.
 3. **❗Du-Zeile + Marker-Zeile** — wörtlich, als letzte beiden Zeilen, `⚙` ganz zuletzt:
    `❗ Du: \`approved\` — Freigabe der Spec, danach beginnt die Umsetzung`
-   `⚙ PO-Briefing unabhängig erstellt · agent-os-openspec 4.20.1`
+   `⚙ PO-Briefing unabhängig erstellt · agent-os-openspec 4.20.2`
    Diese Freigabe verlangt *immer* eine PO-Entscheidung — anders als bei den generischen
    Pflicht-Markern in anderen Befehlen gibt es hier keine `⏳ Läuft noch`- und keine
    `✅ Erledigt`-Variante.
@@ -238,7 +242,7 @@ Vorlage:
 Meine Einschätzung: [nur bei Widerspruch zu einer Anmerkung — sonst weglassen]
 
 ❗ Du: `approved` — Freigabe der Spec, danach beginnt die Umsetzung
-⚙ PO-Briefing unabhängig erstellt · agent-os-openspec 4.20.1
+⚙ PO-Briefing unabhängig erstellt · agent-os-openspec 4.20.2
 
 ---
 

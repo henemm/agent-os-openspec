@@ -298,7 +298,8 @@ def next_step(data: dict) -> "str | None":
         return None
     if phase in _NO_BUILD_PHASES and data.get("no_build_reason"):
         return "/99-reset"  # PO-Entscheidung "nichts bauen" (#424)
-    if phase == "phase3_spec" and data.get("spec_file"):
+    if phase == "phase3_spec" and data.get("spec_file") and not data.get("spec_rework"):
+        # spec_rework: nach einem Ruecksprung ist die Spec neu zu schreiben (#647)
         if _auto_approval_pending(data):
             return AUTO_APPROVAL_STEP  # Ampel gruen im Auto-Modus (#470)
         return APPROVAL_STEP
@@ -2318,6 +2319,10 @@ def record_transition(data: dict, target: str, trigger: str = "command") -> list
     })
     _log_phase_transition(data, target)
     data.pop("waiting_on", None)  # #550: kein veralteter Wartezustand nach dem Wechsel
+    if target in PHASES and PHASES.index(target) >= PHASES.index("phase4_approved"):
+        # #647: Freigabe auf jedem Weg (cmd_phase, phase_listener, Auto) beendet die
+        # Nacharbeit; ein Ruecksprung setzt das Flag vorher und zielt unter phase4.
+        data.pop("spec_rework", None)
     events = _record_budget_events(data)
     _note_transition_boundary(data, target)
     return events
@@ -3634,12 +3639,38 @@ def _reset_approvals_on_backstep(data: dict, current: str, target: str) -> None:
         return
     if tgt_idx < PHASES.index("phase4_approved"):
         data["spec_approved"] = False
+        _retire_briefing(data, current, target)
     if tgt_idx < PHASES.index("phase6_implement"):
         data["green_approved"] = False
     if tgt_idx < PHASES.index("phase8_complete"):
         for key in ("deploy_status", "deploy_at", "deploy_note",
                     "ship_status", "ship_at", "ship_note"):
             data.pop(key, None)
+
+
+_BRIEFING_HISTORY_MAX = 5
+
+
+def _retire_briefing(data: dict, current: str, target: str) -> None:
+    """Ruecksprung vor phase4_approved verwirft das alte PO-Briefing (#647, #648).
+
+    Es wandert nach `po_briefing_history` (hoechstens 5, aelteste fallen weg),
+    `spec_rework` haelt fest, dass die Spec neu zu schreiben ist. Ohne Briefing
+    (Fast Track, Kill-Switch) bleibt alles unveraendert.
+    """
+    if not isinstance(data.get("po_briefing"), dict):
+        return
+    entry = data.pop("po_briefing")
+    from datetime import timezone
+    history = data.get("po_briefing_history")
+    history = list(history) if isinstance(history, list) else []
+    history.append({
+        "entry": entry,
+        "reason": f"backstep {current}->{target}",
+        "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    })
+    data["po_briefing_history"] = history[-_BRIEFING_HISTORY_MAX:]
+    data["spec_rework"] = True
 
 
 def cmd_phase(args: list[str]) -> None:
@@ -3708,6 +3739,8 @@ _SET_FIELD_PROTECTED = {
     "qa_run_stamp": "wird von qa_gate.py gesetzt",
     "no_build_reason": "workflow.py no-build --reason \"<Begruendung>\"",
     "approvals": "wird nur von workflow.record_approval(...) gefuehrt (#469)",
+    "po_briefing_history": "wird von workflow.py phase / set-briefing gefuehrt (#647)",
+    "spec_rework": "wird von workflow.py phase / set-briefing gefuehrt (#647)",
 }
 
 # Nach der Freigabe nur noch mit Override-Token des Users per set-field (#379).
@@ -3909,6 +3942,7 @@ def cmd_set_briefing(args: list[str]) -> None:
         "briefing_sha256": _hashlib.sha256(briefing.encode("utf-8")).hexdigest(),
     }
     data["po_briefing"] = entry
+    data.pop("spec_rework", None)  # neues Briefing nach Ruecksprung (#647)
 
     # Bindung zusätzlich IN die Briefing-Datei stempeln. Der Workflow-State
     # liegt unter .claude/workflows/ und ist gitignored — er erreicht die CI
@@ -4395,12 +4429,45 @@ def _deploy_status_target(ref: str) -> "Path | None":
 
     running = sorted(hits(_workflows_dir()))
     if running:
-        exact = [f for f in running if f.stem == ref]
-        return (exact or running)[0]
+        return _pick_running_target(running, ref)
     archived = hits(_archive_dir())
     if archived:
         return max(archived, key=lambda f: f.stat().st_mtime)  # juengster gewinnt
     return None
+
+
+def _active_name_quiet() -> "str | None":
+    """Name des aktiven Workflows oder None, ohne Abbruch und ohne Meldung."""
+    import contextlib
+    import io
+    try:
+        with contextlib.redirect_stderr(io.StringIO()):
+            return _read_active()[1]
+    except (Exception, SystemExit):
+        return None
+
+
+def _pick_running_target(running: "list[Path]", ref: str) -> Path:
+    """Rangfolge unter laufenden Treffern (#647/#648 Nebenbefund): exakter Name,
+    aktiver Workflow, nicht phase8_complete, dann juengster nach mtime."""
+    exact = [f for f in running if f.stem == ref]
+    if exact:
+        return exact[0]
+    if len(running) == 1:
+        return running[0]
+    active = _active_name_quiet()
+    for f in running:
+        if active and f.stem == active:
+            return f
+
+    def open_(f: Path) -> bool:
+        try:
+            return read_state_json(f).get("current_phase") != "phase8_complete"
+        except Exception:
+            return False
+
+    candidates = [f for f in running if open_(f)] or running
+    return max(candidates, key=lambda f: f.stat().st_mtime)
 
 
 def _split_note_arg(args: list[str]) -> "tuple[list[str], str | None] | None":
@@ -5068,6 +5135,7 @@ def _apply_spec_approval(data: dict, trigger: str) -> list:
     Budget-Ueberschreitungen zurueck (wie `record_transition`).
     """
     data["spec_approved"] = True
+    data.pop("spec_rework", None)  # #647
     exceeded = record_transition(data, "phase4_approved", trigger)
     data["current_phase"] = "phase4_approved"
     return exceeded
