@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.20.3] - 2026-11-24
+
+bash_gate 1c: Befehle, die einen Symlink im eigenen Worktree selbst bearbeiten (rm, unlink, mv, touch -h, ln -sfn/-T, git rm/checkout/restore), werden nicht mehr als Schreibzugriff auf den Haupt-Ordner geblockt; Schreiben durch den Link blockt weiter (#435).
+
+### Fixed
+
+- **Symlink im eigenen Worktree kein Haupt-Ordner-Schreibzugriff (#435, Folge aus #417 F001):** Prüfung 1c (`_writes_main_repo`) löste jedes Schreibziel per `resolve()` vollständig auf; zeigte ein Link im eigenen Worktree in den Haupt-Ordner (typisch `node_modules`), blockten auch `rm L`, `mv L L.bak` oder `ln -sfn x L`, Ausweg nur „override“. Jetzt bestimmt `_link_acting_targets(seg)` je Segment die Tokens, die den Link selbst bearbeiten: `rm`/`unlink` alle Pfade, Quellen von `mv` und `git rm|mv|checkout|restore` (auch mit `git -C`), das `mv`-Ziel nur mit `-T`/`--no-target-directory`, `touch` nur mit `-h`/`--no-dereference`, das `ln`-Ziel nur mit `-n`/`-T`/`--no-dereference`/`--no-target-directory` (Kurzflags auch gruppiert, `-sfn`, `-ch`; Langformen exakt). Diese Tokens prüft 1c wie #473 F002 mit `_lexical_path` (Elternordner aufgelöst, letzter Bestandteil roh), aber nur, wenn das Token im Segment nicht zugleich Umleitungs- oder folgendes Schreibziel ist (`rm L > L` blockt; Vorkommen gezählt) und sein letzter Bestandteil ein normaler Name ist (`L/`, `L/.`, `..` bleiben aufgelöst). Steht ein `..` hinter einem Link (`link/../x`), gilt ebenfalls die volle Auflösung. Alles Übrige bleibt aufgelöst und blockt weiter: Umleitungen, `cp`, `install`, `tee`, `truncate`, `dd of=`, `sed -i`, `perl -i`, `touch` ohne `-h`, `mv`-Ziel ohne `-T`, `ln` ohne `-n`/`-T`, `rm L/a`. Ein Link, der selbst im Haupt-Ordner liegt, blockt bei `rm` weiter. Blockmeldung, Override, Fail-open und Prüfung 1b sind unverändert. Zielordner von `mv` erkennt das Gate in jeder Schreibweise (`-t D`, `-vt D`, `-tD`, `--target-directory[=]D` und Abkürzungen wie `--target-dir`, `--target`) und prüft `D/<name>` aufgelöst.
+
+### Known Limitations
+
+- **Abhängigkeits-Ordner (4c, #293):** Ein Link namens `node_modules`, `vendor`, `.venv` usw. bleibt durch die eigenständige Namensprüfung 4c bei `rm`/`unlink`/`mv` gesperrt; die Unterscheidung Link/Ordner dort ist #652.
+- **`cd` über einen Link:** Nach `cd L/..` liegt die nachgeführte Basis im Haupt-Ordner (`_cd_bases` löst auf); ein folgendes `rm L` bleibt blockiert. Ausweg: Pfad ohne Umweg über den Link oder „override“.
+- **Konservativ aufgelöst:** `sed -i`, `perl -i`, `truncate`, `dd of=` und unbekannte Schreibbefehle auf einen Link bleiben blockiert, auch wenn sie den Link nur ersetzen könnten; ebenso `rm -r L/` (BSD/macOS löscht dort den Inhalt des Ziels). Ausweg: „override“.
+- **`mv`/`ln` mit Zielordner-Flag:** Sobald ein Zielordner-Flag möglich ist (jede Kurzflag-Gruppe mit `t`, jedes `--t…`), bekommt kein Token die Link-Rolle; alle bleiben aufgelöst wie vor #435 (`mv -t sub L` blockt). Ausweg: „override“. `cp`, `install` und `ln` erkennen gruppierte oder abgekürzte Zielordner-Flags (`ln -sft D x`, `cp --target-directory D x`) weiterhin nicht (Bestandslücke, nicht durch #435 entstanden).
+- Kein Sandbox-Ersatz (`python -c`, `eval`, Skripte, #416); wirkt in Konsumentenprojekten erst nach dem Plugin-Update.
+
+Migration: keine. Tests: `tests/test_bash_gate_symlink_parent_435.py`.
+
 ## [4.20.2] - 2026-11-24
 
 Ein Rücksprung auf Analyse oder Spec verwirft das alte PO-Briefing: Danach ist wieder `/30-write-spec` dran, und die Auto-Freigabe gibt eine widerlegte Spec nicht erneut frei (#647, #648, Schnitt 2 von Epic #649).

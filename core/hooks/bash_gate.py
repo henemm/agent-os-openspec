@@ -33,6 +33,7 @@ import os
 import re
 import shlex
 import sys
+from collections import Counter
 from pathlib import Path
 
 # --- Defaults (overridable via config.yaml) ---
@@ -478,6 +479,35 @@ def _copy_targets(args: list) -> list:
     return pos[-1:]
 
 
+def _target_dir_values(args: list) -> list:
+    """Zielordner jeder Schreibweise bis `--`: `-t D`, `-vt D`, `-tD`, `--t…[=]D` (#435 F001).
+
+    Bewusst grob: jede Kurzflag-Gruppe mit `t` (auch `t` als `-S`-Wert) und jede
+    Abkuerzung von `--target-directory` zaehlt — im Zweifel wird aufgeloest.
+    Ein Flag ohne erkennbaren Wert liefert `""`.
+    """
+    out = []
+    for i, tok in enumerate(args):
+        if tok == "--":
+            break
+        nxt = args[i + 1] if i + 1 < len(args) else ""
+        if tok.startswith("--t"):
+            out.append(tok.split("=", 1)[1] if "=" in tok else nxt)
+        elif re.match(r"-[^-]", tok) and "t" in tok:
+            out.append(tok[tok.index("t") + 1:] or nxt)
+    return out
+
+
+def _mv_dir_targets(args: list) -> list:
+    """mv: jeder Zielordner jeder Schreibweise als `DIR/<basename>` je Pfad (#435 F001).
+
+    Ergaenzt `_CONFIG_WRITERS["mv"]`, das nur `-t D`/`--target-directory=D` kennt.
+    """
+    pos = _positional(args, ("-t", "-S"))
+    return [os.path.join(d, os.path.basename(p.rstrip("/")))
+            for d in _target_dir_values(args) if d for p in pos]
+
+
 def _sed_targets(args: list) -> list:
     """sed nur In-Place (`-i`, `-ni`, `-i.bak`, `-i ''`, `--in-place[=SUF]`)."""
     inplace = explicit = skip = False
@@ -573,6 +603,8 @@ def _config_write_targets(seg: list) -> list:
     writer = _CONFIG_WRITERS.get(cmd)
     if writer is not None:
         targets += writer(args)
+    if cmd == "mv":
+        targets += [t for t in _mv_dir_targets(args) if t not in targets]
     return [t for t in targets if t]
 
 
@@ -1263,13 +1295,96 @@ def _broad_search_hit(scan_cmd: str) -> "str | None":
     return None
 
 
+# Befehl -> (Kurzbuchstaben, Langformen, Kurz-Wertflags, Lang-Wertflags), bei
+# denen der Befehl den Link SELBST ersetzt statt ihm zu folgen (#435).
+_LINK_SELF_FLAGS = {
+    "touch": ("h", ("--no-dereference",), "dtr", ("--date", "--reference")),
+    "ln": ("nT", ("--no-dereference", "--no-target-directory"), "St",
+           ("--suffix", "--target-directory")),
+    "mv": ("T", ("--no-target-directory",), "St", ("--suffix", "--target-directory")),
+}
+
+
+def _has_flag(args: list, letters: str, longs: tuple, values: str, long_values: tuple) -> bool:
+    """Flag gesetzt? Kurz auch in Gruppen (`-sfn`), Langform exakt, bis `--` (#435).
+
+    Nach einem Wertflag in der Gruppe ist der Rest dessen Wert (`-dhello`).
+    """
+    skip = False
+    for tok in args:
+        if skip:
+            skip = False
+        elif tok == "--":
+            return False
+        elif tok in longs:
+            return True
+        elif tok in long_values:
+            skip = True
+        elif re.fullmatch(r"-[A-Za-z]+", tok):
+            for j, ch in enumerate(tok[1:]):
+                if ch in letters:
+                    return True
+                if ch in values:
+                    skip = j == len(tok) - 2
+                    break
+    return False
+
+
+def _link_acting_targets(seg: list) -> list:
+    """Tokens, die den Link selbst entfernen, umbenennen oder ersetzen (#435).
+
+    `rm`/`unlink` alle Pfade; Quellen von `mv` und `git rm|mv|checkout|restore`;
+    `mv`-Ziel nur mit `-T`, `touch` nur mit `-h`, `ln`-Ziel nur mit `-n`/`-T`.
+    Eine Quelle, die zugleich Ziel ist, folgt dem Link und faellt weg.
+    `mv`/`ln` mit moeglichem Zielordner-Flag: keine Link-Rolle (F001).
+    """
+    cmd, args = _command_args(_split_redirects(seg)[1])
+    flags = _LINK_SELF_FLAGS.get(cmd)
+    on = flags is not None and _has_flag(args, *flags)
+    if cmd in ("rm", "unlink"):
+        return _positional(args)
+    if cmd == "touch":
+        return _CONFIG_WRITERS["touch"](args) if on else []
+    pos = _positional(args, ("-t", "-S"))
+    # Moeglicher Zielordner (`-vt`, `-tD`, `--target…`): keine Link-Rolle (#435 F001).
+    to_dir = bool(_target_dir_values(args))
+    if cmd == "ln":
+        return pos[-1:] if on and len(pos) >= 2 and not to_dir else []
+    if cmd not in ("mv", "git") or (cmd == "mv" and to_dir):
+        return []
+    src = _dir_removal_targets(cmd, args)
+    every = _git_write_targets(args) if cmd == "git" else pos
+    dest = every[-1:] if len(src) < len(every) else []
+    if cmd == "mv" and on and dest:
+        return src + dest
+    return [s for s in src if s not in dest]
+
+
+def _link_self_path(base: Path, token: str) -> "str | None":
+    """Pfad des Links selbst: Elternordner aufgeloest, letzter Bestandteil roh (#435).
+
+    `None`, wenn der letzte Bestandteil kein normaler Name ist (`L/`, `L/.`,
+    `..`) oder ein `..` hinter einem Link steht (`link/../x`: normpath kuerzt
+    lexikalisch, das Dateisystem folgt dem Link) — dann gilt `resolve()`.
+    """
+    plain = os.path.expanduser(token)
+    if plain.endswith("/") or os.path.basename(plain) in ("", ".", ".."):
+        return None
+    hit = _lexical_path(base, token)
+    parent = os.path.realpath(os.path.join(str(base), os.path.dirname(plain) or "."))
+    return hit if os.path.dirname(hit) == parent else None
+
+
 def _writes_main_repo(segments: list, cwd: Path) -> "str | None":
     """Schreibziel im Haupt-Ordner, aber ausserhalb des eigenen Worktrees (#417)?
 
     Nur aktiv, wenn `cwd` in einem Worktree liegt; sonst `None` (Haupt-Ordner-
     Sitzung unveraendert). Fremde Worktrees unter dem Haupt-Ordner bleiben
     gesperrt. Nicht aufloesbare Ziele (`$VAR`, Glob, Backtick) und Fehler:
-    fail-open. Liefert das aufgeloeste Ziel oder `None`.
+    fail-open. Liefert das aufgeloeste Ziel oder `None`. Bearbeitet ein Befehl
+    einen Link selbst (`rm L`, `mv L x`, `ln -sfn x L`) und ist das Token im
+    Segment nicht zugleich folgendes Schreibziel (`rm L > L`), zaehlt der Link,
+    nicht sein Ziel (#435; Vorkommen gezaehlt, nicht als Menge).
     """
     try:
         m = _WORKTREE_CWD_RE.match(str(cwd))
@@ -1277,12 +1392,14 @@ def _writes_main_repo(segments: list, cwd: Path) -> "str | None":
             return None
         main_dir = Path(m.group("main")).resolve()
         own = (Path(m.group("main")) / ".claude" / "worktrees" / m.group("name")).resolve()
-        for bases, targets, _seg in _segment_write_targets(segments, cwd):
+        for bases, targets, seg in _segment_write_targets(segments, cwd):
+            occ, link = Counter(targets), Counter(_link_acting_targets(seg))
             for t in targets:
                 if any(ch in t for ch in "$`*?["):
                     continue
                 for b in bases:
-                    hit = (b / os.path.expanduser(t)).resolve()
+                    lex = _link_self_path(b, t) if link[t] >= occ[t] else None
+                    hit = Path(lex) if lex else (b / os.path.expanduser(t)).resolve()
                     if hit.is_relative_to(main_dir) and not hit.is_relative_to(own):
                         return str(hit)
     except Exception:
