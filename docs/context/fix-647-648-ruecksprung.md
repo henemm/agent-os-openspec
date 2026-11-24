@@ -41,3 +41,41 @@ Nach einem Rücksprung auf Analyse oder Spec (#647: phase4_approved → phase3_s
 - Normaler Ablauf in `/30-write-spec`: `spec_file` wird vor `set-briefing` gesetzt. In dieser Lücke ist `/30-write-spec` als nächster Schritt korrekt, weil die Phase dann noch nicht fertig ist.
 - `endstate <N>`: Vorgänger in phase8_complete, aber noch nicht archiviert, liegt neben dem aktiven Workflow. Aktiven bevorzugen, dann nicht abgeschlossene, dann den jüngsten.
 - Herdr-Auto-/clear wird mit Epic #649 zurückgebaut. Der Fix muss trotzdem für `next_step` allgemein stimmen (Cloud, Footer, Plan).
+
+## Analysis
+
+### Type
+Bug (#647, #648) plus Nebenbefund `endstate <N>`; Schnitt 2 von Epic #649.
+
+### Root Cause (belegt)
+- `_reset_approvals_on_backstep` (core/hooks/workflow.py:3620) entwertet `spec_approved`/`green_approved`/Deploy-Felder, lässt aber `po_briefing` stehen.
+- `next_step` (workflow.py:285): `phase3_spec` + `spec_file` → immer Freigabe (`APPROVAL_STEP`, im Auto-Modus mit grüner Ampel `AUTO_APPROVAL_STEP` über `_auto_approval_pending`:187).
+- `_auto_approve_decision` (~5080–5150) prüft nur Hashes. Eine widerlegte, aber unveränderte Spec mit altem grünen Briefing würde erneut automatisch freigegeben.
+- `_deploy_status_target` (workflow.py:4385): Bei mehreren laufenden Treffern gewinnt der alphabetisch erste, nicht der aktive Workflow.
+- Spec-Freeze (edit_gate.py ~1078) greift erst ab phase4_approved und ist nach einem Rücksprung auf phase3 also offen (gewollt). `edit_gate.py:601` liest `po_briefing` nur ab phase4.
+
+### Affected Files (with changes)
+| File | Change Type | Description |
+|------|-------------|-------------|
+| core/hooks/workflow.py | MODIFY | Reset verschiebt `po_briefing` nach `po_briefing_history` und setzt `spec_rework`. `next_step` meldet bei `spec_rework` `/30-write-spec`. `set-briefing` und `_apply_spec_approval` löschen das Flag. `_deploy_status_target` bevorzugt den aktiven Workflow. `_FIELD_HINTS` schützt die neuen Felder. |
+| core/commands/30-write-spec.md (+ sync skills/) | MODIFY | Ein Satz: Nach einem Rücksprung ist ein neues Briefing Pflicht. |
+| tests/test_ruecksprung_briefing_647.py | CREATE | Rote Tests für A/B2/C |
+| CHANGELOG.md, .claude-plugin/plugin.json | MODIFY | Patch-Version |
+
+### Scope Assessment
+- Files: 4–5
+- Estimated LoC: workflow.py ca. +40, Tests ca. +100
+- Risk Level: HIGH (Freigabe-Gate, kritischer Pfad), Änderung aber eng begrenzt
+
+### Technical Approach (Entscheidung: A + B2 + C)
+- **A:** Ein Rücksprung auf ein Ziel vor phase4_approved verschiebt `po_briefing` per `pop` in `po_briefing_history` (`{entry, reason: "backstep <von>-><nach>", at}`, höchstens 5 Einträge). Nichts wird still gelöscht. `spec_file` bleibt, weil `/30-write-spec` es überschreibt. Nur wenn vorher ein Briefing existierte, wird `spec_rework=True` gesetzt (sonst bliebe das Flag bei Kill-Switch/Fast Track ohne Briefing hängen).
+- **B2:** `next_step` meldet in phase3_spec Freigabe nur bei `spec_file and not spec_rework`, sonst `/30-write-spec`. `cmd_set_briefing` löscht das Flag nach erfolgreicher Registrierung, `_apply_spec_approval` zur Sicherheit auch. Keine I/O in `next_step`.
+- **B1 verworfen** (allgemeine Regel „Pflicht-Briefing fehlt → /30-write-spec“): `next_step` läuft in jedem Hook. B1 hieße dort Config, Spec und Briefing lesen, und 6–10 bestehende Tests würden kippen. ADR-Wirkung: Der bisherige Vertrag „spec_file ⇒ Freigabe-Schritt“ bleibt für den Normalablauf bestehen.
+- **C:** Rangfolge in `_deploy_status_target`: exakter Name, dann der aktive Workflow (wenn unter den Treffern; `_read_active` in try/except für SystemExit), dann nicht `phase8_complete`, dann jüngster nach mtime.
+- Auto-Freigabe: Mit verschobenem Briefing liefert `auto-approve` `human` („Kein unabhängiges PO-Briefing registriert“), `_auto_approval_pending` liefert False.
+
+### Dependencies
+footer_gate, herdr_bridge (`next=`), status_note, Plan, phase_listener (Freigabe-Phrase → `_check_po_briefing` blockt ohne Briefing korrekt), `end_state`, `auto-approve`. ci_spec_gate liest nur committete Dateien und ist nicht betroffen.
+
+### Open Questions
+- keine (Altfälle ohne Flag behalten das bisherige Verhalten, das ist akzeptiert)
