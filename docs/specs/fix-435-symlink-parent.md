@@ -109,6 +109,7 @@ Prüfung 1c blockt Bash-Schreibzugriffe einer Worktree-Sitzung auf den Haupt-Ord
 - Die Prüfung 1b (wirksame Config) behält ihre eigene Link-Behandlung.
 - Verteilung: wirkt in Konsumentenprojekten erst nach dem Plugin-Update.
 - **Abhängigkeits-Ordner (4c, #293):** Ein Link namens `node_modules`, `vendor`, `.venv` usw. bleibt durch die eigenständige Prüfung 4c bei `rm`/`unlink`/`mv` gesperrt (Namensprüfung, unabhängig von 1c). Die Unterscheidung Link/Ordner dort ist Issue #652.
+- **`mv`/`ln` mit Zielordner-Flag (Adversary F001):** Sobald `-t`/`--t…` in irgendeiner Schreibweise (auch in Kurzflag-Gruppen wie `-vt`, angehängt `-tDIR`, abgekürzt `--target-dir`) vorkommt, bekommt kein Argument eine Link-Rolle; alles bleibt aufgelöst, `mv` erhält zusätzlich `DIR/<basename>` als Schreibziel. Folge: `mv -t sub L` blockt wie vor #435. Varianten des Zielordner-Flags bei `cp`/`install`/`ln` bleiben eine Bestandslücke (#653).
 - **`cd` über einen Link:** Nach `cd L/..` liegt die nachgeführte Basis im Haupt-Ordner (`_cd_bases` löst auf); ein folgendes `rm L` bleibt blockiert. Ausweg: Pfad ohne Umweg über den Link oder „override“.
 
 ## Definition of Done
@@ -164,6 +165,7 @@ Fertig ist diese Änderung, wenn:
 Automatische Tests (jeweils an eine AC oben gebunden):
 
 - `pytest tests/test_bash_gate_symlink_parent_435.py` — Subprozess-Tests gegen das echte `core/hooks/bash_gate.py`. Sandbox nach dem Muster `_worktree_sandbox`/`_expect` aus `tests/test_bash_gate_main_write_417.py`: Haupt-Ordner `main` mit Ordner `libs` und Datei `data.txt`, Worktree unter `main/.claude/worktrees/wt` mit echtem Ordner-Link `wt/libs -> ../../../libs` und Datei-Link `wt/datalink`; der Link heißt bewusst nicht `node_modules`, damit die Tests nur Prüfung 1c messen und nicht die eigenständige Prüfung 4c (#293, Link-Lockerung in #652); zusätzlich ein fremder Worktree, ein Unterordner im Worktree, ein Link im Haupt-Ordner und ein Override-Token. Die RED-Läufe zeigen vor der Implementierung Exit 2 statt Exit 0 für die freien Fälle (AC-1 bis AC-5) und werden als Artefakte registriert; die Block-Fälle (AC-6 bis AC-10) sind schon vor der Änderung grün und sichern, dass die Lockerung keine Lücke öffnet.
+- Nach dem Adversary-Befund ergänzt: `test_mv_mit_zielordner_flag_durch_link_blockt` (F001/F003) und `test_link_dann_punktpunkt_blockt` (F002, `rm L/../x` blockt).
 - Regression: `pytest tests/test_bash_gate*` (insbesondere #417, #418, #473), danach die Vollsuite.
 
 ## Architektur-Entscheidung (ADR)
@@ -178,5 +180,6 @@ Automatische Tests (jeweils an eine AC oben gebunden):
 ## Changelog
 
 - 2026-11-24: Initial spec created (#435)
+- 2026-11-24: Nach Adversary (BROKEN → VERIFIED) Known Limitations und Test Plan ergänzt (Zielordner-Flag, `L/..`)
 - 2026-11-24: Nach TDD RED korrigiert — DoD trennt 1c von Prüfung 4c (#293, Folge-Issue #652), Test-Sandbox mit Link `libs`, Known Limitations um 4c und `cd L/..` ergänzt
 - Release-Hinweis: CHANGELOG `[4.20.3]` — „bash_gate 1c: Befehle, die einen Symlink im eigenen Worktree selbst bearbeiten (rm, unlink, mv, touch -h, ln -sfn/-T, git rm/checkout/restore), werden nicht mehr als Schreibzugriff auf den Haupt-Ordner geblockt; Schreiben durch den Link blockt weiter (#435)“
