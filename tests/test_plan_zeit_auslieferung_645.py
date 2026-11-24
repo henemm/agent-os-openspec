@@ -173,6 +173,23 @@ def test_abgeschlossene_auslieferung_ende_ist_ship_at(no_activity, ship_status):
     assert "Ausliefern  seit" not in out and "Ende  offen" not in out, out
 
 
+def test_abgeschlossene_auslieferung_ship_at_vor_oder_gleich_start(no_activity):
+    wf = no_activity
+    # (a) ship_at VOR dem Start -> ignoriert, Ende aus _finished_span
+    plain = _shipping("t645-vor-start", ship_status="done")
+    before = _shipping("t645-vor-start", ship_status="done", ship_at=_t("07:00"))
+    out_plain = wf.render_plan(plain, estimate=_actual())
+    out_before = wf.render_plan(before, estimate=_actual())
+    assert _time_lines(out_before) == _time_lines(out_plain), out_before
+    assert "Ende  07:00" not in out_before, out_before
+    # (b) ship_at GENAU = Start -> gueltig, Ende = Start, Dauer 0
+    equal = _shipping("t645-gleich-start", ship_status="done", ship_at=_t("08:07"))
+    out_eq = wf.render_plan(equal, estimate=_actual())
+    assert _time_lines(out_eq) == ["Start  08:07",
+                                   f"Dauer  {wf.format_duration(0)}",
+                                   "Ende  08:07"], out_eq
+
+
 # =============================================================================
 # AC-4: Altbestand unverändert
 # =============================================================================
@@ -262,19 +279,19 @@ def test_ausliefern_zeile_anzeigezone_und_umbruch(no_activity):
         {"phase": P8, "entered_at": "2026-11-24T07:57:00+00:00",
          "exited_at": None, "duration_min": None},
     ]
-    # jetzt = 11:30 UTC (12:30 Berlin), als naive Ortszeit wie die übrigen Uhren
+    # jetzt = 11:30 UTC (06:30 New York), als naive Ortszeit wie die übrigen Uhren
     now = datetime(2026, 11, 24, 11, 30, tzinfo=timezone.utc).astimezone().replace(tzinfo=None)
-    est = _actual(now=now, zone="Europe/Berlin")
+    est = _actual(now=now, zone="America/New_York")
 
     wide = wf.render_plan(data, estimate=dict(est))
-    assert _time_lines(wide) == ["Start  08:07",
-                                 f"Ausliefern  seit 08:57 ({wf.format_duration(213)})",
+    assert _time_lines(wide) == ["Start  02:07",
+                                 f"Ausliefern  seit 02:57 ({wf.format_duration(213)})",
                                  "Ende  offen"], wide
 
     out = wf.render_plan(data, width=34, estimate=dict(est))
     lines = out.splitlines()
     assert all(len(ln) <= 34 for ln in lines), [ln for ln in lines if len(ln) > 34]
-    assert "Ausliefern  seit 08:57" in out, out
+    assert "Ausliefern  seit 02:57" in out, out
     joined = " ".join(ln.strip() for ln in lines)
-    assert f"Ausliefern  seit 08:57 ({wf.format_duration(213)})" in joined, out
+    assert f"Ausliefern  seit 02:57 ({wf.format_duration(213)})" in joined, out
     assert "Ende  offen" in lines, out
