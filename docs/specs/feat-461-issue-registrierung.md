@@ -100,6 +100,7 @@ Codebeschreibung in Worten; der Code liegt in `core/hooks/issue_claim.py`.
 - Kommentare in öffentlichen Konsumenten-Repos sind öffentlich; deshalb nur Ortsetikett, Workflow-Name, Zeit und Phase, nie Pfade, Links oder Adressen.
 - Arbeit ohne Workflow (reine Dokumentation, Issue-Pflege) hat keinen Einhängepunkt und wird nicht registriert.
 - Schreibrennen werden nur über „schreiben, neu lesen, frühester gewinnt“ aufgelöst; bei gleichem `createdAt` entscheidet die Kommentar-ID. Es gibt keine Sperre auf Seiten von GitHub.
+- Umfang über der Schätzung: Produktivcode tatsächlich ca. +665/-2 statt +200/-10 (Fake-`gh`-taugliche Kapselung, Nachholen bei `switch`/Phasenwechsel, `claim status`). Die LoC-Grenze wurde per Override überschritten; ein Schnitt in Teil-Lieferungen hätte eine halb gültige Pflicht veröffentlicht (siehe Estimated Changes).
 - Nicht Teil dieser Spec (Folge-Issue): Spalte „Dateien“ und Überschneidungen in `sessions`, Aufräumen alter lokaler Einträge, Ortswahl (#585), herdr-Anzeige (`henemm-infra`).
 
 ## Definition of Done
@@ -182,3 +183,4 @@ RED-Artefakt: `docs/artifacts/461-red.log`.
 ## Changelog
 
 - 1.0 (2026-11-24): Erstfassung nach Auftrag PO vom 24.11.2026 (dritter Kommentar zu #461), Entscheidungen des Tech Leads aus der Analyse übernommen.
+- 1.1 (2026-11-24): Validierung: tatsächlicher Umfang unter Known Limitations nachgetragen.
