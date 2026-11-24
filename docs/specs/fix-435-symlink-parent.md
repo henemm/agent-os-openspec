@@ -76,7 +76,7 @@ Prüfung 1c blockt Bash-Schreibzugriffe einer Worktree-Sitzung auf den Haupt-Ord
 
 **4. Blockbedingung unverändert.** Der (lexikalische oder aufgelöste) Pfad blockt, wenn er unter dem Haupt-Ordner und nicht unter dem eigenen Worktree liegt. Ein Link, der selbst im Haupt-Ordner liegt, hat einen lexikalischen Pfad im Haupt-Ordner und blockt daher auch bei `rm`.
 
-**5. Basis-Nachführung.** Die Basis folgt weiter `_cd_bases`; `cd node_modules/..` oder `cd sub && rm ../L` im Worktree-Unterordner führt zum selben lexikalischen Ergebnis wie vom Worktree-Wurzelordner.
+**5. Basis-Nachführung.** Die Basis folgt weiter dem unveränderten `_cd_bases`; `cd sub && rm ../L` im Worktree-Unterordner führt zum selben lexikalischen Ergebnis wie vom Worktree-Wurzelordner. `cd L/..` löst `_cd_bases` per `resolve()` über den Link in den Haupt-Ordner auf (Bash wechselt logisch in den Worktree); ein folgendes `rm L` bleibt dann blockiert (siehe Known Limitations).
 
 **6. Meldung, Override, Fail-open.** Abschnitt 1c, Block-Meldung (1c-Text mit Hinweis auf „override“), Override-Token und Fail-open bei `$`, Backtick, Glob, offener Quote oder Exception bleiben unverändert.
 
@@ -108,13 +108,15 @@ Prüfung 1c blockt Bash-Schreibzugriffe einer Worktree-Sitzung auf den Haupt-Ord
 - **Hängende Links:** Ein Link, dessen Ziel nicht existiert, wird bei `touch L` (ohne `-h`) als Zieldatei im Haupt-Ordner gewertet und blockiert, wie beabsichtigt.
 - Die Prüfung 1b (wirksame Config) behält ihre eigene Link-Behandlung.
 - Verteilung: wirkt in Konsumentenprojekten erst nach dem Plugin-Update.
+- **Abhängigkeits-Ordner (4c, #293):** Ein Link namens `node_modules`, `vendor`, `.venv` usw. bleibt durch die eigenständige Prüfung 4c bei `rm`/`unlink`/`mv` gesperrt (Namensprüfung, unabhängig von 1c). Die Unterscheidung Link/Ordner dort ist Issue #652.
+- **`cd` über einen Link:** Nach `cd L/..` liegt die nachgeführte Basis im Haupt-Ordner (`_cd_bases` löst auf); ein folgendes `rm L` bleibt blockiert. Ausweg: Pfad ohne Umweg über den Link oder „override“.
 
 ## Definition of Done
 
 Fertig ist diese Änderung, wenn:
 
 - [ ] Jede Acceptance Criterion unten ist durch einen automatischen Test am echten Gate-Subprozess belegt
-- [ ] In einer Worktree-Sitzung lassen sich der eigene `node_modules`-Link (zeigt in den Haupt-Ordner) löschen, umbenennen und neu setzen, ohne „override“ tippen zu müssen
+- [ ] In einer Worktree-Sitzung lässt sich ein eigener Link, der in den Haupt-Ordner zeigt, löschen, umbenennen und neu setzen, ohne dass Prüfung 1c blockt; für einen Link namens `node_modules` (oder einen anderen Abhängigkeits-Ordner) gilt zusätzlich die eigenständige Prüfung 4c (#293), deren Link-Lockerung Issue #652 übernimmt
 - [ ] Jede Befehlsform, die durch den Link in den Haupt-Ordner schreibt (Umleitung, `cp`, `mv` ohne `-T`, `tee`, `touch` ohne `-h`, `rm -r L/`, `rm L/a`), endet weiter mit Exit 2 und dem Hinweis auf „override“
 - [ ] Fremder Worktree, Haupt-Ordner-Sitzung, nicht auflösbare Ziele, Override und Prüfung 1b verhalten sich unverändert
 - [ ] CHANGELOG-Eintrag `[4.20.3]` mit Known Limitations; Version 4.20.3 an allen Stellen (plugin.json, CLAUDE.md, README.md, Skills und Befehls-Marker per `sync_skills.py`)
@@ -161,7 +163,7 @@ Fertig ist diese Änderung, wenn:
 
 Automatische Tests (jeweils an eine AC oben gebunden):
 
-- `pytest tests/test_bash_gate_symlink_parent_435.py` — Subprozess-Tests gegen das echte `core/hooks/bash_gate.py`. Sandbox nach dem Muster `_worktree_sandbox`/`_expect` aus `tests/test_bash_gate_main_write_417.py`: Haupt-Ordner `main` mit `node_modules`, Worktree unter `main/.claude/worktrees/wt` mit echtem Symlink `wt/node_modules -> ../../../node_modules`; zusätzlich ein fremder Worktree, ein Unterordner im Worktree, ein Link im Haupt-Ordner und ein Override-Token. Die RED-Läufe zeigen vor der Implementierung Exit 2 statt Exit 0 für die freien Fälle (AC-1 bis AC-5) und werden als Artefakte registriert; die Block-Fälle (AC-6 bis AC-10) sind schon vor der Änderung grün und sichern, dass die Lockerung keine Lücke öffnet.
+- `pytest tests/test_bash_gate_symlink_parent_435.py` — Subprozess-Tests gegen das echte `core/hooks/bash_gate.py`. Sandbox nach dem Muster `_worktree_sandbox`/`_expect` aus `tests/test_bash_gate_main_write_417.py`: Haupt-Ordner `main` mit Ordner `libs` und Datei `data.txt`, Worktree unter `main/.claude/worktrees/wt` mit echtem Ordner-Link `wt/libs -> ../../../libs` und Datei-Link `wt/datalink`; der Link heißt bewusst nicht `node_modules`, damit die Tests nur Prüfung 1c messen und nicht die eigenständige Prüfung 4c (#293, Link-Lockerung in #652); zusätzlich ein fremder Worktree, ein Unterordner im Worktree, ein Link im Haupt-Ordner und ein Override-Token. Die RED-Läufe zeigen vor der Implementierung Exit 2 statt Exit 0 für die freien Fälle (AC-1 bis AC-5) und werden als Artefakte registriert; die Block-Fälle (AC-6 bis AC-10) sind schon vor der Änderung grün und sichern, dass die Lockerung keine Lücke öffnet.
 - Regression: `pytest tests/test_bash_gate*` (insbesondere #417, #418, #473), danach die Vollsuite.
 
 ## Architektur-Entscheidung (ADR)
@@ -171,9 +173,10 @@ Automatische Tests (jeweils an eine AC oben gebunden):
 - **Verworfene Alternativen:**
   - *Alles lexikalisch prüfen und nur Link-Folgen gesondert erkennen:* kehrt die Sicherheitsrichtung um; ein neuer Befehl in `_CONFIG_WRITERS` wäre standardmäßig offen.
   - *Jeder Link im eigenen Worktree ist frei:* öffnet `echo > L/a`, `cp x L` und `touch L` in den Haupt-Ordner.
-  - *Nur Doku/override belassen:* verfehlt das Ziel des Issues, der Fehlalarm träte bei jedem `node_modules`-Wechsel wieder auf.
+  - *Nur Doku/override belassen:* verfehlt das Ziel des Issues, der Fehlalarm träte bei jedem Entfernen oder Ersetzen eines geteilten Links (z. B. `node_modules`) wieder auf.
 
 ## Changelog
 
 - 2026-11-24: Initial spec created (#435)
+- 2026-11-24: Nach TDD RED korrigiert — DoD trennt 1c von Prüfung 4c (#293, Folge-Issue #652), Test-Sandbox mit Link `libs`, Known Limitations um 4c und `cd L/..` ergänzt
 - Release-Hinweis: CHANGELOG `[4.20.3]` — „bash_gate 1c: Befehle, die einen Symlink im eigenen Worktree selbst bearbeiten (rm, unlink, mv, touch -h, ln -sfn/-T, git rm/checkout/restore), werden nicht mehr als Schreibzugriff auf den Haupt-Ordner geblockt; Schreiben durch den Link blockt weiter (#435)“
