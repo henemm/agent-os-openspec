@@ -479,6 +479,35 @@ def _copy_targets(args: list) -> list:
     return pos[-1:]
 
 
+def _target_dir_values(args: list) -> list:
+    """Zielordner jeder Schreibweise bis `--`: `-t D`, `-vt D`, `-tD`, `--t…[=]D` (#435 F001).
+
+    Bewusst grob: jede Kurzflag-Gruppe mit `t` (auch `t` als `-S`-Wert) und jede
+    Abkuerzung von `--target-directory` zaehlt — im Zweifel wird aufgeloest.
+    Ein Flag ohne erkennbaren Wert liefert `""`.
+    """
+    out = []
+    for i, tok in enumerate(args):
+        if tok == "--":
+            break
+        nxt = args[i + 1] if i + 1 < len(args) else ""
+        if tok.startswith("--t"):
+            out.append(tok.split("=", 1)[1] if "=" in tok else nxt)
+        elif re.match(r"-[^-]", tok) and "t" in tok:
+            out.append(tok[tok.index("t") + 1:] or nxt)
+    return out
+
+
+def _mv_dir_targets(args: list) -> list:
+    """mv: jeder Zielordner jeder Schreibweise als `DIR/<basename>` je Pfad (#435 F001).
+
+    Ergaenzt `_CONFIG_WRITERS["mv"]`, das nur `-t D`/`--target-directory=D` kennt.
+    """
+    pos = _positional(args, ("-t", "-S"))
+    return [os.path.join(d, os.path.basename(p.rstrip("/")))
+            for d in _target_dir_values(args) if d for p in pos]
+
+
 def _sed_targets(args: list) -> list:
     """sed nur In-Place (`-i`, `-ni`, `-i.bak`, `-i ''`, `--in-place[=SUF]`)."""
     inplace = explicit = skip = False
@@ -574,6 +603,8 @@ def _config_write_targets(seg: list) -> list:
     writer = _CONFIG_WRITERS.get(cmd)
     if writer is not None:
         targets += writer(args)
+    if cmd == "mv":
+        targets += [t for t in _mv_dir_targets(args) if t not in targets]
     return [t for t in targets if t]
 
 
@@ -1305,6 +1336,7 @@ def _link_acting_targets(seg: list) -> list:
     `rm`/`unlink` alle Pfade; Quellen von `mv` und `git rm|mv|checkout|restore`;
     `mv`-Ziel nur mit `-T`, `touch` nur mit `-h`, `ln`-Ziel nur mit `-n`/`-T`.
     Eine Quelle, die zugleich Ziel ist, folgt dem Link und faellt weg.
+    `mv`/`ln` mit moeglichem Zielordner-Flag: keine Link-Rolle (F001).
     """
     cmd, args = _command_args(_split_redirects(seg)[1])
     flags = _LINK_SELF_FLAGS.get(cmd)
@@ -1314,10 +1346,11 @@ def _link_acting_targets(seg: list) -> list:
     if cmd == "touch":
         return _CONFIG_WRITERS["touch"](args) if on else []
     pos = _positional(args, ("-t", "-S"))
-    to_dir = "-t" in args or any(a.startswith("--target-directory") for a in args)
+    # Moeglicher Zielordner (`-vt`, `-tD`, `--target…`): keine Link-Rolle (#435 F001).
+    to_dir = bool(_target_dir_values(args))
     if cmd == "ln":
         return pos[-1:] if on and len(pos) >= 2 and not to_dir else []
-    if cmd not in ("mv", "git"):
+    if cmd not in ("mv", "git") or (cmd == "mv" and to_dir):
         return []
     src = _dir_removal_targets(cmd, args)
     every = _git_write_targets(args) if cmd == "git" else pos

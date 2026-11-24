@@ -129,6 +129,33 @@ def test_schraegstrich_punkt_und_unterpfad_blocken(tmp_path):
                           wt, 2, OVERRIDE_HINT, cwd=wt))
 
 
+def test_mv_mit_zielordner_flag_durch_link_blockt(tmp_path):
+    """F001/F003: jede Zielordner-Schreibweise von mv durch den Link -> Exit 2.
+
+    `libs` ist hier das ZIEL-Verzeichnis (mv schreibt hinein), nie eine Quelle.
+    """
+    _main, wt = _link_sandbox(tmp_path)
+    (wt / "y").write_text("y\n")
+    _fail("F001", _expect([
+        f"mv -vt {L} x", f"mv -ft {L} x", f"mv -nt {L} x", f"mv -vt {L} x y",
+        f"mv -t{L} x", f"mv x --target-directory {L}",
+        f"mv --target-directory {L} x", f"mv --target-directory={L} x",
+        f"mv --target-dir {L} x", f"mv --target {L} x", f"ln -s -t {L} x",
+    ], wt, 2, OVERRIDE_HINT, cwd=wt))
+
+
+def test_link_dann_punktpunkt_blockt(tmp_path):
+    """F002: `..` hinter einem Link folgt dem Link -> Exit 2; hinter echtem Ordner frei."""
+    main, wt = _link_sandbox(tmp_path)
+    (main / "unter").mkdir()
+    os.symlink(os.path.join(os.path.relpath(main, wt), "unter"), wt / "sd")
+    assert (wt / "sd").is_symlink() and (wt / "sd").is_dir(), "Aufbau: Unterordner-Link"
+    _fail("F002 blockt", _expect([
+        f"rm {L}/../data.txt", "rm sd/../data.txt", f"rm {L}/../{L}",
+    ], wt, 2, OVERRIDE_HINT, cwd=wt))
+    _fail("F002 frei", _expect([f"rm sub/../{L}"], wt, 0, cwd=wt))
+
+
 def test_link_rolle_plus_umleitungsziel_blockt(tmp_path):
     """AC-9: dasselbe Token ist Link-Rolle und Umleitungsziel -> Exit 2."""
     _main, wt = _link_sandbox(tmp_path)
