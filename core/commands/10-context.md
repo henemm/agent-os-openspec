@@ -39,6 +39,11 @@ python3 .claude/hooks/workflow.py start "[feature-name]" --issue <N>
 `--issue <N>` nur, wenn die Issue-Nummer bekannt ist — sonst weglassen (die Nummer kommt dann
 aus dem Namen).
 
+`start` registriert die Sitzung am Issue (#461). Bricht er ab, weil dort schon eine andere
+Sitzung registriert ist, entsteht kein Workflow: dem PO sagen, wer wo seit wann daran arbeitet;
+`--uebernehmen` nur, wenn die andere Sitzung nachweislich ruht (`workflow.py claim status`)
+oder der PO zustimmt.
+
 Or switch to existing:
 ```bash
 python3 .claude/hooks/workflow.py switch "[feature-name]"

@@ -55,6 +55,11 @@ $WF start "[feature-name]" --issue <N>
 `--issue <N>` nur, wenn die Issue-Nummer bekannt ist — sonst weglassen (die Nummer kommt dann
 aus dem Namen).
 
+`start` registriert die Sitzung am Issue (#461). Bricht er ab, weil dort schon eine andere
+Sitzung registriert ist, entsteht kein Workflow: dem PO sagen, wer wo seit wann daran arbeitet;
+`--uebernehmen` nur, wenn die andere Sitzung nachweislich ruht (`workflow.py claim status`)
+oder der PO zustimmt.
+
 Or switch to existing:
 ```bash
 $WF switch "[feature-name]"
@@ -195,7 +200,7 @@ Beende deine letzte Nachricht in diesem Befehl mit diesen Zeilen, in dieser Reih
 
 ❗ Du: `/<befehl> #<N>` — <ein Halbsatz, warum>
 ℹ️ Status: Workflow `<name>` · Phase `<x>` von 8
-⚙ /10-context · agent-os-openspec 4.20.3
+⚙ /10-context · agent-os-openspec 4.21.0
 
 Die erste Zeile sagt, wer am Zug ist — GENAU EINMAL, nur hier in der Fußzeile, nie zusätzlich als Vokabular mitten im Fließtext davor — und steht in genau einer von drei Formen (es gibt keine vierte):
 

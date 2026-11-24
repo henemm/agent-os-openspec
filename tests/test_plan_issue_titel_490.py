@@ -71,6 +71,7 @@ def _case(tmp_path: Path, label: str, *, gh: bool = True, **extra):
     bindir.mkdir()
     env = {k: v for k, v in os.environ.items()
            if not k.startswith(("HERDR_", "OPENSPEC_", "GH_"))}
+    env["OPENSPEC_ISSUE_CLAIM"] = "0"  # #461: nur der Titelabruf spricht mit dem Stub
     env["CLAUDE_PROJECT_DIR"] = str(proj)
     env["HOME"] = str(proj / "_home")
     env["GH_LOG"] = str(log)

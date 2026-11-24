@@ -39,3 +39,7 @@ def _strip_herdr_env(monkeypatch):
     # an die Subprozesse schaltete das die Worktree-Pflicht des Guards ab und
     # liesse dessen Tests scheitern. Cloud-Tests setzen die Variable selbst.
     monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    # #461: `workflow.py start/switch/phase` registriert sich per `gh` am Issue.
+    # Kein Test darf echtes GitHub erreichen; Tests der Registrierung (mit
+    # Fake-`gh` im PATH) entfernen die Variable gezielt wieder.
+    monkeypatch.setenv("OPENSPEC_ISSUE_CLAIM", "0")

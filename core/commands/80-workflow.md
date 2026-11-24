@@ -88,6 +88,11 @@ python3 .claude/hooks/workflow.py status
 python3 .claude/hooks/workflow.py start "feature-name"
 ```
 
+Mit Issue-Nummer im Namen registriert `start` die Sitzung als Kommentar am Issue (#461). Ist
+dort schon eine andere Sitzung registriert, bricht `start` ohne Workflow ab und nennt Sitzung,
+Ort, Beginn und Erreichbarkeit. Übersicht: `workflow.py claim status`; Nachholen nach Offline-Start:
+`workflow.py claim nachholen`; bewusste Übernahme: `workflow.py start "feature-name" --uebernehmen`.
+
 ### Switch Active Workflow
 ```bash
 python3 .claude/hooks/workflow.py switch "other-feature"

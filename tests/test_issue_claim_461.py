@@ -1035,3 +1035,75 @@ def test_befehlstexte_nennen_uebernehmen_skills_ohne_drift():
     res = subprocess.run([sys.executable, str(SYNC_SKILLS), "--check"], capture_output=True,
                          text=True, cwd=str(REPO_ROOT), timeout=60)
     assert res.returncode == 0, f"Skills-Drift:\n{res.stdout}\n{res.stderr}"
+
+
+# --------------------------------------------------------------------------
+# Regressionen aus dem Adversary-Lauf (F001-F004)
+# --------------------------------------------------------------------------
+
+def test_f001_pending_mit_kommentar_id_wird_bei_abandon_freigegeben(world):
+    """F001 (AC-9): POST gelang, Neu-Lesen scheiterte -> lokal pending mit ID;
+    abandon muss den aktiven Kommentar am Issue trotzdem freigeben."""
+    proj = world.project("proj-f001", label="iMac")
+    world.update(mode="exit1", only_kinds=["list_comments"])
+    res = world.run(proj, "start", ALPHA)
+    world.update(mode=None, only_kinds=None)
+    _ok(res, "start mit scheiterndem Neu-Lesen")
+    claim = _claim_state(proj, ALPHA)
+    assert claim.get("status") == "pending" and _claim_id(claim), claim
+    own = world.claim_of(ALPHA)
+    assert own is not None and _status(own["body"]) == "aktiv", world.comments()
+
+    res = world.run(proj, "abandon", "--reason", "Test")
+    _ok(res, "abandon")
+    own = world.claim_of(ALPHA)
+    assert _status(own["body"]) == "freigegeben", f"nicht freigegeben: {own['body']!r}"
+
+
+def test_f002_verlierer_bricht_ab_auch_wenn_zurueckziehen_scheitert(world):
+    """F002 (AC-2): scheitert das Zurueckziehen des eigenen Eintrags, bleibt es
+    beim Abbruch ohne Workflow-Datei."""
+    proj_a = world.project("rechner-a", label="iMac")
+    proj_b = world.project("rechner-b", label="Server")
+    _start_registered(world, proj_a, ALPHA)
+    world.update(mode="exit1", only_kinds=["edit_comment"])
+    res = world.run(proj_b, "start", BETA)
+    world.update(mode=None, only_kinds=None)
+    assert res.returncode != 0, f"Verlierer muss abbrechen:\n{_out(res)}"
+    assert not _wf_file(proj_b, BETA).exists(), "Verlierer darf keine Workflow-Datei schreiben"
+    assert ALPHA in _out(res)
+
+
+def test_f003_uebernommener_eintrag_wird_nicht_wieder_aktiv(world):
+    """F003 (AC-3/AC-10): nach fremdem --uebernehmen setzt weder `claim nachholen`
+    noch ein Phasenwechsel den Eintrag blind zurueck auf aktiv."""
+    proj_a = world.project("rechner-a", label="iMac")
+    proj_b = world.project("rechner-b", label="Server")
+    claim = _start_registered(world, proj_a, ALPHA)
+    _ok(world.run(proj_b, "start", BETA, "--uebernehmen"), "start --uebernehmen")
+    assert _status(world.claim_of(ALPHA)["body"]) == "übernommen"
+
+    res = world.run(proj_a, "claim", "nachholen")
+    _ok(res, "claim nachholen")
+    assert re.search(r"(?i)übernommen", _out(res)), f"Warnung fehlt:\n{_out(res)}"
+    assert _status(world.claim_of(ALPHA)["body"]) == "übernommen", "Eintrag wieder aktiv"
+    assert _claim_state(proj_a, ALPHA).get("status") == "übernommen"
+
+    data = _wf_state(proj_a, ALPHA)
+    data["context_file"] = "docs/context/x.md"
+    data["issue_claim"]["status"] = "aktiv"  # lokaler Stand noch alt
+    _wf_file(proj_a, ALPHA).write_text(json.dumps(data))
+    _ok(world.run(proj_a, "phase", "phase2_analyse"), "Phasenwechsel")
+    assert _wait(lambda: _claim_state(proj_a, ALPHA).get("status") == "übernommen", timeout=8)
+    c = [x for x in world.comments() if x["id"] == claim["id"]][0]
+    assert _status(c["body"]) == "übernommen", f"Phasenwechsel setzte aktiv: {c['body']!r}"
+
+
+def test_f004_ortsetikett_ohne_domain_muster(world):
+    """F004 (AC-1): ein Ortsetikett wie `www.example.org` darf kein Domain-Muster
+    im Kommentar erzeugen."""
+    proj = world.project("proj-f004", label="www.example.org")
+    _ok(world.run(proj, "start", ALPHA), "start")
+    body = world.claim_of(ALPHA)["body"]
+    assert "www." not in body and "example.org" not in body, body
+    assert not re.search(r"\w\.\w", body), f"Domain-Muster im Kommentar: {body!r}"

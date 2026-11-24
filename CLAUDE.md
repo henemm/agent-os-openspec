@@ -2,7 +2,7 @@
 
 > **Meta-Projekt**: Dies ist das zentrale Framework-Repository, das abstraktes Projekt- und Workflow-Wissen konsolidiert. Alle Projekte können Improvements hierher zurückführen und von Verbesserungen aus anderen Projekten profitieren.
 
-**Version**: 4.20.3
+**Version**: 4.21.0
 
 ## Rollen und Zusammenarbeit (PO-Vorgabe 2026-11-08, gilt für jede Sitzung, auch Cloud)
 
@@ -349,6 +349,8 @@ diesen einen Bash-Aufruf durch; bei Änderungen, abweichender Historie oder ohne
 ab, ohne etwas zu ändern. Nur aus einer Session im Haupt-Ordner nutzbar — Worktree-Sessions dürfen
 laut Claude Code keine Git-Aufrufe auf den Haupt-Ordner richten.
 
+**Kein Hook — Registrierung je Issue:** `issue_claim.py` (#461), aufgerufen von `workflow.py start/switch/phase/abandon/ship-status/claim`: Eintrag als Kommentar am Issue, Doppelstart bricht ab (`--uebernehmen`), fail-open ohne Netz; aus mit `issue_claim.enabled: false` oder `OPENSPEC_ISSUE_CLAIM=0`.
+
 ## Session-Register
 
 `.claude/session-locks/<session_id>.json` beantwortet, wer gerade woran arbeitet.
@@ -472,6 +474,7 @@ python3 /path/to/agent-os-openspec/setup.py --version
 | `core/hooks/adversary_dialog.py` | Adversary Dialog System (Spec-Checkliste, Tri-State Verdict) |
 | `core/hooks/evidence_gate.py` | Opt-in Evidence-Gate (`evidence_checks` in `config.yaml`): `phase8_complete` nur mit maschinell erzeugtem, zum Code passendem Simulator-Beleg; Beleg-Dateien per `edit_gate.py`/`bash_gate.py` schreibgesperrt (#447) |
 | `core/hooks/precondition_origins.py` | Eigenstaendiges CLI-Werkzeug, KEIN Hook/Gate: sammelt per Regex Herkunft von Testvorbedingungen ein (Sprachprofile in `config.yaml`) |
+| `core/hooks/issue_claim.py` | Utility, KEIN Hook: Registrierung je Issue per GitHub-Kommentar, Doppelstart-Abbruch, Freigabe bei Auslieferung/Abbruch (#461) |
 | `core/hooks/herdr_bridge.py` | Utility, KEIN Hook: meldet Workflow-Stand display-only an die Herdr-Sidebar (#466), Auto-/clear (#467), öffnet den Plan-Pane rechts (`workflow.py plan`, #476), fail-open, Kill-Switch `herdr.enabled` |
 | `core/agents/fresh-eyes-inspector.md` | Unabhaengiger UI-Beobachter ohne Bug-Kontext |
 | `core/agents/po-briefer.md` | Unabhaengiges PO-Freigabe-Briefing (Spec vs. Ursprungsanfrage) |

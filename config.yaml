@@ -415,6 +415,18 @@ herdr:
     enabled: true
     ratio: 0.75         # Breitenanteil, der Claude bleibt (0.1–0.9)
 
+# Registrierung je Issue (#461): `workflow.py start` traegt die Sitzung als
+# Kommentar am Issue ein (Ort, Name, Beginn, Phase); ein zweiter Start auf
+# demselben Issue bricht ab (Ausweg `start <name> --uebernehmen`). Ohne Netz:
+# Start mit Warnung, Nachholen bei `switch`, `claim nachholen` oder Phasenwechsel.
+# Abschalten: `enabled: false` oder Umgebungsvariable OPENSPEC_ISSUE_CLAIM=0.
+# Fehler: .claude/issue_claim.log
+issue_claim:
+  enabled: true
+  timeout_seconds: 8          # Zeitlimit je gh-Aufruf
+  # location_label: "iMac"    # Ort je Rechner, am besten lokal in settings.local.json;
+  #                           # ohne Angabe: "Mac" bzw. "Linux-Rechner", in der Cloud "Cloud"
+
 # Autonomie-Schalter (#469, Teil A von #468): `manual` | `auto`. Nur der exakte
 # Literal `auto` schaltet an; alles andere (auch Tippfehler) gilt als `manual`.
 # Auskunft: `workflow.py autonomy`. In diesem Schritt ohne Wirkung auf Gates.
