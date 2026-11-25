@@ -884,7 +884,8 @@ def _doc_section(rel: str, start, end) -> str:
      [r"required-files|gelistet|listed"]),
     ("core/commands/60-validate.md", r"^\*\*Step 2b", r"^#{2,3} ",
      [r"BROKEN", r"phase6_implement|/50-implement|Phase 6"]),
-    ("CLAUDE.md", r"^### Hooks\s*$", r"^#{2,3} ", [CHANGE_SET]),
+    # #580: Abschnitt "Adversary System" steht jetzt in docs/architektur.md.
+    ("docs/architektur.md", r"^### Hooks\s*$", r"^#{2,3} ", [CHANGE_SET]),
     ("CLAUDE.md", r"^## Adversary-Limit", r"^## ", [r"#259|60-validate|(?i:auto-?fix)"]),
     ("docs/WORKFLOW_GUIDE.md", None, None, [CHANGE_SET]),
 ], ids=["50-implement-8c", "validator-step3", "validator-step6", "60-validate-2b",

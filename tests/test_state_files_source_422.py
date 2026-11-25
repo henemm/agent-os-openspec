@@ -925,10 +925,12 @@ def test_changelog_und_claude_md_nennen_limitations_und_funktionen():
             fehler.append(f"CHANGELOG-Eintrag #422 nennt Known Limitation {muss!r} nicht")
 
     claude_md = (REPO_ROOT / "CLAUDE.md").read_text()
-    zeilen = [z for z in claude_md.splitlines() if "core/hooks/hook_utils.py" in z]
+    # #580: Datei-Tabelle steht in docs/architektur.md, beide zusammen lesen.
+    referenz = claude_md + "\n" + (REPO_ROOT / "docs" / "architektur.md").read_text()
+    zeilen = [z for z in referenz.splitlines() if "core/hooks/hook_utils.py" in z]
     for fn in ("read_state_text", "atomic_write_text", "is_stop_locked"):
         if not any(fn in z for z in zeilen):
-            fehler.append(f"CLAUDE.md: hook_utils-Zeile nennt {fn} nicht")
+            fehler.append(f"CLAUDE.md/docs/architektur.md: hook_utils-Zeile nennt {fn} nicht")
 
     # Release-stabil: CLAUDE.md-Version gegen plugin.json statt gegen origin/main.
     plugin = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text())

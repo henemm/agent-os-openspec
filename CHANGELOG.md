@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.25.3] - 2026-11-25
+
+### Changed — CLAUDE.md verschlankt (#580)
+
+- `CLAUDE.md` von 39 904 auf 9 242 Bytes gekürzt; sie enthält nur noch die Regeln, die in jedem Zug gelten (Rollen, Arbeitsweise, Orchestrator-Prinzip, Workflow-Kern, Kontext-Haushalt kurz, harte Konventionen, Workflow-Isolation, Adversary-Limit).
+- Referenzteile (Architektur-Baum, 8-Phasen-Workflow, Parallele Workflows, TDD-Artefakte, Modell-Zuweisung, Adversary System, PO-Briefing-Gate, CI-Spec-Gate, Stop Lock, Override Token, Kontext-Haushalt Langfassung, Hook-Architektur, Session-Register, Verzeichnis-Konventionen, Hook-Entwicklung, Improvement-Flow, Wichtige Dateien, Slash-Commands) wörtlich nach `docs/architektur.md` verschoben; der bisherige Wortlaut der gekürzten Kernregeln (Beim Bearbeiten des Frameworks, Arbeitsanweisungen für Claude, Workflow-Isolation, Begründung des Adversary-Limits) steht dort unter „Langfassungen der Kernregeln“.
+- Größenwächter `tests/test_claude_md_slim_580.py` (Budget 12 KB); die Referenz-Prüfungen aus #422, #577 und #279 lesen `CLAUDE.md` und `docs/architektur.md` zusammen.
+
 ## [4.25.2] - 2026-11-25
 
 ### Fixed
