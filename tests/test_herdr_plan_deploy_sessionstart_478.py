@@ -351,16 +351,18 @@ def _skip_log(proj: Path) -> str:
     return path.read_text() if path.exists() else ""
 
 
-def test_auto_clear_logs_skip_reason_only_when_enabled(tmp_path):
+def test_auto_clear_never_logs_skip_reason(tmp_path):
+    """#662 ersetzt test_auto_clear_logs_skip_reason_only_when_enabled: Auto-/clear ist
+    stillgelegt, `maybe_auto_clear` kehrt sofort zurueck — auch mit Opt-in kein
+    Skip-Log und kein Runner."""
     scenarios = (
-        # (label, phase, message, erwarteter Grund)
-        ("phase8", "phase8_complete", _hook_message(POSITIVE, du="❗ Du: `/70-deploy #478`"), "kein Slash-Befehl"),
+        # (label, phase, message)
+        ("phase8", "phase8_complete", _hook_message(POSITIVE, du="❗ Du: `/70-deploy #478`")),
         ("nomarker", "phase6_implement",
          _hook_message("Alles erledigt, weiter geht es gleich.",
-                       du="❗ Du: `/50-implement #478` — der naechste Pflicht-Schritt"),
-         "keine Grenze vermerkt"),
+                       du="❗ Du: `/50-implement #478` — der naechste Pflicht-Schritt")),
     )
-    for label, phase, message, reason in scenarios:
+    for label, phase, message in scenarios:
         data = _wf_data(phase=phase)
         proj, log, env = _case(tmp_path, f"{label}-on", AUTO_ON, data)
         res = _run_footer(proj, env, message)
@@ -368,10 +370,8 @@ def test_auto_clear_logs_skip_reason_only_when_enabled(tmp_path):
         base = _run_footer(base_proj, base_env, message)
         assert res.returncode == base.returncode, (label, res.stderr, base.stderr)
         assert res.stdout == base.stdout, label
-        text = _skip_log(proj)
-        skips = [ln for ln in text.splitlines() if "skip:" in ln]
-        assert skips, f"{label}: keine skip:-Zeile im Log: {text!r}"
-        assert any(reason in ln for ln in skips), f"{label}: {reason!r} fehlt: {skips}"
+        assert not (proj / ".claude" / "herdr_auto_clear.log").exists(), \
+            f"{label}: Skip-Log trotz Stilllegung: {_skip_log(proj)!r}"
         time.sleep(0.8)
         assert _calls(log) == [], f"{label}: Runner gestartet: {_calls(log)}"
         assert _skip_log(base_proj) == "", f"{label}: Log ausserhalb Herdr"

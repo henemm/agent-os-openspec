@@ -1,6 +1,11 @@
 """Kette beendet den Turn an Phasengrenzen bei aktivem Auto-/clear (Issue #489).
 
 Spec: docs/specs/fix-489-kette-auto-clear.md (AC-1 bis AC-3).
+
+Abgeloest durch #662 (docs/specs/feat-662-kette-flach.md): Auto-/clear ist
+stillgelegt. `workflow.py autoclear` sagt immer `AUTO_CLEAR=off` (Kompatibilitaet
+fuer gecachte Befehlstexte, faellt mit #663), die Befehle 10 bis 50 pruefen es nicht
+mehr und setzen die Kette im Auto-Modus selbst fort.
 """
 
 import os
@@ -49,10 +54,8 @@ def _run(tmp_path: Path, herdr: bool, switch: "str | None"):
 
 
 def test_autoclear_cli(tmp_path):
-    res = _run(tmp_path, True, "1")
-    assert res.returncode == 0, res.stderr
-    assert res.stdout.strip() == "AUTO_CLEAR=on", res.stdout
-    for herdr, switch in [(False, "1"), (True, None), (True, "0")]:
+    # #662: auch Herdr-Pane + Env-Schalter ergibt off (frueher on)
+    for herdr, switch in [(True, "1"), (False, "1"), (True, None), (True, "0")]:
         res = _run(tmp_path, herdr, switch)
         assert res.returncode == 0, res.stderr
         assert res.stdout.strip() == "AUTO_CLEAR=off", (herdr, switch, res.stdout)
@@ -64,15 +67,14 @@ def _texts(name: str):
 
 
 @pytest.mark.parametrize("name", CHAIN)
-def test_chain_commands_check_autoclear(name):
+def test_chain_commands_without_autoclear(name):
+    """#662 ersetzt test_chain_commands_check_autoclear: keine `autoclear`-Pruefung mehr;
+    der Halt an der Kontext-Schwelle (`NICHT selbst`, ❗Du-Zeile) bleibt."""
     for path in _texts(name):
         text = path.read_text(encoding="utf-8")
-        # 30-write-spec hat zwei Selbstaufruf-Stellen (Auto-Freigabe, After Approval)
-        expected = 2 if name == "30-write-spec" else 1
         # Quelle: `workflow.py autoclear`; generierte Skills schreiben `$WF autoclear`
-        calls = len(re.findall(r"(?:workflow\.py|\$WF) autoclear", text))
-        assert calls >= expected, path
-        assert text.count("AUTO_CLEAR=on") >= expected, path
+        assert not re.findall(r"(?:workflow\.py|\$WF) autoclear", text), path
+        assert "AUTO_CLEAR" not in text, path
         assert "NICHT selbst" in text, path
         assert "❗Du-Zeile" in text, path
 

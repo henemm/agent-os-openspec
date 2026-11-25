@@ -584,7 +584,8 @@ def test_manual_taken_boundary_and_recheck_unchanged(tmp_path):
     assert "manuell" in _runner_log(proj), _runner_log(proj)
 
     # (b) Vermerk bereits von anderem Runner genommen (#597, ersetzt den Once-Lock):
-    #     kein Vermerk im State -> footer_gate spawnt keinen Runner
+    #     kein Vermerk im State -> footer_gate spawnt keinen Runner (#662: und schreibt
+    #     kein Skip-Log mehr)
     root = tmp_path / "taken"
     root.mkdir()
     proj = _project(root)
@@ -598,7 +599,7 @@ def test_manual_taken_boundary_and_recheck_unchanged(tmp_path):
     assert res.returncode == 0, res.stderr
     time.sleep(0.8)
     assert _calls(log) == [], f"Runner ohne Vermerk gespawnt: {_calls(log)}"
-    assert "skip: keine Grenze vermerkt" in _runner_log(proj), _runner_log(proj)
+    assert _runner_log(proj) == "", _runner_log(proj)
 
     # (c) Phase wechselt in der Grace-Zeit: _recheck vor /clear, nichts getippt
     proj, log, env, root = _case(tmp_path, "recheck-before")
@@ -1064,18 +1065,17 @@ def test_footer_gate_writes_stop_marker_on_all_paths(tmp_path):
             (base.returncode, base.stdout, base.stderr), label
         assert _signals(proj).read_text() == "keine Verzeichnis"
 
-    # since nach dem Stop-Marker: der eigene Stop bricht den gespawnten Runner nicht ab
+    # #662: mit Grenz-Vermerk schreibt der Stop-Hook weiter den Stop-Marker, startet
+    # aber keinen Runner mehr (frueher: Runner gespawnt, `since` nach dem Marker)
     root, proj, log, env = _footer_case(tmp_path, "f-spawn", boundary=True)
     before = time.time()
     res = _run_footer(env, root, proj, _footer_message())
     after = time.time()
     assert res.returncode == 0, res.stderr
     _assert_stop_marker(proj, before, after, "f-spawn")
-    assert _wait_for(lambda: ("OK" in _runner_log(proj) or "ABBRUCH" in _runner_log(proj)), 30), \
-        f"Runner nicht gelaufen: {_runner_log(proj)!r}"
-    assert "OK" in _runner_log(proj), \
-        f"eigener Stop brach den Runner ab (since vor dem Stop-Marker?): {_runner_log(proj)!r}"
-    assert _typing(_calls(log)) == CLEAR + FOLLOW, _calls(log)
+    time.sleep(1.0)
+    assert _calls(log) == [], f"Stop-Hook startete einen Runner: {_calls(log)}"
+    assert _runner_log(proj) == "", _runner_log(proj)
 
 
 # --- AC-21 ------------------------------------------------------------------

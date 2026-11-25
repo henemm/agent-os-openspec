@@ -47,7 +47,6 @@ from test_herdr_auto_clear_467 import (  # noqa: E402
     _prompts,
 )
 
-WORKFLOW_PY = HOOKS_DIR / "workflow.py"
 PANE = "pane-499"
 WF = "fix-999-befehlsform"
 PHASE = "phase2_analyse"
@@ -167,15 +166,6 @@ def _run_hook(proj: Path, env: dict, message: str):
     return subprocess.run([sys.executable, str(FOOTER_GATE)], input=json.dumps(payload),
                           capture_output=True, text=True, env=env, cwd=str(proj),
                           timeout=30)
-
-
-def _wait_for(predicate, timeout: float = 20.0) -> bool:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if predicate():
-            return True
-        time.sleep(0.1)
-    return predicate()
 
 
 def _alias_paths(proj: Path) -> dict:
@@ -315,20 +305,18 @@ def test_form_check_error_falls_back_to_plugin_form(tmp_path):
 
 def test_state_and_log_keep_short_form(tmp_path):
     """AC-4 (#499); #597 (Spec fix-597, Affected Files): statt des Once-Lock-Schluessels
-    gilt: keine herdr_auto_clear_state.json, Grenze nach `OK` verbraucht."""
+    gilt: keine herdr_auto_clear_state.json, Grenze nach `OK` verbraucht.
+    #662: weder `workflow.py autoclear` noch der Stop-Hook starten den Runner; er laeuft
+    hier direkt (mit Ankuendigung) gegen den Kurzform-Vermerk aus `_case`."""
     proj, log, env, _ = _case(tmp_path, "shortkeys")
-    res = subprocess.run([sys.executable, str(WORKFLOW_PY), "autoclear"],
-                         capture_output=True, text=True, env=env, cwd=str(proj),
-                         timeout=30)
+    argv = [sys.executable, str(BRIDGE), "auto-clear",
+            "--pane", PANE, "--workflow", WF, "--phase", PHASE, "--command", SHORT,
+            "--grace", "0", "--settle", "0", "--idle-timeout", "5", "--announce", "1",
+            "--boundary-at", BOUNDARY_AT]
+    res = subprocess.run(argv, capture_output=True, text=True, env=env, cwd=str(proj),
+                         timeout=60)
     assert res.returncode == 0, res.stderr
-    state = json.loads((proj / ".claude" / "workflows" / f"{WF}.json").read_text())
-    boundary = state.get("auto_clear_boundary")
-    assert isinstance(boundary, dict), state
-    assert boundary.get("command") == SHORT, boundary
-
-    res = _run_hook(proj, env, _message(_du(SHORT)))
-    assert res.returncode == 0, res.stderr
-    assert _wait_for(lambda: ": OK" in _ac_log(proj) or "ABBRUCH" in _ac_log(proj)), (
+    assert ": OK" in _ac_log(proj) or "ABBRUCH" in _ac_log(proj), (
         f"Runner endete nicht; Log: {_ac_log(proj)!r}; Calls: {_calls(log)}")
     # getippter Text: Plugin-Form (kein Alias im Projekt/Home)
     assert _texts(log) == ["/clear", PLUGIN], (_texts(log), _ac_log(proj))
@@ -351,7 +339,7 @@ def test_99_reset_is_never_typed_automatically(tmp_path):
     fields = {"no_build_reason": "PO: nichts bauen",
               "auto_clear_boundary": {"phase": PHASE, "command": RESET,
                                       "at": datetime.now().isoformat()}}
-    # (a) Stop-Hook: kein Spawn, Skip-Grund im Log
+    # (a) Stop-Hook: kein Spawn, kein Skip-Log (#662: maybe_auto_clear kehrt sofort zurueck)
     proj, log, env, _ = _case(tmp_path, "hook", **fields)
     sys.path.insert(0, str(HOOKS_DIR))
     import workflow  # noqa: PLC0415
@@ -361,7 +349,7 @@ def test_99_reset_is_never_typed_automatically(tmp_path):
     assert res.returncode == 0, res.stderr
     time.sleep(1.5)
     assert _calls(log) == [], f"Stub unerwartet aufgerufen: {_calls(log)}"
-    assert "skip: Workflow-Abschluss bleibt manuell" in _ac_log(proj), _ac_log(proj)
+    assert _ac_log(proj) == "", _ac_log(proj)
 
     # (b) Runner direkt (defensiv): weder /clear noch /99-reset
     proj, log, env, _ = _case(tmp_path, "runner", no_build_reason="PO: nichts bauen")

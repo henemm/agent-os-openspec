@@ -630,8 +630,9 @@ def test_without_autark_queue_behaviour_unchanged(tmp_path):
             _write_auftrag(proj, auftrag[0], autark=auftrag[1])
         res = _run_autoclear(proj, env)
         assert res.returncode == 0, (label, res.stderr)
-        assert res.stdout.strip() == "AUTO_CLEAR=on", (label, res.stdout)
-        assert isinstance(_autoclear_state(proj).get("auto_clear_boundary"), dict), label
+        # #662: Auto-/clear stillgelegt -> immer off, kein Vermerk (frueher on + Vermerk)
+        assert res.stdout.strip() == "AUTO_CLEAR=off", (label, res.stdout)
+        assert "auto_clear_boundary" not in _autoclear_state(proj), label
 
 
 # --- AC-7 -------------------------------------------------------------------
@@ -751,12 +752,12 @@ def test_kill_switch_disables_everything(tmp_path):
     assert _context_lines(root) == ["CONTEXT_TOKENS=122040", "CONTEXT_CUT=on",
                                     "CONTEXT_THRESHOLD=100000", "CONTEXT_STOP=on"]
 
-    # autoclear: on wie ohne Auftrag
+    # autoclear: wie ohne Auftrag (#662: stillgelegt, also off)
     proj, env = _autoclear_case(tmp_path / "ac", extra_config=KILL_CFG)
     _write_auftrag(proj, queue_items, autark=True)
     res = _run_autoclear(proj, env)
     assert res.returncode == 0, res.stderr
-    assert res.stdout.strip() == "AUTO_CLEAR=on", res.stdout
+    assert res.stdout.strip() == "AUTO_CLEAR=off", res.stdout
 
     # status_note und Banner: kein Auftragssatz
     data = _data(phase="phase7_validate")
