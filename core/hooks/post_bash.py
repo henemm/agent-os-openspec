@@ -19,7 +19,8 @@ Exit Codes: 0 always (never blocks)
 from hook_utils import setup_path, find_project_root, get_tool_result, get_active_workflow_name, framework_disabled, strip_ansi, read_state_json, UnsafeStateError
 from hook_utils import (context_budget_settings, context_tokens_from_transcript,
                         record_context_usage, context_bucket, context_cut_note,
-                        effective_context_threshold, auftrag_autark_open)
+                        effective_context_threshold, auftrag_autark_open,
+                        context_stop_applies)
 setup_path()
 
 import json
@@ -175,8 +176,13 @@ def _track_context(payload: dict) -> None:
         bucket = context_bucket(tokens, threshold)
         if bucket > last_bucket:
             record_context_usage(str(session_id), tokens, _root, announced_bucket=bucket)
+            try:
+                stop = context_stop_applies(_root)  # #658
+            except Exception:
+                stop = True
             note = context_cut_note(tokens, threshold,
-                                    autark=auftrag_autark_open(_root))  # #551
+                                    autark=auftrag_autark_open(_root),  # #551
+                                    stop=stop)
             print(json.dumps({"hookSpecificOutput": {
                 "hookEventName": "PostToolUse",
                 "additionalContext": note,

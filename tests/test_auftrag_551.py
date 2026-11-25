@@ -175,7 +175,8 @@ def _ctx_project(root: Path, config: str = CONTEXT_CFG) -> Path:
 
 
 def _ctx_run(root: Path, script: str, *args: str, stdin: "str | None" = None, **extra):
-    env = _env(**extra)
+    # #658: Autonomie explizit (Cloud setzt OPENSPEC_AUTONOMY=auto); _env entfernt HERDR_*
+    env = _env(**{"OPENSPEC_AUTONOMY": "manual", **extra})
     return subprocess.run([sys.executable, str(root / ".claude" / "hooks" / script), *args],
                           cwd=root, env=env, capture_output=True, text=True,
                           input=stdin, timeout=60)
@@ -589,7 +590,8 @@ def test_autark_keeps_chain_going(tmp_path):
     assert "CONTEXT_TOKENS=122040" in lines, lines
     assert "CONTEXT_CUT=off" in lines, lines
     assert "CONTEXT_REASON=AUTARK" in lines, lines
-    assert "CONTEXT_CUT=on" not in lines and len(lines) == 3, lines
+    assert "CONTEXT_CUT=on" not in lines and len(lines) == 4, lines
+    assert lines[-1] == "CONTEXT_STOP=off", lines  # #658
 
     # autoclear im Herdr-Pane mit Auto-/clear: off, kein Grenz-Vermerk
     proj, env = _autoclear_case(tmp_path / "ac")
@@ -621,7 +623,7 @@ def test_without_autark_queue_behaviour_unchanged(tmp_path):
         assert "beende den Turn" in hint, (label, hint)
         lines = _context_lines(root)
         assert lines == ["CONTEXT_TOKENS=122040", "CONTEXT_CUT=on",
-                         "CONTEXT_THRESHOLD=100000"], (label, lines)
+                         "CONTEXT_THRESHOLD=100000", "CONTEXT_STOP=on"], (label, lines)
 
         proj, env = _autoclear_case(tmp_path / f"ac-{label}")
         if auftrag is not None:
@@ -747,7 +749,7 @@ def test_kill_switch_disables_everything(tmp_path):
     hint = _post_bash_note(root)
     assert "beende den Turn" in hint, hint
     assert _context_lines(root) == ["CONTEXT_TOKENS=122040", "CONTEXT_CUT=on",
-                                    "CONTEXT_THRESHOLD=100000"]
+                                    "CONTEXT_THRESHOLD=100000", "CONTEXT_STOP=on"]
 
     # autoclear: on wie ohne Auftrag
     proj, env = _autoclear_case(tmp_path / "ac", extra_config=KILL_CFG)

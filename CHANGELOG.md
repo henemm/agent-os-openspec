@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.22.1] - 2026-11-25
+
+Im Auto-Modus hält die Phasenkette an der Kontext-Schwelle nur noch an, wenn `/clear` auch tatsächlich automatisch kommt (Herdr-Auto-/clear); Cloud-Sitzungen ohne Herdr laufen weiter, statt auf einen `/clear` des PO zu warten (#658).
+
+### Fixed
+
+- **#658 (Kontext-Halt nur dort, wo `/clear` automatisch kommt):** `CONTEXT_CUT=on` hielt im Auto-Modus (`OPENSPEC_AUTONOMY=auto`) die Kette auch in Sitzungen ohne Herdr an und verlangte vom PO `/clear` plus Folgebefehl. Messfakt und Entscheidung sind jetzt getrennt: `workflow.py context` gibt als letzte Zeile immer `CONTEXT_STOP=on|off` aus, `on` genau dann, wenn `CONTEXT_CUT=on` und `hook_utils.context_stop_applies()` gilt (Modus nicht `auto` oder `herdr_bridge.auto_clear_active()`: Herdr-Pane und Auto-/clear an). Bei CUT=on ohne Halt steht davor `CONTEXT_REASON=AUTO_NO_CLEAR`. Ein Fehler im Helfer ergibt STOP = CUT (bisheriges Verhalten); ein offener autarker Auftrag (#551) bleibt bei `CONTEXT_CUT=off`, `CONTEXT_REASON=AUTARK`, `CONTEXT_STOP=off`.
+- Die Befehlstexte `/10-context` bis `/50-implement` lesen `CONTEXT_STOP=on` als Halt-Signal (Folge-Skill nicht selbst aufrufen, Checkpoint und ❗Du-Zeile); bei `CONTEXT_STOP=off` setzen sie die Kette selbst fort.
+- Der Kontext-Hinweis von `post_bash.py` wählt den Wortlaut nach derselben Regel: im Auto-Modus ohne Herdr-Auto-/clear „weiterarbeiten“ samt Teilagenten und automatischer Komprimierung, sonst der Halt-Wortlaut mit Verweis auf `CONTEXT_STOP=on` (`context_cut_note(..., stop=)`).
+- `workflow.py autoclear` nutzt den neuen Helfer `herdr_bridge.auto_clear_active()`; Ausgabe unverändert. `CONTEXT_CUT` und die #598-Spiegelbedingung des Stop-Hooks bleiben unverändert.
+
+### Known Limitations
+
+- Ohne Herdr läuft die Kette im Auto-Modus bei großem Kontext weiter; Ausgleich sind Teilagenten und die automatische Komprimierung von Claude Code. Grundsätzlich löst das Epic #649.
+- Ein alter Befehlstext, der noch `CONTEXT_CUT` liest, verhält sich wie bisher; Plugin und Befehlstexte kommen gemeinsam aus einer Version.
+
+Migration: keine. Tests: `tests/test_context_stop_658.py`; `tests/test_kontext_haushalt.py`, `tests/test_kontext_grundlast_557.py`, `tests/test_auftrag_551.py` um `CONTEXT_STOP` ergänzt und mit expliziter Autonomie.
+
 ## [4.22.0] - 2026-11-25
 
 Die Plan-Seitenleiste zeigt unter der Freigabe- bzw. Ende-Zeile grob, wie lange es noch dauert; die Chat-Ausgabe bleibt unverändert (#655).

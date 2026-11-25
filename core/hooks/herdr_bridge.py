@@ -427,6 +427,18 @@ def auto_clear_enabled() -> bool:
     return _auto_clear_config() is not None
 
 
+def auto_clear_active() -> bool:
+    """Fuehrt Herdr hier das Auto-`/clear` aus? Herdr-Pane und Auto-/clear an (#658).
+
+    Eine Quelle fuer `workflow.py autoclear` und `hook_utils.context_stop_applies`.
+    Fail-open: jeder Fehler ergibt False.
+    """
+    try:
+        return bool(_pane()) and auto_clear_enabled()
+    except Exception:
+        return False
+
+
 def _footer_parts():
     """DU_LINE_RE und _footer_commands aus footer_gate (eine Quelle, Lazy-Import)."""
     _hooks_on_path()
