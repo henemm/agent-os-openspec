@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.22.0] - 2026-11-25
+
+Die Plan-Seitenleiste zeigt unter der Freigabe- bzw. Ende-Zeile grob, wie lange es noch dauert; die Chat-Ausgabe bleibt unverändert (#655).
+
+### Added
+
+- **Countdown-Zeile in der Plan-Seitenleiste (#655):** neue pure Hilfsfunktion `_countdown_text` in `core/hooks/workflow.py`; `_plan_time_lines` setzt ihre Zeile direkt unter die Mittelzeile, die eingerückte Basiszeile bleibt die letzte Zeile des Zeit-Blocks.
+- Nach der Freigabe eine Spanne aus `end_low`/`end_high` minus `now`, nach außen auf 5 Minuten gerundet: „Noch  ca. 30–75 Min“, bei gleichen Werten eine Zahl („Noch  ca. 45 Min“). Ab einer aufgerundeten Obergrenze von 120 Minuten in halben Stunden mit deutschem Komma („Noch  ca. 1,5–2,5 h“, „Noch  ca. 2 h“). Ist die Untergrenze erreicht, „Noch  bis ca. 45 Min“ bzw. „bis ca. 2 h“.
+- Vor der Freigabe „Noch  ca. N Min bis Freigabe“ (kaufmännisch auf 5 Minuten gerundet, mindestens 5).
+- Keine Zeile bei „Freigabe  wartet auf dich“, „Ende  offen“, ohne Vergleichsdaten, im Ist-Block (auch während der Auslieferung), bei abgebrochenem Workflow, wenn die Freigabe erreicht oder die Obergrenze überschritten ist. Die Zahl leitet sich aus den angezeigten Zeitpunkten ab und widerspricht der Uhrzeit-Zeile daher nie; die Anzeigezone (#637) ändert sie nicht. Fail-open im bestehenden `try/except`.
+- `workflow.py estimate` (Chat-Ausgabe, `LINE=`) bleibt Zeichen für Zeichen gleich.
+
+### Known Limitations
+
+- Der Countdown springt: `end_low`/`end_high` stehen auf Viertelstunden, die Zahl läuft zwischen den Sprüngen der Ende-Spanne herunter und springt, wenn die Schätzung neu rechnet. Gewollt: ein grober Wert, kein Sekundenzähler.
+- Schmaler Pane (#643): unterhalb von 34 Zeichen Breite bricht die Zeile um (z. B. „Noch  ca. 45 Min bis“ / „  Freigabe“); die Zahl bleibt vollständig.
+- Nach überschrittener Schätzung (Obergrenze ≤ jetzt) zeigt der Plan keine Zeile statt einer negativen Zahl; die Ende-Zeile bleibt stehen.
+- Keine Sekunden und keine Prozentzahl; die Zuverlässigkeit steht weiter in der Basiszeile.
+- Wirkt in Konsumentenprojekten erst nach dem Plugin-Update.
+
+Migration: keine. Tests: `tests/test_countdown_655.py`; `tests/test_zeitschaetzung_620.py` um die Countdown-Zeile ergänzt.
+
 ## [4.21.0] - 2026-11-24
 
 Jede Sitzung trägt sich beim Workflow-Start als Kommentar am Issue ein (Ort, Name, Beginn, Phase, Erreichbarkeit); ein zweiter Start auf demselben Issue bricht mit Klartext ab, auch über Rechner und Claude-Konten hinweg (#461).

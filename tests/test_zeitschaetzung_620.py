@@ -467,13 +467,15 @@ def test_ac5_render_with_estimate_block_after_steps():
     out = wf.render_plan(data, estimate=_est())
     lines = out.splitlines()
     # #642: keine Dauer-Zeile, Basis in eigener, eingerückter Zeile
-    block = ["Start  12:30", "Ende  ca. 15:40–17:00", "  aus 7 Workflows"]
+    # #655: Countdown-Zeile unter der Ende-Zeile (14:00 -> L 100, H 180 min)
+    block = ["Start  12:30", "Ende  ca. 15:40–17:00", "Noch  ca. 1,5–3 h",
+             "  aus 7 Workflows"]
     assert _time_lines(out) == block[:2], lines
     i = lines.index(block[0])
-    assert lines[i:i + 3] == block
+    assert lines[i:i + 4] == block
     ship = next(k for k, ln in enumerate(lines) if "Ausliefern" in ln)
     assert ship < i, lines
-    assert i + 2 < len(lines) - 1, lines  # vor der Schlusszeile
+    assert i + 3 < len(lines) - 1, lines  # vor der Schlusszeile
     assert lines[-1] == plain.splitlines()[-1]
     # Sonst unverändert (abgesehen von Leerzeilen)
     rest = [ln for ln in lines if ln not in block and ln]
