@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.25.4] - 2026-11-25
+
+### Fixed — `workflow.py context` misst frische Sitzungen selbst (#675)
+- Fehlt die Messung von `post_bash.py` für die laufende Sitzung, liest `context` das eigene Transcript (`<CLAUDE_CONFIG_DIR oder ~/.claude>/projects/*/<sitzung>.jsonl`, gleiche Rechnung) und meldet eine Zahl statt `unknown`.
+- Reihenfolge: eigene Messdatei, eigenes Transcript, dann wie bisher die jüngste Messung. Neuer Helfer `hook_utils.session_transcript_path`. Kein Gate-Verhalten geändert; `context` schreibt nichts.
+
 ## [4.25.3] - 2026-11-25
 
 ### Changed — CLAUDE.md verschlankt (#580)
