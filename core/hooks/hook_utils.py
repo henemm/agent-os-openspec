@@ -2701,6 +2701,27 @@ def context_tokens_from_transcript(path) -> "int | None":
     return None
 
 
+def session_transcript_path(session_id=None) -> "Path | None":
+    """Transcript der Sitzung finden (#675): `<CLAUDE_CONFIG_DIR oder ~/.claude>/
+    projects/*/<sid>.jsonl`, bei mehreren das juengste nach mtime.
+
+    Sitzungs-Id aus dem Argument, sonst `CLAUDE_CODE_SESSION_ID`; ungueltige Id
+    (nicht `[A-Za-z0-9_.-]{1,128}`, `.`/`..`) oder kein Treffer ergibt None. Wirft nie.
+    """
+    try:
+        sid = str(session_id or os.environ.get("CLAUDE_CODE_SESSION_ID", "") or "")
+        if sid in (".", "..") or not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", sid):
+            return None
+        config = os.environ.get("CLAUDE_CONFIG_DIR", "")
+        base = Path(config) if config else Path.home() / ".claude"
+        candidates = [p for p in (base / "projects").glob(f"*/{sid}.jsonl") if p.is_file()]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda p: p.stat().st_mtime)
+    except Exception:
+        return None
+
+
 def context_usage_dir(root=None) -> Path:
     base = Path(root) if root is not None else find_project_root()
     return base / ".claude" / CONTEXT_USAGE_DIRNAME
