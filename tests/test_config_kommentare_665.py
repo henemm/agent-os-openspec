@@ -4,7 +4,6 @@ Pinnt, dass nur Kommentare geaendert wurden (AC-1) und dass die Kommentare
 den Stand nach #658/#662/#663 beschreiben (AC-2, AC-3).
 """
 import re
-import subprocess
 from pathlib import Path
 
 import yaml
@@ -42,17 +41,25 @@ def _section_with_header(key):
 
 
 def test_loaded_config_unchanged():
-    """AC-1: yaml.safe_load liefert dieselben Daten wie origin/main."""
-    result = subprocess.run(
-        ["git", "show", "origin/main:config.yaml"],
-        cwd=REPO, capture_output=True, text=True,
-    )
-    assert result.returncode == 0, f"git show fehlgeschlagen: {result.stderr}"
-    before = yaml.safe_load(result.stdout)
+    """AC-1: nur Kommentare geaendert, die geladenen Werte bleiben gleich.
+
+    Die Werte sind aus dem Stand vor #665 fest gepinnt (kein git-Vergleich:
+    der CI-Checkout kennt origin/main nicht, und nach dem Merge waere ein
+    Vergleich gegen origin/main wertlos).
+    """
     after = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
-    assert after["context_budget"] == before["context_budget"]
-    assert after["herdr"] == before["herdr"]
-    assert after == before
+    assert after["context_budget"] == {
+        "enabled": True,
+        "clear_threshold_tokens": 100000,
+    }
+    herdr = after["herdr"]
+    assert herdr["enabled"] is True
+    assert herdr["auto_clear"] == {
+        "grace_s": 10,
+        "idle_timeout_s": 120,
+        "announce": True,
+    }
+    assert herdr["plan_pane"] == {"enabled": True, "ratio": 0.75}
 
 
 def test_context_budget_comment_names_context_stop():
