@@ -37,6 +37,11 @@ Workflow).
 Workspace auf (`pane list --workspace $HERDR_WORKSPACE_ID`, `_pp_sweep`) und
 fasst nie ein Pane an, dessen Owner ein anderes lebendes Claude-Pane ist. Der
 SessionEnd-Hook `herdr_bridge.py plan-pane-close` schliesst das eigene Pane.
+
+#667: `start_session` (aufgerufen von `workflow.py handoff --start`) startet das
+naechste Issue eines autarken Auftrags in einem NEUEN Pane (`pane split`, dann
+`pane run <neu> "exec claude <Startauftrag>"`). Es startet nur einen Prozess und
+tippt nie in ein laufendes Claude-Pane.
 """
 
 import argparse
@@ -834,6 +839,47 @@ def _pp_spawn_watcher(binary: str, args, active: str, version: str) -> None:
     _pp_set_entry(_pp_store() / PP_ID_FILE, args.pane, {"pane_id": new, "cwd": args.cwd})
     ok = run is not None and run.returncode == 0
     _pp_log(f"plan-pane: {new} geoeffnet, pane run {'OK' if ok else 'fehlgeschlagen'}")
+
+
+# --- Frische Sitzung je Auftrags-Issue (#667) --------------------------------
+
+def start_session(prompt: str, cwd) -> "tuple[bool, str]":
+    """Neue Claude-Sitzung rechts neben dem eigenen Pane starten (#667). Wirft nie.
+
+    `pane split <eigenes Pane> --direction right --cwd <cwd> --no-focus`, dann
+    `pane run <neues Pane> "exec claude <prompt>"`. Nie das eigene Pane als Ziel;
+    das alte Pane bleibt stehen. Rueckgabe (ok, Grund); eine Log-Zeile.
+    """
+    try:
+        import shlex
+        pane, binary = _pane(), _binary()
+        if pane is None or binary is None:
+            return _ss_done(False, "kein Herdr-Pane")
+        res = _pp_call(binary, ["pane", "split", pane, "--direction", "right",
+                                "--cwd", str(cwd), "--no-focus"], 5)
+        if res is None or res.returncode != 0:
+            code = "Zeitlimit/Fehler" if res is None else f"Exit {res.returncode}"
+            return _ss_done(False, f"pane split {code}")
+        try:
+            new = json.loads(res.stdout)["result"]["pane"]["pane_id"]
+        except Exception:
+            new = None
+        if not isinstance(new, str) or not new:
+            return _ss_done(False, "pane split ohne pane_id")
+        if new == pane:
+            return _ss_done(False, "pane split lieferte das eigene Pane")
+        run = _pp_call(binary, ["pane", "run", new, f"exec claude {shlex.quote(prompt)}"], 5)
+        if run is None or run.returncode != 0:
+            code = "Zeitlimit/Fehler" if run is None else f"Exit {run.returncode}"
+            return _ss_done(False, f"pane run {code}")
+        return _ss_done(True, f"Sitzung in {new} gestartet")
+    except Exception as exc:
+        return _ss_done(False, f"Fehler {type(exc).__name__}")
+
+
+def _ss_done(ok: bool, reason: str) -> "tuple[bool, str]":
+    _pp_log(f"handoff: {'OK' if ok else 'ABBRUCH'}: {reason}")
+    return ok, reason
 
 
 def _pp_active_name() -> "str | None":

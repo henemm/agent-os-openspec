@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.25.0] - 2026-11-25
+
+Ein autarker Auftrag über mehrere Issues startet jedes nächste Issue in einer frischen Sitzung, statt den Kontext der Hauptsitzung weiter wachsen zu lassen (Epic #649, #667).
+
+### Added
+
+- **#667 (`workflow.py handoff [--start] [--mark cloud|herdr]`):** wählt nach einem ausgelieferten Issue den Weg für das nächste Issue eines autarken Auftrags im Auto-Modus: `cloud` (`CLAUDE_CODE_REMOTE=true`, dazu `REPO_URL=`), `herdr` (Herdr-Pane und `claude` im PATH), sonst `inline` (bisheriger Selbstaufruf) bzw. `none`. Gibt `NEXT=` und den Startauftrag zwischen `PROMPT_BEGIN`/`PROMPT_END` aus (00-intake für #M, `queue add` mit den offenen Nummern samt `--autark`/`--note`/`--spur`, Haltregel nur an PO-Punkten, Messung `CONTEXT_TOKENS`). `--start` startet im Herdr-Weg die neue Sitzung, `--mark` vermerkt den Start im Auftragsfeld `handoff`; ein zweiter Start derselben Nummer meldet `STARTED=already`. Exit 0 (fail-open), nur ungültige Argumente enden mit Exit 1.
+- `herdr_bridge.start_session(prompt, cwd)`: `pane split` nach rechts und `pane run <neues Pane> "exec claude <Startauftrag>"`; nie das eigene Pane, tippt nie in ein laufendes Claude-Pane, fail-open mit Log-Zeile in `.claude/herdr_plan_pane.log`.
+- `hook_utils._normalize_auftrag` behält das Feld `handoff` nur gültig (Nummer > 0, Weg `cloud`/`herdr`).
+
+### Changed
+
+- `/60-validate` und `/70-deploy`, Absatz „Kette bei offenem Auftrag“: bei `ENDSTATE=waiting` aus dem Auftrag zuerst `workflow.py handoff`; Cloud über das Werkzeug `create_session` und danach `handoff --mark cloud`, Herdr über `handoff --start`, sonst wie bisher `/00-intake #M`. `/80-workflow` dokumentiert den Befehl.
+
+### Known Limitations
+
+- Der lokale Durchlauf mit echtem Herdr ist nur gegen ein Fake-Binary belegt (offen am Epic #649); das alte Pane bleibt stehen.
+
+Tests: `tests/test_handoff_667.py`.
+
 ## [4.24.0] - 2026-11-25
 
 Das seit 4.23.0 stillgelegte Auto-/clear per Herdr ist jetzt vollständig entfernt; Herdr-Seitenleiste und Plan-Pane arbeiten unverändert (Epic #649, Schnitt 4: #663).

@@ -74,3 +74,6 @@ docs/artifacts/feat-285/*
 .claude/issue_titles.json.lock
 .claude/issue_titles.log
 .claude/herdr_*
+# Issue-Kurzfassung fuer den Plan (`workflow.py issue-brief`) — Laufzeit-Cache.
+.claude/issue_briefs.json
+.claude/issue_briefs.json.lock
