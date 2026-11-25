@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.25.1] - 2026-11-25
+
+### Fixed
+
+- `config.yaml`: Kommentare auf den Stand nach #658/#662/#663 gebracht (#665). Abschnitt `context_budget` nennt `CONTEXT_STOP=on` (Modus manual) als Haltesignal statt `CONTEXT_CUT=on`; `herdr.auto_clear` und `OPENSPEC_HERDR_AUTO_CLEAR` sind als wirkungslos markiert. Die geladenen Werte bleiben unverändert (Test `tests/test_config_kommentare_665.py`).
+
 ## [4.25.0] - 2026-11-25
 
 Ein autarker Auftrag über mehrere Issues startet jedes nächste Issue in einer frischen Sitzung, statt den Kontext der Hauptsitzung weiter wachsen zu lassen (Epic #649, #667).

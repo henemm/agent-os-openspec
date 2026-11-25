@@ -331,9 +331,11 @@ session_banner:
 # post_bash.py misst die Kontextgroesse aus dem Transcript und weist Claude ab
 # der Schwelle (einmal je Stufe: Schwelle, danach je 50k) darauf hin, den
 # laufenden Block abzuschliessen und den Turn mit Checkpoint + Du-Zeile zu
-# beenden. `workflow.py context` meldet dann CONTEXT_CUT=on, und die Phasen-
-# Befehle rufen den Folge-Skill im Auto-Modus nicht mehr selbst auf — der PO
-# (oder Herdr) tippt /clear. Messung je Sitzung in .claude/context_usage/.
+# beenden. `workflow.py context` meldet dann CONTEXT_CUT=on (Messfakt).
+# Angehalten wird nur bei CONTEXT_STOP=on (Modus manual): die Phasen-Befehle
+# rufen den Folge-Skill dann nicht mehr selbst auf, der PO tippt /clear. Im
+# Auto-Modus setzt die Sitzung die Kette selbst fort; Herdr tippt nichts
+# (#658/#662/#663). Messung je Sitzung in .claude/context_usage/.
 # Auskunft, kein Gate. Nur das Literal false schaltet ab.
 context_budget:
   enabled: true
@@ -392,21 +394,15 @@ time_estimate:
 #   claude = ["$phase $step", "next: $next"]
 herdr:
   enabled: true
-  # Auto-/clear an Phasengrenzen (#467, Opt-in, nur Literal `true` schaltet an):
-  # meldet die Antwort "`/clear` ist jetzt gefahrlos" und nennt die ❗Du-Zeile den
-  # erwarteten Slash-Befehl, tippt ein detachter Runner `/clear` und danach
-  # `/<cmd> #N` in den Pane. Freigaben bleiben manuell. `herdr.enabled: false`
-  # schaltet auch dies ab. Abbrueche: .claude/herdr_auto_clear.log
-  # Zurueckgewiesene Antworten (#597): der neueste saubere Stop gewinnt; der
-  # Grenz-Vermerk wird erst unmittelbar vor dem Tippen von /clear genommen.
-  # "Claude arbeitet weiter" laesst ihn liegen, andere Abbrueche verwerfen ihn.
-  # Fuer alle Projekte (#480): "env": {"OPENSPEC_HERDR_AUTO_CLEAR": "1"} in
-  # ~/.claude/settings.json; ein Projektwert true/false hat Vorrang.
+  # `auto_clear` ist seit #663 (4.24.0) wirkungslos: kein Code liest den
+  # Schluessel oder OPENSPEC_HERDR_AUTO_CLEAR, nichts tippt mehr /clear in einen
+  # Pane. Die Werte bleiben nur stehen, weil das Streichen die wirksame
+  # Gate-Config aendert (Override-Pflicht, #622).
   auto_clear:
-    # enabled: false   # true = an, false = aus (auch gegen den benutzerweiten Schalter); weglassen = Benutzer-Schalter entscheidet
-    grace_s: 10         # Wartezeit nach dem Stop vor /clear (Sekunden); laenger als eigene Stop-Hooks laufen (#506)
-    idle_timeout_s: 120 # Hoechstwartezeit auf SessionStart(clear) nach dem /clear (Sekunden)
-    announce: true      # Vorankuendigung per `notification show`
+    # enabled: false   # wirkungslos (#663)
+    grace_s: 10         # wirkungslos (#663)
+    idle_timeout_s: 120 # wirkungslos (#663)
+    announce: true      # wirkungslos (#663)
   # Workflow-Plan rechts neben Claude (#476, Opt-out, nur Literal `false` schaltet
   # ab): `workflow.py start` oeffnet per `pane split --direction right` einen Pane
   # "Workflow", der den Plan live zeigt (✔ erledigt, ▶ laeuft, ○ offen). Manuell:
