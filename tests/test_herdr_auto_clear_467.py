@@ -2,6 +2,12 @@
 
 Spec: docs/specs/feat-467-herdr-auto-clear.md (AC-1 bis AC-17).
 
+Abgeloest durch #662 (docs/specs/feat-662-kette-flach.md): Der Stop-Hook startet
+nie mehr einen Runner. Die Hook-Pfad-Tests pruefen deshalb "nie spawnen"; die
+Runner-Tests (`test_runner_*`, Runner direkt aufgerufen) bleiben bis zum Rueckbau
+in #663 stehen. `test_second_identical_stop_does_not_double_type` ist entfallen,
+ersetzt durch tests/test_auto_chain_flat_662.py::test_stop_hook_never_spawns_runner.
+
 Das verzweigende Stub-Binary (bash) protokolliert jeden Aufruf NUL-getrennt in
 STUB_LOG und verzweigt nach Unterbefehl:
 - `agent wait`: antwortet wie Herdr beim PO (#506) mit Status `blocked` — der
@@ -283,7 +289,9 @@ def _notifications(log: Path) -> list:
 
 # --- AC-1 -------------------------------------------------------------------
 
-def test_hook_spawns_runner_and_returns_immediately(tmp_path):
+def test_hook_never_spawns_runner_and_returns_immediately(tmp_path):
+    """#662: Grenz-Vermerk, Opt-in und Herdr-Pane starten keinen Runner mehr;
+    das Gate-Verhalten (Exit, Ausgabe, Dauer) bleibt wie ohne Herdr."""
     proj, log, stub, env = _hook_case(tmp_path, auto_clear_boundary=BOUNDARY)
     env["STUB_SLEEP"] = "6"  # haengendes Binary
     msg = _message(POSITIVE)
@@ -294,9 +302,7 @@ def test_hook_spawns_runner_and_returns_immediately(tmp_path):
     base = _baseline(tmp_path, msg)
     assert res.returncode == 0 == base.returncode, res.stderr
     assert res.stdout == base.stdout
-    calls = _wait_calls(log, 1)
-    assert calls, "Kein Runner gespawnt (Stub nie aufgerufen)"
-    assert calls[0][:2] == ["notification", "show"], calls[0]
+    _assert_no_calls(log)
 
 
 # --- AC-2 -------------------------------------------------------------------
@@ -362,16 +368,13 @@ def test_no_spawn_without_herdr_env(tmp_path, missing):
 
 # --- AC-6 -------------------------------------------------------------------
 
-def test_spawn_when_stop_hook_active(tmp_path):
-    """#597 (Spec fix-597 AC-3) ersetzt test_no_spawn_when_stop_hook_active: ein Folge-
-    Stop (`stop_hook_active`) mit passender Grenze und sauberer Antwort ist ein spaeteres
-    sauberes Antwortende und startet einen Runner."""
+def test_no_spawn_when_stop_hook_active(tmp_path):
+    """#662 ersetzt test_spawn_when_stop_hook_active (#597): auch ein Folge-Stop
+    (`stop_hook_active`) mit passender Grenze startet keinen Runner mehr."""
     proj, log, stub, env = _hook_case(tmp_path, auto_clear_boundary=BOUNDARY)
     res = _run_hook(proj, env, _message(POSITIVE), stop_hook_active=True)
     assert res.returncode == 0, res.stderr
-    calls = _wait_calls(log, 1)
-    assert calls, "Kein Runner beim stop_hook_active-Stop (Stub nie aufgerufen)"
-    assert calls[0][:2] == ["notification", "show"], calls[0]
+    _assert_no_calls(log)
 
 
 # --- AC-7 -------------------------------------------------------------------
@@ -421,36 +424,6 @@ def test_no_spawn_when_expected_step_is_freetext(tmp_path):
     res = _run_hook(proj, env, _message(POSITIVE, du="❗ Du: tippe `approved` (danach `/40-tdd-red`)"))
     assert res.returncode == 0, res.stderr
     _assert_no_calls(log)
-
-
-# --- AC-12 ------------------------------------------------------------------
-
-def test_second_identical_stop_does_not_double_type(tmp_path):
-    """#597 (Spec fix-597 AC-5/AC-6) ersetzt test_once_lock_blocks_duplicate_and_expires_after_10_min:
-    zwei identische Stops erzeugen hoechstens zwei Runner, getippt werden `/clear` und
-    der Folgebefehl genau einmal; kein 600-s-Once-Lock, keine herdr_auto_clear_state.json."""
-    proj, log, stub, env = _hook_case(tmp_path, auto_clear_boundary=BOUNDARY)
-    msg = _message(POSITIVE)
-    for _ in range(2):
-        res = _run_hook(proj, env, msg)
-        assert res.returncode == 0, res.stderr
-    assert _wait_calls(log, 1), "Erster Payload spawnte keinen Runner"
-
-    def ended() -> int:
-        return sum(1 for ln in _runner_log(proj).splitlines() if ": OK" in ln or "ABBRUCH" in ln)
-
-    deadline = time.monotonic() + 30
-    while time.monotonic() < deadline and (": OK" not in _runner_log(proj)
-                                           or ended() < len(_notifications(log))):
-        time.sleep(0.1)
-    assert 1 <= len(_notifications(log)) <= 2, _notifications(log)
-    assert ended() == len(_notifications(log)), _runner_log(proj)
-    follow = ["pane", "send-text", PANE, "/agent-os-openspec:50-implement #467"]
-    assert _prompts(_calls(log)) == CLEAR_TYPED + [follow, ENTER], \
-        f"Log: {_runner_log(proj)!r} Aufrufe: {_calls(log)}"
-    assert not (proj / ".claude" / "herdr_auto_clear_state.json").exists(), "Once-Lock-Datei angelegt"
-    data = json.loads((proj / ".claude" / "workflows" / f"{WF}.json").read_text())
-    assert "auto_clear_boundary" not in data, data
 
 
 # --- AC-13 ------------------------------------------------------------------

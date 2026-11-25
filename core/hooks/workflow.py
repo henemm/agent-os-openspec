@@ -2383,14 +2383,16 @@ def _boundary_timestamp() -> str:
 def _note_transition_boundary(data: dict, target: str) -> None:
     """Grenz-Vermerk beim Phasenwechsel in `data` setzen (#497); fail-open, still.
 
-    Nur fuer Grenzen aus AUTO_CLEAR_BOUNDARIES bei aktivem Auto-/clear. Speichern
-    uebernimmt der Aufrufer; `current_phase` ist hier noch die alte Phase.
+    Nur fuer Grenzen aus AUTO_CLEAR_BOUNDARIES bei aktivem Auto-/clear
+    (`herdr_bridge.auto_clear_active()`, seit #662 stillgelegt: nie ein Vermerk;
+    Rueckbau mit #663). Speichern uebernimmt der Aufrufer; `current_phase` ist
+    hier noch die alte Phase.
     """
     try:
-        if (data.get("current_phase"), target) not in AUTO_CLEAR_BOUNDARIES:
-            return
         import herdr_bridge
-        if not (herdr_bridge._pane() and herdr_bridge.auto_clear_enabled()):
+        if not herdr_bridge.auto_clear_active():
+            return
+        if (data.get("current_phase"), target) not in AUTO_CLEAR_BOUNDARIES:
             return
         command = expected_footer_command(dict(data, current_phase=target))
         if isinstance(command, str) and command.startswith("/"):
@@ -5306,27 +5308,14 @@ def cmd_auto_ship(args: list[str]) -> None:
 
 
 def cmd_autoclear(args: list[str]) -> None:
-    """Auskunft, kein Gate: genau eine Zeile `AUTO_CLEAR=on|off`, Exit immer 0 (#489).
+    """Kompatibilitaetszeile, kein Gate: genau `AUTO_CLEAR=off`, Exit immer 0.
 
-    `on` nur in einem Herdr-Pane bei aktivem Auto-/clear
-    (`herdr_bridge.auto_clear_active()`, #658). Bewusst ohne
-    aktiven Workflow, Vorbild `cmd_autonomy`. Bei `on` zusaetzlich Grenz-Vermerk
-    im aktiven Workflow (#495), ohne Einfluss auf Ausgabe/Exit. Ein offener
-    autarker Auftrag (#551) haelt die Kette nicht fuer `/clear` an: `off`.
+    Seit #662 ist das Herdr-Auto-`/clear` stillgelegt: die Zeile bleibt nur fuer
+    alte, aus dem Plugin-Cache gelieferte Befehlstexte (#489), die damit die
+    Kette selbst fortsetzen. Kein Grenz-Vermerk; Wegfall mit #663.
     """
-    state = "off"
     try:
-        import herdr_bridge
-        if herdr_bridge.auto_clear_active():
-            state = "on"
-        if state == "on" and auftrag_autark_open():
-            state = "off"
-    except Exception:
-        state = "off"
-    if state == "on":
-        _record_auto_clear_boundary()
-    try:
-        print(f"AUTO_CLEAR={state}")
+        print("AUTO_CLEAR=off")
     except Exception:
         pass
 
@@ -5473,11 +5462,11 @@ def cmd_context(args: list[str]) -> None:
     100000); die Zeile `CONTEXT_THRESHOLD=` nennt sie. Bewusst ohne aktiven
     Workflow (Vorbild `autonomy`). `CONTEXT_CUT` ist der Messfakt, `CONTEXT_STOP`
     die Entscheidung (#658): `on` genau dann, wenn CUT=on und
-    `hook_utils.context_stop_applies()` (Modus `manual` oder Herdr-Auto-/clear).
+    `hook_utils.context_stop_applies()` (Modus `manual`, #662).
     Nur bei `CONTEXT_STOP=on` rufen die Phasen-Befehle den Folge-Skill nicht mehr
     selbst auf, sondern beenden den Turn mit Checkpoint und Du-Zeile, damit
-    `/clear` den Kontext schneidet. CUT=on ohne Halt (Auto-Modus ohne
-    Herdr-Auto-/clear) meldet zusaetzlich `CONTEXT_REASON=AUTO_NO_CLEAR`. Ein
+    `/clear` den Kontext schneidet. CUT=on ohne Halt (Auto-Modus) meldet
+    zusaetzlich `CONTEXT_REASON=AUTO_NO_CLEAR`. Ein
     Fehler im Helfer ergibt STOP = CUT. Bei offenem autarkem Auftrag (#551) immer
     `CONTEXT_CUT=off` plus `CONTEXT_REASON=AUTARK` (ohne Schwellen-Zeile).
     """

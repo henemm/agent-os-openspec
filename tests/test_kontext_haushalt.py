@@ -326,6 +326,9 @@ def test_phase_commands_stop_chain_at_context_cut(name, follow):
     assert f"`{follow}` NICHT selbst aufrufen" in para
     assert f"❗Du-Zeile `/{follow} #<N>`" in para
     assert "Default 100.000 Token" in para
+    # #662: Halt nur noch im Modus manual; Herdr tippt kein `/clear` mehr
+    assert "manual" in para, para
+    assert "Herdr" not in para, para
 
 
 def test_lookup_rule_in_context_and_implement():

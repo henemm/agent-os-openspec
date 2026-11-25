@@ -4,10 +4,16 @@ Spec: docs/specs/fix-658-context-stop-auto.md (AC-1 bis AC-9).
 
 `CONTEXT_CUT` bleibt der Messfakt (Kontext >= wirksame Schwelle, #557). Neu ist die
 Entscheidung `CONTEXT_STOP=on|off` als letzte Zeile von `workflow.py context`:
-`on` genau dann, wenn CUT=on und (Modus `manual` oder Herdr-Auto-Clear aktiv).
-Im Auto-Modus ohne Herdr-Auto-Clear steht bei CUT=on zusaetzlich
-`CONTEXT_REASON=AUTO_NO_CLEAR` (nach `CONTEXT_THRESHOLD`). Entscheidungs-Helfer:
-`hook_utils.context_stop_applies()`; Fehler darin -> STOP folgt CUT.
+`on` genau dann, wenn CUT=on und Modus `manual` (#662: Herdr-Auto-/clear ist
+stillgelegt und zaehlt nicht mehr). Im Auto-Modus steht bei CUT=on zusaetzlich
+`CONTEXT_REASON=AUTO_NO_CLEAR` (nach `CONTEXT_THRESHOLD`), auch mit Herdr-Pane und
+Auto-/clear-Schalter. Entscheidungs-Helfer: `hook_utils.context_stop_applies()`;
+Fehler darin -> STOP folgt CUT.
+
+#662 (docs/specs/feat-662-kette-flach.md): `test_auto_with_herdr_auto_clear_stop_on`
+und `test_autoclear_output_unchanged` sind entfallen, ersetzt durch
+tests/test_auto_chain_flat_662.py (AC-5 bzw. AC-2); AC-7 und AC-9 der #662-Spec
+liegen hier (`test_helper_error_stop_follows_cut`, `test_post_bash_note_wording_per_variant`).
 
 Isolation: jedes Szenario in einem eigenen tmp-Projekt (Hooks nach `.claude/hooks`
 kopiert, eigenes HOME). Die Cloud-Umgebung setzt `OPENSPEC_AUTONOMY=auto`; die
@@ -175,25 +181,6 @@ def test_auto_without_herdr_stop_off_with_reason(tmp_path):
         assert lines == expected, (label, lines)
 
 
-# --- AC-2: Auto-Modus mit Herdr-Pane und Auto-Clear -> STOP on -------------------
-
-def test_auto_with_herdr_auto_clear_stop_on(tmp_path):
-    expected = ["CONTEXT_TOKENS=150000", "CONTEXT_CUT=on", "CONTEXT_THRESHOLD=100000",
-                "CONTEXT_STOP=on"]
-    cases = {
-        "cfg-clear": (HERDR_AUTO_CLEAR_ON, dict(autonomy="auto", herdr=True)),
-        "env-clear": ("herdr:\n  enabled: true\n",
-                      dict(autonomy="auto", herdr=True, auto_clear_env="1")),
-    }
-    for label, (config, kw) in cases.items():
-        root = _project(tmp_path / label, config)
-        _write_usage(root, OVER)
-        lines = _context(root, _env(root, **kw))
-        assert lines[-1] == "CONTEXT_STOP=on", (label, lines)
-        assert "CONTEXT_REASON=AUTO_NO_CLEAR" not in lines, (label, lines)
-        assert lines == expected, (label, lines)
-
-
 # --- AC-3: Modus manual -> STOP on (mit oder ohne Herdr) --------------------------
 
 def test_manual_mode_stop_on(tmp_path):
@@ -287,13 +274,22 @@ def _context_patched(root: Path, mode: str, env: dict) -> "list[str]":
 
 def test_helper_error_stop_follows_cut(tmp_path):
     # Auto-Modus ohne Herdr: regulaer waere STOP=off; ein Fehler ergibt das alte Verhalten
-    for mode in ("helper", "autonomy", "herdr"):
+    for mode in ("helper", "autonomy"):
         root = _project(tmp_path / f"over-{mode}")
         _write_usage(root, OVER)
         lines = _context_patched(root, mode, _env(root, autonomy="auto"))
         assert _kv(lines, "CONTEXT_CUT") == "on", (mode, lines)
         assert lines and lines[-1] == "CONTEXT_STOP=on", (mode, lines)
         assert "CONTEXT_REASON=AUTO_NO_CLEAR" not in lines, (mode, lines)
+
+    # #662: Herdr ist nicht mehr Teil der Entscheidung. Wirft `auto_clear_active`,
+    # bleibt es im Auto-Modus bei STOP=off mit Grund (kein Rueckfall auf Halt).
+    root = _project(tmp_path / "over-herdr", HERDR_AUTO_CLEAR_ON)
+    _write_usage(root, OVER)
+    lines = _context_patched(root, "herdr", _env(root, autonomy="auto", herdr=True))
+    assert _kv(lines, "CONTEXT_CUT") == "on", lines
+    assert "CONTEXT_REASON=AUTO_NO_CLEAR" in lines, lines
+    assert lines and lines[-1] == "CONTEXT_STOP=off", lines
 
     # CUT off: STOP folgt CUT, also off
     root = _project(tmp_path / "under-helper")
@@ -310,8 +306,9 @@ def _assert_continue_wording(note: str, label: str) -> None:
     assert re.search(r"weiterarbeiten|arbeite weiter", note), (label, note)
     assert "Teilagent" in note, (label, note)
     assert re.search(r"komprimier", note, re.IGNORECASE), (label, note)
+    # #662: kein Herdr mehr im Hinweis (Auto-/clear stillgelegt), keine Halt-Aufforderung
     for forbidden in ("NICHT selbst aufrufen", "beende den Turn", "CONTEXT_STOP=on",
-                      "CONTEXT_CUT=on"):
+                      "CONTEXT_CUT=on", "Herdr"):
         assert forbidden not in note, (label, forbidden, note)
 
 
@@ -339,9 +336,19 @@ def test_post_bash_note_wording_per_variant(tmp_path):
     root = _project(tmp_path / "manual")
     _assert_stop_wording(_post_bash_note(root, _env(root, autonomy="manual")), "manual")
 
+    # #662: auch mit Herdr-Pane und Auto-/clear-Schalter weiterarbeiten (Config und Env)
     root = _project(tmp_path / "auto-herdr-clear", HERDR_AUTO_CLEAR_ON)
-    _assert_stop_wording(_post_bash_note(root, _env(root, autonomy="auto", herdr=True)),
-                         "auto mit Herdr-Auto-Clear")
+    _assert_continue_wording(_post_bash_note(root, _env(root, autonomy="auto", herdr=True)),
+                             "auto mit Herdr-Auto-Clear")
+    root = _project(tmp_path / "auto-herdr-env-clear", "herdr:\n  enabled: true\n")
+    _assert_continue_wording(
+        _post_bash_note(root, _env(root, autonomy="auto", herdr=True, auto_clear_env="1")),
+        "auto mit Herdr-Env-Schalter")
+
+    # Modus manual mit Herdr-Auto-/clear: Halt-Wortlaut wie ohne Herdr
+    root = _project(tmp_path / "manual-herdr-clear", HERDR_AUTO_CLEAR_ON)
+    _assert_stop_wording(_post_bash_note(root, _env(root, autonomy="manual", herdr=True)),
+                         "manual mit Herdr-Auto-Clear")
 
 
 # --- AC-8: Befehlstexte 10 bis 50 lesen CONTEXT_STOP --------------------------------
@@ -367,26 +374,3 @@ def test_phase_commands_read_context_stop(name, follow):
         # Halt-Ausloeser ist CONTEXT_STOP=on, nicht mehr CONTEXT_CUT=on
         assert "Bei `CONTEXT_CUT=on`" not in para, (path, para)
         assert para.index("CONTEXT_STOP=on") < para.index("NICHT selbst aufrufen"), (path, para)
-
-
-# --- AC-9: `workflow.py autoclear` unveraendert -------------------------------------
-
-def test_autoclear_output_unchanged(tmp_path):
-    cases = [
-        # (label, config, herdr, autark, erwartet)
-        ("pane-clear-on", HERDR_AUTO_CLEAR_ON, True, False, "AUTO_CLEAR=on"),
-        ("pane-clear-off", HERDR_AUTO_CLEAR_OFF, True, False, "AUTO_CLEAR=off"),
-        ("pane-clear-on-autark", HERDR_AUTO_CLEAR_ON, True, True, "AUTO_CLEAR=off"),
-        ("pane-clear-off-autark", HERDR_AUTO_CLEAR_OFF, True, True, "AUTO_CLEAR=off"),
-        ("no-pane-clear-on", HERDR_AUTO_CLEAR_ON, False, False, "AUTO_CLEAR=off"),
-    ]
-    for autonomy in ("auto", "manual"):
-        for label, config, herdr, autark, expected in cases:
-            root = _project(tmp_path / f"{autonomy}-{label}", config)
-            if autark:
-                _write_autark_auftrag(root)
-            env = _env(root, autonomy=autonomy, herdr=herdr, session=None)
-            res = _run(root, "workflow.py", "autoclear", env=env)
-            assert res.returncode == 0, (autonomy, label, res.stderr)
-            assert "Traceback" not in res.stderr, (autonomy, label, res.stderr)
-            assert res.stdout.splitlines() == [expected], (autonomy, label, res.stdout)

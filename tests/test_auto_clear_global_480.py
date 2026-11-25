@@ -11,6 +11,8 @@ Vertraege, die diese Tests festlegen (zusaetzlich zur Spec):
 - Die Env-Variable heisst `OPENSPEC_HERDR_AUTO_CLEAR` und wird fuer jeden Lauf
   explizit gesetzt oder entfernt (alle OPENSPEC_*-Variablen werden vorher gestrippt).
 - AC-5: Pfade aus hooks/hooks.json per Regex `core/hooks/[^ "]+\\.py`.
+- #662 (docs/specs/feat-662-kette-flach.md): der Env-Schalter schaltet den Opt-in-Leser
+  weiter ein, bewirkt aber nichts mehr; der Stop-Hook startet nie einen Runner.
 
 Importfehler/fehlende Funktionen erscheinen als Test-FAIL: Module werden erst im
 Testkoerper bzw. im Subprozess importiert.
@@ -173,7 +175,9 @@ def test_env_switch_uses_project_values(tmp_path):
 
 # --- AC-4 -------------------------------------------------------------------
 
-def test_footer_gate_spawns_with_env_switch(tmp_path):
+def test_footer_gate_never_spawns_with_env_switch(tmp_path):
+    """#662 ersetzt test_footer_gate_spawns_with_env_switch: Env-Schalter, Herdr-Pane
+    und Grenz-Vermerk starten keinen Runner mehr."""
     proj = _project(tmp_path, NO_ENTRY)
     wf = proj / ".claude" / "workflows" / f"{WF}.json"
     data = json.loads(wf.read_text())
@@ -195,9 +199,9 @@ def test_footer_gate_spawns_with_env_switch(tmp_path):
     res = subprocess.run([sys.executable, str(FOOTER_GATE)], input=json.dumps(payload),
                          capture_output=True, text=True, env=env, cwd=str(proj), timeout=30)
     assert res.returncode == 0, res.stderr
-    calls = _wait_for(log, 2, timeout=20.0)  # Default grace 10 s + settle 2 s vor /clear (#506)
-    kinds = [" ".join(c[:2]) for c in calls]
-    assert "pane send-text" in kinds, f"Runner nicht gestartet (kein `pane send-text`): {calls}"
+    # ein gestarteter Runner kuendigte sich sofort per `notification show` an
+    calls = _wait_for(log, 1, timeout=3.0)
+    assert calls == [], f"Runner gestartet trotz Stilllegung (#662): {calls}"
 
 
 # --- AC-5 -------------------------------------------------------------------

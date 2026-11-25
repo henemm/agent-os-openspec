@@ -2794,22 +2794,18 @@ _CONTEXT_SAVING_HINT = (
 
 
 def context_stop_applies(root=None) -> bool:
-    """Haelt die Phasenkette beim Kontext-Schnitt fuer `/clear` an? (#658)
+    """Haelt die Phasenkette beim Kontext-Schnitt fuer `/clear` an? (#658, #662)
 
-    True, wenn der Autonomie-Modus nicht `auto` ist (dort tippt der PO ohnehin
-    den Folgebefehl) oder Herdr das Auto-`/clear` ausfuehrt
-    (`herdr_bridge.auto_clear_active()`). Im Auto-Modus ohne Herdr-Auto-/clear
-    kaeme `/clear` von niemandem: False, die Kette laeuft weiter. Imports lazy
-    (workflow.py importiert diese Datei). Wirft einer der Aufrufe, liefert der
-    Helfer True (Halt wie vor #658). `root` ist fuer kuenftige Aufrufer reserviert;
-    beide Quellen bestimmen das Projekt selbst.
+    True genau dann, wenn der Autonomie-Modus nicht `auto` ist (dort tippt der
+    PO ohnehin `/clear` und den Folgebefehl). Im Auto-Modus kaeme `/clear` von
+    niemandem (Herdr-Auto-/clear seit #662 stillgelegt): False, die Kette laeuft
+    weiter. Import lazy (workflow.py importiert diese Datei). Wirft der Aufruf,
+    liefert der Helfer True (Halt wie vor #658). `root` ist fuer kuenftige
+    Aufrufer reserviert; die Quelle bestimmt das Projekt selbst.
     """
     try:
         import workflow
-        if workflow.autonomy_mode() != "auto":
-            return True
-        import herdr_bridge
-        return bool(herdr_bridge.auto_clear_active())
+        return workflow.autonomy_mode() != "auto"
     except Exception:
         return True
 
@@ -2820,8 +2816,8 @@ def context_cut_note(tokens: int, threshold: int, autark: bool = False,
 
     `autark=True` (#551): ein autarker Auftrag laeuft — kein Halt fuer `/clear`,
     stattdessen die automatische Komprimierung von Claude Code.
-    `stop=False` (#658, Auto-Modus ohne Herdr-Auto-/clear, siehe
-    `context_stop_applies`): niemand fuehrt `/clear` aus — weiterarbeiten,
+    `stop=False` (#658/#662, Auto-Modus, siehe `context_stop_applies`):
+    niemand fuehrt `/clear` aus — weiterarbeiten, Nachschlagen an Teilagenten,
     Claude Code komprimiert automatisch. `stop=True` (Default): Halt-Wortlaut,
     Signal ist `workflow.py context` -> `CONTEXT_STOP=on`.
     """
@@ -2839,8 +2835,8 @@ def context_cut_note(tokens: int, threshold: int, autark: bool = False,
         ) + _CONTEXT_SAVING_HINT
     if not stop:
         return head + (
-            "Auto-Modus ohne automatisches `/clear` (kein Herdr-Auto-/clear): die "
-            "Kette wird nicht angehalten, weiterarbeiten; Claude Code komprimiert den "
+            "Auto-Modus: niemand führt `/clear` aus, die Kette wird nicht "
+            "angehalten, weiterarbeiten; Claude Code komprimiert den "
             "Kontext automatisch (`/compact`). Sichere den Stand laufend auf der "
             "Platte (Workflow-State, Commit oder Issue-Kommentar). Sparen: "
         ) + _CONTEXT_SAVING_HINT
@@ -2848,8 +2844,8 @@ def context_cut_note(tokens: int, threshold: int, autark: bool = False,
         "Bring den laufenden Block zu Ende (Spec "
         "fertig, PR angelegt, Phasenwechsel), sichere den Stand auf der Platte "
         "(Workflow-State, Commit oder Issue-Kommentar) und beende den Turn mit "
-        "Checkpoint-Block und Du-Zeile, damit `/clear` gefahrlos ist. Im Auto-Modus "
-        "den naechsten Skill NICHT selbst aufrufen (`workflow.py context` -> "
+        "Checkpoint-Block und Du-Zeile, damit `/clear` gefahrlos ist. Den "
+        "naechsten Skill NICHT selbst aufrufen (`workflow.py context` -> "
         "CONTEXT_STOP=on). Bis dahin: "
     ) + _CONTEXT_SAVING_HINT
 
