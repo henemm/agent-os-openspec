@@ -2,7 +2,7 @@
 
 > **Meta-Projekt**: Dies ist das zentrale Framework-Repository, das abstraktes Projekt- und Workflow-Wissen konsolidiert. Alle Projekte können Improvements hierher zurückführen und von Verbesserungen aus anderen Projekten profitieren.
 
-**Version**: 4.24.0
+**Version**: 4.25.0
 
 ## Rollen und Zusammenarbeit (PO-Vorgabe 2026-11-08, gilt für jede Sitzung, auch Cloud)
 
@@ -72,7 +72,7 @@ agent-os-openspec/
 │   │   ├── override_token.py            # Shared Override-Token Management (TTL, Multi-WF)
 │   │   ├── migrate_state.py             # v2 → v3 State-Migration
 │   │   ├── precondition_origins.py      # Eigenstaendiges CLI-Werkzeug (KEIN Hook/Gate, nicht in hooks.json): Herkunft von Testvorbedingungen einsammeln
-│   │   ├── herdr_bridge.py              # Utility (KEIN Hook): Herdr-Sidebar (#466), Plan-Pane rechts (#476)
+│   │   ├── herdr_bridge.py              # Utility (KEIN Hook): Herdr-Sidebar (#466), Plan-Pane rechts (#476), frische Sitzung je Auftrags-Issue (#667)
 │   │   ├── hook_utils.py                # Shared Bootstrap (Imports, Parsing, Exit)
 │   │   └── config_loader.py             # Config-Loader (YAML + Local Overrides)
 │   ├── agents/              # Agent-Definitionen (Markdown)

@@ -81,6 +81,20 @@ mit Sitzungskennung `OWNER=` und ggf. `ALTAUFTRAG=` (Auftrag ohne laufende Sitzu
 `complete` hakt das Issue ab, `endstate` nennt danach das nächste Issue. Kill-Switch
 `auftrag.enabled: false` → `QUEUE=disabled`.
 
+### Übergabe an eine frische Sitzung (#667)
+```bash
+$WF handoff                 # Weg + Startauftrag
+$WF handoff --start         # Herdr: neue Sitzung im neuen Pane
+$WF handoff --mark cloud    # Start vermerken (nach create_session)
+```
+Wählt für das nächste Issue eines autarken Auftrags (Autonomie `auto`) den Weg:
+`HANDOFF=cloud` (`CLAUDE_CODE_REMOTE=true`, dazu `REPO_URL=`), `herdr` (Herdr-Pane und `claude`
+im PATH), `inline` (bisheriger Selbstaufruf) oder `none`; dazu `NEXT=` und der Startauftrag
+zwischen `PROMPT_BEGIN`/`PROMPT_END` (Auftrag neu anlegen, 00-intake, Haltregel, Messung).
+`--start` meldet `STARTED=yes|no|already` (bei `no` mit `REASON=`), `--mark cloud|herdr`
+vermerkt den Start im Auftrag (Feld `handoff`); derselbe Vermerk ergibt `STARTED=already`.
+Exit 0; nur ungültige Argumente (etwa `--mark` mit anderem Weg) enden mit Usage und Exit 1.
+
 ### Retro: Abgeschlossene Workflows analysieren
 ```bash
 # Alle archivierten Workflows auflisten
@@ -283,7 +297,7 @@ Beende deine letzte Nachricht in diesem Befehl mit diesen Zeilen, in dieser Reih
 
 ❗ Du: `/<befehl> #<N>` — <ein Halbsatz, warum>
 ℹ️ Status: Workflow `<name>` · Phase `<x>` von 8
-⚙ /80-workflow · agent-os-openspec 4.24.0
+⚙ /80-workflow · agent-os-openspec 4.25.0
 
 Die erste Zeile sagt, wer am Zug ist — GENAU EINMAL, nur hier in der Fußzeile, nie zusätzlich als Vokabular mitten im Fließtext davor — und steht in genau einer von drei Formen (es gibt keine vierte):
 

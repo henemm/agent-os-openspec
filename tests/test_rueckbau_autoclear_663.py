@@ -555,13 +555,20 @@ def _changelog_section(version: str) -> str:
     return text[start:end if end != -1 else len(text)]
 
 
+def _version_tuple(text: str) -> tuple:
+    return tuple(int(p) for p in text.split("."))
+
+
 def test_docs_and_version_consistent():
+    # Seit #667 (4.25.0): nicht mehr auf genau 4.24.0 gepinnt, sondern mindestens
+    # 4.24.0 und in plugin.json, CLAUDE.md und README gleich.
     plugin = json.loads((REPO / ".claude-plugin" / "plugin.json").read_text())
-    assert plugin["version"] == VERSION, plugin["version"]
+    current = plugin["version"]
+    assert _version_tuple(current) >= _version_tuple(VERSION), current
     claude = (REPO / "CLAUDE.md").read_text(encoding="utf-8")
     readme = (REPO / "README.md").read_text(encoding="utf-8")
-    assert f"**Version**: {VERSION}" in claude, "CLAUDE.md nennt nicht die neue Version"
-    assert re.search(rf"^\*\*Version\*\*: {re.escape(VERSION)}\b", readme, re.M), \
+    assert f"**Version**: {current}" in claude, "CLAUDE.md nennt nicht die neue Version"
+    assert re.search(rf"^\*\*Version\*\*: {re.escape(current)}\b", readme, re.M), \
         "README nennt nicht die neue Version"
 
     for name, text in (("CLAUDE.md", claude), ("README.md", readme)):

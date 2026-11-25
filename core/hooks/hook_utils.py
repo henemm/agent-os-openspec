@@ -3107,10 +3107,30 @@ def _normalize_auftrag(raw) -> "dict | None":
         seen.add(n)
         issues.append({"n": n, "status": "done" if entry.get("status") == "done" else "open"})
     note = raw.get("note")
-    return {"issues": issues, "autark": raw.get("autark") is True,
-            "note": note if isinstance(note, str) else "",
-            "spur": normalize_spur(raw.get("spur")) or "",
-            "created": str(raw.get("created") or ""), "updated": str(raw.get("updated") or "")}
+    result = {"issues": issues, "autark": raw.get("autark") is True,
+              "note": note if isinstance(note, str) else "",
+              "spur": normalize_spur(raw.get("spur")) or "",
+              "created": str(raw.get("created") or ""), "updated": str(raw.get("updated") or "")}
+    handoff = _normalize_handoff(raw.get("handoff"))
+    if handoff is not None:
+        result["handoff"] = handoff
+    return result
+
+
+HANDOFF_MODES = ("cloud", "herdr")
+
+
+def _normalize_handoff(raw) -> "dict | None":
+    """Vermerk einer Uebergabe (#667): `{"issue": int>0, "mode": cloud|herdr, "at": str}`.
+
+    Ungueltige Nummer (kein int, bool, <= 0) oder ungueltiger Weg -> None (Feld faellt weg).
+    """
+    if not isinstance(raw, dict):
+        return None
+    issue, mode, at = raw.get("issue"), raw.get("mode"), raw.get("at")
+    if type(issue) is not int or issue <= 0 or mode not in HANDOFF_MODES:
+        return None
+    return {"issue": issue, "mode": mode, "at": at if isinstance(at, str) else ""}
 
 
 def read_auftrag(root=None, config: "dict | None" = None) -> "dict | None":

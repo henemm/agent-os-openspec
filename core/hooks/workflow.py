@@ -32,6 +32,7 @@ Usage:
     python3 workflow.py sessions [--json]
     python3 workflow.py claim status|nachholen [<name>] [--uebernehmen]
     python3 workflow.py observable-surface
+    python3 workflow.py handoff [--start] [--mark cloud|herdr]
 """
 
 from hook_utils import setup_path, find_project_root
@@ -5614,6 +5615,185 @@ def cmd_queue(args: list[str]) -> None:
     _print_queue(read_auftrag(root))
 
 
+HANDOFF_USAGE = "Usage: workflow.py handoff [--start] [--mark cloud|herdr]"
+HANDOFF_MARK_MODES = ("cloud", "herdr")
+
+
+def _handoff_parse(args: list[str]) -> "tuple[bool, str | None]":
+    """(--start, --mark-Weg) aus den Argumenten; Fehler -> Usage auf stderr, Exit 1."""
+    start, mark, i = False, None, 0
+    while i < len(args):
+        if args[i] == "--start":
+            start = True
+        elif args[i] == "--mark" and i + 1 < len(args) and args[i + 1] in HANDOFF_MARK_MODES:
+            mark, i = args[i + 1], i + 1
+        else:
+            print(HANDOFF_USAGE, file=sys.stderr)
+            sys.exit(1)
+        i += 1
+    return start, mark
+
+
+def _handoff_own_issue() -> "int | None":
+    """Issue-Nummer des aktiven Workflows oder None (kein/archivierter Workflow). Wirft nie."""
+    try:
+        found = read_active_workflow_fast()
+        if not found:
+            return None
+        own = workflow_issue_number(found[1] if isinstance(found[1], dict) else {})
+        return int(own) if own else None
+    except (Exception, SystemExit):
+        return None
+
+
+def _handoff_repo_url(root: Path) -> str:
+    """https-URL von `origin` ohne `.git` und ohne Zugangsdaten, sonst "none". Wirft nie."""
+    try:
+        import subprocess
+        res = subprocess.run(["git", "remote", "get-url", "origin"], cwd=str(root),
+                             capture_output=True, text=True, timeout=10,
+                             stdin=subprocess.DEVNULL)
+        url = res.stdout.strip() if res.returncode == 0 else ""
+        if not url.startswith("https://"):
+            return "none"
+        rest = url[len("https://"):]
+        host, sep, path = rest.partition("/")
+        host = host.rpartition("@")[2]
+        url = f"https://{host}{sep}{path}".rstrip("/")
+        if url.endswith(".git"):
+            url = url[:-len(".git")]
+        return url if host and not _re.search(r"\s", url) else "none"
+    except Exception:
+        return "none"
+
+
+def _handoff_hooks_rel(root: Path) -> str:
+    """Pfad des Hook-Ordners relativ zum Repo-Root (`.claude/hooks` bzw. `core/hooks`)."""
+    hooks = Path(os.path.abspath(__file__)).parent
+    bases = [root] + [p for p in hooks.parents if (p / ".git").exists()][:1]
+    for base in bases:
+        try:
+            return hooks.relative_to(Path(os.path.abspath(base))).as_posix()
+        except Exception:
+            continue
+    return str(hooks)
+
+
+def handoff_prompt(number: int, open_rest: "list[int]", auftrag: dict, hooks: str) -> str:
+    """Startauftrag der frischen Sitzung (#667), ohne Gespraechswissen lesbar."""
+    import shlex
+    cmd = ["python3", f"{hooks}/workflow.py", "queue", "add",
+           *[str(n) for n in open_rest], "--autark"]
+    note = " ".join((auftrag.get("note") or "").split())
+    if note:
+        cmd += ["--note", note]
+    if auftrag.get("spur"):
+        cmd += ["--spur", auftrag["spur"]]
+    queue_add = " ".join(shlex.quote(part) for part in cmd)
+    return "\n".join([
+        f"Bitte Issue #{number} in diesem Repo bearbeiten: beginne mit dem Befehl 00-intake "
+        f"für #{number} (Kurzbefehl `00-intake` mit Argument `#{number}`; fehlt das Plugin, "
+        "liegt der Befehlstext unter skills/00-intake/SKILL.md bzw. im Konsumenten-Projekt "
+        "der Redirect-Alias) und folge dem Workflow bis zur Auslieferung.",
+        "",
+        f"Lege zuerst den Auftrag neu an: `{queue_add}`",
+        "",
+        "Autarker Auftrag: kein Halt für /clear; halte nur an PO-Punkten (Freigabe ohne "
+        "Auto-Freigabe, AMBIGUOUS, Override, Produktfragen per AskUserQuestion).",
+        "",
+        "Diese Sitzung startet bewusst mit frischem Kontext (#667).",
+        "",
+        "Nenne beim Abschluss im Abschlusskommentar des Issues den Wert `CONTEXT_TOKENS` aus "
+        f"`python3 {hooks}/workflow.py context` (Kontextgröße dieser Sitzung).",
+    ])
+
+
+def handoff_route() -> "tuple[str, int | None, dict | None]":
+    """(Weg none|cloud|herdr|inline, naechstes Issue, Auftrag) nach #667. Wirft nie."""
+    try:
+        if not auftrag_settings()["enabled"]:
+            return "none", None, None
+        auftrag = read_auftrag()
+        if not auftrag:
+            return "none", None, None
+        own = _handoff_own_issue()
+        nxt = next((n for n in auftrag_open_issues(auftrag) if n != own), None)
+        if nxt is None or not auftrag["autark"] or autonomy_mode() != "auto":
+            return "none", nxt, auftrag
+        if os.environ.get("CLAUDE_CODE_REMOTE", "").strip().lower() == "true":
+            return "cloud", nxt, auftrag
+        import shutil
+        import herdr_bridge
+        if herdr_bridge._pane() and shutil.which("claude"):
+            return "herdr", nxt, auftrag
+        return "inline", nxt, auftrag
+    except Exception:
+        return "none", None, None
+
+
+def _handoff_mark(root: Path, auftrag: dict, number: int, mode: str) -> None:
+    from datetime import timezone
+    data = dict(auftrag)
+    data["handoff"] = {"issue": number, "mode": mode,
+                       "at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+    write_auftrag(root, data)
+
+
+def cmd_handoff(args: list[str]) -> None:
+    """`handoff [--start] [--mark cloud|herdr]` (#667): naechstes Auftrags-Issue frisch starten.
+
+    Ausgabe `HANDOFF=none|cloud|herdr|inline`, `NEXT=<M>|none`, bei cloud
+    `REPO_URL=<https ohne .git>|none`, bei `--start` `STARTED=yes|no|already`
+    (+ `REASON=`), bei HANDOFF != none der Startauftrag zwischen `PROMPT_BEGIN`
+    und `PROMPT_END`. `--start` startet im Weg herdr eine neue Claude-Sitzung in
+    einem neuen Pane; `--mark` vermerkt einen Start (Cloud: nach `create_session`).
+    Vermerk im Auftragsfeld `handoff`; derselbe Vermerk macht `--start` zu
+    `STARTED=already`. Exit immer 0 (fail-open), ausser ungueltigen Argumenten
+    (Usage auf stderr, Exit 1, keine Schreibung).
+    """
+    start, mark = _handoff_parse(args)
+    route, nxt, auftrag, prompt = "none", None, None, None
+    try:
+        route, nxt, auftrag = handoff_route()
+        root = find_project_root()
+        if route != "none":
+            own = _handoff_own_issue()
+            rest = [n for n in auftrag_open_issues(auftrag) if n != own]
+            prompt = handoff_prompt(nxt, rest, auftrag, _handoff_hooks_rel(root))
+    except Exception:
+        route, prompt = "none", None
+    print(f"HANDOFF={route}")
+    print(f"NEXT={nxt if nxt is not None else 'none'}")
+    if route == "cloud":
+        print(f"REPO_URL={_handoff_repo_url(root)}")
+    if mark and route != "none":
+        try:
+            _handoff_mark(root, auftrag, nxt, mark)
+        except Exception:
+            pass
+    if start:
+        started, reason = "no", f"Weg {route}"
+        try:
+            done = (auftrag or {}).get("handoff") or {}
+            if route != "none" and done.get("issue") == nxt:
+                started, reason = "already", ""
+            elif route == "herdr":
+                import herdr_bridge
+                ok, reason = herdr_bridge.start_session(prompt, root)
+                if ok:
+                    started = "yes"
+                    _handoff_mark(root, auftrag, nxt, "herdr")
+        except Exception as exc:
+            started, reason = "no", f"Fehler {type(exc).__name__}"
+        print(f"STARTED={started}")
+        if started == "no":
+            print(f"REASON={' '.join(str(reason or 'unbekannt').split())}")
+    if prompt:
+        print("PROMPT_BEGIN")
+        print(prompt)
+        print("PROMPT_END")
+
+
 def cmd_spur(args: list[str]) -> None:
     """`spur [<name> | --clear]` (#591): Spur des Auftrags setzen, leeren oder zeigen.
 
@@ -5922,6 +6102,7 @@ COMMANDS = {
     "endstate": cmd_endstate,
     "queue": cmd_queue,
     "spur": cmd_spur,
+    "handoff": cmd_handoff,
     "retro-list": cmd_retro_list,
     "sessions": cmd_sessions,
     "claim": cmd_claim,
