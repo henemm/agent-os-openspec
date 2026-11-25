@@ -30,6 +30,14 @@ Die Plan-Seitenleiste zeigt unter der Freigabe- bzw. Ende-Zeile grob, wie lange 
 
 Migration: keine. Tests: `tests/test_countdown_655.py`; `tests/test_zeitschaetzung_620.py` um die Countdown-Zeile ergänzt.
 
+## [4.21.1] - 2026-11-25
+
+Auto-/clear greift auch, wenn die Kontext-Schwelle eine Sitzung mitten in einer Phase beendet; die Grenze erkennt jetzt der Stop-Hook selbst statt des Modells (#598).
+
+### Fixed
+
+- **#598 (Auto-/clear beim Kontext-Schnitt mitten in der Phase):** `herdr_bridge.maybe_auto_clear` startete nur mit Grenz-Vermerk `auto_clear_boundary`, den Phasenwechsel aus `AUTO_CLEAR_BOUNDARIES` oder `workflow.py autoclear` setzen; beim Kontext-Schnitt mitten in der Phase ruft das Modell Letzteres nicht auf, das Log meldete `skip: keine Grenze vermerkt` (Befund henemm-infra #515, `phase6_implement`, 151128 bzw. 149699 Token bei wirksamer Schwelle ~144k). Fehlt der Vermerk, gilt der Stop jetzt trotzdem als Grenze, wenn für die stoppende Sitzung der Kontext-Schnitt aktiv ist (dieselbe Bedingung wie `workflow.py context` → `CONTEXT_CUT=on`: `context_budget` an, Messung genau dieser `session_id` ohne Rückgriff auf fremde Messungen ≥ wirksame Schwelle, kein autarker Auftrag offen). Dann schreibt der Hook nach Klartext-Vorprüfung und Negativ-Marker den Vermerk für Phase und erwarteten Befehl (`workflow._record_auto_clear_boundary(name)` gibt ihn jetzt zurück) und läuft den normalen Pfad weiter. Unverändert: Fußzeile muss den erwarteten Befehl nennen, `MANUAL_COMMANDS`, `/clear` als Befehl, Runner-Aktivitätsprüfung; fail-open. Überbrückung bis Epic #649. Migration: keine. Tests: `tests/test_autoclear_kontextschnitt_598.py`.
+
 ## [4.21.0] - 2026-11-24
 
 Jede Sitzung trägt sich beim Workflow-Start als Kommentar am Issue ein (Ort, Name, Beginn, Phase, Erreichbarkeit); ein zweiter Start auf demselben Issue bricht mit Klartext ab, auch über Rechner und Claude-Konten hinweg (#461).

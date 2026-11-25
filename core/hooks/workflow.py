@@ -5330,31 +5330,45 @@ def cmd_autoclear(args: list[str]) -> None:
         pass
 
 
-def _record_auto_clear_boundary() -> None:
+def _record_auto_clear_boundary(name: "str | None" = None) -> "dict | None":
     """Grenz-Vermerk `auto_clear_boundary` im aktiven Workflow speichern (#495).
 
     Der Stop-Hook (`herdr_bridge.maybe_auto_clear`) loest nur aus, wenn der
-    Vermerk zu Phase und erwartetem Befehl passt. Fail-open: kein Workflow,
-    kein bestimmbarer Befehl oder jeder Fehler = nichts speichern, still.
+    Vermerk zu Phase und erwartetem Befehl passt. Mit `name` (#598, Stop-Hook
+    beim Kontext-Schnitt) genau dieser Workflow statt des aktiven. Gibt den
+    geschriebenen Vermerk zurueck. Fail-open: kein Workflow, kein bestimmbarer
+    Befehl oder jeder Fehler = nichts speichern, still, None.
     """
     try:
-        found = read_active_workflow_fast()
-        if found is None:
-            return
-        name, data = found
+        if name is None:
+            found = read_active_workflow_fast()
+            if found is None:
+                return None
+            name, data = found
+        else:
+            if not name or "/" in name or name.startswith("."):
+                return None
+            path = _workflow_file(name)
+            if not path.is_file():
+                return None
+            data = _read_workflow(path)
+            if not isinstance(data, dict):
+                return None
         command = expected_footer_command(data)
         if not isinstance(command, str):
-            return
+            return None
         data.setdefault("name", name)
-        data["auto_clear_boundary"] = {
+        boundary = {
             "phase": data.get("current_phase"),
             "command": command,
             "at": _boundary_timestamp(),
         }
+        data["auto_clear_boundary"] = boundary
         # Bewusst ohne _save_active: kein Herdr-Report, Stand unveraendert
         _atomic_write(_workflow_file(name), data)
+        return boundary
     except Exception:
-        pass
+        return None
 
 
 def _apply_spec_approval(data: dict, trigger: str) -> list:

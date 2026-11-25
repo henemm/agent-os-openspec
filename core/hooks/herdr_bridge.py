@@ -40,6 +40,10 @@ wird zurueckgelegt, sofern kein neuerer im State steht) und der naechste
 saubere Stop startet einen neuen Runner; jeder andere Abbruch verwirft den
 eigenen Vermerk, nach abgeschicktem `/clear` bleibt er verbraucht.
 
+#598: Fehlt der Vermerk, schreibt ihn der Stop-Hook selbst, wenn fuer die
+stoppende Sitzung der Kontext-Schnitt aktiv ist (`_context_cut_active`, wie
+`workflow.py context` -> CONTEXT_CUT=on); erst nach Klartext- und Negativ-Pruefung.
+
 #506: Herdrs Agent-Status (`agent wait`) entscheidet nicht mehr — lokale
 Erkennungsregeln koennen ihn beliebig verschieben. Der Runner liest eigene
 Plugin-Signale je Pane aus `.claude/herdr_signals/` (`record_signal`):
@@ -603,12 +607,21 @@ def maybe_auto_clear(payload, message, data) -> bool:
         if first not in footer_commands(message):
             return _ac_skip(f"Fusszeile nennt {command} nicht")
         boundary = data.get("auto_clear_boundary")
-        if not isinstance(boundary, dict):
+        # #598: ohne Vermerk zaehlt der Stop als Grenze, wenn fuer diese Sitzung
+        # der Kontext-Schnitt aktiv ist (wie `workflow.py context` -> CONTEXT_CUT=on)
+        if not isinstance(boundary, dict) and not _context_cut_active(payload):
             return _ac_skip("keine Grenze vermerkt")
         # Klartext-Vorpruefung (#597), vor jedem Verbrauch: weist klartext_gate diesen
         # Stop zurueck, kommt garantiert ein Folge-Stop; Vermerk unangetastet lassen
         if _klartext_hits(payload):
             return _ac_skip("Klartext-Prüfung weist die Antwort zurück")
+        if not isinstance(boundary, dict):
+            # #598: Vermerk erst nach Klartext- und Negativ-Pruefung schreiben
+            if NEGATIVE_MARKER in message.replace("**", ""):
+                return _ac_skip("Negativmarker")
+            boundary = _record_context_cut_boundary(data)
+            if not isinstance(boundary, dict):
+                return _ac_skip("keine Grenze vermerkt")
         # Negativ-Marker, fremder oder veralteter Vermerk: verbrauchen wie bisher (#495)
         if NEGATIVE_MARKER in message.replace("**", ""):
             _consume_boundary(data, boundary)
@@ -641,6 +654,54 @@ def _klartext_hits(payload) -> list:
         return list(hits) if isinstance(hits, list) else []
     except Exception:
         return []
+
+
+def _context_cut_active(payload) -> bool:
+    """Kontext-Schnitt fuer die stoppende Sitzung aktiv (#598); fail-open = False.
+
+    Gleiche Bedingung wie `workflow.py context` -> `CONTEXT_CUT=on`:
+    `context_budget` an, Messung genau dieser Sitzung (`session_id` aus dem
+    Stop-Payload, keine fremde juengste Messung) >= wirksame Schwelle, kein
+    autarker Auftrag offen.
+    """
+    try:
+        _hooks_on_path()
+        from hook_utils import (auftrag_autark_open, context_budget_settings,
+                                effective_context_threshold, find_project_root,
+                                read_context_usage)
+        settings = context_budget_settings()
+        if not settings["enabled"]:
+            return False
+        sid = payload.get("session_id") if isinstance(payload, dict) else None
+        root = find_project_root()
+        usage = read_context_usage(sid if isinstance(sid, str) and sid else None,
+                                   root, fallback_newest=False)
+        if not isinstance(usage, dict) or type(usage.get("tokens")) is not int:
+            return False
+        threshold = effective_context_threshold(settings, usage.get("baseline_tokens"))
+        if usage["tokens"] < threshold:
+            return False
+        return not auftrag_autark_open(root)
+    except Exception:
+        return False
+
+
+def _record_context_cut_boundary(data: dict) -> "dict | None":
+    """Grenz-Vermerk fuer den uebergebenen Workflow schreiben (#598) und in `data`
+    spiegeln; None bei jedem Fehler (dann kein Auto-/clear)."""
+    try:
+        name = str(data.get("name") or "")
+        if not name:
+            return None
+        _hooks_on_path()
+        import workflow
+        boundary = workflow._record_auto_clear_boundary(name)
+        if not isinstance(boundary, dict):
+            return None
+        data["auto_clear_boundary"] = boundary
+        return boundary
+    except Exception:
+        return None
 
 
 def _boundary_matches(data: dict, command: str) -> bool:
