@@ -5369,6 +5369,23 @@ def _auto_approve_decision() -> "tuple[str, str, list]":
             exceeded or [])
 
 
+def _context_measurement(root) -> "tuple[int | None, int | None]":
+    """(tokens, baseline) fuer `cmd_context` (#675): 1. eigene Messdatei,
+    2. eigenes Transcript (ohne Baseline), 3. juengste Messdatei. Liest nur."""
+    from hook_utils import (context_tokens_from_transcript, read_context_usage,
+                            session_transcript_path)
+    usage = read_context_usage(None, root, fallback_newest=False)
+    if not (isinstance(usage, dict) and type(usage.get("tokens")) is int):
+        path = session_transcript_path()
+        tokens = context_tokens_from_transcript(path) if path is not None else None
+        if type(tokens) is int:
+            return tokens, None
+        usage = read_context_usage(None, root)
+    if isinstance(usage, dict) and type(usage.get("tokens")) is int:
+        return usage["tokens"], usage.get("baseline_tokens")
+    return None, None
+
+
 def cmd_context(args: list[str]) -> None:
     """Auskunft, kein Gate: `CONTEXT_TOKENS=<n|unknown>`, `CONTEXT_CUT=on|off` und als
     letzte Zeile `CONTEXT_STOP=on|off`, Exit immer 0.
@@ -5388,16 +5405,14 @@ def cmd_context(args: list[str]) -> None:
     zusaetzlich `CONTEXT_REASON=AUTO_NO_CLEAR`. Ein
     Fehler im Helfer ergibt STOP = CUT. Bei offenem autarkem Auftrag (#551) immer
     `CONTEXT_CUT=off` plus `CONTEXT_REASON=AUTARK` (ohne Schwellen-Zeile).
+    Fehlt die eigene Messdatei, liest `context` das eigene Transcript, bevor es auf
+    die juengste fremde Messung zurueckfaellt (#675, siehe `_context_measurement`).
     """
     tokens, cut, autark, threshold = None, "off", False, None
     try:
-        from hook_utils import (context_budget_settings, effective_context_threshold,
-                                read_context_usage)
+        from hook_utils import context_budget_settings, effective_context_threshold
         settings = context_budget_settings()
-        usage = read_context_usage(None, find_project_root())
-        baseline = None
-        if isinstance(usage, dict) and type(usage.get("tokens")) is int:
-            tokens, baseline = usage["tokens"], usage.get("baseline_tokens")
+        tokens, baseline = _context_measurement(find_project_root())
         threshold = effective_context_threshold(settings, baseline)
         if settings["enabled"] and tokens is not None and tokens >= threshold:
             cut = "on"
