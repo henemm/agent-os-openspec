@@ -20,6 +20,12 @@ UNDISPATCHED_BY_DESIGN = {
 }
 
 
+def _claude_md_and_architektur() -> str:
+    """CLAUDE.md plus das ausgelagerte Nachschlagewissen (#580)."""
+    return ((REPO_ROOT / "CLAUDE.md").read_text() + "\n"
+            + (REPO_ROOT / "docs" / "architektur.md").read_text())
+
+
 def _dispatching_text() -> str:
     paths = list((REPO_ROOT / "core" / "commands").glob("*.md"))
     paths += list((REPO_ROOT / "modules").glob("*/commands/*.md"))
@@ -27,7 +33,7 @@ def _dispatching_text() -> str:
 
 
 def test_agents_named_in_claude_md_are_dispatched():
-    claude_md = (REPO_ROOT / "CLAUDE.md").read_text()
+    claude_md = _claude_md_and_architektur()
     commands = _dispatching_text()
     agents = [p.stem for p in (REPO_ROOT / "core" / "agents").glob("*.md")]
     missing = [a for a in agents
@@ -45,7 +51,7 @@ def test_exceptions_are_real_and_still_undispatched():
 
 
 def test_model_table_names_no_undispatched_agent():
-    table = [ln for ln in (REPO_ROOT / "CLAUDE.md").read_text().splitlines()
+    table = [ln for ln in _claude_md_and_architektur().splitlines()
              if ln.startswith("| **Haiku**") or ln.startswith("| **Sonnet**")
              or ln.startswith("| **Opus**")]
     assert table

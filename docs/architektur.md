@@ -1,0 +1,486 @@
+# Architektur und Nachschlagewissen
+
+Ausgelagert aus CLAUDE.md (#580); CLAUDE.md enthält nur die Regeln, die in jedem Zug gelten.
+
+## Architektur
+
+```
+agent-os-openspec/
+├── core/                    # Basis-System (immer installiert)
+│   ├── hooks/               # 4 konsolidierte Kern-Gates + ergänzende Guards (Registrierung: hooks/hooks.json)
+│   │   ├── edit_gate.py                 # PreToolUse Edit|Write (Kern-Gate: Phase/TDD/LoC)
+│   │   ├── bash_gate.py                 # PreToolUse Bash (Kern-Gate: Stop-Lock/Secrets/Commit)
+│   │   ├── post_bash.py                 # PostToolUse Bash (Testlauf-Hinweis last_test_run, kein Verdict)
+│   │   ├── phase_listener.py            # UserPromptSubmit (Approval/Stop-Lock/Override)
+│   │   ├── footer_gate.py               # Stop: prueft die ❗Du-Fusszeile gegen next_step()
+│   │   ├── klartext_gate.py             # Stop: blockt Git-Woerter in der Antwort an den Nutzer (aus: OPENSPEC_KLARTEXT=0)
+│   │   ├── session_singleton_guard.py   # SessionStart/PreToolUse(alle)/SessionEnd: Worktree-Pflicht + Session-Register; CLI-Modus `claim`
+│   │   ├── worktree_write_guard.py      # PreToolUse Edit|Write: blockt Schreibzugriff aufs Main-Repo bei Worktree-Split
+│   │   ├── claude_md_protection.py      # PreToolUse Edit|Write: schuetzt CLAUDE.md vor verbotenen Patterns/Aufblaehung
+│   │   ├── tdd_enforcement.py           # PreToolUse Edit|Write: tiefe RED-Artefakt-Validierung (ergaenzt edit_gate.py)
+│   │   ├── post_implementation_gate.py  # PreToolUse Edit|Write: erzwingt User-Review nach Implementierung
+│   │   ├── edit_verify.py               # PostToolUse Edit|Write: prueft ob Aenderung wirklich auf Disk landete
+│   │   ├── secrets_guard.py             # PreToolUse Bash+Read: blockt Zugriff auf .env/Credentials/Keys
+│   │   ├── mention_guard.py             # PreToolUse Bash: blockt nackte `@name` in gh-Texten (aus: OPENSPEC_MENTION_GUARD=0)
+│   │   ├── workflow.py                  # Workflow State CLI (isolierte JSON-Files)
+│   │   ├── qa_gate.py                   # QA-Gate: Test-Output validieren oder per --run konfigurierten Testbefehl selbst ausfuehren, Verdict setzen
+│   │   ├── adversary_dialog.py          # Adversary-Dialog: Spec-Checkliste, Tri-State-Verdict
+│   │   ├── evidence_gate.py             # Opt-in Evidence-Gate vor phase8_complete (Simulator-Beleg, #447)
+│   │   ├── override_token.py            # Shared Override-Token Management (TTL, Multi-WF)
+│   │   ├── migrate_state.py             # v2 → v3 State-Migration
+│   │   ├── precondition_origins.py      # Eigenstaendiges CLI-Werkzeug (KEIN Hook/Gate, nicht in hooks.json): Herkunft von Testvorbedingungen einsammeln
+│   │   ├── herdr_bridge.py              # Utility (KEIN Hook): Herdr-Sidebar (#466), Plan-Pane rechts (#476), frische Sitzung je Auftrags-Issue (#667)
+│   │   ├── hook_utils.py                # Shared Bootstrap (Imports, Parsing, Exit)
+│   │   └── config_loader.py             # Config-Loader (YAML + Local Overrides)
+│   ├── agents/              # Agent-Definitionen (Markdown)
+│   └── commands/            # Slash-Commands (siehe "Slash-Commands Übersicht" unten)
+│       ├── 00-intake.md, 01-feature.md
+│       ├── 10-context.md, 20-analyse.md, 30-write-spec.md
+│       ├── 40-tdd-red.md, 50-implement.md, 60-validate.md
+│       ├── 70-deploy.md, 80-workflow.md, 81-add-artifact.md
+│       └── 82-test.md, 83-user-story.md, 90-retro.md, 99-reset.md
+├── modules/                 # Domain-spezifische Erweiterungen
+│   ├── ios-swiftui/         # iOS/SwiftUI Standards, TDD, Localization
+│   └── home-assistant/      # HA Config-Validation, Dashboard-QA
+├── templates/               # Spec-Templates
+├── .claude/agents/          # Generat aus core/agents (Cloud-Sitzungen ohne Plugin, #577)
+├── setup.py                 # Installations- und Update-Tool (v3.0)
+├── config.yaml              # Zentrale Konfiguration
+└── CHANGELOG.md             # Versionshistorie
+```
+
+## Der 8-Phasen-Workflow (v2.0)
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         OPENSPEC WORKFLOW v2.0                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  phase0_idle                                                            │
+│       │                                                                 │
+│       ▼                                                                 │
+│  phase1_context ─── /10-context ───► Kontext sammeln                       │
+│       │                                                                 │
+│       ▼                                                                 │
+│  phase2_analyse ─── /20-analyse ───► Anforderungen analysieren             │
+│       │                                                                 │
+│       ▼                                                                 │
+│  phase3_spec ────── /30-write-spec ► Spezifikation schreiben               │
+│       │                                                                 │
+│       ▼                                                                 │
+│  phase4_approved ── "approved" ─► User-Freigabe (GATE)                  │
+│       │                                                                 │
+│       ▼                                                                 │
+│  phase5_tdd_red ─── /40-tdd-red ───► Tests schreiben, MÜSSEN FEHLSCHLAGEN  │
+│       │                           + ECHTE Artefakte!                    │
+│       ▼                                                                 │
+│  phase6_implement ─ /50-implement ─► Code schreiben, Tests GRÜN machen     │
+│       │                                                                 │
+│       ▼                                                                 │
+│  phase7_validate ── /60-validate ──► Validierung                           │
+│       │                                                                 │
+│       ▼                                                                 │
+│  phase8_complete                  ► Fertig, bereit für Commit           │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+## Parallele Workflows (v3 — Isolierter State)
+
+Jeder Workflow bekommt ein eigenes JSON-File in `.claude/workflows/`.
+Aktiver Workflow wird **ausschliesslich** per `OPENSPEC_ACTIVE_WORKFLOW` Env-Var verwaltet.
+
+**Priorität bei der Namens-Auflösung:** `workflow.py` liest den aktiven Workflow-Namen NICHT
+direkt aus der Env-Var, sondern ueber `hook_utils.resolve_active_workflow()`. Die Priorität haengt
+davon ab, ob die Session in einem Worktree laeuft:
+
+- **Worktree-Session:** worktree-lokale `.claude/active_workflow`-Datei > worktree-lokale
+  `settings.local.json`-Env-Section. Die eingefrorene `OPENSPEC_ACTIVE_WORKFLOW`-Env-Var wird
+  bewusst NICHT konsultiert (Issue #58): sie ist ein Startzeit-Schnappschuss und koennte auf den
+  Workflow einer parallelen Session zeigen — da alle Workflow-JSONs im geteilten Hauptrepo liegen,
+  wuerde ein fremder Name sonst die "Datei existiert"-Pruefung bestehen und die Session kapern.
+  Sind beide worktree-lokalen Quellen leer, gilt: kein aktiver Workflow.
+- **Main-Repo-Session (kein Worktree):** `.claude/active_workflow`-Datei > `settings.local.json` >
+  `OPENSPEC_ACTIVE_WORKFLOW`-Env-Var (Rueckwaertskompatibilitaet fuer Single-Session-Projekte).
+
+Eine manuell inline gesetzte Env-Var (`OPENSPEC_ACTIVE_WORKFLOW=x python3 ...`) wird also von einer
+vorhandenen `active_workflow`-Datei ueberstimmt, wenn diese auf einen anderen, existierenden
+Workflow zeigt — und im Worktree ueberhaupt nicht mehr als Quelle herangezogen.
+
+**SYMLINK VERBOTEN:** Der `.active`-Symlink-Fallback ist deaktiviert. `workflow.py` bricht mit FATAL-Error ab wenn `OPENSPEC_ACTIVE_WORKFLOW` nicht gesetzt ist. Nach `workflow.py start <name>` gibt das Tool die notwendige `export`-Zeile direkt aus.
+
+```
+.claude/workflows/
+├── FEAT_001.json        ← State fuer FEAT_001
+├── BUG_042.json         ← State fuer BUG_042
+└── _archive/            ← Abgeschlossene Workflows
+```
+
+```bash
+# Workflow starten — Ausgabe enthaelt die Pflicht-export-Zeile
+python3 .claude/hooks/workflow.py start "feature-login"
+export OPENSPEC_ACTIVE_WORKFLOW=feature-login   # ← SOFORT setzen
+
+# Alle weiteren Befehle immer mit Env-Var-Prefix
+OPENSPEC_ACTIVE_WORKFLOW=feature-login python3 .claude/hooks/workflow.py status
+OPENSPEC_ACTIVE_WORKFLOW=feature-login python3 .claude/hooks/workflow.py phase phase6_implement
+OPENSPEC_ACTIVE_WORKFLOW=feature-login python3 .claude/hooks/workflow.py finish
+```
+
+Beim Agent-Spawn den Workflow-Namen immer im Prompt uebergeben: `export OPENSPEC_ACTIVE_WORKFLOW=<name>` als erste Pflicht-Zeile im Agent-Brief.
+
+### Migration von v2
+```bash
+python3 .claude/hooks/migrate_state.py          # Dry run
+python3 .claude/hooks/migrate_state.py --apply   # Tatsaechlich migrieren
+```
+
+## TDD mit ECHTEN Artefakten
+
+`edit_gate.py` prueft RED-Test-Artefakte bevor Code-Edits in phase6+ erlaubt werden.
+
+**Artefakte registrieren (v3):**
+```bash
+python3 .claude/hooks/workflow.py add-artifact test_output "logs/test.log" "Tests failed: 3 errors" phase5_tdd_red
+python3 .claude/hooks/workflow.py add-artifact screenshot "docs/artifacts/test-failed.png" "UI assertion error" phase5_tdd_red
+python3 .claude/hooks/workflow.py mark-red "3 tests failed"
+python3 .claude/hooks/workflow.py mark-ui-red "UI test assertion error"
+```
+
+**Akzeptiert:** Screenshots (>1KB), Test-Output-Logs, UI-Test-Output, API-Responses
+**Blockiert:** Kein RED-Artefakt → kein Code-Edit in phase6+
+
+## Modell-Zuweisungsstrategie
+
+Jeder Agent und jede Phase verwendet gezielt das passende Modell:
+
+| Model | Einsatz | Use Cases |
+|-------|---------|-----------|
+| **Haiku** | Schnell + guenstig fuer mechanische Aufgaben | Validierung (spec-validator), Kontext laden (Explore), Scope-Reviews, Test-Running (test-runner), Bug-Intake |
+| **Sonnet** | Qualitaet + Kosten-Balance fuer kreative/analytische Arbeit | Specs schreiben (spec-writer), Bug-Analyse (bug-investigator), Feature-Planung (feature-planner), Docs-Updates (docs-updater), Analysis-Challenger, Implementation-Validator, Auto-Fixes |
+| **Opus** | Hoechste Qualitaet fuer Kern-Arbeit | Implementation (Hauptkontext), User-Interaktion, Synthese, User Story Discovery (`/83-user-story`, laeuft im Hauptkontext) |
+
+**Dispatching-Muster:**
+- **Parallel Explore (3x Haiku):** Schnelle Kontextsammlung in Analyse-Phasen
+- **Write + Validate (Sonnet + Haiku):** Spec-Erstellung mit Qualitaetssicherung
+- **Parallel Validation (4x Haiku):** Umfassende Validierung nach Implementation
+- **Auto-Fix (Sonnet nach Haiku):** Haiku findet Probleme, Sonnet behebt sie
+
+Siehe `templates/agent_orchestration.md` fuer das vollstaendige Referenz-Template.
+
+## Adversary System (v3.1 — 2-Rollen-Modell)
+
+Das Adversary System implementiert ein **QA-Tester / Fixer Cycle** mit strukturiertem Dialog:
+
+### Rollen
+- **Fixer** (Hauptkontext/Opus): Implementiert Code, liefert Beweise
+- **QA-Tester** (`implementation-validator` Agent/Sonnet): Versucht aktiv die Implementierung zu brechen
+
+### Ablauf
+```
+phase6_implement → User-Freigabe ("go") → phase6b_adversary → Dialog → Verdict
+                                                                         ↓
+                                                              VERIFIED → phase7
+                                                              BROKEN → zurueck zu phase6
+                                                              AMBIGUOUS → User-Review
+```
+
+### Adversary Dialog (`adversary_dialog.py`)
+- Parst Spec `## Expected Behavior` und/oder `## Acceptance Criteria` (`- **AC-N:** ...`, section-gebunden, additiv gemergt bei Koexistenz) → Checkliste
+- Mindestens 2 Dialog-Runden bei hohem Risiko, 1 Runde bei niedrigem Risiko (Early-Agreement-Skepticism bleibt; Stufe aus der Dateiliste: `adversary_dialog.py risk`, #342)
+- Strukturierte Findings mit Severity (CRITICAL/HIGH/MEDIUM/LOW) und Category
+- Tri-State Verdict: **VERIFIED** / **BROKEN** / **AMBIGUOUS**
+- Circuit Breaker: Max 3 Iterationen, dann Eskalation an User
+
+### Hooks
+- `post_bash.py` erkennt Test-Framework-Output und vermerkt ihn nur als Hinweis `last_test_run` — es setzt kein Verdict (#253)
+- `bash_gate.py` (bei `git commit`) und die Uebergaenge nach Phase 7 (`workflow.py phase phase7_validate`) und Phase 8 akzeptieren VERIFIED (bzw. AMBIGUOUS+Override) nur mit gueltigem, gestempeltem Dialog-Artefakt (`adversary_dialog.check_dialog_evidence`)
+- Abdeckungsprüfung (#259): der Hash-Block muss jede Code-Datei der Änderungsmenge binden — beim Commit der entstehende Commit (teilweise gestagt blockt), beim Wechsel nach Phase 7 und in Phase 8 alles seit `base_commit` bzw. `merge-base(origin/main, HEAD)`; `adversary_dialog.py required-files` listet sie, Kill-Switch `adversary_coverage_gate.enabled`
+- `qa_gate.py` validiert Test-Output + optional Adversary-Dialog-Checklist (`--checklist`)
+
+### Fresh Eyes Inspector
+`fresh-eyes-inspector.md` — Unabhaengiger UI-Beobachter der Screenshots OHNE Bug-Kontext bewertet. Ergaenzt den Adversary-Dialog um eine neutrale Perspektive.
+
+## PO-Briefing-Gate (Freigabe Phase 3 → 4)
+
+Die Freigabe (`approved`) verlangt ein **unabhängig erstelltes** Briefing: Der
+`po-briefer`-Agent (Sonnet) liest nur Spec + Ursprungsanfrage — nicht den
+Gesprächsverlauf des Orchestrators — und schreibt `docs/briefings/<workflow>.md`
+mit vier Pflicht-Abschnitten (*Was gebaut wird*, *Definition of Done*,
+*Wie geprüft wird*, *Kritische Anmerkungen*). Grund: Wer die Spec beauftragt hat,
+darf nicht die Entscheidungsgrundlage für ihre Abnahme schreiben.
+
+```bash
+python3 .claude/hooks/workflow.py set-briefing docs/briefings/<workflow>.md
+```
+
+`set-briefing` bindet das Briefing per SHA-256 an die gelesene Spec-Fassung.
+`workflow.py::_check_po_briefing` blockt die Transition nach `phase4_approved`,
+`phase_listener.py` blockt die Freigabe-Phrase, wenn Briefing fehlt, unvollständig
+ist, Platzhalter enthält oder die Spec danach geändert wurde. Kill-Switch:
+`config.yaml` → `po_briefing_gate.enabled: false`; Fast Track ist per Default
+ausgenommen (`skip_fast_track`).
+
+## CI-Spec-Gate (serverseitig)
+
+Lokale Hooks sind abschaltbar, umschreibbar und per Bash umgehbar — und
+`.claude/workflows/` ist gitignored, der Workflow-State erreicht die CI nie.
+`scripts/ci_spec_gate.py` prüft im Pull Request deshalb nur **committete**
+Dateien: Spec zum Code-Change vorhanden und vollständig (Scope/DoD/AC-N/Test
+Plan/ADR, keine Platzhalter), PO-Briefing vorhanden, vollständig und aktuell.
+Die Aktualität hängt am `spec_sha256`-Stempel, den `set-briefing` in den
+Briefing-Frontmatter schreibt.
+
+Das Gate dupliziert keine Regeln: Es ruft `workflow.check_briefing_content`,
+`workflow.check_spec_content`, `workflow.check_adr_content` und `hook_utils.extract_ac_entries` auf.
+Dieselbe Spec-Prüfung läuft lokal schon bei der Freigabe (Kill-Switch gilt für beide).
+
+- Einzelner PR raus: Commit-Trailer `Spec-Gate: skip <Grund>` (sichtbar in der Historie)
+- Projekt raus: `config.yaml` → `ci_spec_gate.enabled: false`
+- `setup.py` installiert Script + `.github/workflows/spec-gate.yml` in Konsumenten-Projekte
+
+## Stop Lock
+
+Sofort-Pause fuer Claude:
+- User sagt **"stop"/"stopp"/"halt"** → `phase_listener.py` setzt Stop-Lock
+- Alle Edit/Write/Bash blockiert durch `edit_gate.py` / `bash_gate.py`
+- User sagt **"resume"/"weiter"/"continue"** → Wieder freigegeben
+- Keywords konfigurierbar via `openspec.yaml` → `stop_lock`
+
+## Override Token
+
+Einmal-Bypass fuer Gates:
+- User sagt **"override"** → `phase_listener.py` erstellt Token
+- `edit_gate.py` prueft Token und ueberspringt Phase-/TDD-Check
+- Oeffnet NICHT den Spec-Freeze (#439): nach der Freigabe sind nur bewegliche Spec-Teile (Frontmatter, `- Test:`-Zeilen, Known Limitations, Implementation Details, Test Plan, Changelog, Approval) aenderbar; Freigegebenes nur per Ruecksprung nach `phase3_spec`
+- Keywords konfigurierbar via `openspec.yaml` → `override_token`
+
+## Kontext-Haushalt (Token)
+
+Etwa 70–75 % des Wiederlesens entstehen in Schritten mit über 100.000 Token Kontext; ein Schritt mit 200k kostet rund das Fünffache eines Schritts mit 40k. Fünf Regeln, die Hooks und Befehle stützen:
+
+1. **Früh schneiden (Schwelle 100k, nicht 200k):** `post_bash.py` misst die Kontextgröße aus dem Transcript (`.claude/context_usage/<session>.json`) und weist ab `context_budget.clear_threshold_tokens` darauf hin (einmal je Stufe, danach je 50k). `workflow.py context` meldet `CONTEXT_TOKENS=`, `CONTEXT_CUT=on|off` (Messfakt) und zuletzt `CONTEXT_STOP=on|off` (on nur bei CUT=on und Modus `manual`, #658/#662; im Auto-Modus setzt die Hauptsitzung die Kette selbst fort, Herdr tippt nichts); bei `CONTEXT_STOP=on` rufen die Phasen-Befehle den Folge-Skill nicht mehr selbst auf, sondern beenden den Turn mit Checkpoint und ❗Du-Zeile — Stand auf der Platte (Workflow-State, Commit, Issue), `/clear` gefahrlos. Auskunft, kein Gate; Kill-Switch `context_budget.enabled: false`.
+2. **Nachschlagen abgeben:** „Wo wird X benutzt?“ geht an einen Explore-Teilagenten (Haiku), der nur die Antwort zurückgibt (`templates/agent_orchestration.md`, Nachschlage-Agent).
+3. **Befehle bündeln:** `workflow.py batch a -- b -- c` führt mehrere Workflow-Aufrufe in einem Schritt aus (Stopp beim ersten Fehler, dessen Exit-Code); `scripts/ship.py` erledigt pushen, PR anlegen, CI abwarten und optional mergen in einem Aufruf.
+4. **Gezielt lesen:** Zeilenbereiche und gezielte Suchen statt ganzer Dateien; mehrere `grep`/`sed -n` zur selben Frage in einen Aufruf.
+5. **Steuerungs-Overhead klein halten:** Statusabfragen nur, wenn die Antwort eine Entscheidung ändert; Zustandsänderungen per `batch` statt als Einzelaufrufe.
+
+## Hook-Architektur (4 Kern-Gates + ergänzende Guards)
+
+Registrierung zentral in `hooks/hooks.json` (Plugin-Modus) bzw. `.claude/settings.json` (Copy-Modus). Reihenfolge innerhalb eines Events entspricht der Listen-Reihenfolge in `hooks.json`.
+
+**SessionStart:** `session_singleton_guard.py register` — legt Sitzungseintrag an → `session_banner.py` — zeigt Version, frischt markierte Kurzbefehle in `~/.claude/commands` auf, zieht den Haupt-Ordner nach; Unerledigtes geht per `additionalContext` an Claude (#399)
+
+**PreToolUse, alle Tools:** `session_singleton_guard.py guard` — erzwingt Worktree-Pflicht (blockt Schreib-Tools im Haupt-Repo) → `secret_egress_guard.py` — blockt ausgeschriebene `.env`-Werte in JEDEM Tool-Input und, nur bei Bash, Umleitungsziele ausserhalb der Sicherheitszone (Issue #97/#237). Bewusst ohne Matcher: der Wert-Check gilt fuer alle Tools, nicht nur Bash.
+
+**PreToolUse Edit|Write|MultiEdit** (in dieser Reihenfolge): `worktree_write_guard.py` → `claude_md_protection.py` → `edit_gate.py` → `tdd_enforcement.py` → `post_implementation_gate.py` → [module hooks]
+  Intern (edit_gate.py, das Kern-Gate): Protected State → Spec-Freeze (Teil-Hash, #439) → Always-Allowed → Code-Check → Infra → Stop-Lock → Workflow → Phase → Override → TDD
+
+**PreToolUse Bash:** `secrets_guard.py` → `bash_gate.py` → [module hooks]
+  Intern (bash_gate.py, das Kern-Gate): Stop-Lock → Config-Schutz (Schreibzugriff auf wirksame Gate-Config, Ausweg "override") → Git Fast-Path → State-Integrity → Secrets → Commit-Gates
+
+**PreToolUse Read:** `secrets_guard.py`
+
+**PostToolUse Bash:** `post_bash.py` → [module hooks]
+  Intern: Test-Output-Detection → `last_test_run` (Hinweis, kein Verdict)
+
+**PostToolUse Edit|Write|MultiEdit:** `edit_verify.py` — prueft, dass die Aenderung tatsaechlich auf Disk gelandet ist; protokolliert Aenderungen an einer freigegebenen Spec in `spec_post_approval_edits` (#439, fail-open)
+
+**UserPromptSubmit:** `phase_listener.py` → [module hooks]
+  Intern: Override → Stop-Lock → Approval (inkl. ADR-Reflexions-Gate via `workflow.py::_check_adr`) → New-UI → GREEN
+
+**Stop:** `footer_gate.py` — gleicht die ❗Du-Fusszeile gegen `workflow.expected_footer_command()` ab und blockt per Exit 2 (Korrektur im selben Turn), wenn der erwartete Befehl unter KEINEM Slash-Befehl der Zeile vorkommt. Fail-open ist die tragende Anforderung (laeuft bei jedem Turn-Ende in jedem Konsumenten-Projekt); Schleifenschutz ueber `.claude/footer_gate_state.json`. `workflow.py autoclear` gibt nur noch `AUTO_CLEAR=off` aus (alte Befehlstexte, #663).
+
+**SessionEnd:** `session_singleton_guard.py cleanup`
+
+**Kein Hook — direkter CLI-Aufruf:** `session_singleton_guard.py claim --issue N[,M]`
+  Traegt die Issue-Nummer(n) explizit ins Session-Register ein, statt sie aus dem Workflow-Namen
+  zu erraten. Wird aus `/00-intake` aufgerufen, sobald die Nummer bekannt ist — vor dem
+  Workflow-Start. Ein Claim verfaellt automatisch, sobald der aktive Workflow zu einer anderen
+  Issue-Nummer gehoert. Als einziger Modus gibt `claim` Meldungen auf stdout aus; die drei
+  Hook-Modi bleiben still.
+
+**Kein Hook — zweiter CLI-Modus:** `session_singleton_guard.py sync-main` zieht den Haupt-Ordner (der Banner versucht das beim Start dort selbst, #399)
+per `git fetch` + `git merge --ff-only` nach (Issue #169). Der Guard lässt im Haupt-Ordner genau
+diesen einen Bash-Aufruf durch; bei Änderungen, abweichender Historie oder ohne Upstream bricht er
+ab, ohne etwas zu ändern. Nur aus einer Session im Haupt-Ordner nutzbar — Worktree-Sessions dürfen
+laut Claude Code keine Git-Aufrufe auf den Haupt-Ordner richten.
+
+**Kein Hook — Registrierung je Issue:** `issue_claim.py` (#461), aufgerufen von `workflow.py start/switch/phase/abandon/ship-status/claim`: Eintrag als Kommentar am Issue, Doppelstart bricht ab (`--uebernehmen`), fail-open ohne Netz; aus mit `issue_claim.enabled: false` oder `OPENSPEC_ISSUE_CLAIM=0`.
+
+## Session-Register
+
+`.claude/session-locks/<session_id>.json` beantwortet, wer gerade woran arbeitet.
+`workflow.py sessions` zeigt die Eintraege als Tabelle, `--json` liefert sie roh.
+
+Liveness: `os.kill(pid, 0)` gegen die gespeicherte `CLAUDE_PID`, ersatzweise `last_seen` gegen
+`_STALE_SECONDS`. Fehlt die eigene Lock-Datei, legt der Heartbeat sie neu an (`reregistered:
+true`) — nur in diesem Ausnahmefall, der 60s-Throttle bleibt sonst unangetastet.
+
+**Bekannte Einschraenkung (Issue #122):** Ein Eintrag, dessen PID inzwischen ein fremder lebender
+Prozess belegt (PID-Recycling im laufenden Boot), wird nie gereapt. `boot_id` schuetzt nur gegen
+Reboot. Bestandsproblem, kein Regressionsschaden.
+
+## Verzeichnis-Konventionen
+
+| Pfad | Zweck |
+|------|-------|
+| `core/hooks/*.py` | 4 konsolidierte Kern-Gates + ergänzende Guards + Utilities |
+| `core/agents/*.md` | Agent-Definitionen mit YAML-Frontmatter |
+| `core/commands/*.md` | Slash-Command-Definitionen — **Quelle** für `skills/` |
+| `skills/*/SKILL.md` | Generiert (`python3 scripts/sync_skills.py`), nie direkt editieren; Drift blockt Release |
+| `modules/<name>/` | Domain-Module mit eigener config.yaml |
+| `templates/` | Wiederverwendbare Spec-Templates |
+
+## Hook-Entwicklung
+
+Checks, die zum Phase-/TDD-/Commit-Gate gehoeren, kommen IN die 4 Kern-Hooks (`edit_gate.py`, `bash_gate.py`, `post_bash.py`, `phase_listener.py`), nicht als separate Dateien. Ein eigenstaendiger neuer Hook (wie `secrets_guard.py`, `worktree_write_guard.py`) ist nur gerechtfertigt, wenn der Check ein eigenes Event/eigene Matcher-Kombination braucht oder unabhaengig von den Kern-Gates greifen muss (z.B. Session-/Worktree-Enforcement). Neue Hooks IMMER in `hooks/hooks.json` registrieren. Modul-spezifische Hooks werden via `modules/<name>/config.yaml` → `hooks:` registriert.
+
+**Hook-Pfade niemals cwd-relativ (#165).** Hook-Kommandos laufen im *aktuellen* Arbeitsverzeichnis der Sitzung, nicht im Projekt-Root ([Doku](https://code.claude.com/docs/en/hooks)). `python3 .claude/hooks/x.py` bricht deshalb, sobald die Sitzung in einem Unterordner steht — im Plugin `${CLAUDE_PLUGIN_ROOT}/...`, in Projekt-`settings.json` `python3 "${CLAUDE_PROJECT_DIR}/.claude/hooks/x.py"` (Anfuehrungszeichen Pflicht: Projektordner duerfen Leerzeichen enthalten).
+
+```python
+# Modul-Hook schreiben — nutze hook_utils fuer Bootstrap:
+from hook_utils import setup_path, find_project_root, get_tool_input, block, allow
+setup_path()
+from config_loader import load_config
+
+def main():
+    tool_input = get_tool_input()
+    file_path = tool_input.get("file_path", "")
+
+    if violation_detected:
+        block("BLOCKED: Reason for blocking")
+    allow()
+
+if __name__ == "__main__":
+    main()
+```
+
+**Exit-Codes:** 0 = erlaubt, 2 = blockiert (stderr wird Claude angezeigt)
+
+## Improvement-Flow zwischen Projekten
+
+### Improvements zu diesem Meta-Projekt beitragen
+
+Wenn in einem Projekt eine Verbesserung am Framework entsteht:
+
+1. **Extrahieren**: Projekt-spezifische Details entfernen
+2. **Generalisieren**: Auf andere Domains anwendbar machen
+3. **Dokumentieren**: In CHANGELOG.md unter [Unreleased] eintragen
+4. **PR erstellen**: Mit Referenz zum Ursprungsprojekt
+
+### Improvements aus diesem Projekt beziehen
+
+```bash
+# Framework in bestehendes Projekt aktualisieren — lokal geaenderte Dateien bleiben stehen,
+# neue Fassung als <name>.new daneben (Manifest .claude/framework_manifest.json, #72)
+python3 /path/to/agent-os-openspec/setup.py /path/to/project --update
+
+# Force-Update (alle Dateien überschreiben, auch lokale Anpassungen)
+python3 /path/to/agent-os-openspec/setup.py /path/to/project --update --force
+
+# Neues Modul hinzufügen
+python3 /path/to/agent-os-openspec/setup.py /path/to/project --module ios-swiftui
+
+# Kurze Slash-Command-Aliase generieren (z.B. /50-implement statt /agent-os-openspec:50-implement)
+python3 /path/to/agent-os-openspec/setup.py /path/to/project --command-aliases   # empfohlen: pro Projekt; Redirect-Aliase liefern ohne geladenes Plugin (Cloud-Sitzung) den Befehlstext aus skills/<name>/SKILL.md bzw. bei Konsumenten aus dem Pin-Cache selbst nach oder stoppen mit BEFEHLSTEXT FEHLT (#562: Konsumenten einmal --update bzw. --cloud-gates laufen lassen, geänderte Dateien committen)
+# Global (~) NUR falls kein Projekt eine eigene Version von 40-tdd-red/50-implement/
+# 60-validate/70-deploy/80-workflow/81-add-artifact/99-reset pflegt — sonst shadowed
+# der globale Alias die Projekt-Datei (Issue #87, Claude-Code-Scope-Präzedenz-Bug)
+
+# Version prüfen
+python3 /path/to/agent-os-openspec/setup.py --version
+```
+
+## Wichtige Dateien
+
+| Datei | Beschreibung |
+|-------|--------------|
+| `setup.py` | Installations- und Update-Tool (v3.0) |
+| `config.yaml` | Template fuer Projektkonfiguration |
+| `CHANGELOG.md` | Versionshistorie |
+| `core/hooks/edit_gate.py` | Kern-Gate Edit/Write (Phase/TDD/LoC/Acceptance-Criteria) |
+| `core/hooks/bash_gate.py` | Kern-Gate Bash (Stop-Lock/State-Integrity/Secrets/Commit-Gates) |
+| `core/hooks/post_bash.py` | PostToolUse Bash (Testlauf-Hinweis `last_test_run`, kein Verdict) |
+| `core/hooks/phase_listener.py` | UserPromptSubmit Listener (Approval/Stop-Lock/Override/ADR-Gate) |
+| `core/hooks/footer_gate.py` | Stop-Hook: ❗Du-Fusszeile mechanisch gegen `expected_footer_command()` pruefen |
+| `core/hooks/session_singleton_guard.py` | SessionStart/PreToolUse/SessionEnd: Worktree-Pflicht + Session-Register; CLI-Modus `claim --issue` |
+| `core/hooks/worktree_write_guard.py` | PreToolUse Edit/Write: blockt Split-Brain-Schreibzugriff aufs Main-Repo |
+| `core/hooks/claude_md_protection.py` | PreToolUse Edit/Write: schuetzt CLAUDE.md vor verbotenen Patterns/Aufblaehung |
+| `core/hooks/tdd_enforcement.py` | PreToolUse Edit/Write: tiefe RED-Artefakt-Validierung |
+| `core/hooks/post_implementation_gate.py` | PreToolUse Edit/Write: erzwingt User-Review nach Implementierung |
+| `core/hooks/edit_verify.py` | PostToolUse Edit/Write: prueft Edit tatsaechlich auf Disk gelandet |
+| `core/hooks/secrets_guard.py` | PreToolUse Bash+Read: blockt Zugriff auf .env/Credentials/Keys |
+| `core/hooks/secret_egress_guard.py` | PreToolUse (alle Tools): blockt ausgeschriebene .env-WERTE im Tool-Input; bei Bash zusaetzlich Umleitungsziele ausserhalb der Sicherheitszone (Projekt, `extra_allowed_write_dirs`, eigenes Sitzungs-Scratchpad) |
+| `core/hooks/workflow.py` | Workflow State CLI (isolierte JSON-Files pro Workflow) |
+| `core/hooks/qa_gate.py` | QA-Gate: Test-Output validieren oder per `--run` den konfigurierten Testbefehl (`qa_gate.test_command`) selbst ausfuehren, Verdict setzen |
+| `core/hooks/override_token.py` | Shared Override-Token Management (TTL, Multi-WF) |
+| `core/hooks/migrate_state.py` | v2 → v3 State-Migration |
+| `core/hooks/hook_utils.py` | Shared Bootstrap (Imports, Parsing, Exit-Helpers); `read_state_json` liest Workflow-State nur als eigene normale Datei (#416); `read_state_text`, `atomic_write_text`, `is_stop_locked` für die übrigen Zustandsdateien (#422) |
+| `core/hooks/config_loader.py` | Config-Loader (YAML + Local Overrides) |
+| `core/hooks/adversary_dialog.py` | Adversary Dialog System (Spec-Checkliste, Tri-State Verdict) |
+| `core/hooks/evidence_gate.py` | Opt-in Evidence-Gate (`evidence_checks` in `config.yaml`): `phase8_complete` nur mit maschinell erzeugtem, zum Code passendem Simulator-Beleg; Beleg-Dateien per `edit_gate.py`/`bash_gate.py` schreibgesperrt (#447) |
+| `core/hooks/precondition_origins.py` | Eigenstaendiges CLI-Werkzeug, KEIN Hook/Gate: sammelt per Regex Herkunft von Testvorbedingungen ein (Sprachprofile in `config.yaml`) |
+| `core/hooks/issue_claim.py` | Utility, KEIN Hook: Registrierung je Issue per GitHub-Kommentar, Doppelstart-Abbruch, Freigabe bei Auslieferung/Abbruch (#461) |
+| `core/hooks/herdr_bridge.py` | Utility, KEIN Hook: meldet Workflow-Stand display-only an die Herdr-Sidebar (#466), öffnet den Plan-Pane rechts (`workflow.py plan`, #476), fail-open, Kill-Switch `herdr.enabled` |
+| `core/agents/fresh-eyes-inspector.md` | Unabhaengiger UI-Beobachter ohne Bug-Kontext |
+| `core/agents/po-briefer.md` | Unabhaengiges PO-Freigabe-Briefing (Spec vs. Ursprungsanfrage) |
+| `scripts/ci_spec_gate.py` | CI-Gate: prueft Spec + Briefing serverseitig im Pull Request |
+| `scripts/sync_cloud_agents.py` | Erzeugt markierte Kopien `.claude/agents/` aus `core/agents` (Cloud ohne Plugin, #577); `--check` blockt Drift im Release-Check |
+| `scripts/ship.py` | Eigenstaendiges Werkzeug, KEIN Hook: pushen, PR anlegen, CI abwarten, optional mergen in EINEM Aufruf (Kontext-Haushalt); `setup.py` kopiert es nach `.claude/scripts/` |
+
+## Slash-Commands Übersicht
+
+| Command | Phase | Beschreibung |
+|---------|-------|--------------|
+| `/00-intake` | - | Aufgaben-Klassifikation (Fast Track / voller Prozess) — immer der erste Schritt |
+| `/01-feature` | - | Feature planen (startet feature-planner Agent, erstellt GitHub Issue) |
+| `/10-context` | 1 | Relevanten Kontext sammeln |
+| `/20-analyse` | 2 | Anforderungen analysieren |
+| `/30-write-spec` | 3 | Spezifikation erstellen |
+| `/40-tdd-red` | 5 | Failing Tests schreiben |
+| `/50-implement` | 6 | Implementieren (Tests grün) |
+| `/60-validate` | 7 | Validierung |
+| `/70-deploy` | - | Deployment (projektspezifisches Template, muss angepasst werden) |
+| `/80-workflow` | - | Workflows verwalten |
+| `/81-add-artifact` | - | Test-Artefakte registrieren |
+| `/82-test` | - | Tests ausführen (startet test-runner Agent) |
+| `/83-user-story` | - | JTBD-basierte User Story Discovery |
+| `/90-retro` | - | Abgeschlossenen (archivierten) Workflow analysieren (Phasenzeiten, Qualitätssignale) |
+| `/99-reset` | - | Aktuellen Workflow abschließen/archivieren, neu starten |
+
+## Langfassungen der Kernregeln
+
+Die Kurzfassungen stehen in CLAUDE.md; hier der bisherige Wortlaut.
+
+### Beim Bearbeiten des Frameworks
+
+1. **Keine Breaking Changes** ohne Migration-Pfad
+2. **CHANGELOG.md** bei jeder Änderung aktualisieren
+3. **Versionsnummer** (`.claude-plugin/plugin.json`): bei Einzel-Auslieferung im Fix-/Feature-PR erhöhen, eigener Release-PR nur beim Bündeln mehrerer Issues (`docs/arbeitsweise.md`)
+4. **Tests** für Hooks: Manuell in einem Test-Projekt validieren
+5. **`core/hooks/` und `core/agents/` sind Infrastruktur**: Ohne laufenden Workflow ab phase6 verlangt `edit_gate.py` dafür einen Override-Token — der User tippt **"override"** (gilt 1 h, wird in `.claude/user_override_token.json` protokolliert). Mit Workflow ab phase6 entfällt er (#322); Phase-, TDD- und Adversary-Prüfung gelten stattdessen. Der Override öffnet nie den freigegebenen Teil einer Spec (#439). Niemals per Bash/`sed` am Gate vorbeischreiben: der Umweg ist kein Freibrief, sondern ein Fehler.
+
+### Arbeitsanweisungen für Claude
+
+Wenn du an diesem Framework arbeitest:
+
+1. **Verstehe den Kontext**: Dies ist ein Meta-Projekt, Änderungen betreffen viele abhängige Projekte
+2. **Teste Hooks**: Validiere Python-Hooks auf Syntax-Fehler vor Commit
+3. **CHANGELOG**: Jede Änderung unter [Unreleased] dokumentieren
+4. **Versionierung**: Semantische Versionierung (MAJOR.MINOR.PATCH)
+
+#### Workflow-Isolation — häufiges Missverständnis
+
+**Workflows blockieren sich gegenseitig NICHT.** Jeder Workflow läuft in einem eigenen Worktree und ist vollständig isoliert. Gates (Adversary-Verdict, Approval-Marker, Phase-Checks) gelten ausschließlich für den **eigenen aktiven Workflow** (`OPENSPEC_ACTIVE_WORKFLOW`).
+
+Siehst du einen anderen Workflow in `phase6` oder `phase7_validate` — das ist nicht dein Problem. Committe nur dann nicht, wenn dein eigener Workflow ein Gate auslöst. Niemals einen Commit verweigern oder dem User Befehle zur manuellen Ausführung geben, weil ein *fremder* Workflow in einer bestimmten Phase steckt.
+
+Bei Feature-Requests:
+- Prüfe erst, ob das Feature in core/ oder als Modul gehört
+- Core = universell für alle Projekte
+- Module = domain-spezifisch
+
+### Adversary-Limit — Begründung
+
+**Begründung:** Der Agent-Kaskaden-Effekt (Developer → Adversary → Fix → Adversary → Fix → Adversary) hat in realen Sessions 177 Minuten und ~3M Output-Tokens verbraucht. Ein VERIFIED bedeutet, die Implementierung ist gut genug — weitere Runden sind Token-Verbrennung ohne Mehrwert.

@@ -823,6 +823,8 @@ def test_changelog_and_claude_md_document_feature():
     start = changelog.index("## [Unreleased]")
     assert "#577" in changelog[start:], "CHANGELOG ohne #577-Eintrag"
 
-    claude_md = (REPO_ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+    # #580: Nachschlagewissen steht in docs/architektur.md, beide zusammen lesen.
+    claude_md = ((REPO_ROOT / "CLAUDE.md").read_text(encoding="utf-8") + "\n"
+                 + (REPO_ROOT / "docs" / "architektur.md").read_text(encoding="utf-8"))
     assert "scripts/sync_cloud_agents.py" in claude_md
     assert ".claude/agents/" in claude_md

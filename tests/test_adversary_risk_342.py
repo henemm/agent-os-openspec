@@ -604,7 +604,7 @@ TEXT_FILES = [
     "core/commands/00-intake.md",
     "core/commands/50-implement.md",
     "core/agents/implementation-validator.md",
-    "CLAUDE.md",
+    "docs/architektur.md",  # #580: Adversary System aus CLAUDE.md ausgelagert
 ]
 HIGH_CLAIM = re.compile(r"(?i)(mindestens|minimum|at least)\s+(2|zwei|two)\b")
 LOW_CLAIM = re.compile(r"(?i)\b(1|eine|one)\s+(runde|round|dialog-runde|dialog round)\b")
