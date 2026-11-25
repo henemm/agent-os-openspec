@@ -11,8 +11,8 @@ Vertraege, die diese Tests festlegen (zusaetzlich zur Spec):
 - `workflow.deploy_configured() -> bool` (Config aus CLAUDE_PROJECT_DIR/config.yaml);
   eine Root-config.yaml nur mit `deploy:` gilt als App-Config (#372), die Test-Configs
   enthalten deshalb zusaetzlich `herdr:`.
-- Skip-Log: Zeilen mit `skip:` in `.claude/herdr_auto_clear.log`; Phase 8 enthaelt
-  „kein Slash-Befehl“, fehlender Positivmarker enthaelt „Marker“.
+- Auto-/clear (#467) ist mit #663 entfernt: weder Stop-Hook noch `herdr_bridge.py
+  auto-clear` schreiben `.claude/herdr_auto_clear.log` oder rufen Herdr auf (AC-8/AC-9).
 - Stub-Binary: `pane split` liefert `{"result":{"pane":{"pane_id":"pane-new"}}}`,
   `agent wait` liefert Herdr-0.9.5-Format mit nur `agent_status` (Status aus
   $STUB_STATUS, Default idle; seit #506 darf der Runner es nicht mehr aufrufen),
@@ -387,41 +387,25 @@ def test_auto_clear_never_logs_skip_reason(tmp_path):
 
 # --- AC-9 -------------------------------------------------------------------
 
-RUNNER_BOUNDARY_AT = datetime.now().isoformat()  # #597: `at` des Grenz-Vermerks
-
-
-def _run_runner(proj: Path, env: dict, command: str = "/50-implement #478",
-                phase: str = "phase6_implement"):
-    # #597: der Runner tippt nur mit passendem Grenz-Vermerk (`--boundary-at`)
-    argv = [sys.executable, str(BRIDGE), "auto-clear", "--pane", PANE, "--workflow", WF,
-            "--phase", phase, "--command", command, "--grace", "0", "--settle", "0",
-            "--idle-timeout", "5", "--announce", "0", "--boundary-at", RUNNER_BOUNDARY_AT]
-    return _run(argv, env, proj)
-
-
-def test_runner_ignores_herdr_agent_status(tmp_path):
-    # #506 ersetzt test_runner_reads_real_agent_status_field: Herdrs Status (auch
-    # `blocked` wie beim PO-Manifest) entscheidet nicht mehr, `agent wait` entfaellt.
+def test_removed_runner_ignores_everything(tmp_path):
+    """#663 ersetzt test_runner_ignores_herdr_agent_status: der Runner ist geloescht.
+    `herdr_bridge.py auto-clear` endet still mit Exit 0, egal welchen Status Herdr
+    meldet; kein `agent wait`/`agent prompt`, kein Tippen, kein Log."""
     cmd = "/50-implement #478"
-    # #597: Grenz-Vermerk als Einmal-Token, sonst tippt der Runner nicht
+    at = datetime.now().isoformat()
     data = _wf_data(phase="phase6_implement",
                     auto_clear_boundary={"phase": "phase6_implement", "command": cmd,
-                                         "at": RUNNER_BOUNDARY_AT})
-
+                                         "at": at})
     for status in ("idle", "blocked"):
-        proj, log, env = _case(tmp_path, status, AUTO_ON, data, STUB_STATUS=status)
-        # Kurz-Alias im Projekt: der Runner tippt die Kurzform (#499, sonst Plugin-Form)
-        alias = proj / ".claude" / "commands" / "50-implement.md"
-        alias.parent.mkdir(parents=True, exist_ok=True)
-        alias.write_text("Alias\n")
-        res = _run_runner(proj, env, cmd)
-        assert res.returncode == 0, res.stderr
-        assert "Traceback" not in res.stderr, res.stderr
-        assert _of(_calls(log), "agent wait") == [], (status, _calls(log))
-        assert _of(_calls(log), "agent prompt") == [], (status, _calls(log))
-        enter = ["pane", "send-keys", PANE, "enter"]
-        typed = [c for c in _calls(log) if c[:1] == ["pane"]]
-        assert typed == [["pane", "send-text", PANE, "/clear"], enter,
-                         ["pane", "send-text", PANE, cmd], enter], \
-            (status, _calls(log), _skip_log(proj))
-        assert "OK" in _skip_log(proj), _skip_log(proj)
+        proj, log, env = _case(tmp_path, status, AUTO_ON, data, STUB_STATUS=status,
+                               OPENSPEC_HERDR_AUTO_CLEAR="1")
+        argv = [sys.executable, str(BRIDGE), "auto-clear", "--pane", PANE, "--workflow", WF,
+                "--phase", "phase6_implement", "--command", cmd, "--grace", "0",
+                "--settle", "0", "--idle-timeout", "5", "--announce", "0",
+                "--boundary-at", at]
+        res = _run(argv, env, proj)
+        assert (res.returncode, res.stdout, res.stderr) == (0, "", ""), (status, res)
+        time.sleep(0.5)
+        assert _calls(log) == [], (status, _calls(log))
+        assert _skip_log(proj) == "", (status, _skip_log(proj))
+        assert not (proj / ".claude" / "herdr_signals").exists(), status

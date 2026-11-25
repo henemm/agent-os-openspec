@@ -217,12 +217,30 @@ def _context_lines(root: Path, session: str = "s1") -> list:
     return res.stdout.splitlines()
 
 
-# Auto-/clear im Herdr-Pane (Muster tests/test_autoclear_boundary_495.py)
+# `workflow.py autoclear` im Herdr-Pane mit eingeschaltetem Auto-/clear-Schalter.
+# Lokale Helfer (#663: frueher aus tests/test_herdr_auto_clear_467.py importiert).
+
+AC_WF = "feat-467-herdr-auto-clear"
+AC_AUTO_ON = ("herdr:\n  auto_clear:\n    enabled: true\n    grace_s: 0\n"
+              "    idle_timeout_s: 5\n    announce: true\n")
+AC_STUB = "#!/bin/bash\nexit 0\n"
+
 
 def _autoclear_case(root: Path, extra_config: str = ""):
-    from test_herdr_auto_clear_467 import AUTO_ON, _hook_case  # noqa: PLC0415
-    root.mkdir(parents=True, exist_ok=True)
-    proj, _log, _stub, env = _hook_case(root, config=AUTO_ON + extra_config)
+    proj = root / "proj"
+    (proj / ".git").mkdir(parents=True)
+    (proj / ".claude" / "workflows" / "_log").mkdir(parents=True)
+    data = {"name": AC_WF, "workflow_type": "feature", "current_phase": "phase6_implement",
+            "phase_transitions": [], "phase_log": []}
+    (proj / ".claude" / "workflows" / f"{AC_WF}.json").write_text(json.dumps(data))
+    (proj / ".claude" / "active_workflow").write_text(AC_WF)
+    (proj / "config.yaml").write_text(AC_AUTO_ON + extra_config)
+    stub = root / "herdr-stub"
+    stub.write_text(AC_STUB)
+    stub.chmod(0o755)
+    env = _env(proj, OPENSPEC_ACTIVE_WORKFLOW=AC_WF, OPENSPEC_AUTONOMY="auto",
+               OPENSPEC_HERDR_AUTO_CLEAR="1", HERDR_ENV="1", HERDR_PANE_ID="pane-551",
+               HERDR_BIN_PATH=str(stub))
     return proj, env
 
 
@@ -233,8 +251,7 @@ def _run_autoclear(proj: Path, env: dict):
 
 
 def _autoclear_state(proj: Path) -> dict:
-    from test_herdr_auto_clear_467 import WF  # noqa: PLC0415
-    return json.loads((proj / ".claude" / "workflows" / f"{WF}.json").read_text())
+    return json.loads((proj / ".claude" / "workflows" / f"{AC_WF}.json").read_text())
 
 
 # status_note / Banner: frischer Prozess je Aufruf (Config-Cache)

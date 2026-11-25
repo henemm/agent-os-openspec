@@ -14,6 +14,9 @@ Fehler darin -> STOP folgt CUT.
 und `test_autoclear_output_unchanged` sind entfallen, ersetzt durch
 tests/test_auto_chain_flat_662.py (AC-5 bzw. AC-2); AC-7 und AC-9 der #662-Spec
 liegen hier (`test_helper_error_stop_follows_cut`, `test_post_bash_note_wording_per_variant`).
+#663 (docs/specs/chore-663-rueckbau-autoclear.md, AC-9): `auto_clear_active` existiert
+nicht mehr; der Herdr-Fall laeuft ohne ladbare Bridge und belegt, dass Config und Env
+`OPENSPEC_HERDR_AUTO_CLEAR` `CONTEXT_STOP` nicht beeinflussen.
 
 Isolation: jedes Szenario in einem eigenen tmp-Projekt (Hooks nach `.claude/hooks`
 kopiert, eigenes HOME). Die Cloud-Umgebung setzt `OPENSPEC_AUTONOMY=auto`; die
@@ -245,19 +248,20 @@ def test_autark_stop_off(tmp_path):
 WRAPPER = '''
 import sys
 sys.path.insert(0, sys.argv[1])
-import hook_utils, workflow, herdr_bridge
+mode = sys.argv[2]
+if mode == "herdr":
+    # #663: Herdr ist kein Teil der Entscheidung; die Bridge ist hier gar nicht ladbar
+    sys.modules["herdr_bridge"] = None
+import hook_utils, workflow
 
 def boom(*a, **k):
     raise RuntimeError("boom-658")
 
-mode = sys.argv[2]
 if mode == "helper":
     hook_utils.context_stop_applies = boom
     workflow.context_stop_applies = boom   # falls workflow den Namen direkt bindet
 elif mode == "autonomy":
     workflow.autonomy_mode = boom
-elif mode == "herdr":
-    herdr_bridge.auto_clear_active = boom
 workflow.cmd_context([])
 '''
 
@@ -282,11 +286,13 @@ def test_helper_error_stop_follows_cut(tmp_path):
         assert lines and lines[-1] == "CONTEXT_STOP=on", (mode, lines)
         assert "CONTEXT_REASON=AUTO_NO_CLEAR" not in lines, (mode, lines)
 
-    # #662: Herdr ist nicht mehr Teil der Entscheidung. Wirft `auto_clear_active`,
-    # bleibt es im Auto-Modus bei STOP=off mit Grund (kein Rueckfall auf Halt).
+    # #662/#663: Herdr ist nicht Teil der Entscheidung. Auch ohne ladbare Bridge
+    # bleibt es im Auto-Modus bei STOP=off mit Grund (kein Rueckfall auf Halt), trotz
+    # Herdr-Pane, Config `herdr.auto_clear` und Env `OPENSPEC_HERDR_AUTO_CLEAR`.
     root = _project(tmp_path / "over-herdr", HERDR_AUTO_CLEAR_ON)
     _write_usage(root, OVER)
-    lines = _context_patched(root, "herdr", _env(root, autonomy="auto", herdr=True))
+    lines = _context_patched(root, "herdr", _env(root, autonomy="auto", herdr=True,
+                                                 auto_clear_env="1"))
     assert _kv(lines, "CONTEXT_CUT") == "on", lines
     assert "CONTEXT_REASON=AUTO_NO_CLEAR" in lines, lines
     assert lines and lines[-1] == "CONTEXT_STOP=off", lines
