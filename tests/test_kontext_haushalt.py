@@ -42,6 +42,8 @@ def _project(tmp_path: Path, config: str = CONFIG) -> Path:
 def _env(**extra: str) -> dict:
     env = {k: v for k, v in os.environ.items()
            if not k.startswith(("OPENSPEC_", "HERDR_")) and k != "CLAUDE_CODE_SESSION_ID"}
+    # #658: Autonomie explizit (Cloud setzt OPENSPEC_AUTONOMY=auto); kein Herdr-Pane
+    env["OPENSPEC_AUTONOMY"] = "manual"
     env.update(extra)
     return env
 
@@ -186,7 +188,7 @@ def test_workflow_context_unknown_without_measurement(tmp_path):
     res = _run(root, "workflow.py", "context")
     assert res.returncode == 0
     assert res.stdout.splitlines() == ["CONTEXT_TOKENS=unknown", "CONTEXT_CUT=off",
-                                       "CONTEXT_THRESHOLD=100000"]
+                                       "CONTEXT_THRESHOLD=100000", "CONTEXT_STOP=off"]
 
 
 def test_workflow_context_on_for_session_and_newest_fallback(tmp_path):
@@ -194,7 +196,8 @@ def test_workflow_context_on_for_session_and_newest_fallback(tmp_path):
     _prime(root, "s1")
     tr = _transcript(root / "t.jsonl", 122_040)
     _run(root, "post_bash.py", stdin=_payload(tr, "s1"))
-    expected = ["CONTEXT_TOKENS=122040", "CONTEXT_CUT=on", "CONTEXT_THRESHOLD=100000"]
+    expected = ["CONTEXT_TOKENS=122040", "CONTEXT_CUT=on", "CONTEXT_THRESHOLD=100000",
+                "CONTEXT_STOP=on"]  # #658: Modus manual -> Halt
     res = _run(root, "workflow.py", "context", env=_env(CLAUDE_CODE_SESSION_ID="s1"))
     assert res.stdout.splitlines() == expected
     res = _run(root, "workflow.py", "context")  # ohne Sitzungs-Id: juengste Messung
@@ -208,7 +211,7 @@ def test_workflow_context_off_below_threshold_from_config(tmp_path):
     _run(root, "post_bash.py", stdin=_payload(tr, "s1"))
     res = _run(root, "workflow.py", "context", env=_env(CLAUDE_CODE_SESSION_ID="s1"))
     assert res.stdout.splitlines() == ["CONTEXT_TOKENS=122040", "CONTEXT_CUT=off",
-                                       "CONTEXT_THRESHOLD=200000"]
+                                       "CONTEXT_THRESHOLD=200000", "CONTEXT_STOP=off"]
 
 
 # --- workflow.py batch ---------------------------------------------------------
@@ -318,7 +321,7 @@ def test_ship_dry_run_with_branch_flag_from_default(tmp_path):
                                          ("50-implement.md", "60-validate")])
 def test_phase_commands_stop_chain_at_context_cut(name, follow):
     text = (COMMANDS / name).read_text()
-    para = next(p for p in text.split("\n\n") if "CONTEXT_CUT=on" in p)
+    para = next(p for p in text.split("\n\n") if "CONTEXT_STOP=on" in p)  # #658
     assert "workflow.py context" in para
     assert f"`{follow}` NICHT selbst aufrufen" in para
     assert f"❗Du-Zeile `/{follow} #<N>`" in para

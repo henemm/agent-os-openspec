@@ -61,6 +61,8 @@ def _env(root: Path, **extra: str) -> dict:
     home = root / "_home"
     home.mkdir(exist_ok=True)
     env["HOME"] = str(home)
+    # #658: Autonomie explizit (Cloud setzt OPENSPEC_AUTONOMY=auto); kein Herdr-Pane
+    env["OPENSPEC_AUTONOMY"] = "manual"
     env.update(extra)
     return env
 
@@ -240,12 +242,12 @@ def test_context_prints_effective_threshold_line(tmp_path):
     root = _project(tmp_path / "cloud")
     _write_usage(root, 120_000, baseline=100_000)
     assert _context(root) == ["CONTEXT_TOKENS=120000", "CONTEXT_CUT=off",
-                              "CONTEXT_THRESHOLD=175000"]
+                              "CONTEXT_THRESHOLD=175000", "CONTEXT_STOP=off"]
 
     root = _project(tmp_path / "local")
     _write_usage(root, 120_000, baseline=25_000)
     assert _context(root) == ["CONTEXT_TOKENS=120000", "CONTEXT_CUT=on",
-                              "CONTEXT_THRESHOLD=100000"]
+                              "CONTEXT_THRESHOLD=100000", "CONTEXT_STOP=on"]
 
 
 # --- AC-7: post_bash-Stufen relativ zur wirksamen Schwelle --------------------------
@@ -275,10 +277,10 @@ def test_old_usage_file_without_baseline_behaves_as_before(tmp_path):
     root = _project(tmp_path / "p")
     _write_usage(root, 99_999)  # alte Fassung: kein baseline_tokens
     assert _context(root) == ["CONTEXT_TOKENS=99999", "CONTEXT_CUT=off",
-                              "CONTEXT_THRESHOLD=100000"]
+                              "CONTEXT_THRESHOLD=100000", "CONTEXT_STOP=off"]
     _write_usage(root, 100_000)
     assert _context(root) == ["CONTEXT_TOKENS=100000", "CONTEXT_CUT=on",
-                              "CONTEXT_THRESHOLD=100000"]
+                              "CONTEXT_THRESHOLD=100000", "CONTEXT_STOP=on"]
     assert "baseline_tokens" not in _usage(root), "context liest nur, schreibt nicht"
 
 
