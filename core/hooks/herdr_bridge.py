@@ -428,15 +428,13 @@ def auto_clear_enabled() -> bool:
 
 
 def auto_clear_active() -> bool:
-    """Fuehrt Herdr hier das Auto-`/clear` aus? Herdr-Pane und Auto-/clear an (#658).
+    """Fuehrt Herdr hier das Auto-`/clear` aus? Seit #662 nie: stillgelegt.
 
-    Eine Quelle fuer `workflow.py autoclear` und `hook_utils.context_stop_applies`.
-    Fail-open: jeder Fehler ergibt False.
+    Eine Quelle fuer `workflow.py autoclear` und die Vermerk-Bedingung beim
+    Phasenwechsel. Liefert fest False, auch mit Herdr-Pane, Config
+    `herdr.auto_clear` und Env `OPENSPEC_HERDR_AUTO_CLEAR`; Loeschung mit #663.
     """
-    try:
-        return bool(_pane()) and auto_clear_enabled()
-    except Exception:
-        return False
+    return False
 
 
 def _footer_parts():
@@ -592,7 +590,11 @@ def maybe_auto_clear(payload, message, data) -> bool:
     (das tut erst der Runner vor dem Tippen), einen Once-Lock gibt es nicht.
 
     Fail-open: jede nicht erfuellte Bedingung oder Ausnahme = kein Spawn.
+
+    Seit #662 stillgelegt: kehrt als erste Anweisung ohne Spawn und ohne
+    Skip-Log zurueck (der Rest bleibt bis zum Rueckbau in #663 stehen).
     """
+    return False
     try:
         since = time.time()  # Stop-Hook-Zeitpunkt: Referenz fuer neue Eingaben (#506)
         pane = _pane()
