@@ -46,6 +46,7 @@ setup_path()
 
 import hashlib as _hashlib
 import json
+import math
 import os
 import re as _re
 import sys
@@ -1375,10 +1376,44 @@ def _plan_time_lines(data: dict, estimate) -> "list[str]":
             middle = f"Ende  ca. {_estimate_end_text(estimate, today, zone)}"
         else:
             middle = "Ende  offen"
+        countdown = _countdown_text(estimate, data)
         return ["", f"Start  {_format_clock(estimate['start'], today, zone)}", middle,
-                TIME_INDENT + _estimate_basis(estimate)]
+                *([countdown] if countdown else []), TIME_INDENT + _estimate_basis(estimate)]
     except Exception:
         return []
+
+
+def _countdown_text(estimate: dict, data: dict) -> "str | None":
+    """Grober Countdown (#655) aus den angezeigten Zeitpunkten minus `now`:
+    vor der Freigabe „Noch  ca. N Min bis Freigabe“, danach die Spanne
+    „Noch  ca. L–H Min“ (ab 120 Min in halben Stunden); None = keine Zeile."""
+    if not estimate.get("n") or (_before_approval(data) and awaiting_human_approval(data)):
+        return None
+    now = _parse_time(estimate.get("now") or _estimate_now())
+
+    def minutes(key):
+        return round((_parse_time(estimate[key]) - now).total_seconds() / 60, 6)
+
+    if estimate.get("approval") is not None:
+        left = minutes("approval")
+        if left <= 0:
+            return None
+        return f"Noch  ca. {max(5, math.floor(left / 5 + 0.5) * 5)} Min bis Freigabe"
+    if estimate.get("end_low") is None or estimate.get("end_high") is None:
+        return None
+    low, high = minutes("end_low"), minutes("end_high")
+    if high <= 0:
+        return None
+    low5, high5 = math.floor(low / 5) * 5, math.ceil(high / 5) * 5
+    if high5 >= 120:
+        unit = "h"
+        lo, hi = (f"{v:g}".replace(".", ",") for v in
+                  (max(0.5, math.floor(low / 30) / 2), math.ceil(high / 30) / 2))
+    else:
+        unit, lo, hi = "Min", str(low5), str(high5)
+    if low5 <= 0:
+        return f"Noch  bis ca. {hi} {unit}"
+    return f"Noch  ca. {hi if lo == hi else f'{lo}–{hi}'} {unit}"
 
 
 def awaiting_human_approval(data) -> bool:
