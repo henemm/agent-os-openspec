@@ -2359,48 +2359,7 @@ def record_transition(data: dict, target: str, trigger: str = "command") -> list
         # #647: Freigabe auf jedem Weg (cmd_phase, phase_listener, Auto) beendet die
         # Nacharbeit; ein Ruecksprung setzt das Flag vorher und zielt unter phase4.
         data.pop("spec_rework", None)
-    events = _record_budget_events(data)
-    _note_transition_boundary(data, target)
-    return events
-
-
-# Phasengrenzen fuer Auto-/clear (#497): Ende eines Phasenbefehls, danach startet
-# der Folgebefehl im neuen Kontext. Alle anderen Wechsel setzen keinen Vermerk.
-AUTO_CLEAR_BOUNDARIES = frozenset({
-    ("phase1_context", "phase2_analyse"),
-    ("phase2_analyse", "phase3_spec"),
-    ("phase3_spec", "phase4_approved"),
-    ("phase5_tdd_red", "phase6_implement"),
-    ("phase6b_adversary", "phase7_validate"),
-})
-
-
-def _boundary_timestamp() -> str:
-    """Zeitstempel fuer `auto_clear_boundary.at`, mit Zeitzone (#497b)."""
-    return datetime.now().astimezone().isoformat()
-
-
-def _note_transition_boundary(data: dict, target: str) -> None:
-    """Grenz-Vermerk beim Phasenwechsel in `data` setzen (#497); fail-open, still.
-
-    Nur fuer Grenzen aus AUTO_CLEAR_BOUNDARIES bei aktivem Auto-/clear
-    (`herdr_bridge.auto_clear_active()`, seit #662 stillgelegt: nie ein Vermerk;
-    Rueckbau mit #663). Speichern uebernimmt der Aufrufer; `current_phase` ist
-    hier noch die alte Phase.
-    """
-    try:
-        import herdr_bridge
-        if not herdr_bridge.auto_clear_active():
-            return
-        if (data.get("current_phase"), target) not in AUTO_CLEAR_BOUNDARIES:
-            return
-        command = expected_footer_command(dict(data, current_phase=target))
-        if isinstance(command, str) and command.startswith("/"):
-            data["auto_clear_boundary"] = {
-                "phase": target, "command": command, "at": _boundary_timestamp(),
-            }
-    except Exception:
-        pass
+    return _record_budget_events(data)
 
 
 # --- ADR Reflection Gate ---
@@ -5310,55 +5269,14 @@ def cmd_auto_ship(args: list[str]) -> None:
 def cmd_autoclear(args: list[str]) -> None:
     """Kompatibilitaetszeile, kein Gate: genau `AUTO_CLEAR=off`, Exit immer 0.
 
-    Seit #662 ist das Herdr-Auto-`/clear` stillgelegt: die Zeile bleibt nur fuer
+    Das Herdr-Auto-`/clear` ist mit #663 entfernt: die Zeile bleibt nur fuer
     alte, aus dem Plugin-Cache gelieferte Befehlstexte (#489), die damit die
-    Kette selbst fortsetzen. Kein Grenz-Vermerk; Wegfall mit #663.
+    Kette selbst fortsetzen.
     """
     try:
         print("AUTO_CLEAR=off")
     except Exception:
         pass
-
-
-def _record_auto_clear_boundary(name: "str | None" = None) -> "dict | None":
-    """Grenz-Vermerk `auto_clear_boundary` im aktiven Workflow speichern (#495).
-
-    Der Stop-Hook (`herdr_bridge.maybe_auto_clear`) loest nur aus, wenn der
-    Vermerk zu Phase und erwartetem Befehl passt. Mit `name` (#598, Stop-Hook
-    beim Kontext-Schnitt) genau dieser Workflow statt des aktiven. Gibt den
-    geschriebenen Vermerk zurueck. Fail-open: kein Workflow, kein bestimmbarer
-    Befehl oder jeder Fehler = nichts speichern, still, None.
-    """
-    try:
-        if name is None:
-            found = read_active_workflow_fast()
-            if found is None:
-                return None
-            name, data = found
-        else:
-            if not name or "/" in name or name.startswith("."):
-                return None
-            path = _workflow_file(name)
-            if not path.is_file():
-                return None
-            data = _read_workflow(path)
-            if not isinstance(data, dict):
-                return None
-        command = expected_footer_command(data)
-        if not isinstance(command, str):
-            return None
-        data.setdefault("name", name)
-        boundary = {
-            "phase": data.get("current_phase"),
-            "command": command,
-            "at": _boundary_timestamp(),
-        }
-        data["auto_clear_boundary"] = boundary
-        # Bewusst ohne _save_active: kein Herdr-Report, Stand unveraendert
-        _atomic_write(_workflow_file(name), data)
-        return boundary
-    except Exception:
-        return None
 
 
 def _apply_spec_approval(data: dict, trigger: str) -> list:

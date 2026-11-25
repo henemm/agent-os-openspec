@@ -14,7 +14,6 @@ unklare Fall endet mit Exit 0; keine Ausnahme darf nach aussen dringen.
 
 import hashlib
 import json
-import os
 import re
 import sys
 from datetime import datetime
@@ -188,60 +187,14 @@ def _reason_line(name: str, phase: "str | None", expected: str) -> str:
         return ""
 
 
-def _maybe_auto_clear(payload: dict, message: str, name: str) -> None:
-    """Herdr Auto-/clear (#467): nur auf dem Pfad "Fusszeile korrekt", fail-open.
-
-    Aendert weder Exit-Code noch stdout; alle Bedingungen prueft herdr_bridge.
-    """
-    try:
-        root = find_project_root()
-        data = read_state_json(root / ".claude" / "workflows" / f"{name}.json", root)
-        if isinstance(data, dict):
-            data.setdefault("name", name)
-            import herdr_bridge
-            herdr_bridge.maybe_auto_clear(payload, message, data)
-    except Exception:
-        pass
-
-
-def _discard_boundary(name: str) -> None:
-    """Vermerk nach zweimal falscher Fusszeile verwerfen (#497a); fail-open, still."""
-    try:
-        root = find_project_root()
-        data = read_state_json(root / ".claude" / "workflows" / f"{name}.json", root)
-        boundary = data.get("auto_clear_boundary") if isinstance(data, dict) else None
-        if isinstance(boundary, dict):
-            data.setdefault("name", name)
-            import herdr_bridge
-            herdr_bridge._consume_boundary(data, boundary)
-    except Exception:
-        pass
-
-
-def _record_stop() -> None:
-    """Stop-Signal fuer den Auto-/clear-Runner (#506), vor jedem Ausgang; still, fail-open.
-
-    Laeuft vor `maybe_auto_clear` (dessen `since` damit nach dem eigenen Stop
-    liegt); jeder weitere Stop (fremder Stop-Hook setzt den Turn fort) ist neuer.
-    """
-    if os.environ.get("HERDR_ENV") != "1" or not os.environ.get("HERDR_PANE_ID"):
-        return
-    try:
-        import herdr_bridge
-        herdr_bridge.record_signal("stop")
-    except Exception:
-        pass
-
-
 def main() -> None:
-    # "aus" wie bisher im Start-cwd; Stop-Marker trotzdem auf jedem Pfad (#506)
+    # "aus" wie bisher im Start-cwd
     disabled = framework_disabled()
     try:
         payload = json.load(sys.stdin)
     except Exception:
         payload = None
     adopt_payload_cwd(payload)
-    _record_stop()
     if disabled or not isinstance(payload, dict):
         sys.exit(0)
 
@@ -262,14 +215,12 @@ def main() -> None:
 
     expected, phase = _expected_command(name)
     if not expected or expected in actuals:
-        _maybe_auto_clear(payload, message, name)
         sys.exit(0)
 
     # Schleifenschutz: Exit 2 setzt den Turn fort — ohne ihn entstuende eine
     # Endlosschleife. Der eigene Zaehler traegt die Garantie allein;
     # `stop_hook_active` ist ein undokumentierter, rein defensiver Zusatz.
     if payload.get("stop_hook_active") is True:
-        _discard_boundary(name)
         sys.exit(0)
     state = _read_state()
     turn_id = _turn_id(payload, message)
