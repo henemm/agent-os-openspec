@@ -2798,7 +2798,7 @@ def context_stop_applies(root=None) -> bool:
 
     True genau dann, wenn der Autonomie-Modus nicht `auto` ist (dort tippt der
     PO ohnehin `/clear` und den Folgebefehl). Im Auto-Modus kaeme `/clear` von
-    niemandem (Herdr-Auto-/clear seit #662 stillgelegt): False, die Kette laeuft
+    niemandem (das Herdr-Auto-/clear ist mit #663 entfernt): False, die Kette laeuft
     weiter. Import lazy (workflow.py importiert diese Datei). Wirft der Aufruf,
     liefert der Helfer True (Halt wie vor #658). `root` ist fuer kuenftige
     Aufrufer reserviert; die Quelle bestimmt das Projekt selbst.

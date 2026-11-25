@@ -9,15 +9,19 @@ schreibt `auto_clear_boundary`, `workflow.py autoclear` sagt immer `AUTO_CLEAR=o
 `CONTEXT_STOP=on` nur noch im Modus manual; die Befehlstexte 10 bis 50 verlieren den
 Herdr-Absatz.
 
-Jedes Szenario schaltet Auto-/clear nach dem bisherigen Massstab EIN (Herdr-Pane,
-Config `herdr.auto_clear.enabled: true` und/oder Env `OPENSPEC_HERDR_AUTO_CLEAR=1`)
-und prueft das als Vorbedingung ueber `auto_clear_enabled()`/`_pane()` (bleiben bis
-#663), damit ein Gruen nie aus einem kaputten Aufbau kommt. Die Test-Env entfernt
-alle geerbten `OPENSPEC_*`/`HERDR_*`/`CLAUDE_*` und setzt Autonomie, Herdr und
-Sitzung explizit (die Cloud-Umgebung setzt `OPENSPEC_AUTONOMY=auto`).
+#663 (docs/specs/chore-663-rueckbau-autoclear.md): Der Auto-/clear-Code ist geloescht.
+AC-1 prueft deshalb, dass die Symbole nicht mehr existieren (statt `auto_clear_active()`
+fest False); der Stop-Hook-Test prueft nur noch den echten Hook (kein Runner, kein
+Log, kein Signal-Ordner) statt `maybe_auto_clear` direkt.
 
-Bewusst eigenstaendig (keine Importe aus den Auto-/clear-Testdateien): diese fallen
-mit dem Rueckbau in #663.
+Jedes Szenario schaltet Auto-/clear nach dem bisherigen Massstab EIN (Herdr-Pane mit
+Stub-Binary, Config `herdr.auto_clear.enabled: true` und/oder Env
+`OPENSPEC_HERDR_AUTO_CLEAR=1`); seit #663 gibt es keine Bridge-Funktion mehr, die das
+bestaetigen koennte, der Aufbau setzt Config und Env daher direkt. Die Test-Env
+entfernt alle geerbten `OPENSPEC_*`/`HERDR_*`/`CLAUDE_*` und setzt Autonomie, Herdr
+und Sitzung explizit (die Cloud-Umgebung setzt `OPENSPEC_AUTONOMY=auto`).
+
+Bewusst eigenstaendig: keine Importe aus anderen Testdateien.
 """
 from __future__ import annotations
 
@@ -164,20 +168,11 @@ class Proj:
                               capture_output=True, text=True, env=self.env,
                               cwd=str(self.proj), timeout=30)
 
-    def switch_state(self) -> dict:
-        """Bisheriger Massstab: Pane + Opt-in; dazu die neue Wahrheit `auto_clear_active`."""
-        res = self.py("import json, herdr_bridge as h\n"
-                      "print('RESULT=' + json.dumps({'pane': h._pane(),"
-                      " 'enabled': h.auto_clear_enabled(), 'active': h.auto_clear_active()}))")
-        lines = [ln for ln in res.stdout.splitlines() if ln.startswith("RESULT=")]
-        assert res.returncode == 0 and lines, (res.stdout, res.stderr)
-        return json.loads(lines[-1][len("RESULT="):])
-
-    def assert_switched_on(self, label: str = "") -> None:
-        """Vorbedingung: nach altem Massstab wuerde Herdr hier `/clear` tippen."""
-        st = self.switch_state()
-        assert st["pane"] == PANE and st["enabled"] is True, (
-            f"[{label}] Aufbau schaltet Auto-/clear nicht ein (Test waere wertlos): {st}")
+    def leftovers(self) -> list:
+        """Spuren des Auto-/clear im Projekt (Signale, Runner-Log, Sperre)."""
+        claude = self.proj / ".claude"
+        return [name for name in ("herdr_signals", "herdr_auto_clear.log",
+                                  "herdr_auto_clear.lock") if (claude / name).exists()]
 
 
 def _message(*blocks: str, command: str = CMD) -> str:
@@ -186,18 +181,18 @@ def _message(*blocks: str, command: str = CMD) -> str:
                         "⚙ /50-implement · agent-os-openspec 4.23.0"])
 
 
-# --- AC-1: auto_clear_active() ist immer False -----------------------------------
+# --- AC-1 (#663): die Auto-/clear-Symbole gibt es nicht mehr ------------------------
 
-def test_auto_clear_active_always_false(tmp_path):
-    for label, (config, switch) in SWITCHES.items():
-        for autonomy in ("auto", "manual"):
-            case = Proj(tmp_path, f"{label}-{autonomy}", config=config, switch=switch,
-                        autonomy=autonomy)
-            st = case.switch_state()
-            assert st["pane"] == PANE and st["enabled"] is True, (label, autonomy, st)
-            assert st["active"] is False, (
-                f"[{label}/{autonomy}] auto_clear_active() liefert {st['active']!r} "
-                "trotz Stilllegung (#662)")
+def test_auto_clear_symbols_gone(tmp_path):
+    case = Proj(tmp_path, "symbols", switch="1")
+    names = ("auto_clear_active", "auto_clear_enabled", "maybe_auto_clear",
+             "spawn_auto_clear", "run_auto_clear", "record_signal", "run_signal")
+    res = case.py("import json, herdr_bridge as h\n"
+                  f"print('RESULT=' + json.dumps([n for n in {names!r} if hasattr(h, n)]))")
+    lines = [ln for ln in res.stdout.splitlines() if ln.startswith("RESULT=")]
+    assert res.returncode == 0 and lines, (res.stdout, res.stderr)
+    left = json.loads(lines[-1][len("RESULT="):])
+    assert left == [], f"herdr_bridge enthaelt noch Auto-/clear-Symbole: {left}"
 
 
 # --- AC-2: `workflow.py autoclear` -> immer AUTO_CLEAR=off, kein Vermerk -----------
@@ -237,34 +232,6 @@ def _with_context_cut(case: Proj, tokens: int = 151_128) -> None:
                                  "baseline_tokens": 69_000, "announced_bucket": 1}))
 
 
-# maybe_auto_clear direkt, Popen abgefangen: jeder Spawn-Versuch wird sichtbar
-SPAWN_PROBE = r"""
-import json, subprocess
-calls = []
-class _Popen:
-    def __init__(self, argv, **kw):
-        calls.append([str(a) for a in argv])
-subprocess.Popen = _Popen
-import herdr_bridge, workflow
-spawned = []
-_orig = herdr_bridge.spawn_auto_clear
-def _spy(*a, **k):
-    spawned.append(True)
-    return _orig(*a, **k)
-herdr_bridge.spawn_auto_clear = _spy
-wf, message = sys.argv[1], sys.argv[2]
-with open(wf) as fh:
-    data = json.load(fh)
-data.setdefault("name", %(wf)r)
-expected = workflow.expected_footer_command(data)
-payload = {"hook_event_name": "Stop", "session_id": %(session)r,
-           "last_assistant_message": message}
-result = herdr_bridge.maybe_auto_clear(payload, message, data)
-print("RESULT=" + json.dumps({"result": result, "popen": calls, "spawned": len(spawned),
-                              "expected": expected}))
-""" % {"wf": WF, "session": SESSION}
-
-
 def test_stop_hook_never_spawns_runner(tmp_path):
     scenarios = {
         # Grenz-Vermerk aus dem Phasenwechsel, saubere Antwort mit Positiv-Block
@@ -289,7 +256,6 @@ def test_stop_hook_never_spawns_runner(tmp_path):
         case = Proj(tmp_path, f"hook-{label}", **kw, **sc["fields"])
         if sc.get("cut"):
             _with_context_cut(case)
-        case.assert_switched_on(label)
         res = case.footer(_message(POSITIVE), **sc["extra"])
         assert res.returncode == 0, (label, res.stderr)
         assert "Traceback" not in res.stderr, (label, res.stderr)
@@ -298,18 +264,8 @@ def test_stop_hook_never_spawns_runner(tmp_path):
             misses.append(f"{label}: Runner gestartet, Herdr-Aufrufe {_calls(case.log)}")
         if case.ac_log():
             misses.append(f"{label}: Auto-/clear-Log geschrieben {case.ac_log()!r}")
-
-        # (b) maybe_auto_clear direkt: kein spawn_auto_clear, kein Popen, False
-        case = Proj(tmp_path, f"probe-{label}", **kw, **sc["fields"])
-        if sc.get("cut"):
-            _with_context_cut(case)
-        res = case.py(SPAWN_PROBE, str(case.wf_file), _message(POSITIVE))
-        lines = [ln for ln in res.stdout.splitlines() if ln.startswith("RESULT=")]
-        assert res.returncode == 0 and lines, (label, res.stdout, res.stderr)
-        out = json.loads(lines[-1][len("RESULT="):])
-        assert out["expected"] == CMD, (label, out)  # Vorbedingung: Fusszeile passt
-        if out["result"] is not False or out["popen"] or out["spawned"]:
-            misses.append(f"{label}: maybe_auto_clear spawnte {out}")
+        if case.leftovers():
+            misses.append(f"{label}: Spuren {case.leftovers()}")
     assert not misses, "\n".join(misses)
 
 
@@ -404,7 +360,6 @@ def test_phase_change_writes_no_boundary(tmp_path):
             case = Proj(tmp_path, label, phase=src, config=config, switch=switch, **fields)
             if src == "phase6b_adversary":
                 _adversary_evidence(case)
-            case.assert_switched_on(label)
             res = case.wf("phase", dst)
             assert res.returncode == 0, (label, res.stdout, res.stderr)
             data = case.state()
@@ -414,7 +369,6 @@ def test_phase_change_writes_no_boundary(tmp_path):
 
         # 3->4 ueber beide Freigabewege: auto-approve und phase_listener „approved“
         case = _approval_case(tmp_path, f"{sw_label}-auto-approve", config, switch)
-        case.assert_switched_on(f"{sw_label}-auto-approve")
         res = case.wf("auto-approve")
         assert "AUTO_APPROVE=done" in res.stdout, (sw_label, res.stdout, res.stderr)
         data = case.state()
@@ -477,14 +431,6 @@ def _ctx_lines(root: Path, env: dict) -> "list[str]":
     return res.stdout.splitlines()
 
 
-def _ctx_switched_on(root: Path, env: dict) -> bool:
-    code = (f"import sys; sys.path.insert(0, {str(root / '.claude' / 'hooks')!r})\n"
-            "import herdr_bridge as h\nprint(bool(h._pane()) and h.auto_clear_enabled())")
-    res = subprocess.run([sys.executable, "-c", code], cwd=root, env=env,
-                         capture_output=True, text=True, timeout=60)
-    return res.stdout.strip() == "True"
-
-
 def test_context_auto_with_herdr_stop_off(tmp_path):
     expected = ["CONTEXT_TOKENS=150000", "CONTEXT_CUT=on", "CONTEXT_THRESHOLD=100000",
                 "CONTEXT_REASON=AUTO_NO_CLEAR", "CONTEXT_STOP=off"]
@@ -499,7 +445,6 @@ def test_context_auto_with_herdr_stop_off(tmp_path):
     for label, (config, kw) in cases.items():
         root = _ctx_project(tmp_path, label, config)
         env = _ctx_env(root, herdr=True, **kw)
-        assert _ctx_switched_on(root, env), f"[{label}] Vorbedingung: Auto-/clear nicht an"
         lines = _ctx_lines(root, env)
         if lines != expected:
             misses.append(f"{label}: {lines}")

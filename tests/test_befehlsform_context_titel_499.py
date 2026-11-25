@@ -1,25 +1,19 @@
-"""Auto-/clear: richtige Befehlsform, /10-context mit context_file, robuster
-Issue-Titel (Issues #499, #500, #492).
+"""/10-context mit context_file und robuster Issue-Titel (Issues #499, #500, #492);
+die Auto-/clear-Befehlsform (#499 AC-1 bis AC-4) ist mit #663 entfallen.
 
-Spec: docs/specs/fix-499-befehlsform-context-titel.md (AC-1 bis AC-11; AC-12 =
+Spec: docs/specs/fix-499-befehlsform-context-titel.md (AC-5 bis AC-11; AC-12 =
 E2E-Skript, AC-13 = Regressionslauf).
 
-Stub-Herdr und Hook-Helfer aus tests/test_herdr_auto_clear_467.py, Stub-`gh`-Muster
-aus tests/test_plan_issue_titel_490.py. Jeder Fall laeuft in einem isolierten
-Projekt mit `HOME` auf einem Wegwerf-Verzeichnis, damit Aliase unter `~/.claude`
-des echten Benutzers nie mitzaehlen.
+#663 (docs/specs/chore-663-rueckbau-autoclear.md): Der Runner (`herdr_bridge.py
+auto-clear`) samt `resolve_command_form` ist geloescht. Die Runner-Tests zu AC-1 bis
+AC-4 sind ersetzt durch `test_command_form_and_runner_are_gone`; AC-5 prueft nur noch
+den Stop-Hook. Stub-Herdr und Hook-Helfer sind lokal (keine Importe aus anderen
+Testdateien), Stub-`gh`-Muster aus tests/test_plan_issue_titel_490.py. Jeder Fall laeuft
+in einem isolierten Projekt mit `HOME` auf einem Wegwerf-Verzeichnis.
 
 Vertraege, die diese Tests festlegen (die Spec nennt sie nicht exakt):
-- `herdr_bridge.resolve_command_form(command) -> str`: Projekt aus
-  `find_project_root()`, Home aus `Path.home()` (Spec: Implementation Details).
-- Der Fehlerfall "Home nicht ermittelbar" wird per `sitecustomize` simuliert, das
-  `pathlib.Path.home` eine `RuntimeError` werfen laesst (wie Python ohne HOME/pwd).
 - Die Cache-Sperre ist eine `fcntl.flock`-Sperre auf `<cache>.lock`
   (Muster `herdr_bridge._pp_flock`).
-- #597 (docs/specs/fix-597-autoclear-klartext.md): Runner-Faelle legen einen
-  passenden Grenz-Vermerk (`at` = BOUNDARY_AT) in den State und uebergeben
-  `--boundary-at`; der Runner tippt nur mit diesem Einmal-Token. Kein Once-Lock
-  mehr; Antworttexte ohne Git-Woerter (Klartext-Vorpruefung).
 """
 
 import fcntl
@@ -34,29 +28,29 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from test_herdr_auto_clear_467 import (  # noqa: E402
-    AUTO_ON,
-    BRIDGE,
-    FOOTER_GATE,
-    HOOKS_DIR,
-    REPO_ROOT,
-    _calls,
-    _kind,
-    _make_stub,
-    _prompts,
-)
+REPO_ROOT = Path(__file__).resolve().parent.parent
+HOOKS_DIR = REPO_ROOT / "core" / "hooks"
+BRIDGE = HOOKS_DIR / "herdr_bridge.py"
+FOOTER_GATE = HOOKS_DIR / "footer_gate.py"
+
+# Auto-/clear nach altem Massstab EIN (frueher aus tests/test_herdr_auto_clear_467.py)
+AUTO_ON = ("herdr:\n  auto_clear:\n    enabled: true\n    grace_s: 0\n"
+           "    idle_timeout_s: 5\n    announce: true\n")
+
+# Stub-Herdr: protokolliert jeden Aufruf NUL-getrennt in STUB_LOG, Exit 0
+STUB_SCRIPT = r"""#!/bin/bash
+{ for a in "$@"; do printf '%s\0' "$a"; done; printf '\n'; } >> "$STUB_LOG"
+exit 0
+"""
 
 PANE = "pane-499"
 WF = "fix-999-befehlsform"
 PHASE = "phase2_analyse"
 SHORT = "/20-analyse #999"
-PLUGIN = "/agent-os-openspec:20-analyse #999"
 RESET = "/99-reset #999"
 AC_LOG = Path(".claude") / "herdr_auto_clear.log"
 TITLE_LOG = Path(".claude") / "issue_titles.log"
-PLAIN = "Phase sauber abgeschlossen, Stand gesichert."  # ohne Git-Woerter (#597)
-BOUNDARY_AT = datetime.now().isoformat()  # `at` des Grenz-Vermerks der Runner-Faelle (#597)
+PLAIN = "Phase sauber abgeschlossen, Stand gesichert."
 
 # Stub-gh: antwortet auf `api repos/.../issues/N` UND `issue view N` (damit AC-9
 # am Cache-Verlust scheitert, nicht an der Aufrufform). Titel: ${GH_TITLE} oder
@@ -82,15 +76,22 @@ fi
 exit "${GH_EXIT:-0}"
 """
 
-SITECUSTOMIZE_NO_HOME = (
-    "import pathlib\n"
-    "def _no_home(cls=None):\n"
-    "    raise RuntimeError('Could not determine home directory.')\n"
-    "pathlib.Path.home = classmethod(_no_home)\n"
-)
+
+# --- Helfer: Projekt, Stub, Hook ----------------------------------------------
+
+def _make_stub(root: Path) -> Path:
+    stub = root / "herdr-stub"
+    stub.write_text(STUB_SCRIPT)
+    stub.chmod(stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    return stub
 
 
-# --- Helfer: Projekt, Runner, Hook --------------------------------------------
+def _calls(log: Path) -> list:
+    if not log.exists():
+        return []
+    return [ln.rstrip("\0").split("\0")
+            for ln in log.read_bytes().decode("utf-8", "replace").split("\n") if ln]
+
 
 def _project(root: Path, phase: str = PHASE, **fields) -> Path:
     proj = root / "proj"
@@ -112,6 +113,8 @@ def _env(proj: Path, log: Path, stub: Path, **extra) -> dict:
     env["CLAUDE_PROJECT_DIR"] = str(proj)
     env["HOME"] = str(proj / "_home")
     env["OPENSPEC_ACTIVE_WORKFLOW"] = WF
+    env["OPENSPEC_AUTONOMY"] = "auto"
+    env["OPENSPEC_HERDR_AUTO_CLEAR"] = "1"
     env.update({"HERDR_ENV": "1", "HERDR_PANE_ID": PANE,
                 "HERDR_BIN_PATH": str(stub), "STUB_LOG": str(log)})
     env.update(extra)
@@ -121,28 +124,10 @@ def _env(proj: Path, log: Path, stub: Path, **extra) -> dict:
 def _case(tmp_path: Path, label: str, phase: str = PHASE, **fields):
     root = tmp_path / label
     root.mkdir(parents=True)
-    # #597: passender Grenz-Vermerk, sonst tippt der Runner nie (Einmal-Token)
-    fields.setdefault("auto_clear_boundary",
-                      {"phase": phase, "command": SHORT, "at": BOUNDARY_AT})
     proj = _project(root, phase=phase, **fields)
     log = root / "stub.log"
     stub = _make_stub(root)
     return proj, log, _env(proj, log, stub), root
-
-
-def _run_runner(proj: Path, env: dict, command: str = SHORT, phase: str = PHASE):
-    argv = [sys.executable, str(BRIDGE), "auto-clear",
-            "--pane", PANE, "--workflow", WF, "--phase", phase, "--command", command,
-            "--grace", "0", "--settle", "0", "--idle-timeout", "5", "--announce", "0",
-            "--boundary-at", BOUNDARY_AT]
-    return subprocess.run(argv, capture_output=True, text=True, env=env,
-                          cwd=str(proj), timeout=60)
-
-
-def _texts(log: Path) -> list:
-    """Getippte Texte (#506: `pane send-text`; `pane send-keys enter` ist kein Text)."""
-    return [c[3] for c in _prompts(_calls(log))
-            if len(c) > 3 and _kind(c) != "pane send-keys"]
 
 
 def _ac_log(proj: Path) -> str:
@@ -168,21 +153,10 @@ def _run_hook(proj: Path, env: dict, message: str):
                           timeout=30)
 
 
-def _alias_paths(proj: Path) -> dict:
-    home = proj / "_home"
-    return {
-        "projekt-commands": proj / ".claude" / "commands" / "20-analyse.md",
-        "projekt-skills": proj / ".claude" / "skills" / "20-analyse" / "SKILL.md",
-        "home-commands": home / ".claude" / "commands" / "20-analyse.md",
-        "home-skills": home / ".claude" / "skills" / "20-analyse" / "SKILL.md",
-    }
-
-
 def _py(code: str, env: dict, cwd: Path, timeout: float = 30):
     full = f"import sys; sys.path.insert(0, {str(HOOKS_DIR)!r})\n{code}"
     return subprocess.run([sys.executable, "-c", full], capture_output=True, text=True,
                           env=env, cwd=str(cwd), timeout=timeout)
-
 
 # --- Helfer: Issue-Titel ------------------------------------------------------
 
@@ -233,113 +207,42 @@ def _result(res) -> str:
     return lines[-1][len("RESULT="):]
 
 
-# --- AC-1 ---------------------------------------------------------------------
+# --- AC-1 bis AC-4 (#663: Runner und Befehlsform entfallen) ----------------------
 
-def test_alias_present_in_each_location_sends_short_form(tmp_path):
-    seen = {}
-    for label in ("projekt-commands", "projekt-skills", "home-commands", "home-skills"):
-        proj, log, env, _ = _case(tmp_path, label)
-        alias = _alias_paths(proj)[label]
-        alias.parent.mkdir(parents=True, exist_ok=True)
-        alias.write_text("---\ndescription: Kurz-Alias\n---\nAlias\n")
-        res = _run_runner(proj, env)
-        assert res.returncode == 0, (label, res.stderr)
-        seen[label] = _texts(log)
-    for label, texts in seen.items():
-        assert texts == ["/clear", SHORT], (label, texts)
-    # Gegenprobe: dieselbe Konstellation ohne jede Alias-Datei waehlt NICHT die Kurzform
-    proj, log, env, _ = _case(tmp_path, "ohne-alias")
-    res = _run_runner(proj, env)
-    assert res.returncode == 0, res.stderr
-    assert _texts(log) == ["/clear", PLUGIN], (
-        f"Ohne Alias muss die Plugin-Form gesendet werden: {_texts(log)}; "
-        f"Log: {_ac_log(proj)!r}")
-
-
-# --- AC-2 ---------------------------------------------------------------------
-
-def test_no_alias_sends_plugin_form_keeps_arguments(tmp_path):
-    proj, log, env, _ = _case(tmp_path, "plugin")
-    res = _run_runner(proj, env)
-    assert res.returncode == 0, res.stderr
-    assert _texts(log) == ["/clear", PLUGIN], (_texts(log), _ac_log(proj))
-
-    # Reine Funktion: Argumente bleiben, qualifizierte Befehle unveraendert
+def test_command_form_and_runner_are_gone(tmp_path):
+    """#663 ersetzt die Runner-Tests zu AC-1 bis AC-4: es gibt keine Befehlsform-Wahl
+    mehr, und `herdr_bridge.py auto-clear` tippt weder `/clear` noch den Folgebefehl."""
+    proj, log, env, _ = _case(tmp_path, "gone",
+                              auto_clear_boundary={"phase": PHASE, "command": SHORT,
+                                                   "at": datetime.now().isoformat()})
     code = ("import herdr_bridge as h\n"
-            "for c in ['/20-analyse #999', '/20-analyse', '/30-write-spec #12 extra',\n"
-            "          '/agent-os-openspec:20-analyse #999', '/anderes-plugin:x #1']:\n"
-            "    print(repr(c) + ' -> ' + repr(h.resolve_command_form(c)))\n")
+            "print('RESULT=' + repr(sorted(n for n in ('resolve_command_form',"
+            " 'PLUGIN_NAMESPACE', 'MANUAL_COMMANDS', '_command_name', 'run_auto_clear')"
+            " if hasattr(h, n))))")
     res = _py(code, env, proj)
     assert res.returncode == 0, res.stderr
-    out = res.stdout
-    assert "'/20-analyse #999' -> '/agent-os-openspec:20-analyse #999'" in out, out
-    assert "'/20-analyse' -> '/agent-os-openspec:20-analyse'" in out, out
-    assert ("'/30-write-spec #12 extra' -> '/agent-os-openspec:30-write-spec #12 extra'"
-            in out), out
-    assert ("'/agent-os-openspec:20-analyse #999' -> '/agent-os-openspec:20-analyse #999'"
-            in out), out
-    assert "'/anderes-plugin:x #1' -> '/anderes-plugin:x #1'" in out, out
+    lines = [ln for ln in res.stdout.splitlines() if ln.startswith("RESULT=")]
+    assert lines == ["RESULT=[]"], f"Befehlsform-/Runner-Symbole stehen noch: {res.stdout}"
 
-
-# --- AC-3 ---------------------------------------------------------------------
-
-def test_form_check_error_falls_back_to_plugin_form(tmp_path):
-    proj, log, env, root = _case(tmp_path, "nohome")
-    site = root / "site"
-    site.mkdir()
-    (site / "sitecustomize.py").write_text(SITECUSTOMIZE_NO_HOME)
-    env["PYTHONPATH"] = os.pathsep.join(
-        [str(site)] + ([env["PYTHONPATH"]] if env.get("PYTHONPATH") else []))
-    # Plausibilitaet: im Subprozess wirft Path.home() tatsaechlich
-    check = _py("import pathlib\ntry:\n    pathlib.Path.home()\n    print('HOME-OK')\n"
-                "except RuntimeError:\n    print('HOME-ERR')\n", env, proj)
-    assert check.stdout.strip() == "HOME-ERR", (check.stdout, check.stderr)
-    res = _run_runner(proj, env)
-    assert res.returncode == 0, res.stderr
-    assert "Traceback" not in res.stderr, res.stderr
-    assert _texts(log) == ["/clear", PLUGIN], (_texts(log), _ac_log(proj))
-    assert "OK" in _ac_log(proj), _ac_log(proj)
-
-
-# --- AC-4 ---------------------------------------------------------------------
-
-def test_state_and_log_keep_short_form(tmp_path):
-    """AC-4 (#499); #597 (Spec fix-597, Affected Files): statt des Once-Lock-Schluessels
-    gilt: keine herdr_auto_clear_state.json, Grenze nach `OK` verbraucht.
-    #662: weder `workflow.py autoclear` noch der Stop-Hook starten den Runner; er laeuft
-    hier direkt (mit Ankuendigung) gegen den Kurzform-Vermerk aus `_case`."""
-    proj, log, env, _ = _case(tmp_path, "shortkeys")
     argv = [sys.executable, str(BRIDGE), "auto-clear",
             "--pane", PANE, "--workflow", WF, "--phase", PHASE, "--command", SHORT,
-            "--grace", "0", "--settle", "0", "--idle-timeout", "5", "--announce", "1",
-            "--boundary-at", BOUNDARY_AT]
+            "--grace", "0", "--settle", "0", "--idle-timeout", "5", "--announce", "1"]
     res = subprocess.run(argv, capture_output=True, text=True, env=env, cwd=str(proj),
                          timeout=60)
-    assert res.returncode == 0, res.stderr
-    assert ": OK" in _ac_log(proj) or "ABBRUCH" in _ac_log(proj), (
-        f"Runner endete nicht; Log: {_ac_log(proj)!r}; Calls: {_calls(log)}")
-    # getippter Text: Plugin-Form (kein Alias im Projekt/Home)
-    assert _texts(log) == ["/clear", PLUGIN], (_texts(log), _ac_log(proj))
-    # Log-Tag: Kurzform
-    assert f"{WF}|{PHASE}|{SHORT}: OK" in _ac_log(proj), _ac_log(proj)
-    assert PLUGIN not in _ac_log(proj), _ac_log(proj)
-    # #597: kein Once-Lock mehr; der Vermerk (Einmal-Token) ist nach dem Tippen verbraucht
-    assert not (proj / ".claude" / "herdr_auto_clear_state.json").exists(), \
-        (proj / ".claude" / "herdr_auto_clear_state.json").read_text()
-    state = json.loads((proj / ".claude" / "workflows" / f"{WF}.json").read_text())
-    assert "auto_clear_boundary" not in state, state
-    # Ankuendigung nennt weiter die Kurzform (gleiche Quelle wie die Fusszeile)
-    notes = [c for c in _calls(log) if _kind(c) == "notification show"]
-    assert notes and SHORT in " ".join(notes[0]), notes
+    assert (res.returncode, res.stdout, res.stderr) == (0, "", ""), res
+    time.sleep(0.5)
+    assert _calls(log) == [], f"Herdr-Stub aufgerufen: {_calls(log)}"
+    assert _ac_log(proj) == "", _ac_log(proj)
 
 
 # --- AC-5 ---------------------------------------------------------------------
 
 def test_99_reset_is_never_typed_automatically(tmp_path):
+    # Ein alter Grenz-Vermerk im State (vor #663 geschrieben) stoert nicht
     fields = {"no_build_reason": "PO: nichts bauen",
               "auto_clear_boundary": {"phase": PHASE, "command": RESET,
                                       "at": datetime.now().isoformat()}}
-    # (a) Stop-Hook: kein Spawn, kein Skip-Log (#662: maybe_auto_clear kehrt sofort zurueck)
+    # Stop-Hook: kein Spawn, kein Log
     proj, log, env, _ = _case(tmp_path, "hook", **fields)
     sys.path.insert(0, str(HOOKS_DIR))
     import workflow  # noqa: PLC0415
@@ -350,14 +253,6 @@ def test_99_reset_is_never_typed_automatically(tmp_path):
     time.sleep(1.5)
     assert _calls(log) == [], f"Stub unerwartet aufgerufen: {_calls(log)}"
     assert _ac_log(proj) == "", _ac_log(proj)
-
-    # (b) Runner direkt (defensiv): weder /clear noch /99-reset
-    proj, log, env, _ = _case(tmp_path, "runner", no_build_reason="PO: nichts bauen")
-    res = _run_runner(proj, env, command=RESET)
-    assert res.returncode == 0, res.stderr
-    assert "Traceback" not in res.stderr, res.stderr
-    assert _texts(log) == [], f"Runner tippte: {_texts(log)}"
-    assert "ABBRUCH" in _ac_log(proj), _ac_log(proj)
 
 
 # --- AC-6 ---------------------------------------------------------------------
