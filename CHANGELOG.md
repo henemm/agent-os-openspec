@@ -21,6 +21,7 @@ Die Plan-Seitenleiste zeigt unter der Freigabe- bzw. Ende-Zeile grob, wie lange 
 
 ### Known Limitations
 
+- In der Stundenform beginnt die Spanne frühestens bei 0,5 h, auch wenn die Schätzung weniger zulässt (Adversary F001).
 - Der Countdown springt: `end_low`/`end_high` stehen auf Viertelstunden, die Zahl läuft zwischen den Sprüngen der Ende-Spanne herunter und springt, wenn die Schätzung neu rechnet. Gewollt: ein grober Wert, kein Sekundenzähler.
 - Schmaler Pane (#643): unterhalb von 34 Zeichen Breite bricht die Zeile um (z. B. „Noch  ca. 45 Min bis“ / „  Freigabe“); die Zahl bleibt vollständig.
 - Nach überschrittener Schätzung (Obergrenze ≤ jetzt) zeigt der Plan keine Zeile statt einer negativen Zahl; die Ende-Zeile bleibt stehen.

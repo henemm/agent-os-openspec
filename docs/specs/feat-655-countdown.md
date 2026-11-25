@@ -118,6 +118,8 @@ Beispiele (`now` = 10:00:00, Anzeigezone beliebig, `n` ≥ 1):
 ## Known Limitations
 
 - **Der Countdown springt:** `end_low`/`end_high` stehen auf Viertelstunden, die Zahl ändert sich also nicht minütlich, sondern läuft zwischen den Sprüngen der Ende-Spanne herunter und springt, wenn die Schätzung neu rechnet (Viertelstundengrenze der Spanne). Das ist gewollt: ein grober Wert, kein Sekundenzähler.
+- **Stunden-Untergrenze (Adversary F001):** In der Stundenform steht die Untergrenze mindestens bei 0,5 h; liegt die echte Untergrenze darunter (z. B. 10 Min bei Obergrenze 200 Min), zeigt die Zeile „ca. 0,5–3,5 h“ und ist damit unten etwas enger als die Schätzung. Bewusst so gelassen: „0–3,5 h“ läse sich wie „fertig“.
+- **Unplausible Eingaben (F003):** Liefert die Schätzung `end_low > end_high` (kommt aus `estimate_remaining` nicht vor), erscheint die Spanne verkehrt herum.
 - **Schmaler Pane (#643):** Unterhalb von 34 Zeichen Breite bricht die Zeile um (z. B. „Noch  ca. 45 Min bis“ / „  Freigabe“); die Zahl bleibt vollständig. Die Breite des Panes selbst ist Issue #643.
 - Nach „Schätzung überschritten“ (H ≤ 0) zeigt der Plan keine Zeile statt einer negativen Zahl; die Ende-Zeile bleibt stehen.
 - Der Countdown nennt keine Sekunden und keine Prozentzahl; die Zuverlässigkeit steht weiter in der Basiszeile.
