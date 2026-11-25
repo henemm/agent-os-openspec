@@ -5731,25 +5731,41 @@ def handoff_route() -> "tuple[str, int | None, dict | None]":
         return "none", None, None
 
 
-def _handoff_mark(root: Path, auftrag: dict, number: int, mode: str) -> None:
+def _handoff_mark(root: Path, number: int, mode: str) -> None:
+    """Start-Vermerk unter Sperre setzen (#668): Auftrag neu lesen, Feld `handoff`, schreiben.
+
+    Sperre wie die Plan-Pane-Datei (`herdr_bridge._pp_flock`); ohne Sperre (Timeout)
+    fail-open weiter. Kein Auftrag mehr -> RuntimeError (zaehlt als Fehlschlag).
+    """
     from datetime import timezone
-    data = dict(auftrag)
-    data["handoff"] = {"issue": number, "mode": mode,
-                       "at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
-    write_auftrag(root, data)
+    import herdr_bridge
+    fd = herdr_bridge._pp_flock(auftrag_path(root, auftrag_owner_key()))
+    try:
+        data = read_auftrag(root)
+        if data is None:
+            raise RuntimeError("kein Auftrag")
+        data["handoff"] = {"issue": number, "mode": mode,
+                           "at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+        write_auftrag(root, data)
+    finally:
+        if fd is not None:
+            os.close(fd)
 
 
 def cmd_handoff(args: list[str]) -> None:
-    """`handoff [--start] [--mark cloud|herdr]` (#667): naechstes Auftrags-Issue frisch starten.
+    """`handoff [--start] [--mark cloud|herdr]` (#667, #668): naechstes Auftrags-Issue frisch starten.
 
-    Ausgabe `HANDOFF=none|cloud|herdr|inline`, `NEXT=<M>|none`, bei cloud
-    `REPO_URL=<https ohne .git>|none`, bei `--start` `STARTED=yes|no|already`
-    (+ `REASON=`), bei HANDOFF != none der Startauftrag zwischen `PROMPT_BEGIN`
+    Zeilen in dieser Reihenfolge: `HANDOFF=none|cloud|herdr|inline`, `NEXT=<M>|none`,
+    bei cloud `REPO_URL=<https ohne .git>|none`, `HANDOFF_DONE=<weg>` wenn fuer
+    NEXT schon ein Start vermerkt ist (#668), bei `--mark` `MARKED=yes|no`
+    (+ `WARN=` bei Schreibfehler), bei `--start` `STARTED=yes|no|already`
+    (+ `REASON=` bei no bzw. `WARN=` wenn der Start lief, der Vermerk aber
+    scheiterte), bei HANDOFF != none der Startauftrag zwischen `PROMPT_BEGIN`
     und `PROMPT_END`. `--start` startet im Weg herdr eine neue Claude-Sitzung in
     einem neuen Pane; `--mark` vermerkt einen Start (Cloud: nach `create_session`).
-    Vermerk im Auftragsfeld `handoff`; derselbe Vermerk macht `--start` zu
-    `STARTED=already`. Exit immer 0 (fail-open), ausser ungueltigen Argumenten
-    (Usage auf stderr, Exit 1, keine Schreibung).
+    Vermerk im Auftragsfeld `handoff` (unter Sperre neu gelesen); derselbe Vermerk
+    macht `--start` zu `STARTED=already`. Exit immer 0 (fail-open), ausser
+    ungueltigen Argumenten (Usage auf stderr, Exit 1, keine Schreibung).
     """
     start, mark = _handoff_parse(args)
     route, nxt, auftrag, prompt = "none", None, None, None
@@ -5766,15 +5782,27 @@ def cmd_handoff(args: list[str]) -> None:
     print(f"NEXT={nxt if nxt is not None else 'none'}")
     if route == "cloud":
         print(f"REPO_URL={_handoff_repo_url(root)}")
-    if mark and route != "none":
-        try:
-            _handoff_mark(root, auftrag, nxt, mark)
-        except Exception:
-            pass
+    done = {}
+    if route != "none":
+        done = (auftrag or {}).get("handoff") or {}
+        if not isinstance(done, dict):
+            done = {}
+        if done.get("issue") == nxt:
+            print(f"HANDOFF_DONE={done.get('mode') or 'unbekannt'}")
+    if mark:
+        marked, warn = "no", ""
+        if route != "none":
+            try:
+                _handoff_mark(root, nxt, mark)
+                marked = "yes"
+            except Exception as exc:
+                warn = f"Vermerk fehlgeschlagen ({type(exc).__name__})"
+        print(f"MARKED={marked}")
+        if warn:
+            print(f"WARN={warn}")
     if start:
-        started, reason = "no", f"Weg {route}"
+        started, reason, warn = "no", f"Weg {route}", ""
         try:
-            done = (auftrag or {}).get("handoff") or {}
             if route != "none" and done.get("issue") == nxt:
                 started, reason = "already", ""
             elif route == "herdr":
@@ -5782,12 +5810,17 @@ def cmd_handoff(args: list[str]) -> None:
                 ok, reason = herdr_bridge.start_session(prompt, root)
                 if ok:
                     started = "yes"
-                    _handoff_mark(root, auftrag, nxt, "herdr")
+                    try:
+                        _handoff_mark(root, nxt, "herdr")
+                    except Exception as exc:
+                        warn = f"Vermerk fehlgeschlagen ({type(exc).__name__})"
         except Exception as exc:
             started, reason = "no", f"Fehler {type(exc).__name__}"
         print(f"STARTED={started}")
         if started == "no":
             print(f"REASON={' '.join(str(reason or 'unbekannt').split())}")
+        elif warn:
+            print(f"WARN={warn}")
     if prompt:
         print("PROMPT_BEGIN")
         print(prompt)

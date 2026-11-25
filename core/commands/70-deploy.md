@@ -149,12 +149,15 @@ Kette bei offenem Auftrag (#551, #555): Sie greift nur, wenn der Wert hinter `FO
 startet #M aus deinem Auftrag. …`, autarker Auftrag) gib die Zeile aus und übergib #M an eine
 frische Sitzung (Befehl `workflow.py handoff`, #667), kein Halt für `/clear`. Erst `python3 .claude/hooks/workflow.py handoff`,
 dann je nach `HANDOFF=`:
+Steht `HANDOFF_DONE=` in der Ausgabe, ist #M schon übergeben (#668): ⏳-Zeile ausgeben und
+Turn beenden, keine weitere Sitzung starten (weder `create_session` noch `--start` noch
+Selbstaufruf).
 - `cloud`: Werkzeug `create_session` (claude-code-remote) mit `prompt` = Text zwischen
   `PROMPT_BEGIN` und `PROMPT_END`, `source_url` = `REPO_URL` (nur wenn ≠ `none`), Titel „#M …“.
   Bei Erfolg `python3 .claude/hooks/workflow.py handoff --mark cloud`, ⏳-Zeile ausgeben, Turn
   beenden, kein Selbstaufruf; misslingt `create_session`, weiter wie `inline`.
-- `herdr`: `python3 .claude/hooks/workflow.py handoff --start`; bei `STARTED=yes` oder
-  `STARTED=already` Turn beenden, bei `STARTED=no` weiter wie `inline`.
+- `herdr`: `python3 .claude/hooks/workflow.py handoff --start`; bei `STARTED=yes` (auch mit
+  `WARN=`) oder `STARTED=already` Turn beenden, bei `STARTED=no` weiter wie `inline`.
 - `inline` (auch `none`): wie bisher `/00-intake #M` selbst aufrufen.
 
 Bei `ENDSTATE=you` (`❗ Du: /00-intake #M — …`,

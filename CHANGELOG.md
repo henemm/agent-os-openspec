@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.25.2] - 2026-11-25
+
+### Fixed
+
+- `workflow.py handoff` startet für dasselbe Issue keine zweite Sitzung mehr (#668). Besteht für `NEXT` schon ein Start-Vermerk (Cloud per `--mark cloud`, Herdr per `--start`), folgt die Zeile `HANDOFF_DONE=<weg>`; die Befehlstexte 60-validate/70-deploy beenden dann den Turn ohne `create_session`, `--start` oder Selbstaufruf. `--mark` meldet `MARKED=yes|no`. Scheitert der Vermerk nach erfolgreichem Herdr-Start, bleibt `STARTED=yes` mit `WARN=` statt `STARTED=no` (sonst Rückfall auf inline und zweite Sitzung). Der Vermerk wird unter Sperre auf den frisch gelesenen Auftrag geschrieben (Test `tests/test_handoff_668.py`).
+
 ## [4.25.1] - 2026-11-25
 
 ### Fixed

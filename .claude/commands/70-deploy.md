@@ -166,12 +166,15 @@ Kette bei offenem Auftrag (#551, #555): Sie greift nur, wenn der Wert hinter `FO
 startet #M aus deinem Auftrag. …`, autarker Auftrag) gib die Zeile aus und übergib #M an eine
 frische Sitzung (Befehl `workflow.py handoff`, #667), kein Halt für `/clear`. Erst `$WF handoff`,
 dann je nach `HANDOFF=`:
+Steht `HANDOFF_DONE=` in der Ausgabe, ist #M schon übergeben (#668): ⏳-Zeile ausgeben und
+Turn beenden, keine weitere Sitzung starten (weder `create_session` noch `--start` noch
+Selbstaufruf).
 - `cloud`: Werkzeug `create_session` (claude-code-remote) mit `prompt` = Text zwischen
   `PROMPT_BEGIN` und `PROMPT_END`, `source_url` = `REPO_URL` (nur wenn ≠ `none`), Titel „#M …“.
   Bei Erfolg `$WF handoff --mark cloud`, ⏳-Zeile ausgeben, Turn
   beenden, kein Selbstaufruf; misslingt `create_session`, weiter wie `inline`.
-- `herdr`: `$WF handoff --start`; bei `STARTED=yes` oder
-  `STARTED=already` Turn beenden, bei `STARTED=no` weiter wie `inline`.
+- `herdr`: `$WF handoff --start`; bei `STARTED=yes` (auch mit
+  `WARN=`) oder `STARTED=already` Turn beenden, bei `STARTED=no` weiter wie `inline`.
 - `inline` (auch `none`): wie bisher `/00-intake #M` selbst aufrufen.
 
 Bei `ENDSTATE=you` (`❗ Du: /00-intake #M — …`,
@@ -184,7 +187,7 @@ Beende deine letzte Nachricht in diesem Befehl mit diesen Zeilen, in dieser Reih
 
 ❗ Du: `/<befehl> #<N>` — <ein Halbsatz, warum>
 ℹ️ Status: Workflow `<name>` · Phase `<x>` von 8
-⚙ /70-deploy · agent-os-openspec 4.25.1
+⚙ /70-deploy · agent-os-openspec 4.25.2
 
 Die erste Zeile sagt, wer am Zug ist — GENAU EINMAL, nur hier in der Fußzeile, nie zusätzlich als Vokabular mitten im Fließtext davor — und steht in genau einer von drei Formen (es gibt keine vierte):
 

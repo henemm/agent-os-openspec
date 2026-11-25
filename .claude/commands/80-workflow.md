@@ -93,6 +93,9 @@ im PATH), `inline` (bisheriger Selbstaufruf) oder `none`; dazu `NEXT=` und der S
 zwischen `PROMPT_BEGIN`/`PROMPT_END` (Auftrag neu anlegen, 00-intake, Haltregel, Messung).
 `--start` meldet `STARTED=yes|no|already` (bei `no` mit `REASON=`), `--mark cloud|herdr`
 vermerkt den Start im Auftrag (Feld `handoff`); derselbe Vermerk ergibt `STARTED=already`.
+Ist für `NEXT` schon ein Start vermerkt, folgt `HANDOFF_DONE=<weg>` (#668: keine zweite
+Sitzung starten). `--mark` meldet `MARKED=yes|no`; scheitert der Vermerk, folgt
+`WARN=Vermerk fehlgeschlagen (<Typ>)` (bei `--start` bleibt dann `STARTED=yes`).
 Exit 0; nur ungültige Argumente (etwa `--mark` mit anderem Weg) enden mit Usage und Exit 1.
 
 ### Retro: Abgeschlossene Workflows analysieren
@@ -297,7 +300,7 @@ Beende deine letzte Nachricht in diesem Befehl mit diesen Zeilen, in dieser Reih
 
 ❗ Du: `/<befehl> #<N>` — <ein Halbsatz, warum>
 ℹ️ Status: Workflow `<name>` · Phase `<x>` von 8
-⚙ /80-workflow · agent-os-openspec 4.25.1
+⚙ /80-workflow · agent-os-openspec 4.25.2
 
 Die erste Zeile sagt, wer am Zug ist — GENAU EINMAL, nur hier in der Fußzeile, nie zusätzlich als Vokabular mitten im Fließtext davor — und steht in genau einer von drei Formen (es gibt keine vierte):
 
