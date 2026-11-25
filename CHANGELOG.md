@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.24.0] - 2026-11-25
+
+Das seit 4.23.0 stillgelegte Auto-/clear per Herdr ist jetzt vollständig entfernt; Herdr-Seitenleiste und Plan-Pane arbeiten unverändert (Epic #649, Schnitt 4: #663).
+
+### Removed
+
+- **#663 (Rückbau Auto-/clear):** `herdr_bridge.py` verliert Runner (`run_auto_clear`, `_Runner`, `spawn_auto_clear`, `maybe_auto_clear`), Plugin-Signale (`record_signal`, `run_signal`, `read_signal`, Ordner `.claude/herdr_signals/`), Grenz-Vermerk-Behandlung, Klartext-Vorprüfung, Befehlsform (`resolve_command_form`), Skip-Log (`.claude/herdr_auto_clear.log`/`.lock`) und das Lesen von `herdr.auto_clear`/`OPENSPEC_HERDR_AUTO_CLEAR` (`_auto_clear_config`, `auto_clear_enabled`, `auto_clear_active`). Die vom Plan-Pane genutzten Helfer heißen jetzt `_base_dir`, `_base_dir_for` und `_log`.
+- `workflow.py`: `AUTO_CLEAR_BOUNDARIES`, `_boundary_timestamp`, `_note_transition_boundary` und `_record_auto_clear_boundary`; kein Phasenwechsel schreibt mehr `auto_clear_boundary`.
+- Aufrufer: `footer_gate._maybe_auto_clear`/`_discard_boundary`/`_record_stop`, `session_singleton_guard._record_activity`, die Signal-Blöcke in `phase_listener.py` und `session_banner.py`.
+- `hooks/hooks.json` (und `.claude/settings.json`): die drei Registrierungen `herdr_bridge.py signal activity` (Notification, PermissionRequest, SessionEnd); `plan-pane-close` bleibt.
+- `scripts/e2e_auto_clear.sh` und die sieben reinen Auto-/clear-Testsuiten (467, 495, 497, 506, 597, 598, 480).
+
+### Known Limitations
+
+- `config.yaml` behält den Schlüssel `herdr.auto_clear` samt Kommentar (Gate-Config, Aufräumen in einem Folge-Issue); er wirkt nicht mehr.
+- `setup.py --update` entfernt keine veralteten Hook-Registrierungen aus Konsumenten-`settings.json`.
+
+Migration: Die CLI-Modi `herdr_bridge.py signal …` und `herdr_bridge.py auto-clear …` entfallen; alte Registrierungen sind harmlos, jeder unbekannte Modus endet still mit Exit 0. `herdr.auto_clear` und `OPENSPEC_HERDR_AUTO_CLEAR` sind wirkungslos. `workflow.py autoclear` bleibt als Kompatibilitätszeile und gibt immer genau `AUTO_CLEAR=off` aus (Exit 0). Tests: `tests/test_rueckbau_autoclear_663.py`.
+
 ## [4.23.0] - 2026-11-25
 
 Im Auto-Modus setzt die Hauptsitzung die Phasenkette jetzt überall selbst fort; Herdr tippt kein `/clear` und keinen Folgebefehl mehr, sondern zeigt nur noch an (Epic #649, Schnitt 3: #662).

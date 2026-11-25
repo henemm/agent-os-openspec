@@ -156,41 +156,12 @@
         ]
       }
     ],
-    "Notification": [
-      {
-        "matcher": "permission_prompt",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || CLAUDE_PLUGIN_ROOT=\"${CLAUDE_PROJECT_DIR}\" python3 \"${CLAUDE_PROJECT_DIR}/core/hooks/herdr_bridge.py\" signal activity",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "PermissionRequest": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || CLAUDE_PLUGIN_ROOT=\"${CLAUDE_PROJECT_DIR}\" python3 \"${CLAUDE_PROJECT_DIR}/core/hooks/herdr_bridge.py\" signal activity",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
     "SessionEnd": [
       {
         "hooks": [
           {
             "type": "command",
             "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || CLAUDE_PLUGIN_ROOT=\"${CLAUDE_PROJECT_DIR}\" python3 \"${CLAUDE_PROJECT_DIR}/core/hooks/herdr_bridge.py\" plan-pane-close",
-            "timeout": 2
-          },
-          {
-            "type": "command",
-            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || CLAUDE_PLUGIN_ROOT=\"${CLAUDE_PROJECT_DIR}\" python3 \"${CLAUDE_PROJECT_DIR}/core/hooks/herdr_bridge.py\" signal activity",
             "timeout": 2
           },
           {

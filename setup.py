@@ -1387,7 +1387,7 @@ Template: `docs/specs/_template.md`
 ## Context Budget (tokens)
 
 Re-reading a 200k-token context costs about five times a 40k one, and most re-reading happens above 100k:
-- `post_bash.py` measures the context from the transcript and warns at `context_budget.clear_threshold_tokens` (default 100000). `workflow.py context` prints `CONTEXT_CUT=on|off` and, last, `CONTEXT_STOP=on|off`; at `CONTEXT_STOP=on` (mode manual only) the phase commands end the turn with the checkpoint instead of chaining — state is on disk, `/clear` is safe. In auto mode the chain continues (`CONTEXT_REASON=AUTO_NO_CLEAR`); Herdr's auto-/clear is retired since 4.23.0 (#662).
+- `post_bash.py` measures the context from the transcript and warns at `context_budget.clear_threshold_tokens` (default 100000). `workflow.py context` prints `CONTEXT_CUT=on|off` and, last, `CONTEXT_STOP=on|off`; at `CONTEXT_STOP=on` (mode manual only) the phase commands end the turn with the checkpoint instead of chaining — state is on disk, `/clear` is safe. In auto mode the chain continues (`CONTEXT_REASON=AUTO_NO_CLEAR`); Herdr types nothing into the session (auto-/clear removed in 4.24.0, #663).
 - Delegate lookups ("where is X used?") to an Explore subagent; read with line ranges, not whole files.
 - Bundle calls: `workflow.py batch status -- phase phase6_implement`; `python3 .claude/scripts/ship.py [--merge squash]` pushes, opens the PR and waits for CI in one step.
 

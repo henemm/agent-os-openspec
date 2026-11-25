@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Herdr-Bridge: meldet den Workflow-Stand an die Herdr-Sidebar (Issue #466).
 
-Kein Hook (nicht in hooks.json) — ein Utility, das workflow.py, phase_listener.py
+Kein Hook (nur `plan-pane-close` steht in hooks.json) — ein Utility, das workflow.py, phase_listener.py
 und session_banner.py an ihren Schreibstellen aufrufen. Rein anzeigend: die
 Bridge schreibt keinen State und uebernimmt nicht die State-Autoritaet der
 offiziellen Herdr-Claude-Integration.
@@ -16,52 +16,10 @@ Ausnahmen, schreibt nie auf stdout/stderr und aendert keinen Exit-Code. Der
 Herdr-Prozess laeuft detached (eigene Session, alle Streams DEVNULL), damit ein
 haengendes Binary keinen Hook ausbremst.
 
-`run_herdr` ist bewusst generisch gehalten — Basis fuer #467 (Auto-/clear).
-
-Auto-/clear (#467, Opt-in `herdr.auto_clear.enabled: true`): footer_gate ruft
-auf dem Pfad "Fusszeile korrekt" `maybe_auto_clear` auf. Sind alle Bedingungen
-erfuellt, startet `spawn_auto_clear` diesen Script detached als Runner
-(`herdr_bridge.py auto-clear ...`), der per `pane send-text` + `pane send-keys
-enter` erst `/clear` und dann den naechsten Workflow-Befehl in den Pane tippt. Der Runner bricht bei
-jedem Zweifel ab, protokolliert den Grund in `.claude/herdr_auto_clear.log` und
-endet immer mit Exit 0.
-
-#597 "Das neueste saubere Antwortende gewinnt": Jeder saubere Stop (auch ein
-Folge-Stop mit `stop_hook_active`) darf einen Runner starten; ein Stop, den
-`klartext_gate.pruefe` zurueckweisen wuerde, startet keinen (Vermerk bleibt).
-Einziges Einmal-Token ist der Grenz-Vermerk `auto_clear_boundary` im
-Workflow-State: kein Verbrauch beim Spawn, kein Once-Lock. Der Runner nimmt den
-Vermerk erst unmittelbar vor dem Tippen von `/clear` (`_Runner._take_boundary`,
-atomar unter `fcntl.flock` auf `<Projekt>/.claude/herdr_auto_clear.lock`, muss
-zu `--phase`, `--command` und `--boundary-at` passen); wer ihn nicht bekommt,
-tippt nicht ("Grenze bereits vergeben"). Bricht ein Runner vor dem Abschicken
-von `/clear` ab, weil Claude weiterarbeitet, bleibt der Vermerk liegen (bzw.
-wird zurueckgelegt, sofern kein neuerer im State steht) und der naechste
-saubere Stop startet einen neuen Runner; jeder andere Abbruch verwirft den
-eigenen Vermerk, nach abgeschicktem `/clear` bleibt er verbraucht.
-
-#598: Fehlt der Vermerk, schreibt ihn der Stop-Hook selbst, wenn fuer die
-stoppende Sitzung der Kontext-Schnitt aktiv ist (`_context_cut_active`, wie
-`workflow.py context` -> CONTEXT_CUT=on); erst nach Klartext- und Negativ-Pruefung.
-
-#506: Herdrs Agent-Status (`agent wait`) entscheidet nicht mehr — lokale
-Erkennungsregeln koennen ihn beliebig verschieben. Der Runner liest eigene
-Plugin-Signale je Pane aus `.claude/herdr_signals/` (`record_signal`):
-`<pane>.input.json` schreibt phase_listener bei jedem abgeschickten Prompt
-(neue Eingabe seit dem Stop-Hook-Zeitpunkt `--since` -> Abbruch), `<pane>.session.json` schreibt
-session_banner bei jedem SessionStart (nach `/clear` wird auf `source=clear`
-gewartet). Herdr dient nur noch als Tastatur (`agent prompt` lehnt bei `blocked`
-mit `agent_blocked` ab). Ein Stop ist nicht zwingend das Turn-Ende (ein fremder
-Stop-Hook kann den Turn per `decision: block` fortsetzen); deshalb schreiben
-zusaetzlich session_singleton_guard (PreToolUse, `<pane>.activity.json`), der
-CLI-Modus `signal activity` (Notification `permission_prompt`, PermissionRequest)
-und footer_gate (jeder Stop, `<pane>.stop.json`) eigene Marker. Der Runner tippt
-nur, wenn seit dem Stop (bzw. nach dem eigenen `/clear` + Toleranz) keines
-dieser Signale eintraf (`_check_activity`), sonst "Claude arbeitet weiter".
-Adversary R2: Default-grace 10 s (fremde Stop-Hooks laufen ohne Signal), erneute
-Pruefung zwischen `send-text` und Enter (bei Abbruch Zeile per `ctrl+u` loeschen),
-SessionEnd (`signal activity`, `kind=session_end`) und ein SessionStart mit
-`source != clear` nach der Referenz zaehlen als Abbruch.
+Das Auto-/clear (#467) ist mit #663 entfernt: kein Code-Pfad tippt mehr in
+einen Herdr-Pane. `herdr.auto_clear` und `OPENSPEC_HERDR_AUTO_CLEAR` werden
+nicht mehr gelesen; alte CLI-Aufrufe (`signal ...`, `auto-clear ...`) enden
+still mit Exit 0.
 
 Plan-Pane (#476, Opt-out `herdr.plan_pane.enabled: false`): `workflow.py start`
 ruft `open_plan_pane`, das den Runner `herdr_bridge.py plan-pane ...` detached
@@ -71,8 +29,7 @@ den neuen Pane `Workflow` und tippt `workflow.py plan --watch` hinein. Lock
 Log `.claude/herdr_plan_pane.log`; immer Exit 0.
 
 #478: session_banner ruft `open_plan_pane_for_active` (Pane nur bei aktivem
-Workflow). `maybe_auto_clear` loggt bei aktivem Opt-in jeden Skip-Grund
-(`skip: <grund>`, gleiche Zeile in Folge nur einmal).
+Workflow).
 
 #496 Lebenszyklus: Besitz steht als Token am Pane (`owner`, `workflow`,
 `version`), nicht mehr in der ID-Datei (die nur noch das cwd fuer
@@ -360,27 +317,9 @@ def report_active() -> None:
         pass
 
 
-# --- Auto-/clear an Phasengrenzen (#467) ------------------------------------
+# --- Gemeinsame Helfer (Basisordner, Log) -----------------------------------
 
-AC_LOG_FILE = "herdr_auto_clear.log"
-AC_TOKEN_LOCK_FILE = "herdr_auto_clear.lock"  # flock fuer die Vermerk-Entnahme (#597)
-AC_BOUNDARY_MAX_AGE_S = 900  # Grenz-Vermerk (#495) gilt hoechstens 15 min
-# grace_s 10 (#506 R2): fremde Stop-Hooks laufen ohne Signal; blockt einer nach
-# laengerer Laufzeit, kommt die Fortsetzung (PreToolUse/Stop) erst danach
-AC_DEFAULTS = {"grace_s": 10, "idle_timeout_s": 120, "announce": True}
-AC_SETTLE_S = 2.0       # Wartezeit vor State-Recheck bzw. nach /clear
-AC_PROMPT_TIMEOUT = 15  # Sekunden je `pane send-text`/`send-keys`/`notification show`
-AC_LOG_MAX_LINES = 200
-
-POSITIVE_MARKER = "`/clear` ist jetzt gefahrlos"
-NEGATIVE_MARKER = "`/clear` jetzt NICHT"
-AC_SIGNAL_DIR = "herdr_signals"  # eigene Hook-Signale je Pane (#506)
-AC_SIGNAL_POLL_S = 0.2
-AC_CLEAR_TOLERANCE_S = 2.0  # Signale bis t_clear + 2 s gehoeren zum eigenen /clear (#506)
-AC_SINCE_FUTURE_S = 5.0     # `--since` hoechstens so weit in der Zukunft (#506)
-AC_CONTINUE_KINDS = ("input", "activity", "stop")  # Fortsetzungs-Signale (#506)
-AC_CLEAR_KEY = "ctrl+u"  # Eingabezeile loeschen (Herdr 0.9.5: `pane send-keys <p> ctrl+u`)
-_PANE_FILE_RE = re.compile(r"[^A-Za-z0-9_.-]")
+LOG_MAX_LINES = 200
 
 
 def _hooks_on_path() -> None:
@@ -388,99 +327,15 @@ def _hooks_on_path() -> None:
         sys.path.insert(0, str(_HOOK_DIR))
 
 
-def _auto_clear_config() -> "dict | None":
-    """Opt-in mit Vorrang: Projekt `false` > Projekt `true` > Umgebung > aus (#480).
-
-    Bewusst NICHT `_enabled()` (Opt-out). Nur das Literal `enabled: false`/`true`
-    im Projekt entscheidet; fehlt es (oder ist es kein bool), schaltet die
-    Umgebungsvariable `OPENSPEC_HERDR_AUTO_CLEAR` (1/true/yes/on) benutzerweit
-    ein. Werte aus dem Projektabschnitt gelten mit Defaults fuer fehlende/
-    unbrauchbare Eintraege. Jede Ausnahme -> None (aus).
-    """
-    try:
-        _hooks_on_path()
-        from config_loader import load_config
-        section = (load_config() or {}).get("herdr")
-        auto = section.get("auto_clear") if isinstance(section, dict) else None
-        auto = auto if isinstance(auto, dict) else {}
-        enabled = auto.get("enabled")
-        if enabled is False:
-            return None
-        if enabled is not True:
-            switch = os.environ.get("OPENSPEC_HERDR_AUTO_CLEAR", "").strip().lower()
-            if switch not in ("1", "true", "yes", "on"):
-                return None
-        cfg = dict(AC_DEFAULTS)
-        for key in ("grace_s", "idle_timeout_s"):
-            val = auto.get(key)
-            if isinstance(val, (int, float)) and not isinstance(val, bool) and val >= 0:
-                cfg[key] = val
-        if isinstance(auto.get("announce"), bool):
-            cfg["announce"] = auto["announce"]
-        return cfg
-    except Exception:
-        return None
-
-
-def auto_clear_enabled() -> bool:
-    """True bei Projekt `enabled: true` oder (ohne Projektwert) Env-Schalter (#480)."""
-    return _auto_clear_config() is not None
-
-
-def auto_clear_active() -> bool:
-    """Fuehrt Herdr hier das Auto-`/clear` aus? Seit #662 nie: stillgelegt.
-
-    Eine Quelle fuer `workflow.py autoclear` und die Vermerk-Bedingung beim
-    Phasenwechsel. Liefert fest False, auch mit Herdr-Pane, Config
-    `herdr.auto_clear` und Env `OPENSPEC_HERDR_AUTO_CLEAR`; Loeschung mit #663.
-    """
-    return False
-
-
-def _footer_parts():
-    """DU_LINE_RE und _footer_commands aus footer_gate (eine Quelle, Lazy-Import)."""
-    _hooks_on_path()
-    import footer_gate
-    return footer_gate.DU_LINE_RE, footer_gate._footer_commands
-
-
-def has_clear_marker(message) -> bool:
-    """Positivmarker ausserhalb von Code-Fences vor der letzten ❗Du-Zeile,
-    und der Negativmarker nirgends in der Nachricht (auch nicht in Fences)."""
-    try:
-        if not isinstance(message, str) or not message:
-            return False
-        if NEGATIVE_MARKER in message.replace("**", ""):
-            return False
-        du_re, _ = _footer_parts()
-        lines = message.splitlines()
-        last_du = None
-        for i, line in enumerate(lines):
-            if du_re.match(line):
-                last_du = i
-        if last_du is None:
-            return False
-        in_fence = False
-        for line in lines[:last_du]:
-            if line.lstrip().startswith("```"):
-                in_fence = not in_fence
-                continue
-            if not in_fence and POSITIVE_MARKER in line.replace("**", ""):
-                return True
-        return False
-    except Exception:
-        return False
-
-
-def _ac_base(cwd=None) -> Path:
+def _base_dir(cwd=None) -> Path:
     """Worktree-lokale Basis (Vorbild: footer_gate._state_path).
 
-    Mit `cwd` (Payload-`cwd` eines Hooks, #506) wird dieselbe Aufloesung fuer
-    dieses Verzeichnis gerechnet, ohne den Prozess-cwd zu aendern; fehlt es oder
-    existiert es nicht, gilt der Prozess-cwd.
+    Mit `cwd` wird dieselbe Aufloesung fuer dieses Verzeichnis gerechnet, ohne
+    den Prozess-cwd zu aendern; fehlt es oder existiert es nicht, gilt der
+    Prozess-cwd.
     """
     if isinstance(cwd, str) and cwd.strip() and os.path.isdir(cwd):
-        return _ac_base_for(Path(cwd))
+        return _base_dir_for(Path(cwd))
     _hooks_on_path()
     from hook_utils import _find_worktree_root, find_project_root
     try:
@@ -492,8 +347,8 @@ def _ac_base(cwd=None) -> Path:
     return find_project_root()
 
 
-def _ac_base_for(start: Path) -> Path:
-    """`_ac_base` fuer ein gegebenes Verzeichnis (Worktree, sonst Projekt-Root)."""
+def _base_dir_for(start: Path) -> Path:
+    """`_base_dir` fuer ein gegebenes Verzeichnis (Worktree, sonst Projekt-Root)."""
     _hooks_on_path()
     from hook_utils import find_project_root
     current = start.absolute()
@@ -511,758 +366,21 @@ def _ac_base_for(start: Path) -> Path:
     return current
 
 
-def spawn_auto_clear(pane: str, workflow_name: str, phase: str, command: str,
-                     cfg: dict, since: "float | None" = None,
-                     boundary_at: str = "") -> bool:
-    """Runner detached starten (kein Shell, eigene Session, DEVNULL); sofort zurueck.
-
-    `since` (Epoch-Sekunden, Default jetzt) ist der Stop-Hook-Zeitpunkt (#506):
-    Eingaben danach gelten fuer den Runner als "Nutzer hat weitergeschrieben".
-    `boundary_at` ist das `at` des Grenz-Vermerks (#597): nur genau diesen
-    Vermerk darf der Runner vor dem Tippen nehmen.
-    """
-    try:
-        since = time.time() if since is None else float(since)
-        argv = [sys.executable, str(Path(__file__).resolve()), "auto-clear",
-                "--pane", pane, "--workflow", workflow_name, "--phase", phase,
-                "--command", command,
-                "--grace", str(cfg.get("grace_s", AC_DEFAULTS["grace_s"])),
-                "--idle-timeout", str(cfg.get("idle_timeout_s", AC_DEFAULTS["idle_timeout_s"])),
-                "--announce", "1" if cfg.get("announce", True) else "0",
-                "--since", repr(since), "--boundary-at", str(boundary_at)]
-        subprocess.Popen(
-            argv,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-            close_fds=True,
-            cwd=str(_ac_base()),
-        )
-        return True
-    except Exception:
-        return False
-
-
-PLUGIN_NAMESPACE = "agent-os-openspec"
-MANUAL_COMMANDS = ("99-reset",)  # Workflow-Abschluss bleibt menschlich (#499)
-
-
-def _command_name(command) -> str:
-    """Befehlsname ohne fuehrenden `/` (erster Token); leer bei Unbrauchbarem."""
-    parts = str(command or "").split()
-    return parts[0].lstrip("/") if parts else ""
-
-
-def resolve_command_form(command: str) -> str:
-    """Tatsaechlich getippte Form des Folgebefehls (#499). Pure bis auf Dateipruefung.
-
-    Kurzform, wenn ein Alias an einem der Orte liegt, die Claude Code aufloest
-    (Worktree/Projekt/Home je `commands/<name>.md` und `skills/<name>/SKILL.md`);
-    sonst Plugin-Form. Qualifizierte Befehle (`:` im Namen) bleiben unveraendert,
-    Argumente werden angehaengt. Jede Ausnahme ergibt die Plugin-Form.
-    """
-    parts = str(command).split(maxsplit=1)
-    name = _command_name(command)
-    if not name or ":" in name:
-        return command
-    rest = f" {parts[1]}" if len(parts) > 1 else ""
-    try:
-        _hooks_on_path()
-        from hook_utils import find_project_root
-        # Worktree (Session-Ordner) und Haupt-Repo; find_project_root loest Worktrees auf
-        for base in (_ac_base(), find_project_root(), Path.home()):
-            claude = Path(base) / ".claude"
-            if ((claude / "commands" / f"{name}.md").is_file()
-                    or (claude / "skills" / name / "SKILL.md").is_file()):
-                return f"/{name}{rest}"
-    except (Exception, SystemExit):
-        pass
-    return f"/{PLUGIN_NAMESPACE}:{name}{rest}"
-
-
-def maybe_auto_clear(payload, message, data) -> bool:
-    """Trigger-Bedingungen (#467) in Spec-Reihenfolge; True = Runner gespawnt.
-
-    Ausloeser ist der Grenz-Vermerk `auto_clear_boundary` (#495), nicht mehr der
-    Positiv-Satz; der Negativ-Satz bleibt Veto. #597: auch ein Folge-Stop mit
-    `stop_hook_active` darf starten; der Vermerk wird beim Spawn nicht verbraucht
-    (das tut erst der Runner vor dem Tippen), einen Once-Lock gibt es nicht.
-
-    Fail-open: jede nicht erfuellte Bedingung oder Ausnahme = kein Spawn.
-
-    Seit #662 stillgelegt: kehrt als erste Anweisung ohne Spawn und ohne
-    Skip-Log zurueck (der Rest bleibt bis zum Rueckbau in #663 stehen).
-    """
-    return False
-    try:
-        since = time.time()  # Stop-Hook-Zeitpunkt: Referenz fuer neue Eingaben (#506)
-        pane = _pane()
-        if pane is None:
-            return False
-        cfg = _auto_clear_config()
-        if cfg is None:
-            return False
-        # Ab hier Opt-in aktiv: jeder Abbruch landet als `skip:` im Log (#478)
-        if not isinstance(data, dict) or not isinstance(message, str):
-            return _ac_skip("Workflow ohne Name/Phase")
-        _hooks_on_path()
-        import workflow
-        command = workflow.expected_footer_command(data)
-        if not isinstance(command, str) or not command.startswith("/"):
-            # Freitext-Schritt (Freigabe) loest nie aus
-            return _ac_skip(f"kein Slash-Befehl als naechster Schritt ({command})")
-        first = command.split()[0]
-        if first == "/clear":
-            return _ac_skip("/clear als Befehl")
-        if _command_name(command) in MANUAL_COMMANDS:
-            return _ac_skip("Workflow-Abschluss bleibt manuell")
-        _, footer_commands = _footer_parts()
-        if first not in footer_commands(message):
-            return _ac_skip(f"Fusszeile nennt {command} nicht")
-        boundary = data.get("auto_clear_boundary")
-        # #598: ohne Vermerk zaehlt der Stop als Grenze, wenn fuer diese Sitzung
-        # der Kontext-Schnitt aktiv ist (wie `workflow.py context` -> CONTEXT_CUT=on)
-        if not isinstance(boundary, dict) and not _context_cut_active(payload):
-            return _ac_skip("keine Grenze vermerkt")
-        # Klartext-Vorpruefung (#597), vor jedem Verbrauch: weist klartext_gate diesen
-        # Stop zurueck, kommt garantiert ein Folge-Stop; Vermerk unangetastet lassen
-        if _klartext_hits(payload):
-            return _ac_skip("Klartext-Prüfung weist die Antwort zurück")
-        if not isinstance(boundary, dict):
-            # #598: Vermerk erst nach Klartext- und Negativ-Pruefung schreiben
-            if NEGATIVE_MARKER in message.replace("**", ""):
-                return _ac_skip("Negativmarker")
-            boundary = _record_context_cut_boundary(data)
-            if not isinstance(boundary, dict):
-                return _ac_skip("keine Grenze vermerkt")
-        # Negativ-Marker, fremder oder veralteter Vermerk: verbrauchen wie bisher (#495)
-        if NEGATIVE_MARKER in message.replace("**", ""):
-            _consume_boundary(data, boundary)
-            return _ac_skip("Negativmarker")
-        if not _boundary_matches(data, command):
-            _consume_boundary(data, boundary)
-            return _ac_skip("keine Grenze vermerkt")
-        if not _boundary_fresh(boundary):
-            _consume_boundary(data, boundary)
-            return _ac_skip("Grenze veraltet")
-        name = str(data.get("name") or "")
-        phase = str(data.get("current_phase") or "")
-        if not name or not phase:
-            return _ac_skip("Workflow ohne Name/Phase")
-        # Kein Verbrauch beim Spawn: der Runner nimmt den Vermerk vor dem Tippen (#597)
-        if not spawn_auto_clear(pane, name, phase, command, cfg, since=since,
-                                boundary_at=str(boundary.get("at"))):
-            return _ac_skip("Spawn fehlgeschlagen")
-        return True
-    except Exception:
-        return False
-
-
-def _klartext_hits(payload) -> list:
-    """Treffer von `klartext_gate.pruefe` (#597); Import-/Laufzeitfehler = keine (fail-open)."""
-    try:
-        _hooks_on_path()
-        import klartext_gate
-        hits = klartext_gate.pruefe(payload)
-        return list(hits) if isinstance(hits, list) else []
-    except Exception:
-        return []
-
-
-def _context_cut_active(payload) -> bool:
-    """Kontext-Schnitt fuer die stoppende Sitzung aktiv (#598); fail-open = False.
-
-    Gleiche Bedingung wie `workflow.py context` -> `CONTEXT_CUT=on`:
-    `context_budget` an, Messung genau dieser Sitzung (`session_id` aus dem
-    Stop-Payload, keine fremde juengste Messung) >= wirksame Schwelle, kein
-    autarker Auftrag offen.
-    """
-    try:
-        _hooks_on_path()
-        from hook_utils import (auftrag_autark_open, context_budget_settings,
-                                effective_context_threshold, find_project_root,
-                                read_context_usage)
-        settings = context_budget_settings()
-        if not settings["enabled"]:
-            return False
-        sid = payload.get("session_id") if isinstance(payload, dict) else None
-        root = find_project_root()
-        usage = read_context_usage(sid if isinstance(sid, str) and sid else None,
-                                   root, fallback_newest=False)
-        if not isinstance(usage, dict) or type(usage.get("tokens")) is not int:
-            return False
-        threshold = effective_context_threshold(settings, usage.get("baseline_tokens"))
-        if usage["tokens"] < threshold:
-            return False
-        return not auftrag_autark_open(root)
-    except Exception:
-        return False
-
-
-def _record_context_cut_boundary(data: dict) -> "dict | None":
-    """Grenz-Vermerk fuer den uebergebenen Workflow schreiben (#598) und in `data`
-    spiegeln; None bei jedem Fehler (dann kein Auto-/clear)."""
-    try:
-        name = str(data.get("name") or "")
-        if not name:
-            return None
-        _hooks_on_path()
-        import workflow
-        boundary = workflow._record_auto_clear_boundary(name)
-        if not isinstance(boundary, dict):
-            return None
-        data["auto_clear_boundary"] = boundary
-        return boundary
-    except Exception:
-        return None
-
-
-def _boundary_matches(data: dict, command: str) -> bool:
-    """Grenz-Vermerk von `workflow.py autoclear` passt zu Phase und Befehl (#495)."""
-    boundary = data.get("auto_clear_boundary")
-    if not isinstance(boundary, dict):
-        return False
-    return (boundary.get("phase") == data.get("current_phase")
-            and boundary.get("command") == command)
-
-
-def _boundary_fresh(boundary: dict) -> bool:
-    """Vermerk hoechstens AC_BOUNDARY_MAX_AGE_S alt (Sicherheitsnetz, #495)."""
-    try:
-        from datetime import datetime
-        at = datetime.fromisoformat(str(boundary.get("at")))
-        if at.tzinfo is not None:
-            at = at.astimezone().replace(tzinfo=None)
-        age = (datetime.now() - at).total_seconds()
-    except Exception:
-        return False
-    return -60 <= age <= AC_BOUNDARY_MAX_AGE_S
-
-
-def _consume_boundary(data: dict, boundary: dict) -> None:
-    """Ausgewerteten Vermerk aus dem Workflow-State entfernen (#495); fail-open.
-
-    Read-Modify-Write auf dieselbe Datei, die footer_gate liest; entfernt wird
-    nur der ausgewertete Vermerk, nie ein inzwischen neuerer. Kein Herdr-Report.
-    """
-    try:
-        name = str(data.get("name") or "")
-        if not name or "/" in name or name.startswith("."):
-            return
-        _hooks_on_path()
-        from hook_utils import atomic_write_json, find_project_root, read_state_json
-        root = find_project_root()
-        path = root / ".claude" / "workflows" / f"{name}.json"
-        state = read_state_json(path, root)
-        if not isinstance(state, dict) or state.get("auto_clear_boundary") != boundary:
-            return
-        del state["auto_clear_boundary"]
-        atomic_write_json(path, state, root=root)
-    except Exception:
-        pass
-
-
-def _ac_skip(reason: str) -> bool:
-    """Skip-Grund loggen (#478), gleiche Zeile in Folge nur einmal; immer False."""
-    try:
-        line = f"skip: {_CONTROL_RE.sub(' ', reason)}"
-        _hooks_on_path()
-        from hook_utils import read_state_text
-        path = _ac_base() / ".claude" / AC_LOG_FILE
-        try:
-            old = read_state_text(path, path.parent.parent).splitlines()
-        except Exception:
-            old = []
-        last = old[-1].split(" ", 1)[1] if old and " " in old[-1] else None
-        if last != line:
-            _ac_log(line)
-    except Exception:
-        pass
-    return False
-
-
-# --- Runner (eigener Prozess) ---
-
-class _Abort(Exception):
-    """Runner-Abbruch mit Grund; nach Abbruch wird nichts mehr gesendet.
-
-    `continuation` (#597): Grund ist ein Weiterarbeiten von Claude (Signal
-    `activity`/`stop`); dann bleibt der Grenz-Vermerk fuer einen spaeteren Stop.
-    """
-
-    def __init__(self, message: str = "", continuation: bool = False):
-        super().__init__(message)
-        self.continuation = continuation
-
-
-def _ac_log(line: str, log_file: str = AC_LOG_FILE) -> None:
+def _log(line: str, log_file: str) -> None:
     """Zeile mit Zeitstempel an `.claude/<log_file>` haengen (rotierend); fail-open."""
     try:
         from hook_utils import atomic_write_text, read_state_text
-        path = _ac_base() / ".claude" / log_file
+        path = _base_dir() / ".claude" / log_file
         root = path.parent.parent
         try:
             old = read_state_text(path, root).splitlines()
         except Exception:
             old = []
         stamp = time.strftime("%Y-%m-%dT%H:%M:%S")
-        lines = old[-(AC_LOG_MAX_LINES - 1):] + [f"{stamp} {_CONTROL_RE.sub(' ', line)}"]
+        lines = old[-(LOG_MAX_LINES - 1):] +[f"{stamp} {_CONTROL_RE.sub(' ', line)}"]
         atomic_write_text(path, "\n".join(lines) + "\n", root=root)
     except Exception:
         pass
-
-
-def _signal_path(pane, kind: str, cwd=None) -> "tuple[Path, Path] | None":
-    """(Marker-Pfad, Wurzel) je Pane; Dateiname nur aus `[A-Za-z0-9_.-]` (#506)."""
-    safe = _PANE_FILE_RE.sub("", str(pane or ""))
-    if not safe.strip("."):
-        return None
-    base = _ac_base(cwd)
-    return base / ".claude" / AC_SIGNAL_DIR / f"{safe}.{kind}.json", base
-
-
-def record_signal(kind: str, source=None, cwd=None, reason=None) -> None:
-    """Hook-Signal fuer das eigene Herdr-Pane vermerken (#506).
-
-    `input` (Prompt), `session` (`source` = SessionStart-Quelle), `activity`
-    (`source` = pretooluse/notification/permission/session_end, als Feld `kind`;
-    bei session_end zusaetzlich `reason` aus dem SessionEnd-Payload), `stop`.
-    Basis aus `cwd` (Payload-`cwd`), sonst Prozess-cwd. Nur mit `HERDR_ENV == "1"`
-    und gesetzter `HERDR_PANE_ID`; ohne Config-Zugriff, Subprozess oder Ausgabe.
-    Jede Ausnahme wird verschluckt (fail-open).
-    """
-    try:
-        if os.environ.get("HERDR_ENV") != "1":
-            return
-        located = _signal_path(os.environ.get("HERDR_PANE_ID", "").strip(), kind, cwd)
-        if located is None:
-            return
-        data = {"at": time.time()}
-        if kind == "session":
-            data["source"] = source if isinstance(source, str) else None
-        elif kind == "activity":
-            data["kind"] = source if isinstance(source, str) else None
-            if isinstance(reason, str):
-                data["reason"] = reason[:40]
-        from hook_utils import atomic_write_json
-        atomic_write_json(located[0], data, root=located[1])
-    except Exception:
-        pass
-
-
-SIGNAL_ACTIVITY_KINDS = {"Notification": "notification", "PermissionRequest": "permission",
-                         "SessionEnd": "session_end"}
-
-
-def run_signal(argv) -> int:
-    """CLI `signal activity` (Notification/PermissionRequest/SessionEnd, #506); immer 0, still.
-
-    Liest den Payload von stdin, Basis aus dessen `cwd`; `kind` aus
-    `hook_event_name` (SessionEnd: `reason` mit, damit der Runner das Ende durch
-    das eigene `/clear` erkennt). Ungueltiger Payload oder fehlende Pane-Id: nichts.
-    """
-    try:
-        if list(argv) != ["activity"]:
-            return 0
-        if os.environ.get("HERDR_ENV") != "1" or not os.environ.get("HERDR_PANE_ID"):
-            return 0
-        payload = json.loads(sys.stdin.read() or "null")
-        if not isinstance(payload, dict):
-            return 0
-        kind = SIGNAL_ACTIVITY_KINDS.get(payload.get("hook_event_name"), "notification")
-        cwd = payload.get("cwd")
-        reason = payload.get("reason") if kind == "session_end" else None
-        record_signal("activity", kind, cwd=cwd if isinstance(cwd, str) else None,
-                      reason=reason)
-    except Exception:
-        pass
-    return 0
-
-
-def read_signal(pane, kind: str) -> dict:
-    """Marker lesen; fehlend, unlesbar oder kein Objekt -> {}."""
-    try:
-        located = _signal_path(pane, kind)
-        if located is None:
-            return {}
-        from hook_utils import read_state_json
-        data = read_state_json(located[0], located[1])
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
-
-
-def _signal_at(data: dict) -> "float | None":
-    at = data.get("at")
-    if isinstance(at, (int, float)) and not isinstance(at, bool):
-        return float(at)
-    return None
-
-
-def _parse_since(value, now: float) -> "float | None":
-    """`--since` nur endlich, > 0 und hoechstens AC_SINCE_FUTURE_S in der Zukunft (#506).
-
-    Sonst None (Runner-Start gilt): `nan` machte jeden Vergleich falsch, ein
-    Zukunftswert jeden echten Marker "zu alt" — beides hebelte die Pruefung aus.
-    """
-    import math
-    try:
-        since = float(value)
-    except (TypeError, ValueError):
-        return None
-    if not math.isfinite(since) or since <= 0 or since > now + AC_SINCE_FUTURE_S:
-        return None
-    return since
-
-
-class _Runner:
-    def __init__(self, args):
-        self.args = args
-        self.binary = _binary()
-        self.idle_timeout = max(0.0, float(args.idle_timeout))
-        self.settle = max(0.0, float(args.settle))
-        grace = max(0.0, float(args.grace))
-        self.grace = grace
-        # Referenz fuer "weitergemacht seit": Stop-Hook-Zeitpunkt `--since`, sonst
-        # Runner-Start (#506); unbrauchbare Werte werden verworfen (Vermerk im Log)
-        now = time.time()
-        raw = getattr(args, "since", None)
-        since = _parse_since(raw, now)
-        self.since_note = None
-        if since is None:
-            self.since_note = ("--since fehlt" if raw is None
-                               else f"--since {str(raw)[:40]!r} verworfen") + \
-                ", Referenz ist der Runner-Start"
-        self.since = since if since is not None else now
-        # Gesamt-Deadline: eine Wartephase (SessionStart nach /clear), Delays, Prompts, Puffer
-        budget = grace + 2 * self.settle + self.idle_timeout + 5 * AC_PROMPT_TIMEOUT + 20
-        self.deadline = time.monotonic() + budget
-        # Grenz-Vermerk als Einmal-Token (#597): `at` aus dem Spawn, genommener
-        # Vermerk (zum Zuruecklegen) und ob `/clear` abgeschickt wurde
-        raw_at = getattr(args, "boundary_at", None)
-        self.boundary_at = raw_at if isinstance(raw_at, str) else ""
-        self.taken = None
-        self.submitted = False
-
-    # --- Grenz-Vermerk als Einmal-Token (#597) ---
-
-    def _with_token_lock(self, fn):
-        """`fn(root, state_path)` unter flock auf `<root>/.claude/herdr_auto_clear.lock`.
-
-        Basis ist das Hauptprojekt (`find_project_root`, wie der Workflow-State),
-        nicht die worktree-lokale `_ac_base`. Rueckgabe `(True, Ergebnis)`; ohne
-        `fcntl`, bei Lock-Fehler oder Ausnahme in `fn` `(False, None)`. Die Sperre
-        wird in jedem Fall freigegeben.
-        """
-        try:
-            import fcntl
-            _hooks_on_path()
-            from hook_utils import find_project_root
-            name = str(self.args.workflow or "")
-            if not name or "/" in name or name.startswith("."):
-                return False, None
-            root = find_project_root()
-            state_path = root / ".claude" / "workflows" / f"{name}.json"
-            fd = os.open(str(root / ".claude" / AC_TOKEN_LOCK_FILE),
-                         os.O_CREAT | os.O_RDWR, 0o644)
-        except (Exception, SystemExit):
-            return False, None
-        try:
-            end = time.monotonic() + 10.0
-            while True:
-                try:
-                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    break
-                except BlockingIOError:
-                    if time.monotonic() >= end:
-                        return False, None
-                    time.sleep(0.01)
-            try:
-                return True, fn(root, state_path)
-            finally:
-                fcntl.flock(fd, fcntl.LOCK_UN)
-        except Exception:
-            return False, None
-        finally:
-            try:
-                os.close(fd)
-            except Exception:
-                pass
-
-    def _take_boundary(self) -> bool:
-        """Vermerk atomar nehmen, wenn er exakt zu phase/command/at passt; sonst False."""
-        args, own_at = self.args, self.boundary_at
-
-        def take(root, path):
-            from hook_utils import atomic_write_json, read_state_json
-            state = read_state_json(path, root)
-            boundary = state.get("auto_clear_boundary") if isinstance(state, dict) else None
-            if (not own_at or not isinstance(boundary, dict)
-                    or boundary.get("phase") != args.phase
-                    or boundary.get("command") != args.command
-                    or boundary.get("at") != own_at):
-                return None
-            del state["auto_clear_boundary"]
-            atomic_write_json(path, state, root=root)
-            return boundary
-
-        ok, boundary = self._with_token_lock(take)
-        if ok and isinstance(boundary, dict):
-            self.taken = boundary
-            return True
-        return False
-
-    def _restore_boundary(self) -> str:
-        """Genommenen Vermerk zuruecklegen, nur wenn keiner im State steht.
-
-        "restored", "newer" (anderer Vermerk vorhanden, bleibt) oder "failed".
-        """
-        taken = self.taken
-
-        def restore(root, path):
-            from hook_utils import atomic_write_json, read_state_json
-            state = read_state_json(path, root)
-            if not isinstance(state, dict) or not isinstance(taken, dict):
-                return "failed"
-            if "auto_clear_boundary" in state:
-                return "newer"
-            state["auto_clear_boundary"] = taken
-            atomic_write_json(path, state, root=root)
-            return "restored"
-
-        ok, result = self._with_token_lock(restore)
-        return result if ok and isinstance(result, str) else "failed"
-
-    def _discard_boundary(self) -> None:
-        """Noch nicht genommenen eigenen Vermerk (`at` == `--boundary-at`) verwerfen.
-
-        Ein neuerer Vermerk (anderes `at`) bleibt; fail-open (ohne Sperre: nichts).
-        """
-        own_at = self.boundary_at
-
-        def discard(root, path):
-            from hook_utils import atomic_write_json, read_state_json
-            state = read_state_json(path, root)
-            boundary = state.get("auto_clear_boundary") if isinstance(state, dict) else None
-            if own_at and isinstance(boundary, dict) and boundary.get("at") == own_at:
-                del state["auto_clear_boundary"]
-                atomic_write_json(path, state, root=root)
-
-        self._with_token_lock(discard)
-
-    def settle_boundary(self, continuation: bool) -> str:
-        """Vermerk-Schicksal nach einem Abbruch (#597); Rueckgabe: Log-Zusatz.
-
-        Nach abgeschicktem `/clear`: bleibt verbraucht. Davor bei Weiterarbeiten
-        von Claude: liegen lassen bzw. zuruecklegen. Jeder andere Abbruch:
-        eigenen, noch nicht genommenen Vermerk verwerfen.
-        """
-        try:
-            if self.submitted:
-                return ""
-            if continuation:
-                if self.taken is None:
-                    return "; Grenze bleibt"
-                result = self._restore_boundary()
-                if result == "restored":
-                    return "; Grenze bleibt (zurückgelegt)"
-                if result == "newer":
-                    return "; neuerer Vermerk bleibt"
-                return "; Grenze nicht zurückgelegt"
-            if self.taken is None:
-                self._discard_boundary()
-        except Exception:
-            pass
-        return ""
-
-    def _remaining(self) -> float:
-        rest = self.deadline - time.monotonic()
-        if rest <= 0:
-            raise _Abort("Gesamt-Deadline ueberschritten")
-        return rest
-
-    def _sleep(self, seconds: float) -> None:
-        if seconds > 0:
-            time.sleep(min(seconds, self._remaining()))
-
-    def _call(self, argv, timeout: float):
-        if self.binary is None:
-            raise _Abort("HERDR_BIN_PATH ungueltig")
-        try:
-            return subprocess.run(
-                [self.binary, *argv], stdin=subprocess.DEVNULL, capture_output=True,
-                text=True, timeout=min(timeout, self._remaining()), close_fds=True)
-        except subprocess.TimeoutExpired:
-            raise _Abort(f"`{' '.join(argv[:2])}` Zeitlimit")
-
-    def _announce(self) -> None:
-        try:
-            self._call(["notification", "show", "OpenSpec Auto-/clear",
-                        "--body", f"In {self.grace:g}s: /clear, dann {self.args.command}"],
-                       AC_PROMPT_TIMEOUT)
-        except _Abort:
-            raise
-        except Exception:
-            pass  # Vorankuendigung ist nur Hinweis
-
-    def _check_activity(self, ref: float, label: str, own_clear: bool = False) -> None:
-        """Eingabe, Aktivitaet oder weiterer Stop im eigenen Pane nach `ref` -> Abbruch.
-
-        Ein Stop ist nicht zwingend das Turn-Ende (fremder Stop-Hook mit
-        `decision: block`); jedes Hook-Signal danach heisst: nicht tippen (#506).
-        Ebenso Sitzungsende (`activity` kind=session_end) und ein SessionStart mit
-        `source != clear` (Claude im Pane neu gestartet/fortgesetzt, R2-F003).
-        `own_clear`: nach dem eigenen `/clear` gehoert SessionEnd(reason=clear) dazu.
-        """
-        for kind in AC_CONTINUE_KINDS:
-            data = read_signal(self.args.pane, kind)
-            at = _signal_at(data)
-            if at is None or at <= ref:
-                continue
-            if kind == "activity" and data.get("kind") == "session_end":
-                if own_clear and data.get("reason") == "clear":
-                    continue
-                raise _Abort(f"{label}: Sitzung beendet (session_end {at - ref:+.1f}s)")
-            why = "Nutzer hat weitergeschrieben" if kind == "input" else "Claude arbeitet weiter"
-            raise _Abort(f"{label}: {why} ({kind} {at - ref:+.1f}s)",
-                         continuation=kind != "input")
-        data = read_signal(self.args.pane, "session")
-        at = _signal_at(data)
-        if at is not None and at > ref and data.get("source") != "clear":
-            raise _Abort(f"{label}: Sitzung neu gestartet "
-                         f"(session {str(data.get('source'))[:20]} {at - ref:+.1f}s)")
-
-    def _wait_session_clear(self, t_clear: float) -> None:
-        """Bis `idle_timeout` auf SessionStart(clear) nach dem eigenen /clear warten.
-
-        Je Poll auch Fortsetzungs-Signale nach `t_clear` + Toleranz pruefen (#506).
-        """
-        end = time.monotonic() + self.idle_timeout
-        while True:
-            self._check_activity(t_clear + AC_CLEAR_TOLERANCE_S, "nach /clear", own_clear=True)
-            data = read_signal(self.args.pane, "session")
-            at = _signal_at(data)
-            if data.get("source") == "clear" and at is not None and at >= t_clear:
-                return
-            rest = end - time.monotonic()
-            if rest <= 0:
-                raise _Abort("nach /clear: kein SessionStart(clear)")
-            self._sleep(min(AC_SIGNAL_POLL_S, rest))
-
-    def _recheck(self, label: str) -> None:
-        """Workflow noch in derselben Phase mit demselben erwarteten Befehl?"""
-        _hooks_on_path()
-        from hook_utils import find_project_root, read_state_json
-        import workflow
-        name = self.args.workflow
-        try:
-            root = find_project_root()
-            data = read_state_json(root / ".claude" / "workflows" / f"{name}.json", root)
-        except Exception as exc:
-            raise _Abort(f"{label}: Workflow-State nicht lesbar ({type(exc).__name__})")
-        if not isinstance(data, dict):
-            raise _Abort(f"{label}: Workflow-State unbrauchbar")
-        data.setdefault("name", name)
-        if data.get("current_phase") != self.args.phase:
-            raise _Abort(f"{label}: Phase gewechselt ({data.get('current_phase')})")
-        if workflow.expected_footer_command(data) != self.args.command:
-            raise _Abort(f"{label}: erwarteter Befehl geaendert")
-
-    def _prompt(self, text: str, ref: float, label: str, own_clear: bool = False) -> None:
-        """Text tippen und abschicken; Herdr nur als Tastatur (#506), ohne Retry.
-
-        Kein `agent prompt`: das lehnt Herdr ab, sobald der Pane `blocked` ist.
-        Zwischen Text und Enter erneut pruefen (R2-F002): kam inzwischen ein Signal,
-        wird die Zeile per `ctrl+u` geloescht und nichts abgeschickt.
-        """
-        res = self._call(["pane", "send-text", self.args.pane, text], AC_PROMPT_TIMEOUT)
-        if res.returncode != 0:
-            raise _Abort(f"pane send-text {text!r} Exit {res.returncode}")
-        try:
-            self._check_activity(ref, label, own_clear=own_clear)
-        except _Abort as exc:
-            try:
-                res = self._call(["pane", "send-keys", self.args.pane, AC_CLEAR_KEY],
-                                 AC_PROMPT_TIMEOUT)
-                note = "Zeile geloescht" if res.returncode == 0 else \
-                    f"Zeile loeschen Exit {res.returncode}"
-            except _Abort as inner:
-                note = f"Zeile loeschen: {inner}"
-            raise _Abort(f"{exc} [zwischen Text und Enter, {note}]",
-                         continuation=exc.continuation)
-        res = self._call(["pane", "send-keys", self.args.pane, "enter"], AC_PROMPT_TIMEOUT)
-        if res.returncode != 0:
-            raise _Abort(f"pane send-keys enter ({text!r}) Exit {res.returncode}")
-
-    def run(self) -> None:
-        if _command_name(self.args.command) in MANUAL_COMMANDS:
-            raise _Abort("Workflow-Abschluss bleibt manuell")
-        if str(self.args.announce).strip() not in ("0", "false", "False", ""):
-            self._announce()
-        if self.since_note:
-            _ac_log(f"{self.args.workflow}|{self.args.phase}|{self.args.command}: "
-                    f"Hinweis: {self.since_note}")
-        self._sleep(self.grace)
-        self._check_activity(self.since, "vor /clear")
-        self._sleep(self.settle)
-        self._recheck("vor /clear")
-        self._check_activity(self.since, "vor /clear")  # unmittelbar vor dem Tippen
-        # Einmal-Token (#597): nur wer den Vermerk bekommt, tippt
-        if not self._take_boundary():
-            raise _Abort("Grenze bereits vergeben")
-        t_clear = time.time()
-        self._prompt("/clear", self.since, "vor /clear")
-        self.submitted = True
-        self._wait_session_clear(t_clear)
-        self._sleep(self.settle)
-        self._recheck("vor Folgebefehl")
-        after = t_clear + AC_CLEAR_TOLERANCE_S
-        self._check_activity(after, "vor Folgebefehl", own_clear=True)
-        # Vermerk/Log/Lock bleiben in Kurzform; nur der getippte Text folgt der Form (#499)
-        self._prompt(resolve_command_form(self.args.command), after, "vor Folgebefehl",
-                     own_clear=True)
-
-
-def run_auto_clear(argv) -> int:
-    """CLI `auto-clear`: Runner ausfuehren; immer 0, Abbruchgruende ins Log."""
-    tag = "auto-clear"
-    try:
-        parser = argparse.ArgumentParser(prog="herdr_bridge.py auto-clear")
-        parser.add_argument("--pane", required=True)
-        parser.add_argument("--workflow", required=True)
-        parser.add_argument("--phase", required=True)
-        parser.add_argument("--command", required=True)
-        parser.add_argument("--grace", type=float, default=AC_DEFAULTS["grace_s"])
-        parser.add_argument("--settle", type=float, default=AC_SETTLE_S)
-        parser.add_argument("--idle-timeout", type=float,
-                            default=AC_DEFAULTS["idle_timeout_s"])
-        parser.add_argument("--announce", default="1")
-        # Stop-Hook-Epoch (#506); roh als Text, `_parse_since` prueft
-        parser.add_argument("--since", default=None)
-        # `at` des Grenz-Vermerks (#597): nur diesen Vermerk darf der Runner nehmen
-        parser.add_argument("--boundary-at", default="")
-        try:
-            args = parser.parse_args(argv)
-        except SystemExit:
-            _ac_log(f"{tag}: ABBRUCH: ungueltige Argumente")
-            return 0
-        tag = f"{args.workflow}|{args.phase}|{args.command}"
-        runner = _Runner(args)
-        try:
-            runner.run()
-        except _Abort as exc:
-            note = runner.settle_boundary(exc.continuation)
-            raise _Abort(f"{exc}{note}") from None
-        except Exception:
-            runner.settle_boundary(False)
-            raise
-        _ac_log(f"{tag}: OK: /clear und Folgebefehl gesendet")
-    except _Abort as exc:
-        _ac_log(f"{tag}: ABBRUCH: {exc}")
-    except Exception as exc:
-        _ac_log(f"{tag}: ABBRUCH: Fehler {type(exc).__name__}")
-    return 0
 
 
 # --- Plan-Pane rechts neben Claude (#476) -----------------------------------
@@ -1315,7 +433,7 @@ def open_plan_pane(force: bool = False) -> bool:
         settings = plan_pane_settings()
         if not force and not settings["enabled"]:
             return False
-        base = str(_ac_base())
+        base = str(_base_dir())
         argv = [sys.executable, str(Path(__file__).resolve()), "plan-pane",
                 "--pane", pane, "--cwd", base, "--ratio", str(settings["ratio"])]
         subprocess.Popen(
@@ -1342,7 +460,7 @@ def open_plan_pane_for_active() -> bool:
 
 
 def _pp_log(line: str) -> None:
-    _ac_log(line, PP_LOG_FILE)
+    _log(line, PP_LOG_FILE)
 
 
 def _pp_call(binary: str, argv, timeout: float):
@@ -1826,15 +944,13 @@ def run_plan_pane(argv) -> int:
 
 
 if __name__ == "__main__":
+    # Nur `plan-pane` und `plan-pane-close`; jeder andere Modus (auch entfernte
+    # aus alten Registrierungen) endet still mit Exit 0 (#663)
     try:
-        if len(sys.argv) > 1 and sys.argv[1] == "auto-clear":
-            run_auto_clear(sys.argv[2:])
-        elif len(sys.argv) > 1 and sys.argv[1] == "plan-pane":
+        if len(sys.argv) > 1 and sys.argv[1] == "plan-pane":
             run_plan_pane(sys.argv[2:])
         elif len(sys.argv) > 1 and sys.argv[1] == "plan-pane-close":
             run_plan_pane_close()
-        elif len(sys.argv) > 1 and sys.argv[1] == "signal":
-            run_signal(sys.argv[2:])
     except BaseException:
         pass
     sys.exit(0)
