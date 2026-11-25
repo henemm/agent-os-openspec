@@ -76,6 +76,9 @@ im PATH), `inline` (bisheriger Selbstaufruf) oder `none`; dazu `NEXT=` und der S
 zwischen `PROMPT_BEGIN`/`PROMPT_END` (Auftrag neu anlegen, 00-intake, Haltregel, Messung).
 `--start` meldet `STARTED=yes|no|already` (bei `no` mit `REASON=`), `--mark cloud|herdr`
 vermerkt den Start im Auftrag (Feld `handoff`); derselbe Vermerk ergibt `STARTED=already`.
+Ist für `NEXT` schon ein Start vermerkt, folgt `HANDOFF_DONE=<weg>` (#668: keine zweite
+Sitzung starten). `--mark` meldet `MARKED=yes|no`; scheitert der Vermerk, folgt
+`WARN=Vermerk fehlgeschlagen (<Typ>)` (bei `--start` bleibt dann `STARTED=yes`).
 Exit 0; nur ungültige Argumente (etwa `--mark` mit anderem Weg) enden mit Usage und Exit 1.
 
 ### Retro: Abgeschlossene Workflows analysieren
