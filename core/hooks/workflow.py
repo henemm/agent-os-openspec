@@ -5308,7 +5308,8 @@ def cmd_auto_ship(args: list[str]) -> None:
 def cmd_autoclear(args: list[str]) -> None:
     """Auskunft, kein Gate: genau eine Zeile `AUTO_CLEAR=on|off`, Exit immer 0 (#489).
 
-    `on` nur in einem Herdr-Pane (`_pane()`) bei aktivem Auto-/clear. Bewusst ohne
+    `on` nur in einem Herdr-Pane bei aktivem Auto-/clear
+    (`herdr_bridge.auto_clear_active()`, #658). Bewusst ohne
     aktiven Workflow, Vorbild `cmd_autonomy`. Bei `on` zusaetzlich Grenz-Vermerk
     im aktiven Workflow (#495), ohne Einfluss auf Ausgabe/Exit. Ein offener
     autarker Auftrag (#551) haelt die Kette nicht fuer `/clear` an: `off`.
@@ -5316,7 +5317,7 @@ def cmd_autoclear(args: list[str]) -> None:
     state = "off"
     try:
         import herdr_bridge
-        if herdr_bridge._pane() and herdr_bridge.auto_clear_enabled():
+        if herdr_bridge.auto_clear_active():
             state = "on"
         if state == "on" and auftrag_autark_open():
             state = "off"
@@ -5461,7 +5462,8 @@ def _auto_approve_decision() -> "tuple[str, str, list]":
 
 
 def cmd_context(args: list[str]) -> None:
-    """Auskunft, kein Gate: `CONTEXT_TOKENS=<n|unknown>` und `CONTEXT_CUT=on|off`, Exit immer 0.
+    """Auskunft, kein Gate: `CONTEXT_TOKENS=<n|unknown>`, `CONTEXT_CUT=on|off` und als
+    letzte Zeile `CONTEXT_STOP=on|off`, Exit immer 0.
 
     Quelle ist die Messung von `post_bash.py` unter
     `.claude/context_usage/<session_id>.json` (Sitzung aus `CLAUDE_CODE_SESSION_ID`,
@@ -5469,10 +5471,15 @@ def cmd_context(args: list[str]) -> None:
     Messung >= wirksamer Schwelle `max(clear_threshold_tokens, baseline_tokens +
     growth_tokens)` (#557; ohne Baseline nur `clear_threshold_tokens`, Default
     100000); die Zeile `CONTEXT_THRESHOLD=` nennt sie. Bewusst ohne aktiven
-    Workflow (Vorbild `autonomy`): die Phasen-Befehle rufen bei `on` den
-    Folge-Skill nicht mehr selbst auf, sondern beenden den Turn mit Checkpoint und
-    Du-Zeile, damit `/clear` den Kontext schneidet. Bei offenem autarkem Auftrag
-    (#551) immer `CONTEXT_CUT=off` plus `CONTEXT_REASON=AUTARK` (ohne Schwellen-Zeile).
+    Workflow (Vorbild `autonomy`). `CONTEXT_CUT` ist der Messfakt, `CONTEXT_STOP`
+    die Entscheidung (#658): `on` genau dann, wenn CUT=on und
+    `hook_utils.context_stop_applies()` (Modus `manual` oder Herdr-Auto-/clear).
+    Nur bei `CONTEXT_STOP=on` rufen die Phasen-Befehle den Folge-Skill nicht mehr
+    selbst auf, sondern beenden den Turn mit Checkpoint und Du-Zeile, damit
+    `/clear` den Kontext schneidet. CUT=on ohne Halt (Auto-Modus ohne
+    Herdr-Auto-/clear) meldet zusaetzlich `CONTEXT_REASON=AUTO_NO_CLEAR`. Ein
+    Fehler im Helfer ergibt STOP = CUT. Bei offenem autarkem Auftrag (#551) immer
+    `CONTEXT_CUT=off` plus `CONTEXT_REASON=AUTARK` (ohne Schwellen-Zeile).
     """
     tokens, cut, autark, threshold = None, "off", False, None
     try:
@@ -5491,6 +5498,13 @@ def cmd_context(args: list[str]) -> None:
         cut = "off"
     if autark:
         cut = "off"
+    stop = cut
+    if cut == "on":
+        try:
+            import hook_utils
+            stop = "on" if hook_utils.context_stop_applies() else "off"
+        except Exception:
+            stop = cut  # #658: Fehler im Helfer -> bisheriges Verhalten
     try:
         print(f"CONTEXT_TOKENS={tokens if tokens is not None else 'unknown'}")
         print(f"CONTEXT_CUT={cut}")
@@ -5498,6 +5512,9 @@ def cmd_context(args: list[str]) -> None:
             print("CONTEXT_REASON=AUTARK")
         elif threshold is not None:
             print(f"CONTEXT_THRESHOLD={threshold}")
+        if cut == "on" and stop == "off":
+            print("CONTEXT_REASON=AUTO_NO_CLEAR")
+        print(f"CONTEXT_STOP={stop}")
     except Exception:
         pass
 

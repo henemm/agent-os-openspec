@@ -2,7 +2,7 @@
 
 > **Meta-Projekt**: Dies ist das zentrale Framework-Repository, das abstraktes Projekt- und Workflow-Wissen konsolidiert. Alle Projekte können Improvements hierher zurückführen und von Verbesserungen aus anderen Projekten profitieren.
 
-**Version**: 4.22.0
+**Version**: 4.22.1
 
 ## Rollen und Zusammenarbeit (PO-Vorgabe 2026-11-08, gilt für jede Sitzung, auch Cloud)
 
@@ -302,7 +302,7 @@ Einmal-Bypass fuer Gates:
 
 Etwa 70–75 % des Wiederlesens entstehen in Schritten mit über 100.000 Token Kontext; ein Schritt mit 200k kostet rund das Fünffache eines Schritts mit 40k. Fünf Regeln, die Hooks und Befehle stützen:
 
-1. **Früh schneiden (Schwelle 100k, nicht 200k):** `post_bash.py` misst die Kontextgröße aus dem Transcript (`.claude/context_usage/<session>.json`) und weist ab `context_budget.clear_threshold_tokens` darauf hin (einmal je Stufe, danach je 50k). `workflow.py context` meldet `CONTEXT_TOKENS=` und `CONTEXT_CUT=on|off`; bei `on` rufen die Phasen-Befehle den Folge-Skill nicht mehr selbst auf, sondern beenden den Turn mit Checkpoint und ❗Du-Zeile — Stand auf der Platte (Workflow-State, Commit, Issue), `/clear` gefahrlos. Auskunft, kein Gate; Kill-Switch `context_budget.enabled: false`.
+1. **Früh schneiden (Schwelle 100k, nicht 200k):** `post_bash.py` misst die Kontextgröße aus dem Transcript (`.claude/context_usage/<session>.json`) und weist ab `context_budget.clear_threshold_tokens` darauf hin (einmal je Stufe, danach je 50k). `workflow.py context` meldet `CONTEXT_TOKENS=`, `CONTEXT_CUT=on|off` (Messfakt) und zuletzt `CONTEXT_STOP=on|off` (on nur bei CUT=on und Modus `manual` oder Herdr-Auto-/clear, #658); bei `CONTEXT_STOP=on` rufen die Phasen-Befehle den Folge-Skill nicht mehr selbst auf, sondern beenden den Turn mit Checkpoint und ❗Du-Zeile — Stand auf der Platte (Workflow-State, Commit, Issue), `/clear` gefahrlos. Auskunft, kein Gate; Kill-Switch `context_budget.enabled: false`.
 2. **Nachschlagen abgeben:** „Wo wird X benutzt?“ geht an einen Explore-Teilagenten (Haiku), der nur die Antwort zurückgibt (`templates/agent_orchestration.md`, Nachschlage-Agent).
 3. **Befehle bündeln:** `workflow.py batch a -- b -- c` führt mehrere Workflow-Aufrufe in einem Schritt aus (Stopp beim ersten Fehler, dessen Exit-Code); `scripts/ship.py` erledigt pushen, PR anlegen, CI abwarten und optional mergen in einem Aufruf.
 4. **Gezielt lesen:** Zeilenbereiche und gezielte Suchen statt ganzer Dateien; mehrere `grep`/`sed -n` zur selben Frage in einen Aufruf.

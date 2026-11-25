@@ -418,7 +418,7 @@ Erst sichern, dann ist `/clear` gefahrlos.
 
 ---
 
-Vor dem Selbstaufruf zusätzlich `$WF context` ausführen (Kontext-Haushalt): Bei `CONTEXT_CUT=on` (Kontext über der wirksamen Schwelle `CONTEXT_THRESHOLD` aus `context_budget`: Grundkontext der Sitzung + `growth_tokens`, mindestens `clear_threshold_tokens`, Default 100.000 Token) den Skill `60-validate` NICHT selbst aufrufen, sondern die Antwort mit dem Checkpoint und der ❗Du-Zeile `/60-validate #<N>` beenden — der Stand liegt auf der Platte, der PO (oder Herdr) tippt `/clear`. Ein Schritt mit 200k Token Kontext kostet etwa das Fünffache eines Schritts mit 40k. Bei `CONTEXT_CUT=off` oder `CONTEXT_TOKENS=unknown`: unverändert.
+Vor dem Selbstaufruf zusätzlich `$WF context` ausführen (Kontext-Haushalt): Bei `CONTEXT_STOP=on` (Kontext über der wirksamen Schwelle `CONTEXT_THRESHOLD` aus `context_budget`: Grundkontext der Sitzung + `growth_tokens`, mindestens `clear_threshold_tokens`, Default 100.000 Token, und `/clear` kommt: Modus manual oder Herdr-Auto-/clear) den Skill `60-validate` NICHT selbst aufrufen, sondern die Antwort mit dem Checkpoint und der ❗Du-Zeile `/60-validate #<N>` beenden — der Stand liegt auf der Platte, der PO (oder Herdr) tippt `/clear`. Ein Schritt mit 200k Token Kontext kostet etwa das Fünffache eines Schritts mit 40k. Bei `CONTEXT_STOP=off` (auch mit `CONTEXT_REASON=AUTO_NO_CLEAR`: Auto-Modus ohne Herdr-Auto-/clear, niemand tippt `/clear`, Claude Code komprimiert automatisch) oder `CONTEXT_TOKENS=unknown`: Kette unverändert selbst fortsetzen (#658).
 
 Zuerst `$WF autoclear` ausführen (#489): Bei `AUTO_CLEAR=on` den Skill
 `60-validate` NICHT selbst aufrufen, sondern die Antwort mit dem Checkpoint (Positiv-Block, bei
@@ -449,7 +449,7 @@ Beende deine letzte Nachricht in diesem Befehl mit diesen Zeilen, in dieser Reih
 
 ❗ Du: `/<befehl> #<N>` — <ein Halbsatz, warum>
 ℹ️ Status: Workflow `<name>` · Phase `<x>` von 8
-⚙ /50-implement · agent-os-openspec 4.22.0
+⚙ /50-implement · agent-os-openspec 4.22.1
 
 Die erste Zeile sagt, wer am Zug ist — GENAU EINMAL, nur hier in der Fußzeile, nie zusätzlich als Vokabular mitten im Fließtext davor — und steht in genau einer von drei Formen (es gibt keine vierte):
 

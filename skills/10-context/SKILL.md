@@ -180,7 +180,7 @@ $WF autonomy
 
 Bei `AUTONOMY=auto` und ohne `/clear` in derselben Session: Rufe den Skill `20-analyse` jetzt sofort selbst auf — warte nicht auf eine User-Eingabe. Der Checkpoint-Block oben bleibt trotzdem in der Ausgabe (Wiedereinstieg über `/20-analyse #<N>`, Herdr-Auto-Clear #467). Bei `AUTONOMY=manual` (oder jeder anderen Ausgabe): wie bisher auf den User warten.
 
-Vor dem Selbstaufruf zusätzlich `$WF context` ausführen (Kontext-Haushalt): Bei `CONTEXT_CUT=on` (Kontext über der wirksamen Schwelle `CONTEXT_THRESHOLD` aus `context_budget`: Grundkontext der Sitzung + `growth_tokens`, mindestens `clear_threshold_tokens`, Default 100.000 Token) den Skill `20-analyse` NICHT selbst aufrufen, sondern die Antwort mit dem Checkpoint und der ❗Du-Zeile `/20-analyse #<N>` beenden — der Stand liegt auf der Platte, der PO (oder Herdr) tippt `/clear`. Ein Schritt mit 200k Token Kontext kostet etwa das Fünffache eines Schritts mit 40k. Bei `CONTEXT_CUT=off` oder `CONTEXT_TOKENS=unknown`: unverändert.
+Vor dem Selbstaufruf zusätzlich `$WF context` ausführen (Kontext-Haushalt): Bei `CONTEXT_STOP=on` (Kontext über der wirksamen Schwelle `CONTEXT_THRESHOLD` aus `context_budget`: Grundkontext der Sitzung + `growth_tokens`, mindestens `clear_threshold_tokens`, Default 100.000 Token, und `/clear` kommt: Modus manual oder Herdr-Auto-/clear) den Skill `20-analyse` NICHT selbst aufrufen, sondern die Antwort mit dem Checkpoint und der ❗Du-Zeile `/20-analyse #<N>` beenden — der Stand liegt auf der Platte, der PO (oder Herdr) tippt `/clear`. Ein Schritt mit 200k Token Kontext kostet etwa das Fünffache eines Schritts mit 40k. Bei `CONTEXT_STOP=off` (auch mit `CONTEXT_REASON=AUTO_NO_CLEAR`: Auto-Modus ohne Herdr-Auto-/clear, niemand tippt `/clear`, Claude Code komprimiert automatisch) oder `CONTEXT_TOKENS=unknown`: Kette unverändert selbst fortsetzen (#658).
 
 ### Herdr-Auto-/clear: Turn an der Grenze beenden (#489)
 
@@ -200,7 +200,7 @@ Beende deine letzte Nachricht in diesem Befehl mit diesen Zeilen, in dieser Reih
 
 ❗ Du: `/<befehl> #<N>` — <ein Halbsatz, warum>
 ℹ️ Status: Workflow `<name>` · Phase `<x>` von 8
-⚙ /10-context · agent-os-openspec 4.22.0
+⚙ /10-context · agent-os-openspec 4.22.1
 
 Die erste Zeile sagt, wer am Zug ist — GENAU EINMAL, nur hier in der Fußzeile, nie zusätzlich als Vokabular mitten im Fließtext davor — und steht in genau einer von drei Formen (es gibt keine vierte):
 
