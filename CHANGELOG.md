@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.23.0] - 2026-11-25
+
+Im Auto-Modus setzt die Hauptsitzung die Phasenkette jetzt überall selbst fort; Herdr tippt kein `/clear` und keinen Folgebefehl mehr, sondern zeigt nur noch an (Epic #649, Schnitt 3: #662).
+
+### Changed
+
+- **#662 (Kette flach, Auto-/clear stillgelegt):** `herdr_bridge.auto_clear_active()` liefert fest `False`, `herdr_bridge.maybe_auto_clear` (Stop-Hook) kehrt als erste Anweisung ohne Runner-Spawn und ohne Skip-Log zurück. Kein Phasenwechsel schreibt mehr `auto_clear_boundary` (`workflow._note_transition_boundary` prüft `auto_clear_active()` zuerst).
+- `workflow.py autoclear` gibt immer genau `AUTO_CLEAR=off` aus (Exit 0, kein Vermerk) — Kompatibilitätszeile für ältere, gecachte Befehlstexte.
+- `hook_utils.context_stop_applies()` ist `autonomy_mode() != "auto"` (Fehler: True): `CONTEXT_STOP=on` gibt es nur noch im Modus `manual`; im Auto-Modus bei `CONTEXT_CUT=on` immer `CONTEXT_REASON=AUTO_NO_CLEAR` und `CONTEXT_STOP=off`. Der Weiterarbeiten-Hinweis von `post_bash.py` nennt kein Herdr mehr.
+- Die Befehlstexte `/10-context` bis `/50-implement` verlieren den Abschnitt „Herdr-Auto-/clear“ und die `autoclear`-Prüfung (bei `/30-write-spec` auch in Step 4b); der Kontext-Halt gilt nur noch bei `CONTEXT_STOP=on` (Modus manual). Checkpoint-Blöcke bleiben.
+
+### Known Limitations
+
+- Toter Code bis #663: Runner, Signale, Grenz-Vermerk-Code, `_auto_clear_config`/`auto_clear_enabled`, das `autoclear`-Subcommand, der Config-Schlüssel `herdr.auto_clear` (Kommentar in `config.yaml` noch veraltet) und `scripts/e2e_auto_clear.sh`.
+- Im Modus `manual` tippt Herdr nicht mehr `/clear` und Folgebefehl; der PO tippt beides wie ohne Herdr.
+
+Migration: `herdr.auto_clear` und `OPENSPEC_HERDR_AUTO_CLEAR` wirken nicht mehr; der Code-Rückbau folgt mit #663. Tests: `tests/test_auto_chain_flat_662.py`; Auto-/clear-Einstiegstests auf „nie spawnen / kein Vermerk“ umgestellt.
+
 ## [4.22.1] - 2026-11-25
 
 Im Auto-Modus hält die Phasenkette an der Kontext-Schwelle nur noch an, wenn `/clear` auch tatsächlich automatisch kommt (Herdr-Auto-/clear); Cloud-Sitzungen ohne Herdr laufen weiter, statt auf einen `/clear` des PO zu warten (#658).
