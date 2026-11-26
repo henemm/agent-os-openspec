@@ -137,6 +137,30 @@ def test_manual_approval_stays_you():
     assert es["kind"] == "you", es
 
 
+def _transition(frm: str, to: str, trigger: str) -> dict:
+    # Felder wie in workflow.record_transition
+    return {"from": frm, "to": to, "at": "2026-11-26T10:00:00", "trigger": trigger}
+
+
+def test_manual_reapproval_after_rollback_stays_you():
+    """F001: Auto-Freigabe, Ruecksprung nach phase3_spec, manuelle Neufreigabe -> ❗ Du."""
+    wf = _wf()
+    transitions = [
+        _transition("phase3_spec", "phase4_approved", "auto"),
+        _transition("phase4_approved", "phase3_spec", "command"),
+        _transition("phase3_spec", "phase4_approved", "approval"),
+    ]
+    data = _data(approvals=[_approval("auto")], phase_transitions=transitions)
+    es = wf.end_state(data)
+    assert es["kind"] == "you", es
+    assert es["line"].startswith(f"❗ Du: /50-implement #{ISSUE} — "), es
+    # Nur die Auto-Freigabe protokolliert -> weiterhin ⏳
+    data = _data(approvals=[_approval("auto")],
+                 phase_transitions=[_transition("phase3_spec", "phase4_approved", "auto")])
+    es = wf.end_state(data)
+    assert es["kind"] == "waiting", es
+
+
 # --- AC-5 -------------------------------------------------------------------
 
 def _run_footer_gate(project: Path, message: str, prompt_id: str):

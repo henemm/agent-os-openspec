@@ -117,3 +117,4 @@ Fertig ist diese Änderung, wenn:
 ## Changelog
 
 - 2026-11-26: Erstfassung
+- 2026-11-26: Ausgeliefert als 4.26.7 (4.26.6 war inzwischen durch #691 belegt)
