@@ -282,7 +282,7 @@ Selbstaufruf).
   `PROMPT_BEGIN` und `PROMPT_END`, `source_url` = `REPO_URL` (nur wenn ≠ `none`), Titel „#M …“.
   Bei Erfolg `python3 .claude/hooks/workflow.py handoff --mark cloud`, ⏳-Zeile ausgeben, Turn
   beenden, kein Selbstaufruf; misslingt `create_session`, weiter wie `inline`.
-- `herdr`: `python3 .claude/hooks/workflow.py handoff --start`; bei `STARTED=yes` (auch mit
+- `herdr`: `python3 .claude/hooks/workflow.py handoff --start` (neuer Tab); bei `STARTED=yes` (auch mit
   `WARN=`) oder `STARTED=already` Turn beenden, bei `STARTED=no` weiter wie `inline`.
 - `inline` (auch `none`): wie bisher `/00-intake #M` selbst aufrufen.
 

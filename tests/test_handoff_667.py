@@ -136,6 +136,13 @@ def _auftrag(proj: Path) -> dict:
     return json.loads(_auftrag_file(proj).read_text())
 
 
+def _auftrag_any(proj: Path, ws: str) -> dict:
+    """Auftrag mit gesetztem HERDR_WORKSPACE_ID (#613): `.claude/auftrag/herdr-<W>.json`,
+    falls vorhanden, sonst `.claude/auftrag.json`."""
+    keyed = proj / ".claude" / "auftrag" / f"herdr-{ws}.json"
+    return json.loads(keyed.read_text()) if keyed.exists() else _auftrag(proj)
+
+
 def _fake_claude(root: Path) -> Path:
     bindir = root / "fakebin"
     bindir.mkdir(exist_ok=True)
@@ -377,8 +384,8 @@ def test_herdr_start_with_fake_binary(tmp_path):
     assert run[3].startswith("exec claude "), run
     assert shlex.split(run[3]) == ["exec", "claude", prompt], run
 
-    mark = _auftrag(proj).get("handoff")
-    assert isinstance(mark, dict), _auftrag(proj)
+    mark = _auftrag_any(proj, "w1").get("handoff")
+    assert isinstance(mark, dict), _auftrag_any(proj, "w1")
     assert mark.get("issue") == 548 and mark.get("mode") == "herdr", mark
     _assert_iso(mark.get("at"))
 

@@ -35,7 +35,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_handoff_667 import (  # noqa: E402
     COMMANDS_DIR, PANE, NEW_PANE, REPO_ROOT, SKILLS_DIR, WF,
-    _assert_iso, _auftrag, _auftrag_file, _calls, _env, _handoff, _kv, _of, _parse, _project,
+    _assert_iso, _auftrag, _auftrag_any, _auftrag_file, _calls, _env, _handoff, _kv, _of, _parse, _project,
 )
 
 WS = "w9"
@@ -228,8 +228,8 @@ def test_tab_create_with_env_label_no_focus(tmp_path):
     assert run[3].startswith("exec claude "), run
     assert shlex.split(run[3]) == ["exec", "claude", prompt], run
 
-    mark = _auftrag(proj).get("handoff")
-    assert isinstance(mark, dict), _auftrag(proj)
+    mark = _auftrag_any(proj, WS).get("handoff")
+    assert isinstance(mark, dict), _auftrag_any(proj, WS)
     assert mark.get("issue") == 548 and mark.get("mode") == "herdr", mark
     _assert_iso(mark.get("at"))
 

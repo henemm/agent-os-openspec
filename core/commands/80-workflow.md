@@ -79,10 +79,11 @@ Ausgabe `QUEUE=`, `AUTARK=`, `NEXT=` und bei offenem Auftrag `PROMPT=/00-intake 
 ### Übergabe an eine frische Sitzung (#667)
 ```bash
 python3 .claude/hooks/workflow.py handoff                 # Weg + Startauftrag
-python3 .claude/hooks/workflow.py handoff --start         # Herdr: neue Sitzung im neuen Pane
+python3 .claude/hooks/workflow.py handoff --start         # Herdr: neue Sitzung im neuen Tab
 python3 .claude/hooks/workflow.py handoff --mark cloud    # Start vermerken (nach create_session)
 ```
 Ausgabe `HANDOFF=cloud|herdr|inline|none`, `NEXT=`, Startauftrag zwischen `PROMPT_BEGIN`/`PROMPT_END`.
 `--start` meldet `STARTED=yes|no|already`. Ist für `NEXT` schon ein Start vermerkt, folgt
 `HANDOFF_DONE=<weg>` (#668: keine zweite Sitzung starten). `--mark` meldet `MARKED=yes|no`;
-scheitert der Vermerk, folgt `WARN=Vermerk fehlgeschlagen (<Typ>)`.
+scheitert der Vermerk, folgt `WARN=Vermerk fehlgeschlagen (<Typ>)`. Die neue Sitzung (eigener
+Tab „#M Titel“, #694) schließt den Tab der Vorgängerin nach sauberer Übergabe (⏳).

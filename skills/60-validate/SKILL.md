@@ -298,7 +298,7 @@ Selbstaufruf).
   `PROMPT_BEGIN` und `PROMPT_END`, `source_url` = `REPO_URL` (nur wenn ≠ `none`), Titel „#M …“.
   Bei Erfolg `$WF handoff --mark cloud`, ⏳-Zeile ausgeben, Turn
   beenden, kein Selbstaufruf; misslingt `create_session`, weiter wie `inline`.
-- `herdr`: `$WF handoff --start`; bei `STARTED=yes` (auch mit
+- `herdr`: `$WF handoff --start` (neuer Tab); bei `STARTED=yes` (auch mit
   `WARN=`) oder `STARTED=already` Turn beenden, bei `STARTED=no` weiter wie `inline`.
 - `inline` (auch `none`): wie bisher `/00-intake #M` selbst aufrufen.
 
@@ -323,7 +323,7 @@ Letzte Nachricht endet so (Gründe: `docs/befehle/fusszeile.md`):
 
 ❗ Du: `/<befehl> #<N>` — <ein Halbsatz, warum>
 ℹ️ Status: Workflow `<name>` · Phase `<x>` von 8
-⚙ /60-validate · agent-os-openspec 4.26.7
+⚙ /60-validate · agent-os-openspec 4.27.0
 
 Erste Zeile genau einmal, in einer Form: `✅ Erledigt: <was>. …` (abgeschlossen), `⏳ Läuft noch: <worauf gewartet wird>. …` (vorher `workflow.py waiting "…"`, danach `--clear`) oder `❗ Du: …` (PO ist dran, auch wenn du nur auf ihn wartest; dringend `‼️`). Genaue Zeile: `workflow.py endstate`.
 
