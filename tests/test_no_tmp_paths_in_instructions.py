@@ -29,4 +29,5 @@ def test_no_tmp_write_targets(path):
 
 def test_qa_gate_output_lives_in_artifacts():
     text = (REPO_ROOT / "core" / "commands" / "50-implement.md").read_text()
-    assert "docs/artifacts/<workflow-name>/adversary-test-output.txt" in text
+    # #404: qa_gate.py --run schreibt fest nach docs/artifacts/<wf>/test-run-output.txt
+    assert "docs/artifacts/<workflow-name>/test-run-output.txt" in text

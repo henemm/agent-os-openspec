@@ -31,7 +31,7 @@ Ursprünglicher Auftrag an den Explore-Agenten:
   Lies folgende Ressourcen und extrahiere die konkreten Werte:
   1. [spec_file aus dem Wiedereinstieg-Block oben] → Acceptance Criteria (AC-1 bis AC-N)
   2. docs/artifacts/<workflow-name>/adversary-dialog.md → Adversary-Verdict und Findings
-  3. openspec.yaml (Feld test_command) → konkreter Test-Befehl
+  3. config.yaml (Feld qa_gate.test_command) → konkreter Test-Befehl
 
   Gib zurück:
   - spec_file_path: [konkreter Pfad, bereits aus Wiedereinstieg bekannt]

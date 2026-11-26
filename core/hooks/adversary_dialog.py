@@ -1363,6 +1363,25 @@ def phase8_code_files(wf: dict) -> "tuple[list[str] | None, str]":
     return sorted(set(files)), info
 
 
+def change_set_hash(wf: dict) -> "str | None":
+    """Code-Stand der Phase-8-Menge als ein sha256 (#404); None ohne Git-Arbeitsbaum.
+
+    Hasht die sortierten Paare (realpath, sha256 des Inhalts). Eine nicht lesbare
+    Datei geht als `unreadable` ein. Wirft ChangeSetError wie phase8_code_files.
+    """
+    files, _info = phase8_code_files(wf)
+    if files is None:
+        return None
+    pairs = []
+    for path in sorted(files):
+        try:
+            digest = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+        except OSError:
+            digest = "unreadable"
+        pairs.append([path, digest])
+    return hashlib.sha256(json.dumps(pairs).encode()).hexdigest()
+
+
 def _cmd_required_files() -> int:
     """CLI `required-files` (#259 §12): Phase-8-Menge auf stdout, Basis auf stderr.
 

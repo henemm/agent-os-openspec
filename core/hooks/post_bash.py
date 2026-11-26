@@ -66,13 +66,21 @@ def _extract_stdout(payload: dict) -> str:
         out = resp.get("stdout") or resp.get("output") or ""
         if isinstance(out, str) and out:
             return out
+    # #403: PostToolUseFailure hat kein tool_response, sondern `error`
+    # ("Exit code N\n<ausgabe>") — ein roter Lauf soll ein altes `passed` ersetzen.
+    error = payload.get("error")
+    if isinstance(error, str) and error:
+        return error
     tool_input = payload.get("tool_input") or {}
     legacy = tool_input.get("stdout", "")
     return legacy if isinstance(legacy, str) else ""
 
 
-def _detect_test_output(command: str, stdout: str) -> None:
-    """Detect test framework output and record it as `last_test_run` (#253)."""
+def _detect_test_output(command: str, stdout: str, failed_exit: bool = False) -> None:
+    """Detect test framework output and record it as `last_test_run` (#253).
+
+    failed_exit (#403): Ereignis PostToolUseFailure — der Befehl endete mit Exit != 0.
+    """
     # Only process test-like commands
     test_indicators = ["pytest", "jest", "xcodebuild", "go test", "cargo test",
                        "npm test", "yarn test", "vitest", "mocha"]
@@ -86,6 +94,11 @@ def _detect_test_output(command: str, stdout: str) -> None:
         return
 
     stdout = strip_ansi(stdout)  # ANSI darf Fehler-Evidenz nicht verdecken (#275)
+    if failed_exit:  # #403: Bash-Fehlschlag mit testlauf-artiger Ausgabe ist nie gruen
+        if (_FAILURE_EVIDENCE_RE.search(stdout) or _PASS_COUNT_RE.search(stdout)
+                or _SKIPPED_RE.search(stdout) or re.search(r"\berrors?\b", stdout, re.I)):
+            _record_test_run("failed", runner)
+        return
     if _FAILURE_EVIDENCE_RE.search(stdout):
         _record_test_run("failed", runner)  # alter gruener Hinweis bleibt nicht stehen
         return
@@ -184,7 +197,7 @@ def _track_context(payload: dict) -> None:
                                     autark=auftrag_autark_open(_root),  # #551
                                     stop=stop)
             print(json.dumps({"hookSpecificOutput": {
-                "hookEventName": "PostToolUse",
+                "hookEventName": payload.get("hook_event_name") or "PostToolUse",  # #403
                 "additionalContext": note,
             }}, ensure_ascii=False))
     except Exception:
@@ -203,7 +216,9 @@ def main():
     if not command:
         sys.exit(0)
 
-    _detect_test_output(command, _extract_stdout(payload))
+    failed_exit = (payload.get("hook_event_name") == "PostToolUseFailure"
+                   or (not payload.get("tool_response") and bool(payload.get("error"))))
+    _detect_test_output(command, _extract_stdout(payload), failed_exit)
     _track_context(payload)
 
     sys.exit(0)

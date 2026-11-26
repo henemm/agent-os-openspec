@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.26.0] - 2026-11-26
+
+### Added — `qa_gate.py --run` ausgerollt und per `qa_gate.require_run` durchsetzbar (#404)
+- Neuer Schalter `qa_gate.require_run` (Standard `false`). Bei `true` verlangen Commit-Gate (Feature in Phase 6/6b/7, feature-fast ab Phase 6), der Wechsel nach `phase8_complete` (beide Zweige) und `workflow.py complete` einen grünen Lauf-Stempel aus `qa_gate.py --run`, der zu Ausgabedatei (`output_sha256`, im Projekt, kein Symlink), Testbefehl (`command_sha256`) und aktuellem Code-Stand (`code_sha256`, neu: `adversary_dialog.change_set_hash`) passt. Einzige Prüfstelle: `workflow.qa_run_stamp_problem`. Ohne `test_command` oder bei Git-Fehler blockt sie (fail-closed); ohne git ersatzweise Stempelzeit gegen mtime.
+- Datei-Modus `qa_gate.py <datei>` gibt einen Hinweis auf `--run` aus und bricht bei `require_run: true` mit Exit 1 ab.
+- Befehle 50-implement, 60-validate, 80-workflow und die Agenten developer-agent, implementation-validator nutzen `qa_gate.py --run` (Artefakt `docs/artifacts/<wf>/test-run-output.txt`); veralteter Schlüssel `pre_commit.test_command` ersetzt.
+
+### Fixed
+- `qa_gate.py` (F002): der Gruppen-Kill bei Timeout läuft, solange der Leader noch nicht gereapt ist (Warten per `waitid(WNOWAIT)`), dadurch keine wiederverwendete PID und keine überlebenden Hintergrundkinder; `_pump` leert die Pipe bei Schreibfehlern weiter, statt bis zum Timeout zu blockieren.
+- `qa_gate.py` (F004): `--run` verweigert einen `test_command`, der eine Secret-/Credential-Datei nennt (Muster aus `secrets_guard`).
+- `post_bash.py` (#403): zusätzlich unter `PostToolUseFailure` (matcher Bash) registriert; ein roter Testlauf setzt `last_test_run` auf `failed`.
+
 ## [4.25.5] - 2026-11-26
 
 ### Changed — Befehlstexte verschlankt, Schnitt 1: 50-implement und 60-validate (#674)
