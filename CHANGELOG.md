@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.26.1] - 2026-11-26
+
+### Changed — Befehlstexte verschlankt, Schnitt 2: 30-write-spec, 00-intake, 80-workflow (#677)
+- `core/commands/30-write-spec.md` 14 544 → 8 575 Bytes, `core/commands/00-intake.md` 12 568 → 7 907 Bytes, `core/commands/80-workflow.md` 10 931 → 4 583 Bytes; zusammen 38 043 → 21 065 Bytes (−45 %). Geladener Skill-Text 15 000 → 9 105, 16 389 → 11 728 bzw. 13 754 → 7 596 Bytes (zusammen ≈ −4 800 Token).
+- Begründungen, Sonderfälle, Referenzteil und Vorlagen (u. a. Mini-Spec-Vorlage, Modell-Empfehlung, Stufen-Tabelle, Workflow-Phasen, State-Architektur) wörtlich nach `docs/befehle/30-write-spec.md`, `docs/befehle/00-intake.md` und `docs/befehle/80-workflow.md`; Ablauf, Pflichtschritte, Agent-Aufrufe und Ausgabe-Vorlagen bleiben im Befehl. Kein Gate-Verhalten geändert.
+- Größenwächter erweitert: `tests/test_commands_slim_674.py` mit gesenkten Budgets und Verweis-Prüfung für alle fünf verschlankten Befehle, neu `tests/test_commands_slim_677.py` (Budget je Datei und Summe ≤ 22 825 Bytes).
+
 ## [4.26.0] - 2026-11-26
 
 ### Added — `qa_gate.py --run` ausgerollt und per `qa_gate.require_run` durchsetzbar (#404)
