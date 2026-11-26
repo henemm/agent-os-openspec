@@ -1,36 +1,20 @@
 # Phase 5: TDD RED - Write Failing Tests
 
-You are in **Phase 5 - TDD RED Phase**.
+Hintergrund (Begründungen, Sonderfälle): `docs/befehle/40-tdd-red.md` im Plugin-Ordner — nur bei Bedarf lesen.
 
-## Purpose
-
-Write tests BEFORE implementation. Tests MUST FAIL because the functionality doesn't exist yet.
-
-**If tests pass → you're not doing TDD, you're testing existing code.**
+Tests vor der Implementierung; sie MÜSSEN scheitern.
 
 ## Step 0: Workflow-State auflösen (ZUERST — vor allem anderen)
 
-**Wurde dieser Befehl mit einer Issue-Nummer aufgerufen** (z. B. `/40-tdd-red #42` — typisch nach einem `/clear`)? Dann aktiviere den Workflow explizit. Ein reines `export OPENSPEC_ACTIVE_WORKFLOW=...` reicht NICHT: Shell-State überlebt keinen Bash-Tool-Aufruf, und in Worktree-Sessions ignoriert `resolve_active_workflow()` die Env-Var ohnehin (Issue #58).
+**Aufruf mit Issue-Nummer** (z. B. `/40-tdd-red #42`, typisch nach `/clear`)? Workflow explizit aktivieren (`export` reicht NICHT):
 
 ```bash
 python3 .claude/hooks/workflow.py find 42   # die übergebene Nummer
-```
-
-**PFLICHT direkt danach** — Workflow wirklich aktivieren (nicht nur die Zeile oben lesen) und den Stand verifizieren:
-
-```bash
 python3 .claude/hooks/workflow.py switch <NAME-aus-obigem-Output>
 python3 .claude/hooks/workflow.py status
 ```
 
-Das `status`-Kommando ist der eigentliche Wiedereinstiegs-Check: Es zeigt die Quelle (`[file]`) und bestätigt Phase/Spec. Fasse dem User in 2 Sätzen zusammen, wo der Workflow steht — damit sichtbar ist, dass der `/clear` nichts verloren hat.
-
-**Ohne Issue-Argument** (laufende Session, kein `/clear` dazwischen): `workflow.py status` reicht direkt.
-
-## Prerequisites
-
-- Spec approved (`phase4_approved`)
-- Test plan defined in spec
+Fasse dem User in 2 Sätzen zusammen, wo der Workflow steht. **Ohne Issue-Argument:** `workflow.py status` reicht.
 
 ## Your Tasks
 
@@ -42,47 +26,18 @@ python3 .claude/hooks/workflow.py phase phase5_tdd_red
 
 ### 2. Write Tests Based on Spec
 
-From the spec's Test Plan, create test files:
+Je Anforderung aus dem Test Plan ein Test (GIVEN/WHEN/THEN), der am fehlenden Feature scheitert.
 
-```python
-# tests/test_[feature].py
-
-def test_new_functionality():
-    """
-    GIVEN: [precondition]
-    WHEN: [action]
-    THEN: [expected result]
-    """
-    # This test MUST FAIL because feature doesn't exist
-    result = feature_that_doesnt_exist()
-    assert result == expected_value
-```
-
-### 3. Run Tests - MUST BE RED
-
-Execute the tests:
-```bash
-pytest tests/test_[feature].py -v > docs/artifacts/[workflow]/test-output-red.txt 2>&1
-```
-
-**Expected:** Tests FAIL with clear error messages.
-
-### 4. Capture REAL Artifacts
-
-Save actual test output as artifacts:
+### 3. Run Tests - MUST BE RED, Capture REAL Artifacts
 
 ```bash
-# Create artifacts directory
 mkdir -p docs/artifacts/[workflow-name]
-
-# Save test output
 pytest tests/ -v > docs/artifacts/[workflow]/test-red-output.txt 2>&1
-
-# For UI tests, take actual screenshots
-# For API tests, save actual responses
 ```
 
-### 5. Register Artifacts
+**Expected:** FAIL mit klarer Fehlermeldung; UI/API: echte Screenshots/Antworten.
+
+### 4. Register Artifacts
 
 ```bash
 python3 .claude/hooks/workflow.py add-artifact test_output \
@@ -91,43 +46,24 @@ python3 .claude/hooks/workflow.py add-artifact test_output \
     phase5_tdd_red
 ```
 
-### 6. Mark RED
+### 5. Mark RED
 
-Gleich nach dem Registrieren den RED-Stand im Workflow-State melden — damit nennt die Fußzeile
-schon jetzt `/50-implement`, auch wenn der Turn vor dem Phasenwechsel endet:
+Gleich nach dem Registrieren (Fußzeile nennt dann schon `/50-implement`):
 
 ```bash
 python3 .claude/hooks/workflow.py mark-red "<kurzes Ergebnis, z. B. 3 tests failed>"
 ```
 
-## Artifact Requirements
-
-Each artifact MUST:
-- Be a **real file** (not placeholder)
-- Have **minimum size** (proves non-empty)
-- Include **description** of what it proves
-- Show **failure evidence** (error, fail, assertion)
-
-## RED Phase Checklist
-
-Before proceeding to implementation:
-
-- [ ] Tests written for all spec requirements
-- [ ] All tests executed
-- [ ] All tests FAIL (RED)
-- [ ] At least 1 artifact registered
-- [ ] Artifact shows failure evidence
-- [ ] RED gemeldet: `workflow.py mark-red "<Ergebnis>"` ausgeführt
+**Checkliste:** Tests für alle Anforderungen, alle ausgeführt und RED, mind. 1 echtes, nicht leeres Artefakt mit
+Beschreibung und Fehlerbeleg registriert, `mark-red` ausgeführt.
 
 ## Next Step
 
-Sobald alle Artefakte registriert sind und Spec + RED-Testdateien committed sind — der nächste Schritt setzt den Gesprächskontext zurück. Führe zuerst aus:
+Sind alle Artefakte registriert und Spec + RED-Testdateien committed:
 
 ```bash
 python3 .claude/hooks/workflow.py phase phase6_implement
 ```
-
-Danach folgt die Ausgabe an den User, danach rufst du `50-implement` selbst auf (siehe unten).
 
 ### Checkpoint prüfen (Anweisung an dich — nicht ausgeben)
 
@@ -180,21 +116,12 @@ Erst sichern, dann ist `/clear` gefahrlos.
 
 ---
 
-Vor dem Selbstaufruf zusätzlich `python3 .claude/hooks/workflow.py context` ausführen (Kontext-Haushalt): Bei `CONTEXT_STOP=on` (Kontext über der wirksamen Schwelle `CONTEXT_THRESHOLD` aus `context_budget`: Grundkontext der Sitzung + `growth_tokens`, mindestens `clear_threshold_tokens`, Default 100.000 Token, nur im Modus manual) den Skill `50-implement` NICHT selbst aufrufen, sondern die Antwort mit dem Checkpoint und der ❗Du-Zeile `/50-implement #<N>` beenden — der Stand liegt auf der Platte, der PO tippt `/clear`. Ein Schritt mit 200k Token Kontext kostet etwa das Fünffache eines Schritts mit 40k. Bei `CONTEXT_STOP=off` (auch mit `CONTEXT_REASON=AUTO_NO_CLEAR`: Auto-Modus, niemand tippt `/clear`, Nachschlagen an Teilagenten abgeben, Claude Code komprimiert automatisch) oder `CONTEXT_TOKENS=unknown`: Kette unverändert selbst fortsetzen (#658).
+Vor dem Selbstaufruf zusätzlich `python3 .claude/hooks/workflow.py context` ausführen (Kontext-Haushalt): Bei `CONTEXT_STOP=on` (Kontext über der wirksamen Schwelle `CONTEXT_THRESHOLD` aus `context_budget`: Grundkontext der Sitzung + `growth_tokens`, mindestens `clear_threshold_tokens`, Default 100.000 Token, nur im Modus manual) den Skill `50-implement` NICHT selbst aufrufen, sondern die Antwort mit dem Checkpoint und der ❗Du-Zeile `/50-implement #<N>` beenden — der Stand liegt auf der Platte, der PO tippt `/clear`. Bei `CONTEXT_STOP=off` oder `CONTEXT_TOKENS=unknown`: Kette unverändert selbst fortsetzen (#658).
 
-Ohne `/clear` in derselben Session: Rufe den Skill `50-implement` jetzt sofort selbst
-auf — warte nicht auf eine weitere User-Eingabe, die registrierten RED-Artefakte sind
-bereits die Voraussetzung, keine zusätzliche Entscheidung steht mehr aus.
-
-Mit `/clear` dazwischen: Der Checkpoint-Block oben zeigt den regulären Wiedereinstieg
-über den expliziten Befehl `/50-implement #<N>`.
-
-Diese Kette gilt unabhängig vom Autonomie-Modus — auch bei `AUTONOMY=auto` ist hier nichts zusätzlich zu tun (#472).
+Ohne `/clear`: Rufe den Skill `50-implement` jetzt sofort selbst auf, ohne auf den User zu warten (gilt in jedem Autonomie-Modus, #472).
+Mit `/clear`: Wiedereinstieg über `/50-implement #<N>`.
 Immer menschlich bleiben — auch bei `AUTONOMY=auto`: AMBIGUOUS-Verdict, zweites BROKEN bzw. Circuit Breaker, Override, Deploy, Stop-Lock.
 
 ## Common Mistakes
 
-❌ **Tests that pass** → Test is worthless, proves nothing
-❌ **Mock everything** → Not testing real behavior
-❌ **Placeholder artifacts** → Hook will block implementation
-❌ **Skip to implement** → TDD enforcement hook will block you
+❌ Grüne Tests (wertlos) · alles gemockt · Platzhalter-Artefakte oder Sprung zur Implementierung (Hook blockt)

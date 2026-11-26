@@ -5,7 +5,9 @@ disable-model-invocation: false
 
 # User Story Discovery (JTBD-basiert)
 
-Du führst einen **strukturierten Dialog** mit dem Product Owner, um eine User Story zu ermitteln und zu dokumentieren.
+Du führst einen **strukturierten Dialog** mit dem Product Owner, um eine User Story nach Jobs to be Done (JTBD) zu ermitteln und zu dokumentieren.
+
+Hintergrund (Begründungen, Sonderfälle): `docs/befehle/83-user-story.md` im Plugin-Ordner — nur bei Bedarf lesen; dort Fragen und Output-Template.
 
 ## Setup
 
@@ -18,165 +20,28 @@ WF="python3 ${_H}/workflow.py"
 _S="${_H%/core/hooks}/scripts"; [ "$_H" = ".claude/hooks" ] && _S=".claude/scripts"
 ```
 
-## Framework: Jobs to be Done (JTBD)
-
-Kernidee: Menschen "kaufen" Produkte nicht - sie "heuern" sie an, um einen Job zu erledigen.
-
 ## Argument prüfen (ZUERST)
 
-Das Argument dieses Befehls ist normalerweise ein **Thema** (`/83-user-story Kalender-Integration`) — dann überspringe diesen Abschnitt und arbeite mit dem Thema weiter.
+Normalerweise ist das Argument ein **Thema** (`/83-user-story Kalender-Integration`) — dann weiter mit Schritt 1.
 
-**Besteht das Argument nur aus einer Nummer** (`/83-user-story #1761`)? Dann ist ein laufender Workflow gemeint — löse ihn von der Platte auf, statt zu raten:
+**Nur eine Nummer** (`/83-user-story #1761`)? Laufenden Workflow auflösen und aktivieren:
 
 ```bash
 $WF find 42   # die übergebene Nummer
-```
-
-**PFLICHT direkt danach** — Workflow wirklich aktivieren (nicht nur die Zeile oben lesen). Ein reines `export OPENSPEC_ACTIVE_WORKFLOW=...` reicht NICHT: Shell-State überlebt keinen Bash-Tool-Aufruf, und in Worktree-Sessions ignoriert `resolve_active_workflow()` die Env-Var ohnehin (Issue #58):
-
-```bash
 $WF switch <NAME-aus-obigem-Output>
 $WF status
 ```
 
-Das `status`-Kommando ist der eigentliche Wiedereinstiegs-Check: Es zeigt die Quelle (`[file]`) und bestätigt Phase/Spec. **Fasse dem User in 2 Sätzen zusammen, wo der Workflow steht**, und frage dann, für welches Feature die User Story gesucht ist. Findet der Block nichts, behandle das Argument doch als Thema.
+**Fasse dem User in 2 Sätzen zusammen, wo der Workflow steht**, und frage, für welches Feature die Story gesucht ist. Findet der Block nichts, behandle das Argument als Thema.
 
 ## Dein Vorgehen
 
-### Phase 1: Kontext klären
+1. **Kontext klären:** Gesamtes Produkt, neues Epic/Feature oder bestehendes Feature verbessern?
+2. **JTBD-Interview:** Fragen **nacheinander** (nicht alle auf einmal; `AskUserQuestion` oder frei im Chat): Situation (When…), Job (I want to…), Ergebnis (So that…), Dimensionen (funktional, emotional, sozial), Timeline (optional), Alternativen.
+3. **Zusammenfassung validieren:** Story zusammenfassen und bestätigen lassen, bevor du speicherst.
+4. **Dokumentieren:** speichern unter `docs/stories/[name].md` nach dem Output-Template.
 
-Frage zuerst, worum es geht:
-
-```
-Für welches Produkt/Feature soll ich die User Story ermitteln?
-- Gesamtes Produkt
-- Neues Epic/Feature (z.B. "Kalender-Integration")
-- Bestehendes Feature verbessern
-```
-
-### Phase 2: JTBD Interview (Dialog)
-
-Stelle diese Fragen **nacheinander** (nicht alle auf einmal). Nutze `AskUserQuestion` für strukturierte Fragen, oder frage frei im Chat.
-
-**1. Die Situation (When...)**
-> "In welcher Situation befindet sich der Nutzer, wenn das Problem auftritt?"
-> "Was macht er gerade? Wo ist er? Was ist der Kontext?"
-
-**2. Der Job (I want to...)**
-> "Was will der Nutzer in diesem Moment erreichen?"
-> "Was ist die konkrete Aufgabe, die er erledigen will?"
-
-**3. Das gewünschte Ergebnis (So that...)**
-> "Was erhofft sich der Nutzer davon?"
-> "Wie sieht Erfolg aus? Was ist anders, wenn der Job erledigt ist?"
-
-**4. Die Dimensionen**
-- **Funktional:** Was muss technisch passieren?
-- **Emotional:** Wie will sich der Nutzer fühlen? (sicher, entspannt, in Kontrolle?)
-- **Sozial:** Wie will der Nutzer von anderen wahrgenommen werden?
-
-**5. Die Timeline (optional, bei komplexeren Stories)**
-> "Was war der erste Gedanke - wann wurde dir klar, dass du so etwas brauchst?"
-> "Welche anderen Lösungen hast du vorher probiert?"
-> "Was hat dich motiviert, aktiv nach einer Lösung zu suchen?"
-
-**6. Die Alternativen**
-> "Was macht der Nutzer heute, um dieses Problem zu lösen?"
-> "Was sind die Nachteile der aktuellen Lösung?"
-
-### Phase 3: Zusammenfassung validieren
-
-Fasse die Story zusammen und lass sie bestätigen:
-
-```markdown
-## User Story: [Name]
-
-**Situation:** [When...]
-**Job:** [I want to...]
-**Ergebnis:** [So that...]
-
-### Das Problem heute
-[Was der Nutzer aktuell macht und warum das nicht gut funktioniert]
-
-### Die gewünschte Lösung
-[Was das Produkt/Feature anders macht]
-
-### Erfolgskriterien
-- [ ] Kriterium 1
-- [ ] Kriterium 2
-```
-
-### Phase 4: Dokumentieren
-
-Speichere das Ergebnis im Projekt:
-
-```
-docs/stories/[name].md
-```
-
-Verwende das Template unten.
-
-## Output Template
-
-```markdown
-# User Story: [Name]
-
-> Erstellt: [Datum]
-> Status: Draft | Approved
-> Produkt: [Produktname]
-
-## JTBD Statement
-
-**When** [Situation/Kontext],
-**I want to** [Job/Aufgabe],
-**So that** [gewünschtes Ergebnis].
-
-## Kontext
-
-### Die Situation
-[Detaillierte Beschreibung der Situation, in der das Problem auftritt]
-
-### Das Problem heute
-[Wie löst der Nutzer das Problem aktuell? Was sind die Nachteile?]
-
-### Alternativen
-- Alternative 1: [Was der Nutzer sonst tun könnte]
-- Alternative 2: ...
-
-## Dimensionen
-
-### Funktional
-[Was muss technisch passieren?]
-
-### Emotional
-[Wie will sich der Nutzer fühlen?]
-
-### Sozial
-[Wie will der Nutzer wahrgenommen werden?]
-
-## Erfolgskriterien
-
-- [ ] Kriterium 1
-- [ ] Kriterium 2
-- [ ] Kriterium 3
-
-## Abgeleitete Features
-
-| Feature | Priorität | Status |
-|---------|-----------|--------|
-| Feature 1 | Must | Backlog |
-| Feature 2 | Should | Backlog |
-
----
-*Ermittelt im JTBD-Dialog am [Datum]*
-```
-
-## Wichtig
-
-- **Frag nach, bis du es wirklich verstehst** - keine Annahmen
-- **Nutze die Sprache des Users** - keine technischen Begriffe erzwingen
-- **Emotional > Funktional** - Das "Warum" ist wichtiger als das "Was"
-- **Validiere am Ende** - Lass die Zusammenfassung bestätigen bevor du speicherst
+Frag nach, bis du es wirklich verstehst; nutze die Sprache des Users; das "Warum" ist wichtiger als das "Was".
 
 ## Versions-Marker (Pflicht)
 
@@ -184,7 +49,7 @@ Beende deine letzte Nachricht in diesem Befehl mit diesen Zeilen, in dieser Reih
 
 ❗ Du: `/<befehl> #<N>` — <ein Halbsatz, warum>
 ℹ️ Status: Workflow `<name>` · Phase `<x>` von 8
-⚙ /83-user-story · agent-os-openspec 4.26.1
+⚙ /83-user-story · agent-os-openspec 4.26.2
 
 Die erste Zeile sagt, wer am Zug ist — GENAU EINMAL, nur hier in der Fußzeile, nie zusätzlich als Vokabular mitten im Fließtext davor — und steht in genau einer von drei Formen (es gibt keine vierte):
 

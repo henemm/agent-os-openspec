@@ -221,3 +221,253 @@ Issue außerhalb vor.
 
 Die Kette greift weiterhin nur bei „aus deinem Auftrag“ (bei einem
 autarken Auftrag hängt `endstate` Epic-/Meilenstein-Nachfolger selbst an und meldet dann ⏳).
+
+## Wiedereinstieg und Hängende Subagenten (Wortlaut vor #678)
+
+## Wiedereinstieg via Issue-Nummer (nach `/clear`)
+
+**Wurde dieser Befehl als `/60-validate #<N>` aufgerufen** (typisch nach einem `/clear`)? Dann löse zuerst den Workflow von der Platte auf:
+
+```bash
+python3 .claude/hooks/workflow.py find 42   # die übergebene Nummer
+```
+
+**PFLICHT direkt danach** — Workflow wirklich aktivieren (ein reines `export` reicht NICHT):
+
+```bash
+python3 .claude/hooks/workflow.py switch <NAME-aus-obigem-Output>
+python3 .claude/hooks/workflow.py status
+```
+
+Fasse dem User in 2 Sätzen den Stand zusammen (Phase, Verdict) und fahre dann mit den Prerequisites fort.
+
+### Hängende Subagenten
+
+Die Sitzung wird automatisch erneut aufgerufen, sobald der Hintergrund-Agent fertig ist. Fehlt beim
+nächsten eigenen Zug der Bericht: `TaskList` prüfen, noch aktiv → `TaskStop`, mit präziserem Briefing
+neu starten. Nur innerhalb eines `/loop`-Laufs zusätzlich:
+
+```
+ScheduleWakeup(1200, "Validierung Rückfall [60-validate], nur im /loop-Kontext: TaskList → noch aktiver Agent? JA → TaskStop, dann User: 'Agent hängt — bitte /60-validate neu starten.' NEIN → fertig.")
+```
+
+## Kontext laden (Wortlaut vor #678)
+
+Dispatche einen **Explore/Haiku Subagenten**:
+
+```
+Agent(subagent_type="Explore", model="haiku", description="Validierungs-Kontext laden", run_in_background=true, prompt="
+  Lies [spec_file] (AC-1 bis AC-N), docs/artifacts/<workflow-name>/adversary-dialog.md
+  (Verdict, Findings) und config.yaml (qa_gate.test_command).
+  Gib zurück: spec_file_path, affected_files, test_command, Liste aller AC-N,
+  adversary_verdict (VERIFIED / BROKEN / AMBIGUOUS).")
+```
+
+Kein Agent darf mit `[...]`-Platzhaltern gestartet werden.
+
+## Prerequisites und Adversary Dialog Prerequisite (Wortlaut vor #678)
+
+Implementation complete, GREEN artifacts registered, **Adversary Dialog verified** (`adversary_verdict` set) — `python3 .claude/hooks/workflow.py status`.
+
+### Adversary Dialog Prerequisite
+
+**Pflicht vor allem Weiteren:**
+
+```bash
+python3 .claude/hooks/adversary_dialog.py validate docs/artifacts/<workflow-name>/adversary-dialog.md
+```
+
+Wenn die Validierung fehlschlaegt: Zurueck zu `/50-implement` Step 8 (Adversary Dialog wiederholen).
+Akzeptierte Verdicts: **VERIFIED** oder **AMBIGUOUS** (mit User-OK).
+
+## Step 1: Parallele Validierung (Wortlaut vor #678)
+
+Dispatche **4 parallele Haiku-Agenten** im Vordergrund — alle vier in EINER Nachricht, dann laufen sie parallel:
+
+```
+Agent(subagent_type="general-purpose", model="haiku", description="TEST CHECK", run_in_background=false, prompt="
+  Fuehre ALLE Tests aus: python3 .claude/hooks/qa_gate.py --run (ohne test_command: [test_command])
+  Report: Anzahl passed/failed, Laufzeit, Fehlerdetails.")
+
+Agent(subagent_type="general-purpose", model="haiku", description="SPEC COMPLIANCE", run_in_background=false, prompt="
+  Lies die Spec: [spec_file_path]
+  Pruefe jeden Acceptance Criterion gegen die Implementation.
+  Report: Welche Kriterien sind erfuellt, welche nicht?")
+
+Agent(subagent_type="general-purpose", model="haiku", description="REGRESSION CHECK", run_in_background=false, prompt="
+  Fuehre die vollstaendige Test-Suite aus (nicht nur Feature-Tests).
+  Report: Gibt es Regressionen? Welche Tests die vorher gruen waren
+  sind jetzt rot?")
+
+Agent(subagent_type="general-purpose", model="haiku", description="SCOPE CHECK", run_in_background=false, prompt="
+  Vergleiche die geaenderten Dateien mit der Spec.
+  Wurden Dateien ausserhalb des Specs geaendert?
+  Wurden mehr als 5 Dateien / 250 LoC geaendert?")
+```
+
+## Step 2: Ergebnis-Auswertung (Wortlaut vor #678)
+
+**Step 2a: Alle Checks bestanden** -> Weiter zu Step 3
+
+**Step 2b: Fehler gefunden -> Auto-Fix nur fuer Nicht-Code (general-purpose/Sonnet)**
+
+Auto-Fix darf nur Nicht-Code aendern (Doku, Tests, Config). **Braucht ein Fund eine Code-Aenderung,
+ist das der BROKEN-Pfad:** zurueck zu `phase6_implement`, gezielter Fix per `/50-implement`, danach
+eine Adversary-Runde aus demselben Kontingent wie jedes BROKEN-Verdict.
+
+**Nachprüfung nach Phase 8 (Staging/live):** Ein fachlicher Befund zaehlt wie BROKEN:
+`deploy-status failed --note`, zurueck zu `phase6_implement`, Fix per `/50-implement`, eine
+Adversary-Runde aus demselben Kontingent, danach erneut `/60-validate` und `/70-deploy`.
+
+Bei Nicht-Code-Fehlern dispatche einen **general-purpose/Sonnet Subagenten**:
+
+```
+Agent(subagent_type="general-purpose", model="sonnet", description="Auto-Fix Nicht-Code", run_in_background=true, prompt="
+  Behebe nur diese Validierungsfehler: [Fehler-Liste aus den 4 Haiku-Reports]
+  Keine Code-Dateien aendern (nur Doku, Tests, Config) — Code-Fix = BROKEN-Pfad.
+  Scoping Limits einhalten, Tests danach erneut ausfuehren.")
+```
+
+Nach dem Fix: Dispatche die relevanten Haiku-Checks erneut zur Verifikation.
+
+## Step 3: docs-updater-Auftrag (Wortlaut vor #678)
+
+  spec_file_path: [Pfad zur Spec — NUR LESEN, kein Bearbeitungsziel]
+  Aktualisiere alle betroffene Dokumentation.
+
+  Die Spec-Datei selbst NICHT bearbeiten — der freigegebene Teil ist nach der
+  Freigabe eingefroren (#230, #439).")
+
+## Validation Report (Vorlage)
+
+```markdown
+## Validation Report: [Workflow Name]
+
+### Test Results
+- Unit Tests: [N] passed, [N] failed, [N] übersprungen
+- Integration Tests: [N] passed, [N] failed, [N] übersprungen
+- Full Suite: [N] total, [N] passed, [N] übersprungen
+- Ein Lauf mit 0 bestanden und ≥ 1 übersprungen ist nicht grün.
+
+### Spec Compliance / Regression / Scope
+- Acceptance Criteria: [N]/[N] erfuellt [Details zu nicht erfuellten]
+- Regressionen: [Keine / N]
+- Files/LoC: [N] (Limit 5) / +[N]/-[N] (Limit 250), out-of-scope: [Keine / Liste]
+
+### Result: PASS / FAIL
+```
+
+## Autonomen Weiterlauf prüfen (Wortlaut vor #678)
+
+Existiert im Projekt ein `/70-deploy` UND steht `deploy.autonomous: true` in der Projekt-Config
+(`python3 .claude/hooks/workflow.py deploy-config`) — oder dokumentiert das Projekt (`CLAUDE.md`,
+`70-deploy.md`) explizit, dass Deploy **ohne Freigabe-Halt autonom** läuft? Dann ist das bindende
+Projekt-Policy: committe wie unten beschrieben und rufe `/70-deploy` **im selben Turn selbst auf**;
+melde das Ergebnis der ganzen Kette. Sonst Standardverhalten unten (fragen, nicht autonom weiterlaufen).
+
+## Beobachtbare Oberfläche prüfen (Wortlaut vor #678)
+
+Fehlt die Zeile `OBSERVABLE_SURFACE=no` (auch bei `yes`, Absturz, abweichendem Format oder
+ausgebliebenem Aufruf), wird die Schlussfrage „Soll ich den Stand sichern?" gestellt. Nur die
+ausdrücklich gelesene Zeile `OBSERVABLE_SURFACE=no` lässt sie entfallen. Die Autonomie-Regel sticht:
+
+## On Failure (Wortlaut vor #678)
+
+If validation fails after auto-fix attempt:
+1. Do NOT update state to complete
+2. Report the remaining issues to the user
+3. User decides: fix manually or re-implement
+
+## Auto-Modus Punkt 3: ship.py (Wortlaut vor #678)
+
+   **Ein Aufruf statt vieler (Kontext-Haushalt):** `python3 .claude/scripts/ship.py` erledigt Punkt 3
+   und Punkt 5 in einem Schritt: Branch prüfen (nie Default-Branch, nie detached `HEAD`; mit
+   `--branch <workflow-name>` legt es den Feature-Branch aus Punkt 2 an, bei Namenskonflikt mit
+   Suffix `-2`, `-3` …), `git push -u origin <feature-branch>`, PR anlegen oder den offenen PR
+   wiederverwenden, CI abwarten und bei `AUTO_SHIP=on` mit `--merge squash` (bzw. der im Repo
+   üblichen Methode) mergen. Zurück kommen nur wenige Zeilen `BRANCH=… PR=… CI=green|red|none
+   MERGED=yes|no|skipped`; bei `CI=red` nennt `FAILED_CHECKS=` die roten Checks — dann gilt Punkt 5
+   (Ursache beheben oder in Alltagssprache melden). Die Regeln dieses Abschnitts (nie `--force`,
+   nie Schutzregeln umgehen, rote CI nie überbrücken) gelten im Skript genauso; bei `AUTO_SHIP=off`
+   ohne `--merge` aufrufen.
+
+## Zusammenfassung: Ausnahmen (Wortlaut vor #678)
+
+**Ausnahmen (siehe Prüfungen oben):** Bei dokumentierter Autonomie oder ohne beobachtbare
+Oberfläche ersetzt die Ankündigung aus der Tabelle die letzte Zeile, ohne Frage. Im Auto-Modus
+(`AUTONOMY=auto`): ersetze die letzte Zeile durch das Ergebnis plus den Block — keine Commit-Frage.
+
+## Vorschlag (#589) (Wortlaut vor #678)
+
+Vorschlag (#589): Ohne nächstes Issue aus dem Auftrag nennt die ✅-Zeile hinter `FOOTER=` oft
+schon die nächste Aufgabe („… mit /00-intake #M weitermachen (<Grund>).“); dann folgen
+`SUGGEST_ISSUE=M`, `SUGGEST_SOURCE=epic|milestone|spur|related|priority` und `SUGGEST_REASON=`.
+Bei `SUGGEST_SOURCE=epic-leer` prüfst du das Abschlusskriterium des Epics, schlägst aber nie ein
+Issue außerhalb vor.
+Das ist nur Auskunft für dich: gib die Zeile wörtlich aus und starte wegen eines bloßen
+Vorschlags nichts selbst — die Kette greift weiterhin nur bei „aus deinem Auftrag“.
+
+## Auto-Modus prüfen: Einleitung (Wortlaut vor #678)
+
+Nur die ausdrücklich gelesene Zeile `AUTONOMY=auto` schaltet um; jede andere Ausgabe (auch ein
+Fehler) gilt als `manual` — dann gilt die Tabelle oben unverändert.
+
+## Auto-Modus Punkt 1: auto-ship (Wortlaut vor #678)
+
+   Nur die ausdrücklich gelesene Zeile `AUTO_SHIP=on` schaltet um; jede andere Ausgabe (auch ein
+   Fehler) gilt als `AUTO_SHIP=off`. Default im Auto-Modus ist an; abschalten per
+   `autonomy.ship: false` in der Projekt-`config.yaml` (`settings.local.json` zählt nicht).
+
+## Auto-Modus Punkt 6: approvals (Wortlaut vor #678)
+
+   Erste Zeile `APPROVALS=<n>`, danach je Eintrag `- <gate> | <by> | <at> | <reason>`. Übernimm
+   jede Zeile als Gate, Zeit und Grund in die Abschlussmeldung; bei `APPROVALS=0` schreibe
+   „keine automatischen Freigaben".
+
+## Endzustand melden (Wortlaut vor #678)
+
+Gib den Wert hinter `FOOTER=` **wörtlich** als Endzustand-Zeile aus — genau eine der drei Formen
+`✅ Erledigt: …`, `⏳ Läuft noch: …` oder `❗ Du: … — …`; keine erfundene PO-Aufgabe, keine zweite
+Abschlusszeile. `SHIP_STATUS=open`/`running` trotz Auslieferung: erst `ship-status done` (Step 4).
+Wartest du noch auf CI, Agent oder Server: `ship-status running --note "<worauf>"` bzw.
+`workflow.py waiting "<worauf>" <N>`, dann `endstate` erneut aufrufen.
+
+## Auto-Modus Punkt 4 (Wortlaut vor #678)
+
+4. **Deploy bleibt beim PO.** Der Auto-Modus löst nie ein Deploy aus —
+   `deploy.autonomous` (siehe „Autonomen Weiterlauf prüfen" oben) ist eine eigene, getrennte
+   Entscheidung des Projekts und wird von `AUTONOMY=auto` weder gesetzt noch ersetzt. Kein
+   `/70-deploy` aus dem Auto-Modus heraus.
+
+## Auto-Modus Punkt 5: Versions-Bump (Wortlaut vor #678)
+
+   **Versions-Bump bei Einzel-Auslieferung (#640):** Regelt das Projekt die Einzel-Auslieferung
+   (im Framework-Repo `docs/arbeitsweise.md`), gilt beim Ausliefern dessen Regel: Wird ein Issue
+   allein und sofort veröffentlicht, steckt der Versions-Bump schon im Fix- oder Feature-PR (ein
+   einziger Testlauf bis zur veröffentlichten Version); ein getrennter Release-PR folgt nur beim
+   Bündeln mehrerer Issues.
+
+## Step 4: ship-status von Hand (Wortlaut vor #678)
+
+Workflow fertig. `scripts/ship.py` meldet die Stände selbst; von Hand:
+
+```bash
+python3 .claude/hooks/workflow.py ship-status running <N> --note "PR <nr>: CI läuft"
+python3 .claude/hooks/workflow.py ship-status done <N> --note "PR <nr> gemergt"
+python3 .claude/hooks/workflow.py ship-status failed <N> --note "<Grund in Alltagssprache>"
+python3 .claude/hooks/workflow.py ship-status skipped <N> --note "<warum nichts auszuliefern ist>"
+```
+
+`skipped` nur, wenn es wirklich nichts auszuliefern gibt.
+
+## Kette bei offenem Auftrag: Übergabe (Wortlaut vor #678)
+
+übergib #M an eine
+frische Sitzung (Befehl `workflow.py handoff`, #667), kein Halt für `/clear`. Erst `python3 .claude/hooks/workflow.py handoff`,
+dann je nach `HANDOFF=`:
+
+## Auto-Modus Punkt 3: Beispiel Default-Branch (Wortlaut vor #678)
+
+Default-Branch des Remotes ermitteln: zuerst `git symbolic-ref --short refs/remotes/origin/HEAD`
+   (z. B. `origin/main` → `main`); schlägt das fehl, `git ls-remote --symref origin HEAD` und die
+   Zeile `ref: refs/heads/<name>` auswerten.
