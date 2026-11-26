@@ -8,6 +8,8 @@ disable-model-invocation: false
 **Immer der erste Schritt** — vor jedem Feature-Workflow. Auch Bugs starten hier.
 Bestimmt den Track und verhindert, dass ein 10-Minuten-Fix 8 Phasen durchläuft.
 
+Hintergrund (Begründungen, Sonderfälle): `docs/befehle/00-intake.md` im Plugin-Ordner — nur bei Bedarf lesen.
+
 ## Setup
 
 ```bash
@@ -35,63 +37,39 @@ Bewerte die Aufgabe anhand von 3 Kriterien:
 (Hook-/Gate-Code, Guards, Konfiguration = hoch; nur Anweisungstext, Doku, Tests = niedrig; im Zweifel hoch) —
 `python3 ${_H}/adversary_dialog.py risk` zeigt Stufe, Grund und geforderte Runden (#342)
 
-Der Workflow-State kennt genau diese zwei Stufen (`feature-fast`, `feature`). Die **Tiefe** im vollen
-Prozess richtet sich nach der Summe — das ist eine Anweisung, kein Zustand im State (#254):
-
-- Summe 1–3: Kontext und Analyse kurz in einem Durchgang (1x Explore)
-- Summe 4–6: Kontext und Analyse getrennt, Analyse mit 3x Haiku parallel
-
 ## Deine Aufgaben
 
 ### 1. Aufgabe verstehen + schnell recherchieren
 
 Lies den Aufgaben-Kontext aus dem Gespräch (ARGUMENTS oder letzte User-Nachricht).
-Bei Unklarheit über Scope: schnelle Suche:
-
-```bash
-# Betroffene Dateien schätzen
-grep -rn "keyword" --include="*.py" -l | head -10
-```
+Bei Unklarheit über Scope: `grep -rn "keyword" --include="*.py" -l | head -10`.
 
 ### 1b. Issue-Nummer(n) ins Session-Register eintragen
 
-Sobald die Issue-Nummer(n) aus dem Aufgaben-Kontext bekannt sind — noch vor der
-Track-Bewertung, denn im Fast Track entsteht nie ein Workflow:
+Sobald die Issue-Nummer(n) bekannt sind — noch vor der Track-Bewertung:
 
 ```bash
 python3 ${_H}/session_singleton_guard.py claim --issue <N>[,<M>...]
 ```
 
-Damit weiß jede andere Session, wer gerade an Issue #N arbeitet. Ohne Issue-Nummer
-(z.B. reiner Wartungs-Task) entfällt der Schritt.
+Ohne Issue-Nummer entfällt der Schritt.
 
 ### 1c. Issue-Kurzfassung für den Plan prüfen
-
-Der Plan-Pane zeigt im Kopf den Issue-Titel und darunter „Problem: …“ / „Ziel: …“. Beides
-liest `workflow.py` selbst aus dem Issue-Text (Abschnitte wie *Problem*, *Beschreibung*,
-*Motivation* bzw. *Ziel*, *Expected*, *Lösung*; ohne Überschriften der erste Absatz):
 
 ```bash
 $WF issue-brief <N>
 ```
 
-Ausgabe `TITLE=`, `PROBLEM=`, `ZIEL=`, `SOURCE=issue|manual|none`. Ist `PROBLEM=` oder `ZIEL=`
-leer, nichtssagend oder falsch (etwa weil das Issue nur Stichpunkte enthält), schreibe nach
-dem Lesen des Issues selbst je ein bis zwei Sätze in Alltagssprache — was heute stört und was
-danach gelten soll:
+Ist `PROBLEM=` oder `ZIEL=` leer, nichtssagend oder falsch, schreibe nach dem Lesen des Issues
+selbst je ein bis zwei Sätze in Alltagssprache:
 
 ```bash
 $WF issue-brief <N> --problem "<was heute stört>" --ziel "<was danach gilt>"
 ```
 
-Eine so gesetzte Fassung (`SOURCE=manual`) wird vom Issue nicht mehr überschrieben;
-`issue-brief <N> --auto` liest wieder aus dem Issue. Ohne Issue-Nummer entfällt der Schritt.
-
 ### 1a. Mehr-Issue-Auftrag sichern (#551)
 
-Erteilt der PO mehrere Issues in einem Auftrag („Setze 545, 547 und 548 um …“),
-sichere den Auftrag vor dem ersten Workflow per `workflow.py queue add` auf der
-Platte, damit er `/clear` und Worktree-Wechsel überlebt:
+Erteilt der PO mehrere Issues in einem Auftrag, sichere ihn vor dem ersten Workflow per `workflow.py queue add`:
 
 ```bash
 $WF queue add <N...> [--autark] [--note "<Wortlaut>"] [--spur <name>]
@@ -100,17 +78,9 @@ $WF queue add <N...> [--autark] [--note "<Wortlaut>"] [--spur <name>]
 `--autark` nur, wenn der PO „autark“ bzw. „melde dich nur, wenn …“ gesagt hat.
 `--spur <name>` (auch einzeln: `workflow.py spur <name>`), wenn der PO eine Spur genannt hat
 oder die Aufgabe zu einer erkennbaren Reihe gehört (#591): nach „fertig“ schlägt `endstate`
-dann offene Issues mit dem GitHub-Label `spur:<name>` vor. Epic und Meilenstein haben Vorrang;
-die Spur wirkt als Stufe 3. Das Label muss an den Issues gesetzt sein.
-Der Auftrag gehört dieser Sitzung (#613): Er liegt im Haupt-Repo unter
-`.claude/auftrag/<sitzung>.json` (herdr-Workspace, sonst Sitzungs-Id; ohne beides
-`.claude/auftrag.json`), andere Sitzungen sehen ihn nicht. `workflow.py complete` hakt
-das Issue ab, `workflow.py queue` zeigt den Stand (`NEXT=`, `PROMPT=`, `OWNER=`); meldet
-es `ALTAUFTRAG=`, liegt ein Auftrag ohne laufende Sitzung vor, den diese Sitzung nur
-übernimmt (`workflow.py queue claim`), wenn er nachweislich ihr gilt. Ein
-autarker Auftrag hält die Kette nicht für `/clear` an; menschliche Pflichtstopps
-(AMBIGUOUS, zweites BROKEN, Override, Deploy-Freigabe, Stop-Lock, Produktfragen)
-bleiben. Bei nur einem Issue entfällt der Schritt.
+dann offene Issues mit dem GitHub-Label `spur:<name>` vor. Epic und Meilenstein haben Vorrang.
+Meldet `workflow.py queue` `ALTAUFTRAG=`, nur per `workflow.py queue claim` übernehmen, wenn er
+nachweislich dieser Sitzung gilt. Bei nur einem Issue entfällt der Schritt.
 
 **Planung autarker Aufträge (#622):** Bei einem autarken Auftrag keine Schritte
 einplanen, die eine menschliche Sperre (override) brauchen, wenn eingebaute
@@ -124,15 +94,13 @@ Bei einem Fehlerbericht, noch bevor bewertet wird:
 
 1. **Duplikatsuche:** `gh issue list --label "bug" --state open` und
    `gh issue list --search "<Stichwort>" --state open`. Duplikat → bestehendes Issue verwenden.
-2. **Fehler nachstellen** und die Ursache mit `file:line` belegen. Die ausführliche Vorgehensweise
-   steht in `/20-analyse` Step 2b.
+2. **Fehler nachstellen** und die Ursache mit `file:line` belegen (Vorgehen: `/20-analyse` Step 2b).
 3. **Scoring speisen:** Ursache bekannt und ≤3 Dateien → Unsicherheit **Low**.
    Ursache unklar → Unsicherheit mindestens Medium.
 4. **STOP** und nachfragen, wenn: Ursache unklar, nicht reproduzierbar, mehrere mögliche Ursachen,
    Fix > 5 Dateien.
 
-Es gibt keinen eigenen Bug-Typ: Der Nachweis ist ein Test, der den Fehler vorher rot zeigt.
-Danach gilt dieselbe Wahl `feature-fast` / `feature` wie für jede andere Aufgabe.
+Kein eigener Bug-Typ: Nachweis ist ein Test, der den Fehler vorher rot zeigt.
 
 ### 2. Score präsentieren und Track vorschlagen
 
@@ -156,6 +124,7 @@ Was das bedeutet:
 - Kein Adversary Agent
 ```
 
+Modell: Sonnet bei Fast Track und Summe 1–3, Opus bei Summe 4–6.
 **Workflow-Name:** Leite ihn selbst aus dem Aufgaben-Titel ab (Issue-Nummer + Stichwort, z.B. `fix-862-col-labels`). Nie beim User erfragen.
 
 ### 2b. Autonomie prüfen (#472)
@@ -178,23 +147,25 @@ Immer menschlich bleiben — auch bei `AUTONOMY=auto`: AMBIGUOUS-Verdict, zweite
 
 ### 3. Workflow starten (nach User-Bestätigung des Tracks, bei `AUTONOMY=auto` sofort)
 
-`--issue <N>` nur, wenn die Issue-Nummer bekannt ist — sonst weglassen (die Nummer kommt dann
-aus dem Namen).
-`--score <S>` immer mit der Summe aus Step 2 (0–6): daraus lernt die Zeitschätzung (#620).
+`--issue <N>` nur, wenn die Issue-Nummer bekannt ist. `--score <S>` immer mit der Summe aus Step 2 (0–6) (#620).
 
-**Registrierung am Issue (#461):** `start` trägt die Sitzung als Kommentar am Issue ein (Ort,
-Name, Beginn, Phase). Bricht `start` mit `ABGEBROCHEN: An Issue #N arbeitet bereits eine andere
+**Registrierung am Issue (#461):** Bricht `start` mit `ABGEBROCHEN: An Issue #N arbeitet bereits eine andere
 Sitzung` ab, entsteht kein Workflow: nicht weiterarbeiten, dem PO in einfachen Worten sagen, wer
-wo seit wann daran arbeitet. `workflow.py claim status` zeigt Alter des Eintrags und offene Pull
-Requests; `start <name> --uebernehmen` nur, wenn die andere Sitzung nachweislich nicht mehr
-arbeitet oder der PO zustimmt. Eine Warnung ohne Netz blockiert nicht (wird nachgeholt).
+wo seit wann daran arbeitet. `start <name> --uebernehmen` nur, wenn die andere Sitzung nachweislich nicht mehr
+arbeitet oder der PO zustimmt.
 
 **Fast Track:**
 ```bash
 $WF start [name] --type feature-fast --issue <N> --score <S>
 export OPENSPEC_ACTIVE_WORKFLOW=[name]
 ```
-→ Weiter mit `/30-write-spec` (Mini-Spec-Format, siehe unten)
+→ Weiter mit `/30-write-spec` (Mini-Spec-Vorlage: `docs/befehle/00-intake.md`, Abschnitt „Mini-Spec (Fast Track)“); nach "approved" direkt zu `/50-implement`.
+
+**Auto-Modus (`autonomy.mode: auto`, #470):** Auch der Fast Track braucht dann ein
+unabhängiges PO-Briefing mit `## Ampel`. Also nach der Mini-Spec den `po-briefer` laufen lassen
+(`/30-write-spec` Step 3b), `workflow.py set-briefing <pfad>` und danach
+`workflow.py auto-approve`: `AUTO_APPROVE=done` → direkt weiter zu `/50-implement`,
+`AUTO_APPROVE=human` → der PO gibt wie bisher mit "approved" frei.
 
 **Voller Prozess:**
 ```bash
@@ -208,76 +179,9 @@ export OPENSPEC_ACTIVE_WORKFLOW=[name]
 ```bash
 $WF estimate
 ```
-Meldet `workflow.py estimate` `ESTIMATE=on`, den Satz aus `LINE=` als letzte Zeile der Intake-Bewertung nennen, z.B.
-„Start 21:41, Freigabe ca. 22:15 (aus 7 Workflows)“ (#642: vor der Spec-Freigabe nur deren
-ungefährer Zeitpunkt, danach „Ende ca. 22:15–23:15 (80 % sicher, aus 12 Workflows)“, Prozent erst ab
-10 Vergleichen); „Noch keine Zeitschätzung: zu wenig Vergleichsdaten“ heißt: noch zu wenige
-abgeschlossene Workflows mit gemessener Arbeitszeit. Bei `ESTIMATE=off` die Schätzung weglassen.
-Dieselben Zeiten stehen im Plan-Pane und werden mit jeder Phase genauer.
+Meldet `workflow.py estimate` `ESTIMATE=on`, den Satz aus `LINE=` als letzte Zeile der Intake-Bewertung nennen; bei `ESTIMATE=off` weglassen.
 
-## Modell-Empfehlung
-
-| Stufe | Hauptkontext | Begründung |
-|-------|-------------|-----------|
-| Fast Track | **Sonnet** | Bekannte Aufgabe, kein komplexes Reasoning nötig |
-| Voller Prozess, Summe 1–3 | **Sonnet** | Kreativ/analytisch aber gut definiert — Kosten/Qualitäts-Optimum |
-| Voller Prozess, Summe 4–6 | **Opus** | Hohe Komplexität, hoher Einsatz, potenziell Neuland — Mehrpreis lohnt im Haupt-Reasoning-Loop |
-
-Die Modell-Wahl gilt für den **Hauptkontext** (die laufende Claude-Session).
-Sub-Agenten haben eigene Modelle (Haiku für mechanische Tasks, Sonnet für Analyse/Specs) — das bleibt unabhängig vom Track.
-
-Modell wechseln: `/model` in der Claude-Code-Session oder beim Start `claude --model claude-opus-4-8`.
-
-## Unterschiede nach Stufe und Tiefe
-
-| Phase | Fast Track | Voller Prozess, Summe 1–3 | Voller Prozess, Summe 4–6 |
-|-------|-----------|---------|-------------|
-| Context-Doc | ❌ entfällt | ✅ kurz, inline | ✅ vollständig |
-| Analyse | ❌ entfällt | ✅ 1x Explore | ✅ 3x Haiku parallel |
-| Spec | ✅ Mini-Spec | ✅ Vollständig | ✅ Vollständig |
-| User-Freigabe | ✅ immer | ✅ immer | ✅ immer |
-| TDD RED | ❌ inline | ✅ Separate Phase | ✅ Separate Phase |
-| Adversary | ❌ entfällt | ✅ mindestens 2 Runden bei hohem Risiko, 1 bei niedrigem | ✅ mindestens 2 Runden bei hohem Risiko, 1 bei niedrigem |
-| Validierung | ✅ immer | ✅ immer | ✅ immer |
-
-## Mini-Spec (Fast Track)
-
-Beim Fast Track schreibt der Hauptkontext direkt (kein Sonnet-Agent) eine Mini-Spec.
-Datei: `docs/specs/fast/[name].md`
-
-```markdown
-# Mini-Spec: [Name]
-
-## Was ändert sich
-- [Änderung 1]
-- [Änderung 2]
-
-## Was darf sich nicht ändern
-- [Invariante]
-
-## Manuelle Test-Schritte
-1. [Schritt]
-2. [Schritt]
-
-## Inline-Test (wird während Implementierung geschrieben)
-- [ ] Test für [Hauptverhalten]
-```
-
-Nach User-Freigabe ("approved") direkt zu `/50-implement`.
-
-**Auto-Modus (`autonomy.mode: auto`, #470):** Auch der Fast Track braucht dann ein
-unabhängiges PO-Briefing mit `## Ampel` — die Ausnahme `skip_fast_track` gilt im
-Auto-Modus nicht. Also nach der Mini-Spec den `po-briefer` laufen lassen
-(`/30-write-spec` Step 3b), `workflow.py set-briefing <pfad>` und danach
-`workflow.py auto-approve`: `AUTO_APPROVE=done` → direkt weiter zu `/50-implement`,
-`AUTO_APPROVE=human` → der PO gibt wie bisher mit "approved" frei.
-
-## Was beim Fast Track IMMER aktiv bleibt
-
-- **Spec + User-Freigabe** — keine Implementierung ohne "approved"
-- **Rebase-Gate** — Branch muss auf `origin/main` stehen
-- **Secrets Guard** — nie Credentials im Code
-- **Stop-Lock** — "stopp" pausiert sofort
+Beim Fast Track bleiben IMMER aktiv: Spec + User-Freigabe, Rebase-Gate, Secrets Guard, Stop-Lock.
 
 ## Versions-Marker (Pflicht)
 
@@ -285,7 +189,7 @@ Beende deine letzte Nachricht in diesem Befehl mit diesen Zeilen, in dieser Reih
 
 ❗ Du: `/<befehl> #<N>` — <ein Halbsatz, warum>
 ℹ️ Status: Workflow `<name>` · Phase `<x>` von 8
-⚙ /00-intake · agent-os-openspec 4.26.0
+⚙ /00-intake · agent-os-openspec 4.26.1
 
 Die erste Zeile sagt, wer am Zug ist — GENAU EINMAL, nur hier in der Fußzeile, nie zusätzlich als Vokabular mitten im Fließtext davor — und steht in genau einer von drei Formen (es gibt keine vierte):
 
