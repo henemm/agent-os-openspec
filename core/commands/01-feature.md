@@ -1,6 +1,6 @@
 # Feature planen oder aendern
 
-Starte nach Schritt 0 den `feature-planner` Agenten — eigener Agent-Typ (Projekt-Agent in `.claude/agents/`, lokal auch als Plugin-Agent), Start **ohne `model`**, das Modell steht im Frontmatter (#577):
+Starte nach Schritt 0 den `feature-planner` Agenten — eigener Agent-Typ, Start **ohne `model`** (#577):
 
 ```
 Agent(subagent_type="feature-planner", description="Feature planen", prompt="
@@ -11,62 +11,28 @@ Agent(subagent_type="feature-planner", description="Feature planen", prompt="
 
 **Fallback, wenn der Typ in der Agent-Liste fehlt:** feature-planner → `agent-os-openspec:feature-planner`, sonst `Agent(subagent_type="general-purpose", model="sonnet", prompt="Lies zuerst .claude/agents/feature-planner.md (im Framework-Repo core/agents/feature-planner.md) und folge ihr. …")`.
 
-**Anfrage:** $ARGUMENTS
+Hintergrund (Begründungen, Sonderfälle): `docs/befehle/01-feature.md` im Plugin-Ordner — nur bei Bedarf lesen.
 
----
+**Anfrage:** $ARGUMENTS
 
 ## Schritt 0: GitHub Issues durchsuchen (IMMER ZUERST)
 
-Bevor irgendeine Analyse beginnt:
 ```bash
-# Offene Feature-Issues anzeigen
 gh issue list --label "enhancement" --state open
-
-# Keyword-Suche (aus $ARGUMENTS ableiten)
 gh issue list --search "$ARGUMENTS" --state open
 ```
 
-Falls passendes Issue gefunden → Issue-Nummer notieren und weiter mit Analyse.
-Falls kein Issue → `feature-planner` erstellt am Ende eines neues Issue.
-
----
-
-## Modus erkennen
-
-| Formulierung | Modus |
-|--------------|-------|
-| "Neues Feature...", "Fuege hinzu...", "Implementiere..." | **NEU** |
-| "Aenderung an...", "Passe an...", "Erweitere...", "Modifiziere..." | **AENDERUNG** |
-
----
-
-## Injizierte Standards
-
-- `global/analysis-first.md`
-- `global/scoping-limits.md`
-- `global/documentation-rules.md`
-
----
+Kein passendes Issue → `feature-planner` legt am Ende eines an.
 
 ## Workflow
 
-1. **Modus bestimmen:** NEU oder AENDERUNG?
-2. Feature-Intent verstehen (WAS, WARUM, Kategorie). Den Zweck in zwei bis drei Sätzen formulieren (welches Nutzerproblem, welche riskanteste Annahme) und **vom PO bestätigen lassen, bevor ein Issue angelegt wird** (#187)
-3. **Bei AENDERUNG:** Aktuellen Zustand dokumentieren, Delta identifizieren
-4. Bestehende Systeme pruefen (KRITISCH!)
-5. Scoping (Max 4-5 Dateien, +/-250 LoC)
-6. Dokumentiere in Roadmap
-7. **NEU:** Erstelle OpenSpec Proposal in `openspec/changes/[feature-name]/`
-8. **AENDERUNG:** Aktualisiere bestehende Spec in `openspec/specs/`
-
----
+1. **Modus:** NEU oder AENDERUNG (dann Ist-Zustand und Delta dokumentieren)?
+2. Zweck in zwei bis drei Sätzen (Nutzerproblem, riskanteste Annahme) **vom PO bestätigen lassen, bevor ein Issue angelegt wird** (#187)
+3. Bestehende Systeme pruefen (KRITISCH!), Scoping (max. 4-5 Dateien, +/-250 LoC), Roadmap
+4. **NEU:** Proposal in `openspec/changes/[feature-name]/`; **AENDERUNG:** Spec in `openspec/specs/` aktualisieren
 
 ## STOP-Bedingungen
 
-Stoppe und frage nach wenn:
-- Feature-Intent unklar
-- Zweck vom PO noch nicht bestätigt — dann kein Issue anlegen
-- Scoping ueberschritten (>5 Dateien, >250 LoC)
-- Bestehendes System gefunden (erweitern oder neu?)
+Stoppe und frage nach, wenn der Feature-Intent unklar ist, der Zweck vom PO noch nicht bestätigt ist (dann kein Issue anlegen), das Scoping ueberschritten ist (>5 Dateien, >250 LoC) oder ein bestehendes System gefunden wurde (erweitern oder neu?).
 
 **KEINE direkte Implementierung ohne Spec-Freigabe!**

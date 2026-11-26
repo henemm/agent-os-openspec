@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.26.2] - 2026-11-26
+
+### Changed — Befehlstexte verschlankt, Schnitt 3: 10-context, 20-analyse, 40-tdd-red, 70-deploy, kleine Befehle, 60-validate (#678)
+- Elf Befehlstexte zusammen 72 384 → 46 569 Bytes (−36 %): 10-context 7 680 → 4 970, 20-analyse 9 339 → 6 404, 40-tdd-red 8 013 → 5 447, 70-deploy 8 327 → 3 607, 60-validate (zweiter Durchgang) 20 286 → 16 364, 01-feature, 81-add-artifact, 82-test, 83-user-story, 90-retro, 99-reset je ≤ 1 800 Bytes. Geladener Skill-Text dieser elf Befehle 113 658 → 88 173 Bytes.
+- Gesamtziel aus #674 erreicht: `core/commands/*.md` zusammen 82 831 Bytes (Ausgang 138 946, −40,4 %).
+- Begründungen, Vorlagen, Beispiele und Sonderfälle wörtlich nach `docs/befehle/` (neu: 10-context, 20-analyse, 40-tdd-red, 70-deploy, 01-feature, 81-add-artifact, 83-user-story, 99-reset; 60-validate erweitert). Ablauf, Pflichtschritte, Agent-Aufrufe, Checkpoint- und Ausgabe-Vorlagen bleiben im Befehl; kein Gate-Verhalten geändert.
+- Größenwächter: `tests/test_commands_slim_674.py` mit gesenkten Budgets und Verweis-Prüfung für elf Befehle, neu `tests/test_commands_slim_678.py` (Budgets dieses Schnitts, Summe ≤ 83 000 Bytes, Ankerüberschriften).
+
 ## [4.26.1] - 2026-11-26
 
 ### Changed — Befehlstexte verschlankt, Schnitt 2: 30-write-spec, 00-intake, 80-workflow (#677)

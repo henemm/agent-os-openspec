@@ -1,136 +1,96 @@
 # Phase 7: Validation
 
-You are in **Phase 7 - Validation**.
-
 Hintergrund (Begründungen, Sonderfälle): `docs/befehle/60-validate.md` im Plugin-Ordner — nur bei Bedarf lesen.
 
-## Wiedereinstieg via Issue-Nummer (nach `/clear`)
+## Wiedereinstieg (`/60-validate #<N>`, nach `/clear`)
 
-**Wurde dieser Befehl als `/60-validate #<N>` aufgerufen** (typisch nach einem `/clear`)? Dann löse zuerst den Workflow von der Platte auf:
+Workflow explizit aktivieren (`export` reicht NICHT):
 
 ```bash
 python3 .claude/hooks/workflow.py find 42   # die übergebene Nummer
-```
-
-**PFLICHT direkt danach** — Workflow wirklich aktivieren (ein reines `export` reicht NICHT):
-
-```bash
 python3 .claude/hooks/workflow.py switch <NAME-aus-obigem-Output>
 python3 .claude/hooks/workflow.py status
 ```
 
-Fasse dem User in 2 Sätzen den Stand zusammen (Phase, Verdict) und fahre dann mit den Prerequisites fort.
+Fasse dem User in 2 Sätzen den Stand zusammen (Phase, Verdict).
 
 ### Hängende Subagenten
 
-Die Sitzung wird automatisch erneut aufgerufen, sobald der Hintergrund-Agent fertig ist. Fehlt beim
-nächsten eigenen Zug der Bericht: `TaskList` prüfen, noch aktiv → `TaskStop`, mit präziserem Briefing
-neu starten. Nur innerhalb eines `/loop`-Laufs zusätzlich:
-
-```
-ScheduleWakeup(1200, "Validierung Rückfall [60-validate], nur im /loop-Kontext: TaskList → noch aktiver Agent? JA → TaskStop, dann User: 'Agent hängt — bitte /60-validate neu starten.' NEIN → fertig.")
-```
+Die Sitzung wird automatisch erneut aufgerufen, sobald der Hintergrund-Agent fertig ist. Fehlt dann der
+Bericht: `TaskList` prüfen, noch aktiv → `TaskStop`, neu starten.
 
 ### Kontext laden (nur bei Wiedereinstieg nach `/clear`)
 
-Dispatche einen **Explore/Haiku Subagenten**:
-
 ```
 Agent(subagent_type="Explore", model="haiku", description="Validierungs-Kontext laden", run_in_background=true, prompt="
-  Lies [spec_file] (AC-1 bis AC-N), docs/artifacts/<workflow-name>/adversary-dialog.md
-  (Verdict, Findings) und config.yaml (qa_gate.test_command).
-  Gib zurück: spec_file_path, affected_files, test_command, Liste aller AC-N,
-  adversary_verdict (VERIFIED / BROKEN / AMBIGUOUS).")
+  Lies [spec_file], docs/artifacts/<workflow-name>/adversary-dialog.md, config.yaml. Gib zurück: spec_file_path,
+  affected_files, test_command, alle AC-N, adversary_verdict.")
 ```
 
-Kein Agent darf mit `[...]`-Platzhaltern gestartet werden.
+Nie mit `[...]`-Platzhaltern starten.
 
 ## Prerequisites
 
-Implementation complete, GREEN artifacts registered, **Adversary Dialog verified** (`adversary_verdict` set) — `python3 .claude/hooks/workflow.py status`.
-
-### Adversary Dialog Prerequisite
-
-**Pflicht vor allem Weiteren:**
+Implementierung fertig, GREEN-Artefakte registriert, `adversary_verdict` gesetzt (`workflow.py status`). **Pflicht vor allem Weiteren:**
 
 ```bash
 python3 .claude/hooks/adversary_dialog.py validate docs/artifacts/<workflow-name>/adversary-dialog.md
 ```
 
-Wenn die Validierung fehlschlaegt: Zurueck zu `/50-implement` Step 8 (Adversary Dialog wiederholen).
-Akzeptierte Verdicts: **VERIFIED** oder **AMBIGUOUS** (mit User-OK).
+Scheitert sie: zurück zu `/50-implement` Step 8. Akzeptiert: **VERIFIED** oder **AMBIGUOUS** (mit User-OK).
 
 ## Your Tasks
 
 ### Step 1: Parallele Validierung (4x Haiku)
 
-Dispatche **4 parallele Haiku-Agenten** im Vordergrund — alle vier in EINER Nachricht, dann laufen sie parallel:
+4 Haiku-Agenten im Vordergrund, alle in EINER Nachricht (laufen parallel):
 
 ```
 Agent(subagent_type="general-purpose", model="haiku", description="TEST CHECK", run_in_background=false, prompt="
-  Fuehre ALLE Tests aus: python3 .claude/hooks/qa_gate.py --run (ohne test_command: [test_command])
-  Report: Anzahl passed/failed, Laufzeit, Fehlerdetails.")
-
+  Fuehre ALLE Tests aus: python3 .claude/hooks/qa_gate.py --run (ohne test_command: [test_command]). Report: passed/failed, Laufzeit, Fehler.")
 Agent(subagent_type="general-purpose", model="haiku", description="SPEC COMPLIANCE", run_in_background=false, prompt="
-  Lies die Spec: [spec_file_path]
-  Pruefe jeden Acceptance Criterion gegen die Implementation.
-  Report: Welche Kriterien sind erfuellt, welche nicht?")
-
+  Pruefe jedes Acceptance Criterion aus [spec_file_path] gegen die Implementation. Report: erfuellt / nicht erfuellt.")
 Agent(subagent_type="general-purpose", model="haiku", description="REGRESSION CHECK", run_in_background=false, prompt="
-  Fuehre die vollstaendige Test-Suite aus (nicht nur Feature-Tests).
-  Report: Gibt es Regressionen? Welche Tests die vorher gruen waren
-  sind jetzt rot?")
-
+  Volle Test-Suite ausfuehren. Report: welche vorher gruenen Tests sind jetzt rot?")
 Agent(subagent_type="general-purpose", model="haiku", description="SCOPE CHECK", run_in_background=false, prompt="
-  Vergleiche die geaenderten Dateien mit der Spec.
-  Wurden Dateien ausserhalb des Specs geaendert?
-  Wurden mehr als 5 Dateien / 250 LoC geaendert?")
+  Geaenderte Dateien vs. Spec: Dateien ausserhalb der Spec? Mehr als 5 Dateien / 250 LoC?")
 ```
 
 Bei `qa_gate.require_run: true` nach jedem Auto-Fix `--run` wiederholen (#404).
 
 ### Step 2: Ergebnis-Auswertung
 
-**Step 2a: Alle Checks bestanden** -> Weiter zu Step 3
+**Step 2a:** Alle Checks bestanden → Step 3.
 
-**Step 2b: Fehler gefunden -> Auto-Fix nur fuer Nicht-Code (general-purpose/Sonnet)**
+**Step 2b: Fehler → Auto-Fix nur für Nicht-Code** (Doku, Tests, Config). **Braucht ein Fund eine
+Code-Änderung, ist das der BROKEN-Pfad:** zurück zu `phase6_implement`, Fix per `/50-implement`, eine Adversary-Runde
+aus demselben Kontingent wie jedes BROKEN-Verdict.
 
-Auto-Fix darf nur Nicht-Code aendern (Doku, Tests, Config). **Braucht ein Fund eine Code-Aenderung,
-ist das der BROKEN-Pfad:** zurueck zu `phase6_implement`, gezielter Fix per `/50-implement`, danach
-eine Adversary-Runde aus demselben Kontingent wie jedes BROKEN-Verdict.
-
-**Nachprüfung nach Phase 8 (Staging/live):** Ein fachlicher Befund zaehlt wie BROKEN:
-`deploy-status failed --note`, zurueck zu `phase6_implement`, Fix per `/50-implement`, eine
-Adversary-Runde aus demselben Kontingent, danach erneut `/60-validate` und `/70-deploy`.
-
-Bei Nicht-Code-Fehlern dispatche einen **general-purpose/Sonnet Subagenten**:
+**Nachprüfung nach Phase 8 (Staging/live):** Ein fachlicher Befund zählt wie BROKEN: `deploy-status failed --note`,
+zurück zu `phase6_implement`, Fix per `/50-implement`, eine Adversary-Runde aus demselben Kontingent, danach erneut
+`/60-validate` und `/70-deploy`.
 
 ```
 Agent(subagent_type="general-purpose", model="sonnet", description="Auto-Fix Nicht-Code", run_in_background=true, prompt="
-  Behebe nur diese Validierungsfehler: [Fehler-Liste aus den 4 Haiku-Reports]
-  Keine Code-Dateien aendern (nur Doku, Tests, Config) — Code-Fix = BROKEN-Pfad.
-  Scoping Limits einhalten, Tests danach erneut ausfuehren.")
+  Behebe nur: [Fehler-Liste aus den 4 Haiku-Reports]. Keine Code-Dateien (Code-Fix = BROKEN-Pfad); Scoping Limits; Tests erneut.")
 ```
 
-Nach dem Fix: Dispatche die relevanten Haiku-Checks erneut zur Verifikation.
+Danach die relevanten Haiku-Checks erneut.
 
 ### Step 3: Dokumentation aktualisieren (docs-updater/Sonnet)
 
-Bei erfolgreicher Validierung dispatche den **docs-updater** (Start **ohne `model`**):
+**docs-updater**, Start **ohne `model`**:
 
 ```
 Agent(subagent_type="docs-updater", description="Doku aktualisieren", run_in_background=true, prompt="
   changed_files: [Liste], feature_summary: [Kurzbeschreibung],
-  spec_file_path: [Pfad zur Spec — NUR LESEN, kein Bearbeitungsziel]
-  Aktualisiere alle betroffene Dokumentation.
-
-  Die Spec-Datei selbst NICHT bearbeiten — der freigegebene Teil ist nach der
-  Freigabe eingefroren (#230, #439).")
+  spec_file_path: [Pfad — NUR LESEN]. Aktualisiere die betroffene Doku; die Spec selbst NICHT
+  bearbeiten, der freigegebene Teil ist eingefroren (#230, #439).")
 ```
 
-**Fallback, wenn der Typ in der Agent-Liste fehlt:** docs-updater → `agent-os-openspec:docs-updater`, sonst `Agent(subagent_type="general-purpose", model="sonnet", prompt="Lies zuerst .claude/agents/docs-updater.md (im Framework-Repo core/agents/docs-updater.md) und folge ihr. …")`.
+**Fallback, wenn der Typ fehlt:** docs-updater → `agent-os-openspec:docs-updater`, sonst `Agent(subagent_type="general-purpose", model="sonnet", prompt="Lies zuerst .claude/agents/docs-updater.md und folge ihr. …")`.
 
-Der freigegebene Teil der Spec ist eingefroren; Änderungen daran nur über `workflow.py phase phase3_spec`.
+Änderungen am freigegebenen Teil der Spec nur über `workflow.py phase phase3_spec`.
 
 ### Step 4: Workflow State aktualisieren
 
@@ -138,62 +98,38 @@ Der freigegebene Teil der Spec ist eingefroren; Änderungen daran nur über `wor
 python3 .claude/hooks/workflow.py phase phase8_complete
 ```
 
-Phase 8 heißt nur **„Code fertig“** (`ship_status: open`); erst `ship-status done` (oder `skipped`)
-macht den Workflow fertig. `scripts/ship.py` meldet die Stände selbst; einzeln ausgeführt von Hand:
-
-```bash
-python3 .claude/hooks/workflow.py ship-status running <N> --note "PR <nr>: CI läuft"
-python3 .claude/hooks/workflow.py ship-status done <N> --note "PR <nr> gemergt"
-python3 .claude/hooks/workflow.py ship-status failed <N> --note "<Grund in Alltagssprache>"
-python3 .claude/hooks/workflow.py ship-status skipped <N> --note "<warum nichts auszuliefern ist>"
-```
-
-`skipped` nur, wenn es wirklich nichts auszuliefern gibt.
+Phase 8 heißt nur **„Code fertig“** (`ship_status: open`); erst `ship-status done` (oder `skipped`) macht den
+Workflow fertig. `scripts/ship.py` meldet die Stände selbst; von Hand
+`python3 .claude/hooks/workflow.py ship-status running|done|failed <N> --note "<Stand in Alltagssprache>"`;
+`ship-status skipped` nur, wenn es wirklich nichts auszuliefern gibt.
 
 ## Validation Report
 
-```markdown
-## Validation Report: [Workflow Name]
-
-### Test Results
-- Unit Tests: [N] passed, [N] failed, [N] übersprungen
-- Integration Tests: [N] passed, [N] failed, [N] übersprungen
-- Full Suite: [N] total, [N] passed, [N] übersprungen
-- Ein Lauf mit 0 bestanden und ≥ 1 übersprungen ist nicht grün.
-
-### Spec Compliance / Regression / Scope
-- Acceptance Criteria: [N]/[N] erfuellt [Details zu nicht erfuellten]
-- Regressionen: [Keine / N]
-- Files/LoC: [N] (Limit 5) / +[N]/-[N] (Limit 250), out-of-scope: [Keine / Liste]
-
-### Result: PASS / FAIL
-```
+Test Results, Spec Compliance / Regression / Scope, Result PASS / FAIL (Vorlage im Hintergrund), je Testlauf:
+- Full Suite: [N] total, [N] passed, [N] übersprungen — 0 bestanden und ≥ 1 übersprungen ist nicht grün.
 
 ## Next Step
 
 ### Autonomen Weiterlauf prüfen (PFLICHT, vor der Ausgabe)
 
-Existiert im Projekt ein `/70-deploy` UND steht `deploy.autonomous: true` in der Projekt-Config
-(`python3 .claude/hooks/workflow.py deploy-config`) — oder dokumentiert das Projekt (`CLAUDE.md`,
-`70-deploy.md`) explizit, dass Deploy **ohne Freigabe-Halt autonom** läuft? Dann ist das bindende
-Projekt-Policy: committe wie unten beschrieben und rufe `/70-deploy` **im selben Turn selbst auf**;
-melde das Ergebnis der ganzen Kette. Sonst Standardverhalten unten (fragen, nicht autonom weiterlaufen).
+Gibt es `/70-deploy` UND `deploy.autonomous: true` (`python3 .claude/hooks/workflow.py deploy-config`) oder
+dokumentiert das Projekt (`CLAUDE.md`, `70-deploy.md`) Deploy **ohne Freigabe-Halt autonom**? Dann bindend: committen
+und `/70-deploy` **im selben Turn selbst aufrufen**, Ergebnis der Kette melden. Sonst fragen (Standard unten).
 
 ### Beobachtbare Oberfläche prüfen (PFLICHT, vor der Ausgabe)
 
-Tritt neben die Autonomie-Prüfung. **Keine eigene Einschätzung von dir ersetzt den Aufruf:**
+**Keine eigene Einschätzung ersetzt den Aufruf:**
 
 ```bash
 python3 .claude/hooks/workflow.py observable-surface
 ```
 
-Fehlt die Zeile `OBSERVABLE_SURFACE=no` (auch bei `yes`, Absturz, abweichendem Format oder
-ausgebliebenem Aufruf), wird die Schlussfrage „Soll ich den Stand sichern?" gestellt. Nur die
-ausdrücklich gelesene Zeile `OBSERVABLE_SURFACE=no` lässt sie entfallen. Die Autonomie-Regel sticht:
+Fehlt die Zeile `OBSERVABLE_SURFACE=no` (auch bei `yes`, Absturz, abweichendem Format, ohne Aufruf), wird
+„Soll ich den Stand sichern?" gefragt; nur die gelesene Zeile `OBSERVABLE_SURFACE=no` erspart das. Autonomie sticht:
 
 | Oberfläche | Autonomie dokumentiert | Schlusszeile |
 |---|---|---|
-| `yes` | nein | Frage „Soll ich den Stand sichern?" — unverändert wie bisher |
+| `yes` | nein | Frage „Soll ich den Stand sichern?" |
 | `yes` | ja | Ankündigung: schreibe fest und deploye, Kette im selben Turn |
 | `no` | nein | Ankündigung: schreibe jetzt fest, keine Rückfrage |
 | `no` | ja | Ankündigung: schreibe fest und deploye, Kette im selben Turn |
@@ -204,8 +140,7 @@ ausdrücklich gelesene Zeile `OBSERVABLE_SURFACE=no` lässt sie entfallen. Die A
 python3 .claude/hooks/workflow.py autonomy
 ```
 
-Nur die ausdrücklich gelesene Zeile `AUTONOMY=auto` schaltet um; jede andere Ausgabe (auch ein
-Fehler) gilt als `manual` — dann gilt die Tabelle oben unverändert.
+Nur die gelesene Zeile `AUTONOMY=auto` schaltet um; alles andere (auch Fehler) gilt als `manual` (Tabelle oben).
 
 Bei `AUTONOMY=auto` (nach Step 4, also mit `phase8_complete`):
 
@@ -215,9 +150,8 @@ Bei `AUTONOMY=auto` (nach Step 4, also mit `phase8_complete`):
    python3 .claude/hooks/workflow.py auto-ship
    ```
 
-   Nur die ausdrücklich gelesene Zeile `AUTO_SHIP=on` schaltet um; jede andere Ausgabe (auch ein
-   Fehler) gilt als `AUTO_SHIP=off`. Default im Auto-Modus ist an; abschalten per
-   `autonomy.ship: false` in der Projekt-`config.yaml` (`settings.local.json` zählt nicht).
+   Nur die gelesene Zeile `AUTO_SHIP=on` schaltet um; alles andere gilt als `AUTO_SHIP=off`. Default an;
+   aus per `autonomy.ship: false` in der Projekt-`config.yaml` (`settings.local.json` zählt nicht).
 2. **Committen ohne Rückfrage** — unabhängig von `OBSERVABLE_SURFACE`; die Frage „Soll ich den
    Stand sichern?" entfällt. Die Commit-Gates (`bash_gate.py`) gelten wie immer.
    Bei `AUTO_SHIP=on`: Steht der Checkout auf `main`, `master`, dem Default-Branch des Remotes
@@ -227,8 +161,8 @@ Bei `AUTONOMY=auto` (nach Step 4, also mit `phase8_complete`):
    wird nie zurückgesetzt (kein `reset`, kein `--force`). Bei `AUTO_SHIP=off` gilt der Text oben
    unverändert.
 3. **Den Feature-Branch pushen** — Branch prüfen mit `git rev-parse --abbrev-ref HEAD` und den
-   Default-Branch des Remotes ermitteln: zuerst `git symbolic-ref --short refs/remotes/origin/HEAD`
-   (z. B. `origin/main` → `main`); schlägt das fehl, `git ls-remote --symref origin HEAD` und die
+   Default-Branch des Remotes ermitteln: zuerst `git symbolic-ref --short refs/remotes/origin/HEAD`;
+   schlägt das fehl, `git ls-remote --symref origin HEAD` und die
    Zeile `ref: refs/heads/<name>` auswerten. Gepusht wird nur, wenn der aktuelle Branch weder
    `main` noch `master` noch der Default-Branch des Remotes ist: dann
    `git push -u origin <feature-branch>`. Schlagen beide Wege fehl, gilt: bei `AUTO_SHIP=off` wird
@@ -238,20 +172,12 @@ Bei `AUTONOMY=auto` (nach Step 4, also mit `phase8_complete`):
    Nie `main`, `master` oder den Default-Branch pushen (auch kein detached `HEAD`), nie
    `--force`. Nur bei `AUTO_SHIP=off` gilt: steht der Checkout darauf, wird nur committet und der
    PO in der Abschlussmeldung darauf hingewiesen. Schlägt der Push fehl, melden statt umgehen.
-   **Ein Aufruf statt vieler (Kontext-Haushalt):** `python3 .claude/scripts/ship.py` erledigt Punkt 3
-   und Punkt 5 in einem Schritt: Branch prüfen (nie Default-Branch, nie detached `HEAD`; mit
-   `--branch <workflow-name>` legt es den Feature-Branch aus Punkt 2 an, bei Namenskonflikt mit
-   Suffix `-2`, `-3` …), `git push -u origin <feature-branch>`, PR anlegen oder den offenen PR
-   wiederverwenden, CI abwarten und bei `AUTO_SHIP=on` mit `--merge squash` (bzw. der im Repo
-   üblichen Methode) mergen. Zurück kommen nur wenige Zeilen `BRANCH=… PR=… CI=green|red|none
-   MERGED=yes|no|skipped`; bei `CI=red` nennt `FAILED_CHECKS=` die roten Checks — dann gilt Punkt 5
-   (Ursache beheben oder in Alltagssprache melden). Die Regeln dieses Abschnitts (nie `--force`,
-   nie Schutzregeln umgehen, rote CI nie überbrücken) gelten im Skript genauso; bei `AUTO_SHIP=off`
-   ohne `--merge` aufrufen.
-4. **Deploy bleibt beim PO.** Der Auto-Modus löst nie ein Deploy aus —
-   `deploy.autonomous` (siehe „Autonomen Weiterlauf prüfen" oben) ist eine eigene, getrennte
-   Entscheidung des Projekts und wird von `AUTONOMY=auto` weder gesetzt noch ersetzt. Kein
-   `/70-deploy` aus dem Auto-Modus heraus.
+   **Ein Aufruf statt vieler (Kontext-Haushalt):** `python3 .claude/scripts/ship.py [--branch <workflow-name>]
+   [--merge squash]` erledigt Punkt 3 und 5 (Branch, Push, PR, CI, bei `AUTO_SHIP=on` Merge) mit denselben Regeln;
+   Ausgabe `BRANCH=… PR=… CI=green|red|none MERGED=yes|no|skipped`, bei `CI=red` `FAILED_CHECKS=` (dann Punkt 5).
+   Bei `AUTO_SHIP=off` ohne `--merge`.
+4. **Deploy bleibt beim PO.** Der Auto-Modus löst nie ein Deploy aus; `deploy.autonomous` (oben) ist eine
+   getrennte Projekt-Entscheidung, von `AUTONOMY=auto` weder gesetzt noch ersetzt. Kein `/70-deploy` aus dem Auto-Modus.
 5. **Ausliefern (Merge und PR, #525)** —
    **Bei `AUTO_SHIP=on` liefert Claude selbst aus:** Nach Punkt 2 und 3 im selben Turn den PR vom
    Feature-Branch auf den Default-Branch anlegen (PR-Vorlage des Repos beachten), die CI abwarten
@@ -278,26 +204,20 @@ Bei `AUTONOMY=auto` (nach Step 4, also mit `phase8_complete`):
    umgehen, rote CI nie überbrücken. Auch ohne ausdrückliche Policy liegen PR und Merge beim Tech Lead
    (Claude), nie beim PO (PO-Vorgabe 2026-11-08): PR anlegen, CI abwarten, bei grün mergen und
    dem PO nur das Ergebnis melden.
-   **Versions-Bump bei Einzel-Auslieferung (#640):** Regelt das Projekt die Einzel-Auslieferung
-   (im Framework-Repo `docs/arbeitsweise.md`), gilt beim Ausliefern dessen Regel: Wird ein Issue
-   allein und sofort veröffentlicht, steckt der Versions-Bump schon im Fix- oder Feature-PR (ein
-   einziger Testlauf bis zur veröffentlichten Version); ein getrennter Release-PR folgt nur beim
-   Bündeln mehrerer Issues.
+   **Versions-Bump bei Einzel-Auslieferung (#640):** gilt die Projektregel (Framework-Repo: `docs/arbeitsweise.md`):
+   ein Issue allein und sofort veröffentlicht → Bump im Fix-/Feature-PR; Release-PR nur beim Bündeln mehrerer Issues.
 6. **Automatische Freigaben auflisten** — für die Abschlussmeldung:
 
    ```bash
    python3 .claude/hooks/workflow.py approvals --auto
    ```
 
-   Erste Zeile `APPROVALS=<n>`, danach je Eintrag `- <gate> | <by> | <at> | <reason>`. Übernimm
-   jede Zeile als Gate, Zeit und Grund in die Abschlussmeldung; bei `APPROVALS=0` schreibe
-   „keine automatischen Freigaben".
+   Ausgabe `APPROVALS=<n>`, dann je Eintrag `- <gate> | <by> | <at> | <reason>` → als Gate, Zeit und Grund
+   in die Abschlussmeldung; bei `APPROVALS=0` „keine automatischen Freigaben".
 
 Immer menschlich bleiben — auch bei `AUTONOMY=auto`: AMBIGUOUS-Verdict, zweites BROKEN bzw. Circuit Breaker, Override, Deploy, Stop-Lock.
 
 ### Zusammenfassung an den User
-
-Nach erfolgreicher Validierung, gib dem User folgende Zusammenfassung:
 
 ---
 ✅ **Alles fertig und geprüft.**
@@ -315,9 +235,8 @@ Soll ich den Stand sichern?
 
 ---
 
-**Ausnahmen (siehe Prüfungen oben):** Bei dokumentierter Autonomie oder ohne beobachtbare
-Oberfläche ersetzt die Ankündigung aus der Tabelle die letzte Zeile, ohne Frage. Im Auto-Modus
-(`AUTONOMY=auto`): ersetze die letzte Zeile durch das Ergebnis plus den Block — keine Commit-Frage.
+**Ausnahmen:** Autonomie dokumentiert oder keine beobachtbare Oberfläche → Ankündigung aus der Tabelle statt
+der Frage. `AUTONOMY=auto`: letzte Zeile durch Ergebnis plus Block ersetzen, keine Commit-Frage.
 
 Bei `AUTO_SHIP=on` (Claude hat ausgeliefert, siehe Punkt 5):
 
@@ -327,9 +246,8 @@ Bei `AUTO_SHIP=on` (Claude hat ausgeliefert, siehe Punkt 5):
 - <Gate> · <Zeit> · <Grund>     (je Zeile aus `workflow.py approvals --auto`)
 ```
 
-Die ❗Du-Zeile nennt nie einen Git-Schritt (PR, Merge, Push, Branch, Commit); die
-Endzustand-Zeile kommt ausschließlich aus `workflow.py endstate` (siehe „Abschluss:
-Endzustand melden“).
+Die ❗Du-Zeile nennt nie einen Git-Schritt (PR, Merge, Push, Branch, Commit); die Endzustand-Zeile kommt nur
+aus `workflow.py endstate`.
 
 Bei `AUTO_SHIP=off` (Ergebnis: Commit-Hash, gepushter Branch):
 
@@ -338,8 +256,7 @@ Bei `AUTO_SHIP=off` (Ergebnis: Commit-Hash, gepushter Branch):
 - <Gate> · <Zeit> · <Grund>     (je Zeile aus `workflow.py approvals --auto`)
 ```
 
-Die Endzustand-Zeile nennt auch hier nie einen Git-Schritt (PR, Merge, Push, Branch, Commit) —
-das erledigt Claude, siehe Punkt 5.
+Auch hier nennt die Endzustand-Zeile nie einen Git-Schritt, siehe Punkt 5.
 
 ### Abschluss: Endzustand melden (Pflicht, #550)
 
@@ -349,18 +266,16 @@ Auch nach `complete`:
 python3 .claude/hooks/workflow.py endstate <N>
 ```
 
-Gib den Wert hinter `FOOTER=` **wörtlich** als Endzustand-Zeile aus — genau eine der drei Formen
-`✅ Erledigt: …`, `⏳ Läuft noch: …` oder `❗ Du: … — …`; keine erfundene PO-Aufgabe, keine zweite
-Abschlusszeile. `SHIP_STATUS=open`/`running` trotz Auslieferung: erst `ship-status done` (Step 4).
-Wartest du noch auf CI, Agent oder Server: `ship-status running --note "<worauf>"` bzw.
-`workflow.py waiting "<worauf>" <N>`, dann `endstate` erneut aufrufen.
+Den Wert hinter `FOOTER=` **wörtlich** als Endzustand-Zeile ausgeben — genau eine Form: `✅ Erledigt: …`,
+`⏳ Läuft noch: …` oder `❗ Du: … — …`; nichts erfinden, keine zweite Abschlusszeile. `SHIP_STATUS=open`/`running`
+trotz Auslieferung: erst `ship-status done` (Step 4). Warten auf CI, Agent, Server: `ship-status running --note
+"<worauf>"` bzw. `workflow.py waiting "<worauf>" <N>`, dann `endstate` erneut.
 
 Kette bei offenem Auftrag (#551, #555): Sie greift nur, wenn der Wert hinter `FOOTER=`
 „aus deinem Auftrag“ enthält; `M` ist die Nummer darin (dieselbe wie `NEXT=M` aus
 `python3 .claude/hooks/workflow.py queue`). Bei `ENDSTATE=waiting` (`⏳ Läuft noch: Claude
 startet #M aus deinem Auftrag. …`, autarker Auftrag) gib die Zeile aus und übergib #M an eine
-frische Sitzung (Befehl `workflow.py handoff`, #667), kein Halt für `/clear`. Erst `python3 .claude/hooks/workflow.py handoff`,
-dann je nach `HANDOFF=`:
+frische Sitzung (`workflow.py handoff`, #667), kein Halt für `/clear`: erst `python3 .claude/hooks/workflow.py handoff`, dann je nach `HANDOFF=`:
 Steht `HANDOFF_DONE=` in der Ausgabe, ist #M schon übergeben (#668): ⏳-Zeile ausgeben und
 Turn beenden, keine weitere Sitzung starten (weder `create_session` noch `--start` noch
 Selbstaufruf).
@@ -376,17 +291,13 @@ Bei `ENDSTATE=you` (`❗ Du: /00-intake #M — …`,
 Auftrag nicht autark) gib die Zeile wörtlich aus und warte auf den PO. Ein `ENDSTATE=waiting`
 ohne „aus deinem Auftrag“ (CI, Deploy, Agent) startet keine Kette.
 
-Vorschlag (#589): Ohne nächstes Issue aus dem Auftrag nennt die ✅-Zeile hinter `FOOTER=` oft
-schon die nächste Aufgabe („… mit /00-intake #M weitermachen (<Grund>).“); dann folgen
-`SUGGEST_ISSUE=M`, `SUGGEST_SOURCE=epic|milestone|spur|related|priority` und `SUGGEST_REASON=`.
-Bei `SUGGEST_SOURCE=epic-leer` prüfst du das Abschlusskriterium des Epics, schlägst aber nie ein
-Issue außerhalb vor.
-Das ist nur Auskunft für dich: gib die Zeile wörtlich aus und starte wegen eines bloßen
-Vorschlags nichts selbst — die Kette greift weiterhin nur bei „aus deinem Auftrag“.
+Vorschlag (#589): Ohne nächstes Issue aus dem Auftrag nennt die ✅-Zeile hinter `FOOTER=` oft schon die nächste
+Aufgabe („… mit /00-intake #M weitermachen (<Grund>).“), dazu `SUGGEST_ISSUE=M`,
+`SUGGEST_SOURCE=epic|milestone|spur|related|priority`, `SUGGEST_REASON=`; bei `SUGGEST_SOURCE=epic-leer` das
+Abschlusskriterium des Epics prüfen, nie ein Issue außerhalb vorschlagen. Zeile wörtlich ausgeben, wegen eines
+Vorschlags nichts selbst starten — die Kette greift nur bei „aus deinem Auftrag“.
 
 ## On Failure
 
-If validation fails after auto-fix attempt:
-1. Do NOT update state to complete
-2. Report the remaining issues to the user
-3. User decides: fix manually or re-implement
+Scheitert die Validierung nach dem Auto-Fix: Status nicht auf complete setzen, Restfehler melden, der User entscheidet
+(selbst beheben oder neu implementieren).

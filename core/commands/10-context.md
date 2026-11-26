@@ -2,31 +2,19 @@
 
 You are starting **Phase 1 - Context Generation** for a new workflow.
 
-## Purpose
+Hintergrund (Begründungen, Sonderfälle): `docs/befehle/10-context.md` im Plugin-Ordner — nur bei Bedarf lesen.
 
-Before analysing, gather ALL relevant context. This prevents:
-- Missing important related code
-- Overlooking existing patterns
-- Reinventing existing solutions
+## Wiedereinstieg (`/10-context #<N>`, nach `/clear`)
 
-## Wiedereinstieg via Issue-Nummer (nach `/clear`)
-
-**Wurde dieser Befehl als `/10-context #<N>` aufgerufen** (typisch nach einem `/clear`)? Dann löse zuerst den Workflow von der Platte auf — der komplette State überlebt jeden `/clear` und jeden Worktree:
+Workflow explizit aktivieren (`export` reicht NICHT):
 
 ```bash
 python3 .claude/hooks/workflow.py find 42   # die übergebene Nummer
-```
-
-**PFLICHT direkt danach** — Workflow wirklich aktivieren (nicht nur die Zeile oben lesen). Ein reines `export OPENSPEC_ACTIVE_WORKFLOW=...` reicht NICHT: Shell-State überlebt keinen Bash-Tool-Aufruf, und in Worktree-Sessions ignoriert `resolve_active_workflow()` die Env-Var ohnehin (Issue #58):
-
-```bash
 python3 .claude/hooks/workflow.py switch <NAME-aus-obigem-Output>
 python3 .claude/hooks/workflow.py status
 ```
 
-Das `status`-Kommando ist der eigentliche Wiedereinstiegs-Check: Es zeigt die Quelle (`[file]`) und bestätigt Phase/Spec. **Fasse dem User in 2 Sätzen zusammen, wo der Workflow steht** — und überspringe dann Schritt 1: ein gefundener Workflow wird NICHT neu gestartet.
-
-Meldet der Block `KEIN laufender Workflow`, sag das und frage, ob ein neuer Workflow zu dieser Nummer starten soll. **Ohne Argument** geht es direkt bei Schritt 1 weiter.
+Fasse dem User in 2 Sätzen zusammen, wo der Workflow steht; Schritt 1 entfällt. `KEIN laufender Workflow`: fragen, ob neu starten.
 
 ## Your Tasks
 
@@ -36,73 +24,23 @@ Meldet der Block `KEIN laufender Workflow`, sag das und frage, ob ein neuer Work
 python3 .claude/hooks/workflow.py start "[feature-name]" --issue <N>
 ```
 
-`--issue <N>` nur, wenn die Issue-Nummer bekannt ist — sonst weglassen (die Nummer kommt dann
-aus dem Namen).
-
-`start` registriert die Sitzung am Issue (#461). Bricht er ab, weil dort schon eine andere
-Sitzung registriert ist, entsteht kein Workflow: dem PO sagen, wer wo seit wann daran arbeitet;
-`--uebernehmen` nur, wenn die andere Sitzung nachweislich ruht (`workflow.py claim status`)
-oder der PO zustimmt.
-
-Or switch to existing:
-```bash
-python3 .claude/hooks/workflow.py switch "[feature-name]"
-```
+`--issue <N>` nur mit bekannter Nummer. `start` registriert die Sitzung am Issue (#461); bricht er ab (andere Sitzung
+registriert), dem PO sagen, wer wo seit wann arbeitet; `--uebernehmen` nur, wenn die andere ruht (`workflow.py claim status`) oder der PO zustimmt.
+Bestehenden Workflow: `python3 .claude/hooks/workflow.py switch "[feature-name]"`.
 
 ### 2. Gather Context
 
-Search and collect:
+Betroffene Dateien, Specs in `docs/specs/`, ähnliche Lösungen, Dependencies, Dependents.
 
-1. **Related Files** - Find all files that might be relevant
-   ```
-   Grep for: keywords, function names, class names
-   Glob for: related file patterns
-   ```
-
-2. **Existing Specs** - Check `docs/specs/` for related entities
-
-3. **Similar Implementations** - How does the codebase handle similar things?
-
-4. **Dependencies** - What does the affected code depend on?
-
-5. **Dependents** - What depends on the code we'll change?
-
-**Kontext-Haushalt (Nachschlagen abgeben, gezielt lesen):** Nachschlagefragen („Wo wird X benutzt?“, „Welche Dateien importieren Y?“, „Wie heißt die Funktion für Z?“) gehen an einen Explore-Teilagenten (Haiku), der mit eigenem, kleinem Kontext liest und nur die Antwort zurückgibt — Recherche ist der größte Token-Posten, und im Hauptkontext zahlt jeder Schritt das Wiederlesen aller vorher gelesenen Dateien erneut. Selbst liest du nur, was du gleich brauchst, mit Zeilenbereich (`sed -n 120,160p`, Read mit offset/limit) oder gezielter Suche statt ganzer Dateien. Mehrere `grep`/`sed -n` zur selben Frage in einen Aufruf bündeln; Workflow-Aufrufe mit `workflow.py batch a -- b -- c` zusammenfassen.
+**Kontext-Haushalt:** Nachschlagen an einen Explore-Teilagenten (Haiku); selbst nur mit Zeilenbereich (`sed -n 120,160p`) oder gezielter Suche lesen; Workflow-Aufrufe mit `workflow.py batch a -- b -- c` bündeln.
 
 ### 3. Create Context Document
 
-Create `docs/context/[workflow-name].md`:
-
-```markdown
-# Context: [Workflow Name]
-
-## Request Summary
-[1-2 sentences: what the user wants]
-
-## Related Files
-| File | Relevance |
-|------|-----------|
-| path/to/file.py | Contains X which we need to modify |
-
-## Existing Patterns
-- Pattern 1: How similar things are done
-- Pattern 2: ...
-
-## Dependencies
-- Upstream: [what our code uses]
-- Downstream: [what uses our code]
-
-## Existing Specs
-- `docs/specs/category/entity.md` - Related spec
-
-## Risks & Considerations
-- Risk 1
-- Risk 2
-```
+`docs/context/[workflow-name].md`: Request Summary, Related Files, Existing Patterns, Dependencies, Existing Specs, Risks (Vorlage im Hintergrund).
 
 ### 4. Update Workflow State
 
-Erst das Kontext-Dokument im State eintragen — der Phasenwechsel nach `phase2_analyse` verlangt das Feld `context_file`:
+Erst `context_file` eintragen, dann die Phase:
 
 ```bash
 python3 .claude/hooks/workflow.py set-field context_file docs/context/[workflow-name].md
@@ -162,9 +100,9 @@ Erst sichern, dann ist `/clear` gefahrlos.
 python3 .claude/hooks/workflow.py autonomy
 ```
 
-Bei `AUTONOMY=auto` und ohne `/clear` in derselben Session: Rufe den Skill `20-analyse` jetzt sofort selbst auf — warte nicht auf eine User-Eingabe. Der Checkpoint-Block oben bleibt trotzdem in der Ausgabe (Wiedereinstieg über `/20-analyse #<N>`). Bei `AUTONOMY=manual` (oder jeder anderen Ausgabe): wie bisher auf den User warten.
+Bei `AUTONOMY=auto` ohne `/clear`: Rufe den Skill `20-analyse` jetzt sofort selbst auf, ohne auf den User zu warten; der Checkpoint-Block bleibt in der Ausgabe. Sonst auf den User warten.
 
-Vor dem Selbstaufruf zusätzlich `python3 .claude/hooks/workflow.py context` ausführen (Kontext-Haushalt): Bei `CONTEXT_STOP=on` (Kontext über der wirksamen Schwelle `CONTEXT_THRESHOLD` aus `context_budget`: Grundkontext der Sitzung + `growth_tokens`, mindestens `clear_threshold_tokens`, Default 100.000 Token, nur im Modus manual) den Skill `20-analyse` NICHT selbst aufrufen, sondern die Antwort mit dem Checkpoint und der ❗Du-Zeile `/20-analyse #<N>` beenden — der Stand liegt auf der Platte, der PO tippt `/clear`. Ein Schritt mit 200k Token Kontext kostet etwa das Fünffache eines Schritts mit 40k. Bei `CONTEXT_STOP=off` (auch mit `CONTEXT_REASON=AUTO_NO_CLEAR`: Auto-Modus, niemand tippt `/clear`, Nachschlagen an Teilagenten abgeben, Claude Code komprimiert automatisch) oder `CONTEXT_TOKENS=unknown`: Kette unverändert selbst fortsetzen (#658).
+Vor dem Selbstaufruf zusätzlich `python3 .claude/hooks/workflow.py context` ausführen (Kontext-Haushalt): Bei `CONTEXT_STOP=on` (Kontext über der wirksamen Schwelle `CONTEXT_THRESHOLD` aus `context_budget`: Grundkontext der Sitzung + `growth_tokens`, mindestens `clear_threshold_tokens`, Default 100.000 Token, nur im Modus manual) den Skill `20-analyse` NICHT selbst aufrufen, sondern die Antwort mit dem Checkpoint und der ❗Du-Zeile `/20-analyse #<N>` beenden — der Stand liegt auf der Platte, der PO tippt `/clear`. Bei `CONTEXT_STOP=off` oder `CONTEXT_TOKENS=unknown`: Kette unverändert selbst fortsetzen (#658).
 
 Immer menschlich bleiben — auch bei `AUTONOMY=auto`: AMBIGUOUS-Verdict, zweites BROKEN bzw. Circuit Breaker, Override, Deploy, Stop-Lock.
 

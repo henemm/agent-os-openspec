@@ -1,68 +1,36 @@
 # Reset Workflow
 
-Reset the workflow state to start fresh.
+Schließt den aktiven Workflow ab und archiviert ihn.
 
-## When to Use
-
-| Situation | Action |
-|-----------|--------|
-| Workflow completed successfully | `/99-reset` |
-| Need to abort current workflow | `/99-reset` |
-| Starting a completely new task | `/99-reset` |
+Hintergrund (Begründungen, Sonderfälle): `docs/befehle/99-reset.md` im Plugin-Ordner — nur bei Bedarf lesen.
 
 ## Wiedereinstieg via Issue-Nummer (nach `/clear`)
 
-**Wurde dieser Befehl als `/99-reset #<N>` aufgerufen?** Dann löse den Workflow ZUERST von der Platte auf. Dieser Befehl archiviert den **aktiven** Workflow — steht der falsche aktiv, trifft es fremde Arbeit:
+**Aufruf als `/99-reset #<N>`?** ZUERST Workflow auflösen und aktivieren — steht der falsche aktiv, trifft es fremde Arbeit:
 
 ```bash
 python3 .claude/hooks/workflow.py find 42   # die übergebene Nummer
-```
-
-**PFLICHT direkt danach** — Workflow wirklich aktivieren (nicht nur die Zeile oben lesen). Ein reines `export OPENSPEC_ACTIVE_WORKFLOW=...` reicht NICHT: Shell-State überlebt keinen Bash-Tool-Aufruf, und in Worktree-Sessions ignoriert `resolve_active_workflow()` die Env-Var ohnehin (Issue #58):
-
-```bash
 python3 .claude/hooks/workflow.py switch <NAME-aus-obigem-Output>
 python3 .claude/hooks/workflow.py status
 ```
 
-Das `status`-Kommando ist der eigentliche Wiedereinstiegs-Check: Es zeigt die Quelle (`[file]`) und bestätigt Phase/Spec/Verdict. **Fasse dem User in 2 Sätzen zusammen, wo der Workflow steht** — steht er vor `phase8_complete`, nenne den offenen Pflicht-Schritt und frage nach, bevor du abschließt.
-
-**Ohne Argument** wird der aktive Workflow abgeschlossen.
-
-## What Happens
-
-Completes and archives the current workflow, or removes it if in early phases. Workflows ohne Bau (PO-Entscheidung „nichts bauen" oder keine Spec) werden per `abandon` archiviert.
+**Fasse dem User in 2 Sätzen zusammen, wo der Workflow steht** — vor `phase8_complete` den offenen Pflicht-Schritt nennen und nachfragen, bevor du abschließt. Ohne Argument gilt der aktive Workflow.
 
 ## Execute Reset
 
 **Erst prüfen, ob überhaupt gebaut wurde** (`python3 .claude/hooks/workflow.py status`):
 
-- Hat der Workflow das Feld `no_build_reason` (PO-Entscheidung „nichts bauen", gesetzt per `workflow.py no-build --reason "..."`) **oder** wurde nie eine `spec_file` geschrieben, dann **nicht** `finish`, sondern:
+- Hat der Workflow das Feld `no_build_reason` (PO-Entscheidung „nichts bauen", per `workflow.py no-build --reason "..."`) **oder** wurde nie eine `spec_file` geschrieben, dann **nicht** `finish`, sondern:
 
   ```bash
   python3 .claude/hooks/workflow.py abandon --reason "<Begründung>"
   ```
 
   Begründung für `workflow.py abandon --reason` = Inhalt von `no_build_reason`; fehlt das Feld, den PO nach dem Grund fragen.
-- Nur bei geschriebener Spec und abgeschlossener Arbeit gilt `finish` (unten).
+- Nur bei geschriebener Spec und abgeschlossener Arbeit:
 
 ```bash
-# Complete and archive the current workflow
 python3 .claude/hooks/workflow.py finish
-
-# Or start fresh with a new workflow
-python3 .claude/hooks/workflow.py start "new-feature"
 ```
 
-## Next Steps
-
-After reset, start a new workflow:
-
-```
-/10-context               → Gather context first
-/20-analyse [feature/bug] → Start analysis
-```
-
----
-
-*Use reset for clean starts. Don't carry state from abandoned work.*
+Danach neu starten mit `/10-context` bzw. `/20-analyse [feature/bug]`.
