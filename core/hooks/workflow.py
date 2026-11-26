@@ -293,6 +293,10 @@ def next_step(data: dict) -> "str | None":
       Spec-Datei vor, ist der offene Schritt das Freigabewort, kein Befehl.
     - phase5_tdd_red bleibt stehen, bis /40-tdd-red am Ende phase6_implement
       setzt; sind die RED-Tests laut State fertig, ist /50-implement faellig.
+
+    Fast Track (#688): in phase4_approved folgt bei `workflow_type ==
+    "feature-fast"` direkt /50-implement (kein RED-Schritt); `NEXT_STEP`
+    bleibt fuer den vollen Prozess unveraendert.
     """
     if not isinstance(data, dict):
         return None
@@ -310,6 +314,8 @@ def next_step(data: dict) -> "str | None":
         data.get("red_test_done") or data.get("ui_test_red_done")
     ):
         return "/50-implement"
+    if phase == "phase4_approved" and data.get("workflow_type") == "feature-fast":
+        return "/50-implement"  # Fast Track ohne RED-Schritt (#688)
     return NEXT_STEP[phase]
 
 
@@ -503,12 +509,46 @@ def _end_state_final(data: dict, deploy, autonomous: bool, suggest=None,
     return _end("you", END_YOU.format(cmd, NEXT_WHY["/70-deploy"]), cmd)
 
 
+def _auto_approved(data: dict) -> bool:
+    """True, wenn die juengste Spec-Freigabe in `approvals` automatisch war (#688).
+
+    Rein lesend, ohne Config-Zugriff, wirft nie: fehlt `approvals`, ist es keine
+    Liste oder hat es keinen dict-Eintrag mit `gate == "spec"`, ist das Ergebnis False.
+
+    Manuelle Freigaben schreiben keinen `approvals`-Eintrag. Deshalb entscheidet
+    zuerst der juengste dict-Eintrag in `phase_transitions` mit
+    `to == "phase4_approved"`: ist sein `trigger` nicht "auto" (z.B. "approval"
+    vom Listener nach einem Ruecksprung), ist das Ergebnis False. Fehlt ein
+    solcher Eintrag, bleibt die `approvals`-Logik massgeblich.
+    """
+    if not isinstance(data, dict):
+        return False
+    transitions = data.get("phase_transitions")
+    if isinstance(transitions, list):
+        for entry in reversed(transitions):
+            if isinstance(entry, dict) and entry.get("to") == "phase4_approved":
+                if entry.get("trigger") != "auto":
+                    return False
+                break
+    approvals = data.get("approvals")
+    if not isinstance(approvals, list):
+        return False
+    for entry in reversed(approvals):
+        if isinstance(entry, dict) and entry.get("gate") == "spec":
+            return entry.get("by") == "auto"
+    return False
+
+
 def _end_state_open(data: dict, self_driven: bool = False) -> dict:
     """Endzustand fuer Phasen vor 8: Schritt aus next_step(), Warum aus NEXT_WHY.
 
     `self_driven` (#555): Auto-Modus mit offenem autarkem Auftrag — einen
     Slash-Schritt fuehrt Claude selbst aus, also ⏳ statt einer erfundenen
     PO-Aufgabe. Freigabe-Woerter und Freitext-Schritte bleiben ❗.
+
+    Nach einer Auto-Freigabe (#688, juengster Spec-Eintrag in `approvals` mit
+    `by == "auto"`) gilt in phase4_approved dasselbe: Claude fuehrt den
+    naechsten Slash-Schritt selbst aus, also ⏳ statt ❗.
     """
     step = next_step(data)
     if step == AUTO_APPROVAL_STEP:
@@ -516,7 +556,9 @@ def _end_state_open(data: dict, self_driven: bool = False) -> dict:
     why = NEXT_WHY.get(step or "", NEXT_WHY[""])
     if step and step.startswith("/"):
         cmd = expected_footer_command(data)
-        if self_driven:
+        if self_driven or (
+            data.get("current_phase") == "phase4_approved" and _auto_approved(data)
+        ):
             return _end("waiting", END_WAITING.format(f"Claude führt {cmd} selbst aus"), cmd)
         return _end("you", END_YOU.format(cmd, why), cmd)
     return _end("you", END_YOU.format(step or "/00-intake", why))

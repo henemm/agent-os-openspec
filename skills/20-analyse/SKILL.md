@@ -157,7 +157,7 @@ Letzte Nachricht endet so (Gründe: `docs/befehle/fusszeile.md`):
 
 ❗ Du: `/<befehl> #<N>` — <ein Halbsatz, warum>
 ℹ️ Status: Workflow `<name>` · Phase `<x>` von 8
-⚙ /20-analyse · agent-os-openspec 4.26.6
+⚙ /20-analyse · agent-os-openspec 4.26.7
 
 Erste Zeile genau einmal, in einer Form: `✅ Erledigt: <was>. …` (abgeschlossen), `⏳ Läuft noch: <worauf gewartet wird>. …` (vorher `workflow.py waiting "…"`, danach `--clear`) oder `❗ Du: …` (PO ist dran, auch wenn du nur auf ihn wartest; dringend `‼️`). Genaue Zeile: `workflow.py endstate`.
 

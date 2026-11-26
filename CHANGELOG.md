@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.26.7] - 2026-11-26
+
+### Fixed — Fast Track: Anzeige nennt nach der Freigabe /50-implement (#688)
+- `core/hooks/workflow.py`: `next_step` liefert für `workflow_type == "feature-fast"` in `phase4_approved` `/50-implement` statt `/40-tdd-red` (der Fast Track hat keinen RED-Schritt). Wirkt in Hook-Hinweis, Fußzeilen-Gate, Seitenleiste und Plan; `NEXT_STEP` und der volle Prozess bleiben unverändert.
+- `_end_state_open`: Nach einer Auto-Freigabe (jüngster Spec-Eintrag in `approvals` mit `by == "auto"`, neue reine Hilfsfunktion `_auto_approved`) zeigt der Endzustand in `phase4_approved` `⏳ Läuft noch: Claude führt <Befehl> selbst aus` statt `❗ Du:`. Manuelle Freigabe bleibt `❗ Du:`.
+- Tests: `tests/test_fast_track_anzeige_688.py`.
+
 ## [4.26.6] - 2026-11-26
 
 ### Fixed — Auto-Modus: ausgeliefertes Issue wird abgehakt und archiviert (#691)
