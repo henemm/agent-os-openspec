@@ -13,8 +13,11 @@ Vertraege aus der Spec (Implementation Details), die diese Tests festlegen:
   sonst inline.
 - Vermerk im Auftrag: Feld `handoff = {"issue": M, "mode": weg, "at": ISO}`;
   `hook_utils._normalize_auftrag` behaelt es nur gueltig.
-- `herdr_bridge.start_session(prompt, cwd)`: `pane split <eigenes Pane> --direction right
-  --cwd <root> --no-focus`, dann `pane run <neues Pane> "exec claude <shlex-quoted prompt>"`.
+- `herdr_bridge.start_session(prompt, cwd, label)` (#694): mit `HERDR_WORKSPACE_ID` zuerst
+  `tab create --workspace W --cwd <root> --label <label> --env ... --no-focus`, sonst bzw. bei
+  Tab-Fehler `pane split <eigenes Pane> --direction right --cwd <root> --no-focus`, dann
+  `pane run <neues Pane> "exec claude <shlex-quoted prompt>"`. Ohne `HERDR_WORKSPACE_ID` (Default
+  dieser Tests) bleibt der Split-Pfad.
 
 Umgebung: Diese Tests laufen u. a. in der Cloud (`CLAUDE_CODE_REMOTE=true`,
 `OPENSPEC_AUTONOMY=auto`) und auf Rechnern mit echtem `claude` im PATH. Jeder Test setzt
@@ -51,6 +54,10 @@ import json, os, sys
 args = sys.argv[1:]
 with open(os.environ["FAKE_HERDR_LOG"], "a") as f:
     f.write(json.dumps(args) + "\\n")
+if args[:2] == ["tab", "create"]:
+    print(json.dumps({{"result": {{"tab": {{"tab_id": "w1:t2"}},
+                                   "root_pane": {{"pane_id": "{new}"}}}}}}))
+    sys.exit(0)
 if args[:2] == ["pane", "split"]:
     out = os.environ.get("FAKE_SPLIT_OUT") or json.dumps(
         {{"result": {{"pane": {{"pane_id": "{new}"}}}}}})
@@ -343,10 +350,12 @@ def test_prompt_content_numbers_note_spur(tmp_path):
 # --- AC-5 -------------------------------------------------------------------
 
 def test_herdr_start_with_fake_binary(tmp_path):
-    """AC-5: --start im herdr-Weg: pane split + pane run mit exec claude, STARTED=yes, Vermerk."""
+    """AC-5 (#667, angepasst durch #694 AC-15): --start im herdr-Weg: tab create als Primaerweg
+    + pane run mit exec claude, kein pane split, STARTED=yes, Vermerk."""
     proj = _project(tmp_path / "p")
     herdr = _fake_herdr(tmp_path / "p")
-    res = _handoff(proj, "--start", env=_env(proj, claude=True, herdr=herdr))
+    res = _handoff(proj, "--start", env=_env(proj, claude=True, herdr=herdr,
+                                             HERDR_WORKSPACE_ID="w1"))
     assert res.returncode == 0, (res.stdout, res.stderr)
     lines, prompt = _parse(res.stdout)
     assert _kv(lines, "HANDOFF") == "herdr", res.stdout
@@ -354,14 +363,14 @@ def test_herdr_start_with_fake_binary(tmp_path):
     assert prompt, res.stdout
 
     calls = _calls(proj)
-    splits, runs = _of(calls, "pane split"), _of(calls, "pane run")
-    assert len(splits) == 1 and len(runs) == 1, calls
-    split = splits[0]
-    assert split[:3] == ["pane", "split", PANE], split
-    assert split[split.index("--direction") + 1] == "right", split
-    assert os.path.realpath(split[split.index("--cwd") + 1]) == os.path.realpath(proj), split
-    assert "--no-focus" in split, split
-    assert calls.index(split) < calls.index(runs[0]), calls
+    tabs, runs = _of(calls, "tab create"), _of(calls, "pane run")
+    assert len(tabs) == 1 and len(runs) == 1, calls
+    assert _of(calls, "pane split") == [], calls
+    tab = tabs[0]
+    assert tab[tab.index("--workspace") + 1] == "w1", tab
+    assert os.path.realpath(tab[tab.index("--cwd") + 1]) == os.path.realpath(proj), tab
+    assert "--no-focus" in tab, tab
+    assert calls.index(tab) < calls.index(runs[0]), calls
     run = runs[0]
     assert run[:3] == ["pane", "run", NEW_PANE], run
     assert all(c[2] != PANE for c in runs), "nie im eigenen Pane starten"
