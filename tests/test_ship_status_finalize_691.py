@@ -379,3 +379,44 @@ def test_validate_doc_mentions_finalize_and_skill_in_sync():
     assert SKILL_MD in expected, list(expected)
     assert SKILL_MD.read_text() == expected[SKILL_MD], \
         "skills/60-validate/SKILL.md weicht vom Generat ab (sync_skills.py laufen lassen)"
+
+
+# --- Adversary F001: approvals nach ship-status done --------------------------
+
+_AUTO_APPROVAL = {"gate": "phase4_approved", "by": "auto", "at": "2026-11-26T10:00:00+00:00",
+                  "reason": "Fast Track"}
+_USER_APPROVAL = {"gate": "phase6b_go", "by": "user", "at": "2026-11-26T11:00:00+00:00",
+                  "reason": "go"}
+
+
+def _approval_lines(stdout: str) -> "list[str]":
+    return [line for line in _lines(stdout) if line.startswith("APPROVALS=")]
+
+
+def test_approvals_after_ship_done_reads_archive(tmp_path):
+    proj = _active_project(tmp_path / "p",
+                           _data(approvals=[_AUTO_APPROVAL, _USER_APPROVAL]))
+    res = _cli(proj, "ship-status", "done")
+    assert res.returncode == 0, (res.stdout, res.stderr)
+    assert _archive_file(proj).is_file(), "Vorbedingung: Workflow archiviert"
+
+    res = _cli(proj, "approvals", "--auto")
+
+    assert res.returncode == 0, (res.stdout, res.stderr)
+    assert _approval_lines(res.stdout) == ["APPROVALS=1"], res.stdout
+    assert "phase4_approved" in res.stdout, res.stdout
+    assert "FATAL" not in res.stderr, res.stderr
+
+
+def test_approvals_with_target_reads_archive(tmp_path):
+    proj = _project(tmp_path / "p")
+    _archive_file(proj).write_text(json.dumps(
+        _data(ship_status="done", approvals=[_AUTO_APPROVAL, _USER_APPROVAL])))
+
+    res = _cli(proj, "approvals", "--auto", "547", active=None)
+    assert res.returncode == 0, (res.stdout, res.stderr)
+    assert _approval_lines(res.stdout) == ["APPROVALS=1"], res.stdout
+
+    res = _cli(proj, "approvals", "547", active=None)
+    assert res.returncode == 0, (res.stdout, res.stderr)
+    assert _approval_lines(res.stdout) == ["APPROVALS=2"], res.stdout

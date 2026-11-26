@@ -68,6 +68,8 @@ Beim Status `done` oder `skipped` (nach dem Setzen von `ship_status` und `_claim
 
 `cmd_complete` ruft denselben Helfer für Archivierung und Aufräumen auf; sein sichtbares Verhalten bleibt gleich. `running` und `failed` bleiben unverändert (kein Abschluss).
 
+Folge für `approvals` (Adversary F001): Da `ship-status done` vor `approvals --auto` in /60-validate archiviert, nimmt `cmd_approvals` ein optionales Ziel `<nr|name>` (laufend, sonst Archiv, wie `_status_target`). Ohne Ziel und ohne aktiven Workflow fällt es auf den jüngsten archivierten Workflow mit `ship_status` `done`/`skipped` zurück; Meldungen der gescheiterten Auflösung werden unterdrückt. Ausgabeformat unverändert, Exit immer 0.
+
 Verworfen: nur Anweisungstext („nach Merge `write-log` und `finish`“) — genau das Vergessen ist der Befund. Abhaken schon bei `phase phase8_complete` — das Issue gälte als erledigt, bevor ausgeliefert ist (CI rot).
 
 ## Expected Behavior
@@ -140,3 +142,4 @@ Lauf: `pytest tests/test_ship_status_finalize_691.py`, danach Regressionslauf `p
 ## Changelog
 
 - 2026-11-26: Initial spec created
+- 2026-11-26: Adversary F001 — `approvals` liest nach `ship-status done` das Archiv (Ziel-Argument, Rückfall auf jüngsten ausgelieferten)
