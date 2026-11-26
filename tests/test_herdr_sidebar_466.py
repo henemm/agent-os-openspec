@@ -37,8 +37,14 @@ SESSION_BANNER = HOOKS_DIR / "session_banner.py"
 TOKEN_NAMES = ["workflow", "issue", "phase", "step", "next", "state", "spur"]
 PANE = "pane-466"
 
+# #671: Die Zeile entsteht in EINEM printf (Format vorab in einer Variablen
+# gebaut; Bash-Variablen koennen kein NUL halten, das Format nur den Text `\0`).
+# So landet sie mit einem einzigen write() per O_APPEND im Log und kann nicht
+# stueckweise gelesen werden.
 STUB_SCRIPT = r"""#!/bin/bash
-{ for a in "$@"; do printf '%s\0' "$a"; done; printf '\n'; } >> "$STUB_LOG"
+fmt=''
+for _ in "$@"; do fmt+='%s\0'; done
+printf "${fmt}\n" "$@" >> "$STUB_LOG"
 if [ -n "$STUB_META" ]; then
   sid=$(awk '{print $6}' /proc/$$/stat)
   fd0=$(readlink /proc/$$/fd/0)
@@ -117,10 +123,23 @@ def _calls(log: Path) -> list:
     if not log.exists():
         return []
     out = []
-    for line in log.read_bytes().decode("utf-8", "replace").split("\n"):
+    # #671: Eine letzte Zeile ohne abschliessendes \n ist noch im Schreiben und
+    # zaehlt nicht als Aufruf; split() legt sie als letztes Element ab.
+    for line in log.read_bytes().decode("utf-8", "replace").split("\n")[:-1]:
         if line:
             out.append(line.split("\0")[:-1] if line.endswith("\0") else line.split("\0"))
     return out
+
+
+def test_calls_ignoriert_unvollstaendige_letzte_zeile(tmp_path):
+    """#671 AC-2: eine letzte Zeile ohne \\n ist unvollstaendig und zaehlt nicht."""
+    log = tmp_path / "log"
+    log.write_bytes(b"report\0--a\0\nclear\0--tok")
+    assert _calls(log) == [["report", "--a"]]
+    log.write_bytes(b"report\0--a\0\nclear\0--tok\0\n")
+    assert _calls(log) == [["report", "--a"], ["clear", "--tok"]]
+    log.write_bytes(b"repo")
+    assert _calls(log) == []
 
 
 def _wait_calls(log: Path, n: int = 1, timeout: float = 3.0) -> list:

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.26.4] - 2026-11-26
+
+### Fixed — Wackelige Tests: Herdr-Stub-Log und Laufzeitgrenze des Erwähnungs-Wächters (#671, #683)
+- `tests/test_herdr_sidebar_466.py`: Der Stub schreibt die Protokollzeile eines Aufrufs mit einem einzigen `printf` (Format vorab in einer Variablen gebaut, ein `write()` per `O_APPEND`) statt Argument für Argument; `_calls` wertet eine letzte Zeile ohne abschließendes `\n` nicht als Aufruf. Neu: `test_calls_ignoriert_unvollstaendige_letzte_zeile`.
+- `tests/test_mention_guard_617.py::test_laufzeit_150kb_unter_2s_und_ueber_200kb_frei`: misst den Grundaufwand eines Hook-Aufrufs im selben Lauf (kurzer Befehl, Minimum aus zwei Läufen) und prüft nur den Mehraufwand für 150 KB gegen 2,0 s. Blocken bei 150 KB und Freigabe über 200 KB bleiben geprüft. Kein Produktivcode geändert.
+
 ## [4.26.3] - 2026-11-26
 
 ### Changed — Versions-Marker-Block und Hook-Hinweis verschlankt (#679)

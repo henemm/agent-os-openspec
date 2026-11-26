@@ -358,11 +358,19 @@ def test_laufzeit_150kb_unter_2s_und_ueber_200kb_frei(tmp_path):
     import time
     fueller = "wort " * (150 * 1024 // 5)
     cmd = f"gh issue comment 1 --body '{fueller} {AT}henning'"
+    # #671: Grundaufwand (Prozessstart, Import) im selben Lauf am selben Hook
+    # messen und abziehen; nur der Mehraufwand fuer 150 KB zaehlt gegen 2,0 s.
+    grund = float("inf")
+    for _ in range(2):
+        t0 = time.monotonic()
+        rk = _bash(tmp_path, f"gh issue comment 1 --body 'kurz {AT}henning'")
+        grund = min(grund, time.monotonic() - t0)
+        assert rk.returncode == 2, rk.stderr
     t0 = time.monotonic()
     r = _bash(tmp_path, cmd)
     dauer = time.monotonic() - t0
     assert r.returncode == 2, r.stderr
-    assert dauer < 2.0, dauer
+    assert dauer - grund < 2.0, (dauer, grund)
     gross = f"gh issue comment 1 --body '{'wort ' * (250 * 1024 // 5)} {AT}henning'"
     _free(_bash(tmp_path, gross))
 
