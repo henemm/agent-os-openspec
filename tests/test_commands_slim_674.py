@@ -16,23 +16,35 @@ BEFEHLE = REPO_ROOT / "docs" / "befehle"
 
 BUDGETS = {
     "00-intake.md": 8192,
-    "01-feature.md": 2560,
-    "10-context.md": 7680,
-    "20-analyse.md": 9728,
+    "01-feature.md": 2048,
+    "10-context.md": 5120,
+    "20-analyse.md": 6656,
     "30-write-spec.md": 8704,
-    "40-tdd-red.md": 8192,
+    "40-tdd-red.md": 5632,
     "50-implement.md": 15360,
-    "60-validate.md": 20480,
-    "70-deploy.md": 8704,
+    "60-validate.md": 16384,
+    "70-deploy.md": 6144,
     "80-workflow.md": 5632,
-    "81-add-artifact.md": 3584,
-    "82-test.md": 3072,
-    "83-user-story.md": 5120,
-    "90-retro.md": 3072,
-    "99-reset.md": 3072,
+    "81-add-artifact.md": 2048,
+    "82-test.md": 2048,
+    "83-user-story.md": 2048,
+    "90-retro.md": 2048,
+    "99-reset.md": 2048,
 }
 
-LINKED = ["50-implement", "60-validate", "00-intake", "30-write-spec", "80-workflow"]
+LINKED = [
+    "50-implement",
+    "60-validate",
+    "00-intake",
+    "30-write-spec",
+    "80-workflow",
+    "10-context",
+    "20-analyse",
+    "40-tdd-red",
+    "70-deploy",
+    "81-add-artifact",
+    "83-user-story",
+]
 
 
 def _size(name: str) -> int:
@@ -46,7 +58,7 @@ def test_implement_within_budget():
 
 def test_validate_within_budget():
     size = _size("60-validate.md")
-    assert size <= 20480, f"60-validate.md hat {size} Bytes, Budget 20480"
+    assert size <= 16384, f"60-validate.md hat {size} Bytes, Budget 16384"
 
 
 def test_every_command_has_budget():
