@@ -465,6 +465,45 @@ def _positional(args: list, value_flags: tuple = ()) -> list:
     return out
 
 
+_SHORT_VALUE_LETTERS = {"cp": "St", "mv": "St", "ln": "St", "install": "gmoSt"}
+_LONG_VALUE_OPTS = ("suffix", "mode", "owner", "group", "strip-program", "no-preserve", "sparse")
+
+
+def _target_dir_split(cmd: str, args: list) -> tuple:
+    """GNU-getopt fuer cp/mv/ln/install -> `(zielordner, positionale)` (#653).
+
+    Kurzgruppen (`-vt D`, `-tD`, `-sft D`), `--t…[=]D` als Abkuerzung von
+    `--target-directory`, Permutation, `--`; Werte anderer Wertoptionen fallen weg.
+    """
+    letters = _SHORT_VALUE_LETTERS.get(cmd, "St")
+    dirs, pos, i, only_pos = [], [], 0, False
+    while i < len(args):
+        tok, nxt = args[i], (args[i + 1] if i + 1 < len(args) else None)
+        i += 1
+        if only_pos or not tok.startswith("-") or tok == "-":
+            pos.append(tok)
+        elif tok == "--":
+            only_pos = True
+        elif tok.startswith("--"):
+            name, eq, val = tok[2:].partition("=")
+            is_dir = "target-directory".startswith(name)
+            if is_dir or name in _LONG_VALUE_OPTS:
+                if not eq and nxt is not None:
+                    val, i = nxt, i + 1
+                if is_dir and (eq or nxt is not None):
+                    dirs.append(val)
+        else:
+            for k, ch in enumerate(tok[1:], 1):
+                if ch in letters:
+                    val = tok[k + 1:]
+                    if not val and nxt is not None:
+                        val, i = nxt, i + 1
+                    if ch == "t" and (val or nxt is not None):
+                        dirs.append(val)
+                    break
+    return dirs, pos
+
+
 def _copy_targets(args: list) -> list:
     """cp/install/ln: letztes Argument, bei `-t DIR` je Quelle `DIR/<basename>`."""
     target_dir = None
@@ -477,6 +516,15 @@ def _copy_targets(args: list) -> list:
     if target_dir is not None:
         return [os.path.join(target_dir, os.path.basename(p.rstrip("/"))) for p in pos]
     return pos[-1:]
+
+
+def _target_dir_joined(cmd: str, args: list) -> list:
+    """Je Zielordner jeder Schreibweise und Quelle `DIR/<basename>` (#653).
+
+    Ergaenzt `_copy_targets` (Beweis-Sperre #453) im Aufrufer, statt es zu aendern.
+    """
+    dirs, pos = _target_dir_split(cmd, args)
+    return [os.path.join(d, os.path.basename(p.rstrip("/"))) for d in dirs for p in pos]
 
 
 def _target_dir_values(args: list) -> list:
@@ -605,6 +653,8 @@ def _config_write_targets(seg: list) -> list:
         targets += writer(args)
     if cmd == "mv":
         targets += [t for t in _mv_dir_targets(args) if t not in targets]
+    if cmd in _SHORT_VALUE_LETTERS:
+        targets += [t for t in _target_dir_joined(cmd, args) if t not in targets]
     return [t for t in targets if t]
 
 
@@ -648,10 +698,8 @@ def _dir_removal_targets(cmd: str, args: list) -> list:
     if cmd == "rm":
         return _positional(args)
     if cmd == "mv":
-        pos = _positional(args, ("-t", "-S"))
-        if "-t" in args or any(a.startswith("--target-directory") for a in args):
-            return pos
-        return pos[:-1]
+        dirs, pos = _target_dir_split("mv", args)
+        return pos if dirs else pos[:-1]
     if cmd == "git":
         paths = _git_write_targets(args)
         sub = _positional(args, ("-C", "-c"))[:1]
@@ -769,13 +817,14 @@ def _into_dir_targets(seg: list, bases: list) -> list:
     """`cp|mv|install|ln SRC… DIR`: je Quelle `DIR/<basename>` (#447).
 
     Nur wenn das Ziel auf `/` endet oder gegen eine Basis ein vorhandener Ordner ist;
-    `-t DIR` deckt `_copy_targets` bereits ab.
+    Zielordner jeder Schreibweise deckt `_target_dir_joined` ab (#653).
     """
     cmd, args = _command_args(_split_redirects(seg)[1])
-    if cmd not in ("cp", "mv", "install", "ln") or "-t" in args \
-            or any(a.startswith("--target-directory") for a in args):
+    if cmd not in ("cp", "mv", "install", "ln"):
         return []
-    pos = _positional(args, ("-m", "-o", "-g", "-S"))
+    dirs, pos = _target_dir_split(cmd, args)
+    if dirs:
+        return []
     if len(pos) < 2:
         return []
     dest = pos[-1]
