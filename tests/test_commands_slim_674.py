@@ -15,16 +15,16 @@ SKILLS = REPO_ROOT / "skills"
 BEFEHLE = REPO_ROOT / "docs" / "befehle"
 
 BUDGETS = {
-    "00-intake.md": 12800,
+    "00-intake.md": 8192,
     "01-feature.md": 2560,
     "10-context.md": 7680,
     "20-analyse.md": 9728,
-    "30-write-spec.md": 14848,
+    "30-write-spec.md": 8704,
     "40-tdd-red.md": 8192,
     "50-implement.md": 15360,
     "60-validate.md": 20480,
     "70-deploy.md": 8704,
-    "80-workflow.md": 11264,
+    "80-workflow.md": 5632,
     "81-add-artifact.md": 3584,
     "82-test.md": 3072,
     "83-user-story.md": 5120,
@@ -32,7 +32,7 @@ BUDGETS = {
     "99-reset.md": 3072,
 }
 
-LINKED = ["50-implement", "60-validate"]
+LINKED = ["50-implement", "60-validate", "00-intake", "30-write-spec", "80-workflow"]
 
 
 def _size(name: str) -> int:
