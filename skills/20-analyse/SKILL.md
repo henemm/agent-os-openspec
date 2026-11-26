@@ -145,7 +145,9 @@ $WF autonomy
 
 Bei `AUTONOMY=auto`, ohne offene Frage an den User und ohne `/clear`: Rufe den Skill `30-write-spec` jetzt sofort selbst auf, ohne auf den User zu warten; der Checkpoint-Block bleibt in der Ausgabe. Sonst auf den User warten.
 
-Vor dem Selbstaufruf zusätzlich `$WF context` ausführen (Kontext-Haushalt): Bei `CONTEXT_STOP=on` (Kontext über der wirksamen Schwelle `CONTEXT_THRESHOLD` aus `context_budget`: Grundkontext der Sitzung + `growth_tokens`, mindestens `clear_threshold_tokens`, Default 100.000 Token, nur im Modus manual) den Skill `30-write-spec` NICHT selbst aufrufen, sondern die Antwort mit dem Checkpoint und der ❗Du-Zeile `/30-write-spec #<N>` beenden — der Stand liegt auf der Platte, der PO tippt `/clear`. Bei `CONTEXT_STOP=off` oder `CONTEXT_TOKENS=unknown`: Kette unverändert selbst fortsetzen (#658).
+Vor dem Selbstaufruf zusätzlich `$WF context` ausführen (Kontext-Haushalt): Bei `CONTEXT_STOP=on` (über `CONTEXT_THRESHOLD`, Default 100.000 Token, nur Modus manual; Herleitung: docs/befehle/10-context.md) den Skill `30-write-spec` NICHT selbst aufrufen, sondern die Antwort mit dem Checkpoint und der ❗Du-Zeile `/30-write-spec #<N>` beenden — der Stand liegt auf der Platte, der PO tippt `/clear`. Bei `CONTEXT_STOP=off` oder `CONTEXT_TOKENS=unknown`: Kette unverändert selbst fortsetzen (#658).
+
+`CONTEXT_HANDOFF=on` (#696): `workflow.py handoff --same --start`; `STARTED=yes`/`already`: `30-write-spec` nicht aufrufen, Turn mit Checkpoint und ⏳-Zeile sofort beenden; `STARTED=no`: weiter.
 
 Immer menschlich bleiben — auch bei `AUTONOMY=auto`: AMBIGUOUS-Verdict, zweites BROKEN bzw. Circuit Breaker, Override, Deploy, Stop-Lock.
 
@@ -157,7 +159,7 @@ Letzte Nachricht endet so (Gründe: `docs/befehle/fusszeile.md`):
 
 ❗ Du: `/<befehl> #<N>` — <ein Halbsatz, warum>
 ℹ️ Status: Workflow `<name>` · Phase `<x>` von 8
-⚙ /20-analyse · agent-os-openspec 4.27.0
+⚙ /20-analyse · agent-os-openspec 4.28.0
 
 Erste Zeile genau einmal, in einer Form: `✅ Erledigt: <was>. …` (abgeschlossen), `⏳ Läuft noch: <worauf gewartet wird>. …` (vorher `workflow.py waiting "…"`, danach `--clear`) oder `❗ Du: …` (PO ist dran, auch wenn du nur auf ihn wartest; dringend `‼️`). Genaue Zeile: `workflow.py endstate`.
 

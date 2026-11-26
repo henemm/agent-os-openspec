@@ -29,7 +29,7 @@ SMALL = [
 ]
 SMALL_BUDGET = 2048
 VALIDATE_BUDGET = 16384
-TOTAL_BUDGET = 83000
+TOTAL_BUDGET = 83600  # #696: +600 fuer die CONTEXT_HANDOFF-Absaetze (Rest nach Kuerzung)
 
 
 def _size(name: str) -> int:

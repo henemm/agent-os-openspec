@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.28.0] - 2026-11-26
+
+### Added — Frische Sitzung am Phasenwechsel innerhalb eines Issues (#696)
+- `core/hooks/workflow.py`: `context` meldet vor `CONTEXT_STOP=` die Zeile `CONTEXT_HANDOFF=on|off`; `on` nur bei Messung der eigenen Sitzung über der wirksamen Schwelle, Autonomie `auto`, nicht Cloud, Herdr-Pane und `claude` im PATH (auch bei autarkem Auftrag, dort bleibt `CONTEXT_CUT=off`). Die Messung einer fremden Sitzung zählt nicht, damit die Nachfolgerin nicht sofort wieder übergibt.
+- Neu: `handoff --same [--start]` übergibt den laufenden Workflow an eine neue Sitzung im eigenen Tab, im selben Worktree (`git rev-parse --show-toplevel`), mit Startauftrag `/<nächster Befehl> #N`. Ausgabe `HANDOFF=herdr|none`, `NEXT=`, `STARTED=yes|no|already`. Nach dem Start stehen `handoff_same` (gegen Doppelstart je Phase) und `waiting_on` im Workflow, die Vorgängerin endet mit ⏳ und ihr Tab wird geschlossen (#694). `--same` mit `--mark` ist ein Usage-Fehler; ohne `--same` bleibt `handoff` unverändert.
+- Befehlstexte `10-context` bis `50-implement`: bei `CONTEXT_HANDOFF=on` Übergabe statt Selbstaufruf; `80-workflow` und `docs/befehle/80-workflow.md` beschreiben `handoff --same`. Tests: `tests/test_feat_696_handoff_same.py`.
+
 ## [4.27.0] - 2026-11-26
 
 ### Added — Übergabe im eigenen Tab, Nachfolgerin räumt auf (#694)

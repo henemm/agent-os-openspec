@@ -81,6 +81,7 @@ Ausgabe `QUEUE=`, `AUTARK=`, `NEXT=` und bei offenem Auftrag `PROMPT=/00-intake 
 python3 .claude/hooks/workflow.py handoff                 # Weg + Startauftrag
 python3 .claude/hooks/workflow.py handoff --start         # Herdr: neue Sitzung im neuen Tab
 python3 .claude/hooks/workflow.py handoff --mark cloud    # Start vermerken (nach create_session)
+python3 .claude/hooks/workflow.py handoff --same --start  # #696: derselbe Workflow, frisch
 ```
 Ausgabe `HANDOFF=cloud|herdr|inline|none`, `NEXT=`, Startauftrag zwischen `PROMPT_BEGIN`/`PROMPT_END`.
 `--start` meldet `STARTED=yes|no|already`. Ist für `NEXT` schon ein Start vermerkt, folgt

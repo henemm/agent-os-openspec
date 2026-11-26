@@ -88,4 +88,6 @@ Bei `AUTONOMY=auto` und ohne `/clear` in derselben Session: Rufe den Skill `20-a
 
 ## Kontext-Haushalt beim Selbstaufruf
 
+Herleitung der Schwelle (gilt für die Befehle 10 bis 50): `CONTEXT_THRESHOLD` ist die wirksame Schwelle aus `context_budget`, also Grundkontext der Sitzung + `growth_tokens`, mindestens `clear_threshold_tokens` (Default 100.000 Token, #557). `CONTEXT_STOP=on` gibt es nur im Modus manual (#662). `CONTEXT_HANDOFF=on` (#696) meldet im Auto-Modus unter Herdr, dass die eigene Messung über der Schwelle liegt; dann übergibt `workflow.py handoff --same --start` den Workflow an eine frische Sitzung im selben Worktree.
+
 Ein Schritt mit 200k Token Kontext kostet etwa das Fünffache eines Schritts mit 40k. Bei `CONTEXT_STOP=off` (auch mit `CONTEXT_REASON=AUTO_NO_CLEAR`: Auto-Modus, niemand tippt `/clear`, Nachschlagen an Teilagenten abgeben, Claude Code komprimiert automatisch) oder `CONTEXT_TOKENS=unknown`: Kette unverändert selbst fortsetzen (#658).

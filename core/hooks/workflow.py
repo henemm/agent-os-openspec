@@ -33,6 +33,7 @@ Usage:
     python3 workflow.py claim status|nachholen [<name>] [--uebernehmen]
     python3 workflow.py observable-surface
     python3 workflow.py handoff [--start] [--mark cloud|herdr]
+    python3 workflow.py handoff --same [--start]
 """
 
 from hook_utils import setup_path, find_project_root
@@ -5576,21 +5577,38 @@ def _auto_approve_decision() -> "tuple[str, str, list]":
             exceeded or [])
 
 
-def _context_measurement(root) -> "tuple[int | None, int | None]":
-    """(tokens, baseline) fuer `cmd_context` (#675): 1. eigene Messdatei,
-    2. eigenes Transcript (ohne Baseline), 3. juengste Messdatei. Liest nur."""
+def _context_measurement(root) -> "tuple[int | None, int | None, bool]":
+    """(tokens, baseline, own) fuer `cmd_context` (#675): 1. eigene Messdatei,
+    2. eigenes Transcript (ohne Baseline), 3. juengste Messdatei. Liest nur.
+    `own` (#696) ist True nur fuer 1. und 2., nie fuer den Rueckfall auf 3."""
     from hook_utils import (context_tokens_from_transcript, read_context_usage,
                             session_transcript_path)
     usage = read_context_usage(None, root, fallback_newest=False)
-    if not (isinstance(usage, dict) and type(usage.get("tokens")) is int):
-        path = session_transcript_path()
-        tokens = context_tokens_from_transcript(path) if path is not None else None
-        if type(tokens) is int:
-            return tokens, None
-        usage = read_context_usage(None, root)
     if isinstance(usage, dict) and type(usage.get("tokens")) is int:
-        return usage["tokens"], usage.get("baseline_tokens")
-    return None, None
+        return usage["tokens"], usage.get("baseline_tokens"), True
+    path = session_transcript_path()
+    tokens = context_tokens_from_transcript(path) if path is not None else None
+    if type(tokens) is int:
+        return tokens, None, True
+    usage = read_context_usage(None, root)
+    if isinstance(usage, dict) and type(usage.get("tokens")) is int:
+        return usage["tokens"], usage.get("baseline_tokens"), False
+    return None, None, False
+
+
+def _same_handoff_possible() -> bool:
+    """Weg herdr fuer `handoff --same` (#696): Autonomie auto, nicht Cloud, Herdr-Pane
+    und `claude` im PATH. Wirft nie."""
+    try:
+        if autonomy_mode() != "auto":
+            return False
+        if os.environ.get("CLAUDE_CODE_REMOTE", "").strip().lower() == "true":
+            return False
+        import shutil
+        import herdr_bridge
+        return bool(herdr_bridge._pane() and shutil.which("claude"))
+    except Exception:
+        return False
 
 
 def cmd_context(args: list[str]) -> None:
@@ -5614,18 +5632,23 @@ def cmd_context(args: list[str]) -> None:
     `CONTEXT_CUT=off` plus `CONTEXT_REASON=AUTARK` (ohne Schwellen-Zeile).
     Fehlt die eigene Messdatei, liest `context` das eigene Transcript, bevor es auf
     die juengste fremde Messung zurueckfaellt (#675, siehe `_context_measurement`).
+    Vor `CONTEXT_STOP=` steht `CONTEXT_HANDOFF=on|off` (#696): `on` nur bei
+    Messfakt CUT (vor dem AUTARK-Zwang), Messung der eigenen Sitzung und Weg
+    herdr (`_same_handoff_possible`); dann uebergeben die Phasen-Befehle per
+    `handoff --same --start` an eine frische Sitzung.
     """
-    tokens, cut, autark, threshold = None, "off", False, None
+    tokens, cut, autark, threshold, own = None, "off", False, None, False
     try:
         from hook_utils import context_budget_settings, effective_context_threshold
         settings = context_budget_settings()
-        tokens, baseline = _context_measurement(find_project_root())
+        tokens, baseline, own = _context_measurement(find_project_root())
         threshold = effective_context_threshold(settings, baseline)
         if settings["enabled"] and tokens is not None and tokens >= threshold:
             cut = "on"
         autark = auftrag_autark_open()
     except Exception:
         cut = "off"
+    handoff = "on" if cut == "on" and own and _same_handoff_possible() else "off"
     if autark:
         cut = "off"
     stop = cut
@@ -5644,6 +5667,7 @@ def cmd_context(args: list[str]) -> None:
             print(f"CONTEXT_THRESHOLD={threshold}")
         if cut == "on" and stop == "off":
             print("CONTEXT_REASON=AUTO_NO_CLEAR")
+        print(f"CONTEXT_HANDOFF={handoff}")
         print(f"CONTEXT_STOP={stop}")
     except Exception:
         pass
@@ -5837,23 +5861,30 @@ def cmd_queue(args: list[str]) -> None:
     _print_queue(read_auftrag(root))
 
 
-HANDOFF_USAGE = "Usage: workflow.py handoff [--start] [--mark cloud|herdr]"
+HANDOFF_USAGE = ("Usage: workflow.py handoff [--start] [--mark cloud|herdr] | "
+                 "handoff --same [--start]")
 HANDOFF_MARK_MODES = ("cloud", "herdr")
 
 
-def _handoff_parse(args: list[str]) -> "tuple[bool, str | None]":
-    """(--start, --mark-Weg) aus den Argumenten; Fehler -> Usage auf stderr, Exit 1."""
-    start, mark, i = False, None, 0
+def _handoff_parse(args: list[str]) -> "tuple[bool, str | None, bool]":
+    """(--start, --mark-Weg, --same) aus den Argumenten; Fehler (auch `--same` mit
+    `--mark`, #696) -> Usage auf stderr, Exit 1."""
+    start, mark, same, i = False, None, False, 0
     while i < len(args):
         if args[i] == "--start":
             start = True
+        elif args[i] == "--same":
+            same = True
         elif args[i] == "--mark" and i + 1 < len(args) and args[i + 1] in HANDOFF_MARK_MODES:
             mark, i = args[i + 1], i + 1
         else:
             print(HANDOFF_USAGE, file=sys.stderr)
             sys.exit(1)
         i += 1
-    return start, mark
+    if same and mark:
+        print(HANDOFF_USAGE, file=sys.stderr)
+        sys.exit(1)
+    return start, mark, same
 
 
 def _handoff_own_issue() -> "int | None":
@@ -5909,9 +5940,13 @@ def _handoff_label(number: int) -> str:
     return f"#{number} {title}"[:40].strip()
 
 
-def handoff_prompt(number: int, open_rest: "list[int]", auftrag: dict, hooks: str,
-                   prev: "int | None" = None) -> str:
-    """Startauftrag der frischen Sitzung (#667), ohne Gespraechswissen lesbar."""
+HANDOFF_AUTARK_LINE = (
+    "Autarker Auftrag: kein Halt für /clear; halte nur an PO-Punkten (Freigabe ohne "
+    "Auto-Freigabe, AMBIGUOUS, Override, Produktfragen per AskUserQuestion).")
+
+
+def _handoff_queue_add(open_rest: "list[int]", auftrag: dict, hooks: str) -> str:
+    """`python3 <hooks>/workflow.py queue add <N...> --autark [--note ..] [--spur ..]` (#667)."""
     import shlex
     cmd = ["python3", f"{hooks}/workflow.py", "queue", "add",
            *[str(n) for n in open_rest], "--autark"]
@@ -5920,7 +5955,13 @@ def handoff_prompt(number: int, open_rest: "list[int]", auftrag: dict, hooks: st
         cmd += ["--note", note]
     if auftrag.get("spur"):
         cmd += ["--spur", auftrag["spur"]]
-    queue_add = " ".join(shlex.quote(part) for part in cmd)
+    return " ".join(shlex.quote(part) for part in cmd)
+
+
+def handoff_prompt(number: int, open_rest: "list[int]", auftrag: dict, hooks: str,
+                   prev: "int | None" = None) -> str:
+    """Startauftrag der frischen Sitzung (#667), ohne Gespraechswissen lesbar."""
+    queue_add = _handoff_queue_add(open_rest, auftrag, hooks)
     report = ([f"Nenne in deiner ersten Meldung in einem Satz das Ergebnis von #{prev} "
                "(Abschlusskommentar am Issue).", ""] if prev else [])
     return "\n".join(report + [
@@ -5931,8 +5972,7 @@ def handoff_prompt(number: int, open_rest: "list[int]", auftrag: dict, hooks: st
         "",
         f"Lege zuerst den Auftrag neu an: `{queue_add}`",
         "",
-        "Autarker Auftrag: kein Halt für /clear; halte nur an PO-Punkten (Freigabe ohne "
-        "Auto-Freigabe, AMBIGUOUS, Override, Produktfragen per AskUserQuestion).",
+        HANDOFF_AUTARK_LINE,
         "",
         "Diese Sitzung startet bewusst mit frischem Kontext (#667).",
         "",
@@ -5985,6 +6025,146 @@ def _handoff_mark(root: Path, number: int, mode: str) -> None:
             os.close(fd)
 
 
+def _worktree_toplevel() -> "str | None":
+    """Wurzel des aktuellen Worktrees (`git rev-parse --show-toplevel` im cwd, #696),
+    nicht `find_project_root()` (das loest Worktrees zum Haupt-Repo auf). Wirft nie."""
+    try:
+        import subprocess
+        res = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True,
+                             text=True, timeout=10, stdin=subprocess.DEVNULL)
+        top = res.stdout.strip() if res.returncode == 0 else ""
+        return top if top and os.path.isdir(top) else None
+    except Exception:
+        return None
+
+
+def handoff_same_prompt(name: str, number: "int | None", next_cmd: str,
+                        auftrag: "dict | None", hooks: str) -> str:
+    """Startauftrag fuer `handoff --same` (#696): derselbe Workflow, frischer Kontext.
+
+    `auftrag` nur, wenn `.claude/auftrag.json` offene Issues hat; dann dieselbe
+    `queue add`-Zeile wie `handoff_prompt` (alle offenen Issues) und die autark-Zeile.
+    """
+    cmd, _sep, arg = next_cmd.lstrip("/").partition(" ")
+    issue = f" für Issue #{number}" if number else ""
+    call = f"Kurzbefehl `{cmd}`" + (f" mit Argument `{arg}`" if arg else "")
+    lines = [f"Bitte den laufenden Workflow `{name}`{issue} in diesem Worktree fortsetzen.",
+             ""]
+    if auftrag:
+        queue_add = _handoff_queue_add(auftrag_open_issues(auftrag), auftrag, hooks)
+        lines += [f"Lege zuerst den Auftrag neu an: `{queue_add}`", ""]
+    lines += [
+        f"Hebe dann den Wartevermerk der Vorgängerin auf: `python3 {hooks}/workflow.py "
+        "waiting --clear`",
+        "",
+        f"Führe danach den nächsten Schritt `{next_cmd}` aus ({call}; fehlt das Plugin, "
+        f"liegt der Befehlstext unter skills/{cmd}/SKILL.md bzw. im Konsumenten-Projekt "
+        "der Redirect-Alias) und folge dem Workflow weiter.",
+        "",
+        "Diese Sitzung setzt den Workflow mit frischem Kontext fort (#696).",
+        "",
+    ]
+    if auftrag:
+        lines += [HANDOFF_AUTARK_LINE, ""]
+    lines.append("Nenne in deiner ersten Meldung in einem Satz den Stand des Workflows "
+                 "(Phase und nächster Schritt).")
+    return "\n".join(lines)
+
+
+def _handoff_same_route() -> "tuple[str, str | None, dict | None, str | None]":
+    """(Weg herdr|none, NEXT, State, Workflow-Name) fuer `handoff --same` (#696). Wirft nie."""
+    try:
+        found = read_active_workflow_fast()
+        if not found or not isinstance(found[1], dict):
+            return "none", None, None, None
+        name, data = found
+        nxt = expected_footer_command(data)
+        if not (isinstance(nxt, str) and nxt.startswith("/")):
+            return "none", None, None, None
+        if not _same_handoff_possible():
+            return "none", None, None, None
+        return "herdr", nxt, data, name
+    except Exception:
+        return "none", None, None, None
+
+
+def _handoff_same_auftrag() -> "dict | None":
+    """Offener Auftrag fuer den Startauftrag (#696), sonst None. Wirft nie."""
+    try:
+        if not auftrag_settings()["enabled"]:
+            return None
+        auftrag = read_auftrag()
+        return auftrag if auftrag and auftrag_open_issues(auftrag) else None
+    except Exception:
+        return None
+
+
+def _handoff_same_start(name: str, data: dict, nxt: str, prompt: str) -> "tuple[str, str]":
+    """Start fuer `handoff --same --start` (#696): (STARTED, REASON).
+
+    Gleicher Vermerk `handoff_same` (Phase + NEXT) -> already ohne Start. Sonst
+    Worktree-Wurzel als cwd, `herdr_bridge.start_session`; nur bei Erfolg Vermerk
+    `handoff_same` und `waiting_on` (Endzustand ⏳) in den Workflow-State schreiben.
+    """
+    from datetime import timezone
+    import herdr_bridge
+    phase = data.get("current_phase")
+    note = data.get("handoff_same")
+    if isinstance(note, dict) and note.get("phase") == phase and note.get("next") == nxt:
+        return "already", ""
+    cwd = _worktree_toplevel()
+    if cwd is None:
+        return "no", "Worktree-Wurzel nicht ermittelbar (git rev-parse --show-toplevel)"
+    number = workflow_issue_number(data)
+    label = _handoff_label(int(number)) if number else name[:40]
+    ok, reason = herdr_bridge.start_session(prompt, cwd, label)
+    if not ok:
+        return "no", reason
+    path = _workflow_file(name)
+    fresh = _read_workflow(path)
+    fresh["handoff_same"] = {
+        "phase": phase, "next": nxt,
+        "at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+    fresh["waiting_on"] = _one_line(f"frische Sitzung setzt {nxt} fort")
+    _atomic_write(path, fresh)
+    return "yes", ""
+
+
+def _cmd_handoff_same(start: bool) -> None:
+    """`handoff --same [--start]` (#696): laufenden Workflow an eine frische Sitzung geben.
+
+    Zeilen: `HANDOFF=herdr|none`, `NEXT=<Folgebefehl inkl. #N>|none`, bei `--start`
+    `STARTED=yes|no|already` (+ `REASON=` bei no), bei herdr der Startauftrag
+    zwischen `PROMPT_BEGIN`/`PROMPT_END`. Ohne `--start` keine Schreibung. Exit 0.
+    """
+    route, nxt, data, name = _handoff_same_route()
+    prompt = None
+    if route == "herdr":
+        try:
+            number = workflow_issue_number(data)
+            prompt = handoff_same_prompt(name, int(number) if number else None, nxt,
+                                         _handoff_same_auftrag(),
+                                         _handoff_hooks_rel(find_project_root()))
+        except Exception:
+            route, nxt = "none", None
+    print(f"HANDOFF={route}")
+    print(f"NEXT={nxt or 'none'}")
+    if start:
+        started, reason = "no", f"Weg {route}"
+        if route == "herdr":
+            try:
+                started, reason = _handoff_same_start(name, data, nxt, prompt)
+            except Exception as exc:
+                started, reason = "no", f"Fehler {type(exc).__name__}"
+        print(f"STARTED={started}")
+        if started == "no":
+            print(f"REASON={' '.join(str(reason or 'unbekannt').split())}")
+    if prompt:
+        print("PROMPT_BEGIN")
+        print(prompt)
+        print("PROMPT_END")
+
+
 def cmd_handoff(args: list[str]) -> None:
     """`handoff [--start] [--mark cloud|herdr]` (#667, #668): naechstes Auftrags-Issue frisch starten.
 
@@ -5999,8 +6179,12 @@ def cmd_handoff(args: list[str]) -> None:
     Vermerk im Auftragsfeld `handoff` (unter Sperre neu gelesen); derselbe Vermerk
     macht `--start` zu `STARTED=already`. Exit immer 0 (fail-open), ausser
     ungueltigen Argumenten (Usage auf stderr, Exit 1, keine Schreibung).
+    `--same` (#696) uebergibt stattdessen den laufenden Workflow, siehe `_cmd_handoff_same`.
     """
-    start, mark = _handoff_parse(args)
+    start, mark, same = _handoff_parse(args)
+    if same:
+        _cmd_handoff_same(start)
+        return
     route, nxt, auftrag, prompt = "none", None, None, None
     try:
         route, nxt, auftrag = handoff_route()

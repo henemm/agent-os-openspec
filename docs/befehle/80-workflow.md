@@ -44,6 +44,16 @@ Sitzung starten). `--mark` meldet `MARKED=yes|no`; scheitert der Vermerk, folgt
 `WARN=Vermerk fehlgeschlagen (<Typ>)` (bei `--start` bleibt dann `STARTED=yes`).
 Exit 0; nur ungültige Argumente (etwa `--mark` mit anderem Weg) enden mit Usage und Exit 1.
 
+`handoff --same [--start]` (#696) übergibt den laufenden Workflow an eine frische Sitzung im
+selben Worktree (Arbeitsordner `git rev-parse --show-toplevel`), wenn `workflow.py context` am
+Phasenwechsel `CONTEXT_HANDOFF=on` meldet. Ausgabe `HANDOFF=herdr|none` (herdr nur mit aktivem
+Workflow, Autonomie `auto`, nicht Cloud, Herdr-Pane und `claude`; Freitext-Folgeschritt wie die
+Freigabe ergibt `none`), `NEXT=<Folgebefehl inkl. #N>|none`, bei `--start` `STARTED=yes|no|already`
+(bei `no` mit `REASON=`) und der Startauftrag zwischen `PROMPT_BEGIN`/`PROMPT_END`. Nach dem
+Start stehen im Workflow `handoff_same` (Phase, Folgebefehl, Zeit; gleiche Phase und gleicher
+Folgebefehl ergeben `STARTED=already`) und `waiting_on`, damit die Vorgängerin mit ⏳ endet und
+ihr Tab geschlossen wird. `--same` mit `--mark` endet mit Usage und Exit 1.
+
 ### Retro: Abgeschlossene Workflows analysieren
 ```bash
 # Alle archivierten Workflows auflisten

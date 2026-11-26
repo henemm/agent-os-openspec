@@ -188,7 +188,8 @@ def test_workflow_context_unknown_without_measurement(tmp_path):
     res = _run(root, "workflow.py", "context")
     assert res.returncode == 0
     assert res.stdout.splitlines() == ["CONTEXT_TOKENS=unknown", "CONTEXT_CUT=off",
-                                       "CONTEXT_THRESHOLD=100000", "CONTEXT_STOP=off"]
+                                       "CONTEXT_THRESHOLD=100000", "CONTEXT_HANDOFF=off",
+                                       "CONTEXT_STOP=off"]
 
 
 def test_workflow_context_on_for_session_and_newest_fallback(tmp_path):
@@ -197,7 +198,7 @@ def test_workflow_context_on_for_session_and_newest_fallback(tmp_path):
     tr = _transcript(root / "t.jsonl", 122_040)
     _run(root, "post_bash.py", stdin=_payload(tr, "s1"))
     expected = ["CONTEXT_TOKENS=122040", "CONTEXT_CUT=on", "CONTEXT_THRESHOLD=100000",
-                "CONTEXT_STOP=on"]  # #658: Modus manual -> Halt
+                "CONTEXT_HANDOFF=off", "CONTEXT_STOP=on"]  # #658: Modus manual -> Halt
     res = _run(root, "workflow.py", "context", env=_env(CLAUDE_CODE_SESSION_ID="s1"))
     assert res.stdout.splitlines() == expected
     res = _run(root, "workflow.py", "context")  # ohne Sitzungs-Id: juengste Messung
@@ -211,7 +212,8 @@ def test_workflow_context_off_below_threshold_from_config(tmp_path):
     _run(root, "post_bash.py", stdin=_payload(tr, "s1"))
     res = _run(root, "workflow.py", "context", env=_env(CLAUDE_CODE_SESSION_ID="s1"))
     assert res.stdout.splitlines() == ["CONTEXT_TOKENS=122040", "CONTEXT_CUT=off",
-                                       "CONTEXT_THRESHOLD=200000", "CONTEXT_STOP=off"]
+                                       "CONTEXT_THRESHOLD=200000", "CONTEXT_HANDOFF=off",
+                                       "CONTEXT_STOP=off"]
 
 
 # --- workflow.py batch ---------------------------------------------------------
