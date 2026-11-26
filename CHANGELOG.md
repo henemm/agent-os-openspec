@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.26.3] - 2026-11-26
+
+### Changed — Versions-Marker-Block und Hook-Hinweis verschlankt (#679)
+- Versions-Marker-Block (`scripts/sync_skills.py::marker_block`, hängt an 14 generierten Befehlstexten) 3 259 → 1 110 Bytes; `skills/` zusammen 135 415 → 105 329 Bytes (−30 086), die vier Vollkopien in `.claude/commands/` 56 852 → 48 256 Bytes.
+- Hook-Hinweis je Nutzer-Nachricht (`core/hooks/workflow.py`, `END_STATE_RULE` und `_status_note_base`, Typfall `fix-1761-statusvermerk`/`phase7_validate`/Issue 1761) 1 902 → 870 Bytes; Auto-Freigabe-Fall (#470) 633 → 541 Bytes, weiterhin ohne ❗. Kopfzeile und Auftragssatz unverändert.
+- Regeln bleiben (drei Formen ✅/⏳/❗ mit genauem Wortlaut aus `workflow.py endstate`, `workflow.py waiting`/`status`, Stand AM ENDE der Nachricht, Verbotswörter vor `phase8_complete`, ⚙-Zeile wörtlich und zuletzt); die Begründungsprosa beider Texte steht wörtlich in `docs/befehle/fusszeile.md`. Kein Gate-Verhalten geändert (`footer_gate.py`, `phase_listener.py` unverändert).
+- Größenwächter: neu `tests/test_marker_slim_679.py` (Block ≤ 1 200, Hinweis ≤ 900 Bytes, Hintergrunddokument).
+
 ## [4.26.2] - 2026-11-26
 
 ### Changed — Befehlstexte verschlankt, Schnitt 3: 10-context, 20-analyse, 40-tdd-red, 70-deploy, kleine Befehle, 60-validate (#678)
