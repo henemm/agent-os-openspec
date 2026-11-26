@@ -98,10 +98,9 @@ Agent(subagent_type="docs-updater", description="Doku aktualisieren", run_in_bac
 python3 .claude/hooks/workflow.py phase phase8_complete
 ```
 
-Phase 8 heißt nur **„Code fertig“** (`ship_status: open`); erst `ship-status done` (oder `skipped`) macht den
-Workflow fertig. `scripts/ship.py` meldet die Stände selbst; von Hand
-`python3 .claude/hooks/workflow.py ship-status running|done|failed <N> --note "<Stand in Alltagssprache>"`;
-`ship-status skipped` nur, wenn es wirklich nichts auszuliefern gibt.
+Phase 8 heißt nur **„Code fertig“** (`ship_status: open`); erst `ship-status done` (oder `ship-status skipped`, nur ohne Auslieferung) schließt den
+Workflow ab (archiviert, im Auftrag abgehakt; kein `finish`). `scripts/ship.py` meldet das selbst; von Hand
+`python3 .claude/hooks/workflow.py ship-status running|done|failed <N> --note "<Stand in Alltagssprache>"`.
 
 ## Validation Report
 

@@ -4334,6 +4334,12 @@ def cmd_mark_ui_red(args: list[str]) -> None:
 
 def cmd_write_log(args: list[str]) -> None:
     data, name = _read_active()
+    log_file = _write_execution_log(data, name, args[0] if args else "success")
+    print(f"Execution log written: {log_file}")
+
+
+def _write_execution_log(data: dict, name: str, outcome: str = "success") -> Path:
+    """Execution-Log fuer `data`/`name` schreiben (aus `cmd_write_log`, #691)."""
     log_dir = find_project_root() / ".claude" / "workflows" / "_log"
     log_dir.mkdir(parents=True, exist_ok=True)
     date_str = datetime.now().strftime("%Y-%m-%d")
@@ -4351,7 +4357,6 @@ def cmd_write_log(args: list[str]) -> None:
     impl_idx = PHASES.index("phase6_implement")
     expected = PHASES[1:impl_idx + 1]
     phases_skipped = [p for p in expected if p not in phases_visited]
-    outcome = args[0] if args else "success"
     # "nie gesetzt" != "explizit 0" (#278): beide Kennzahlen schreibt erst `stamp`.
     persisted = "adversary_findings_total" in data
     findings_total = data["adversary_findings_total"] if persisted else "unbekannt"
@@ -4377,7 +4382,7 @@ def cmd_write_log(args: list[str]) -> None:
         f"outcome: {outcome}",
     ]
     log_file.write_text("\n".join(lines) + "\n")
-    print(f"Execution log written: {log_file}")
+    return log_file
 
 
 def cmd_override_ambiguous(args: list[str]) -> None:
@@ -4418,24 +4423,36 @@ def cmd_complete(args: list[str]) -> None:
             data["loc_delta_final"], data["loc_delta_test_final"] = final
     except Exception:
         pass
+    _finalize_archive(data, name)
+    print(f"Workflow {name} completed and archived.")
+
+
+def _auftrag_mark_issue(data: dict, name: str) -> None:
+    """#551: Issue im Auftrag abhaken; aendert weder Ausgabe noch Exit."""
+    try:
+        issue = workflow_issue_number(data) or workflow_issue_number({"name": name})
+        if issue:
+            auftrag_mark_done(find_project_root(), issue)
+    except Exception:
+        pass
+
+
+def _finalize_archive(data: dict, name: str, clear_active: bool = True) -> None:
+    """Abschluss wie `complete` (#691): archivieren, Arbeitsdatei loeschen, Aktiv-Zeiger
+    nur bei `clear_active` loeschen, dann Issue im Auftrag abhaken."""
     archive = _archive_dir()
     archive.mkdir(parents=True, exist_ok=True)
     _atomic_write(archive / f"{name}.json", data)
     wf_file = _workflow_file(name)
     if wf_file.exists():
         wf_file.unlink()
-    link = _active_link()
-    if link.is_symlink():
-        link.unlink()
-    _persist_env(None)
-    _herdr("clear")
-    try:  # #551: Issue im Auftrag abhaken; aendert weder Ausgabe noch Exit
-        issue = workflow_issue_number(data) or workflow_issue_number({"name": name})
-        if issue:
-            auftrag_mark_done(find_project_root(), issue)
-    except Exception:
-        pass
-    print(f"Workflow {name} completed and archived.")
+    if clear_active:
+        link = _active_link()
+        if link.is_symlink():
+            link.unlink()
+        _persist_env(None)
+        _herdr("clear")
+    _auftrag_mark_issue(data, name)
 
 
 def cmd_abandon(args: list[str]) -> None:
@@ -4674,12 +4691,15 @@ def cmd_ship_status(args: list[str]) -> None:
               " [--note <Text>]", file=sys.stderr)
         sys.exit(1)
     value = rest[0]
+    is_active = False
     if len(rest) > 1:
         path, data, name = _status_target(rest[1])
+        is_active = name == _active_name_quiet()
     else:
         try:
             data, name = _read_active()
             path = _workflow_file(name)
+            is_active = True
         except SystemExit:
             found = _ship_fallback_target()
             if found is None:
@@ -4703,6 +4723,29 @@ def cmd_ship_status(args: list[str]) -> None:
     except Exception:
         pass
     print(f"SHIP_STATUS={value} ({name})")
+    if value in ("done", "skipped"):
+        _ship_finalize(path, data, name, is_active)
+
+
+def _ship_finalize(path: Path, data: dict, name: str, is_active: bool) -> None:
+    """#691: Auslieferung fertig -> Workflow in Phase 8 abschliessen, fail-open.
+
+    Archiviertes Ziel: nur abhaken (idempotent). Laufendes Ziel in
+    `phase8_complete`: Log falls fehlend, archivieren, abhaken, `ARCHIVED=<name>`.
+    Sonst nichts. Fehler aendern weder Ausgabe noch Exit-Code."""
+    try:
+        if path.parent.resolve() == _archive_dir().resolve():
+            _auftrag_mark_issue(data, name)
+            return
+        if data.get("current_phase") != "phase8_complete":
+            return
+        log_dir = find_project_root() / ".claude" / "workflows" / "_log"
+        if not (log_dir.is_dir() and any(log_dir.glob(f"*_{name}.yaml"))):
+            _write_execution_log(data, name)
+        _finalize_archive(data, name, clear_active=is_active)
+        print(f"ARCHIVED={name}")
+    except (Exception, SystemExit):
+        pass
 
 
 def _deploy_status_target(ref: str) -> "Path | None":
@@ -5004,15 +5047,41 @@ def cmd_find(args: list[str]) -> None:
     print("\nNAME=" + hits[0][0])
 
 
+def _approvals_fallback_data() -> dict:
+    """Juengster archivierter Workflow mit `ship_status` done/skipped (#691 F001), sonst {}."""
+    folder = _archive_dir()
+    hits = []
+    for f in (folder.glob("*.json") if folder.is_dir() else []):
+        try:
+            data = _read_workflow(f)
+        except (Exception, SystemExit):
+            continue
+        if isinstance(data, dict) and data.get("ship_status") in ("done", "skipped"):
+            hits.append((f.stat().st_mtime, data))
+    return max(hits, key=lambda t: t[0])[1] if hits else {}
+
+
 def cmd_approvals(args: list[str]) -> None:
-    """Freigabe-Protokoll des aktiven Workflows anzeigen (#472). Nur Anzeige.
+    """`approvals [--auto] [<issue-nr|name>]`: Freigabe-Protokoll anzeigen (#472). Nur Anzeige.
 
     stdout: `APPROVALS=<n>`, danach je Eintrag `- <gate> | <by> | <at> | <reason>`.
-    `--auto` zeigt nur automatische Freigaben (`by == "auto"`). Exit immer 0 —
-    ohne aktiven Workflow oder bei unlesbarem State `APPROVALS=0`.
+    `--auto` zeigt nur automatische Freigaben (`by == "auto"`). Ziel: laufender
+    oder archivierter Treffer; ohne Ziel der aktive Workflow, ersatzweise der
+    juengste archivierte mit `ship_status` done/skipped (#691 F001: `ship-status
+    done` archiviert vorher). Exit immer 0 — ohne Treffer `APPROVALS=0`.
     """
+    import contextlib
+    import io
+    refs = [a for a in args if a != "--auto"]
     try:
-        data, _name = _read_active()
+        with contextlib.redirect_stderr(io.StringIO()):
+            if refs:
+                data = _status_target(refs[0])[1]
+            else:
+                try:
+                    data = _read_active()[0]
+                except SystemExit:
+                    data = _approvals_fallback_data()
         entries = data.get("approvals") or []
     except (SystemExit, Exception):
         entries = []
