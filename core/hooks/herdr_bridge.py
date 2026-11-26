@@ -39,9 +39,15 @@ fasst nie ein Pane an, dessen Owner ein anderes lebendes Claude-Pane ist. Der
 SessionEnd-Hook `herdr_bridge.py plan-pane-close` schliesst das eigene Pane.
 
 #667: `start_session` (aufgerufen von `workflow.py handoff --start`) startet das
-naechste Issue eines autarken Auftrags in einem NEUEN Pane (`pane split`, dann
-`pane run <neu> "exec claude <Startauftrag>"`). Es startet nur einen Prozess und
-tippt nie in ein laufendes Claude-Pane.
+naechste Issue eines autarken Auftrags per `pane run <neu> "exec claude
+<Startauftrag>"`. Es startet nur einen Prozess und tippt nie in ein laufendes
+Claude-Pane.
+
+#694: Neuer Tab „#M Titel“ (`tab create ... --env OPENSPEC_HANDOFF_PREV_PANE=<eigen>
+--no-focus`, Rueckfall `pane split` mit demselben Env). Der SessionStart der
+Nachfolgerin startet `handoff-cleanup <prev>`: nach idle/done (Nachpruefung) und
+letzter Marke ⏳ schliesst er den Tab der Vorgaengerin bzw. nur sie und ihre
+Plan-Panes. Sperre `.claude/herdr_handoff_cleanup_<pane>.lock`, immer Exit 0.
 """
 
 import argparse
@@ -841,45 +847,286 @@ def _pp_spawn_watcher(binary: str, args, active: str, version: str) -> None:
     _pp_log(f"plan-pane: {new} geoeffnet, pane run {'OK' if ok else 'fehlgeschlagen'}")
 
 
-# --- Frische Sitzung je Auftrags-Issue (#667) --------------------------------
+# --- Frische Sitzung je Auftrags-Issue (#667, #694) --------------------------
 
-def start_session(prompt: str, cwd) -> "tuple[bool, str]":
-    """Neue Claude-Sitzung rechts neben dem eigenen Pane starten (#667). Wirft nie.
+HANDOFF_ENV = "OPENSPEC_HANDOFF_PREV_PANE"
 
-    `pane split <eigenes Pane> --direction right --cwd <cwd> --no-focus`, dann
-    `pane run <neues Pane> "exec claude <prompt>"`. Nie das eigene Pane als Ziel;
-    das alte Pane bleibt stehen. Rueckgabe (ok, Grund); eine Log-Zeile.
+
+def start_session(prompt: str, cwd, label=None) -> "tuple[bool, str]":
+    """Neue Claude-Sitzung in einem eigenen Tab starten (#694, vorher #667). Wirft nie.
+
+    Mit `HERDR_WORKSPACE_ID` zuerst `tab create --workspace W --cwd <cwd> --label <label>
+    --env OPENSPEC_HANDOFF_PREV_PANE=<eigenes Pane> --no-focus`; scheitert das, Rueckfall
+    `pane split <eigenes Pane> --direction right --cwd <cwd> --no-focus --env ...`. Danach
+    `pane run <neues Pane> "exec claude <prompt>"`; scheitert das im neuen Tab, wird er per
+    `tab close` geschlossen. Nie das eigene Pane als Ziel. Rueckgabe (ok, Grund); Log-Zeile.
     """
     try:
         import shlex
         pane, binary = _pane(), _binary()
         if pane is None or binary is None:
             return _ss_done(False, "kein Herdr-Pane")
-        res = _pp_call(binary, ["pane", "split", pane, "--direction", "right",
-                                "--cwd", str(cwd), "--no-focus"], 5)
-        if res is None or res.returncode != 0:
-            code = "Zeitlimit/Fehler" if res is None else f"Exit {res.returncode}"
-            return _ss_done(False, f"pane split {code}")
-        try:
-            new = json.loads(res.stdout)["result"]["pane"]["pane_id"]
-        except Exception:
-            new = None
-        if not isinstance(new, str) or not new:
-            return _ss_done(False, "pane split ohne pane_id")
-        if new == pane:
-            return _ss_done(False, "pane split lieferte das eigene Pane")
-        run = _pp_call(binary, ["pane", "run", new, f"exec claude {shlex.quote(prompt)}"], 5)
+        env_arg = f"{HANDOFF_ENV}={pane}"
+        command = f"exec claude {shlex.quote(prompt)}"
+        tab = _ss_tab(binary, pane, cwd, label, env_arg)
+        if tab is not None:
+            tab_id, new = tab
+            run = _pp_call(binary, ["pane", "run", new, command], 5)
+            if run is not None and run.returncode == 0:
+                return _ss_done(True, f"Sitzung in {new} (Tab {tab_id}) gestartet")
+            code = "Zeitlimit/Fehler" if run is None else f"Exit {run.returncode}"
+            closer = ["tab", "close", tab_id] if tab_id else ["pane", "close", new]
+            _pp_quick(binary, closer, 3)
+            return _ss_done(False, f"pane run {code}, neuer Tab geschlossen")
+        new, reason = _ss_split(binary, pane, cwd, env_arg)
+        if new is None:
+            return _ss_done(False, reason)
+        run = _pp_call(binary, ["pane", "run", new, command], 5)
         if run is None or run.returncode != 0:
             code = "Zeitlimit/Fehler" if run is None else f"Exit {run.returncode}"
             return _ss_done(False, f"pane run {code}")
-        return _ss_done(True, f"Sitzung in {new} gestartet")
+        return _ss_done(True, f"Sitzung in {new} gestartet (Split)")
     except Exception as exc:
         return _ss_done(False, f"Fehler {type(exc).__name__}")
+
+
+def _ss_tab(binary: str, pane: str, cwd, label, env_arg: str) -> "tuple | None":
+    """`tab create` (#694); (tab_id | None, neues Pane) oder None = Rueckfall auf den Split."""
+    workspace = os.environ.get("HERDR_WORKSPACE_ID", "").strip()
+    if not workspace:
+        return None
+    argv = ["tab", "create", "--workspace", workspace, "--cwd", str(cwd)]
+    text = _clean(label or "").strip()
+    if text:
+        argv += ["--label", text]
+    res = _pp_quick(binary, argv + ["--env", env_arg, "--no-focus"], 5)
+    if res is None or res[0] != 0:
+        code = "Zeitlimit/Fehler" if res is None else f"Exit {res[0]}"
+        _pp_log(f"handoff: tab create {code}, Rueckfall Split")
+        return None
+    try:
+        result = json.loads(res[1])["result"]
+        new = result["root_pane"]["pane_id"]
+        tab_id = (result.get("tab") or {}).get("tab_id")
+    except Exception:
+        new, tab_id = None, None
+    if not isinstance(new, str) or not new or new == pane:
+        _pp_log("handoff: tab create ohne brauchbare pane_id, Rueckfall Split")
+        return None
+    return (tab_id if isinstance(tab_id, str) and tab_id else None), new
+
+
+def _ss_split(binary: str, pane: str, cwd, env_arg: str) -> "tuple":
+    """Rueckfall `pane split` (#667) mit Env (#694); (neues Pane, "") oder (None, Grund)."""
+    res = _pp_call(binary, ["pane", "split", pane, "--direction", "right",
+                            "--cwd", str(cwd), "--no-focus", "--env", env_arg], 5)
+    if res is None or res.returncode != 0:
+        code = "Zeitlimit/Fehler" if res is None else f"Exit {res.returncode}"
+        return None, f"pane split {code}"
+    try:
+        new = json.loads(res.stdout)["result"]["pane"]["pane_id"]
+    except Exception:
+        new = None
+    if not isinstance(new, str) or not new:
+        return None, "pane split ohne pane_id"
+    if new == pane:
+        return None, "pane split lieferte das eigene Pane"
+    return new, ""
 
 
 def _ss_done(ok: bool, reason: str) -> "tuple[bool, str]":
     _pp_log(f"handoff: {'OK' if ok else 'ABBRUCH'}: {reason}")
     return ok, reason
+
+
+# --- Nachfolgerin raeumt den Tab der Vorgaengerin auf (#694) ----------------
+
+HC_WAIT_MS = 30 * 60 * 1000  # Warte-Frist auf idle/done
+HC_GRACE_S = 5.0  # Nachpruefung (Footer-Gate kann den Turn wieder aufnehmen)
+HC_MARKS = ("⏳", "✅", "❗", "‼")  # Endzustandsmarken; die letzte im Text gewinnt
+
+
+def start_predecessor_cleanup() -> bool:
+    """SessionStart (#694): Runner `handoff-cleanup <prev>` detached starten; True = gestartet.
+
+    Nur mit `OPENSPEC_HANDOFF_PREV_PANE` ungleich dem eigenen Pane und aktiver Bridge.
+    Wartet nicht, schreibt nichts auf stdout/stderr, wirft nie.
+    """
+    try:
+        prev = os.environ.get(HANDOFF_ENV, "").strip()
+        pane = _pane()
+        if not prev or pane is None or prev == pane:
+            return False
+        base = str(_base_dir())
+        subprocess.Popen(
+            [sys.executable, str(Path(__file__).resolve()), "handoff-cleanup", prev],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True, close_fds=True, cwd=base)
+        return True
+    except BaseException:
+        return False
+
+
+def _hc_parse(argv) -> "tuple | None":
+    """`<prev> [--timeout-ms N] [--grace S]` ohne argparse (keine Ausgabe); None = ungueltig."""
+    args = [str(a) for a in argv]
+    if not args or args[0].startswith("-") or not args[0].strip():
+        return None
+    prev, timeout_ms, grace = args[0].strip(), HC_WAIT_MS, HC_GRACE_S
+    rest = args[1:]
+    while rest:
+        if len(rest) < 2:
+            return None
+        flag, value = rest[0], rest[1]
+        try:
+            if flag == "--timeout-ms":
+                timeout_ms = max(1, int(value))
+            elif flag == "--grace":
+                grace = max(0.0, float(value))
+            else:
+                return None
+        except ValueError:
+            return None
+        rest = rest[2:]
+    return prev, timeout_ms, grace
+
+
+def _hc_lock(prev: str) -> Path:
+    """Sperre je Vorgaenger-Pane: `.claude/herdr_handoff_cleanup_<pane>.lock`."""
+    safe = re.sub(r"[^A-Za-z0-9_-]", "_", prev)[:80] or "_"
+    return _pp_store() / f"herdr_handoff_cleanup_{safe}.lock"
+
+
+def _hc_pid_alive(path: Path) -> bool:
+    try:
+        pid = int(path.read_text().strip())
+        if pid <= 0:
+            return False
+        os.kill(pid, 0)
+        return True
+    except PermissionError:
+        return True
+    except Exception:
+        return False
+
+
+def _hc_take_lock(path: Path) -> bool:
+    """Sperre per O_EXCL mit PID (Muster `_pp_take_lock`); gehalten, solange der Halter
+    lebt oder die Datei juenger als PP_LOCK_STALE_S ist (der Runner wartet bis 30 min)."""
+    for _ in range(2):
+        try:
+            fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+            os.write(fd, str(os.getpid()).encode())
+            os.close(fd)
+            return True
+        except FileExistsError:
+            try:
+                if (_hc_pid_alive(path)
+                        or time.time() - path.stat().st_mtime < PP_LOCK_STALE_S):
+                    return False
+                path.unlink()
+            except FileNotFoundError:
+                pass
+    return False
+
+
+def _hc_settled(binary: str, prev: str, timeout_ms: int, grace: float) -> bool:
+    """`agent wait` auf idle/done, nach `grace` Sekunden per `pane get` bestaetigt."""
+    res = _pp_quick(binary, ["agent", "wait", prev, "--until", "idle", "--until", "done",
+                             "--timeout", str(timeout_ms)], timeout_ms / 1000.0 + 5)
+    if res is None or res[0] != 0:
+        _pp_log(f"handoff-cleanup: {prev} nicht idle/done (Frist, blocked oder Fehler)")
+        return False
+    if grace > 0:
+        time.sleep(grace)
+    res = _pp_quick(binary, ["pane", "get", prev], 5)
+    try:
+        status = json.loads(res[1])["result"]["pane"]["agent_status"] if res[0] == 0 else None
+    except Exception:
+        status = None
+    if status not in ("idle", "done"):
+        _pp_log(f"handoff-cleanup: {prev} Nachpruefung {status!r}, nichts geschlossen")
+        return False
+    return True
+
+
+def last_end_mark(text) -> "str | None":
+    """Zuletzt vorkommende Endzustandsmarke (⏳ ✅ ❗ ‼) im Text oder None. Pure."""
+    text = str(text or "")
+    pos, mark = max((text.rfind(m), m) for m in HC_MARKS)
+    return mark if pos >= 0 else None
+
+
+def _hc_handed_over(binary: str, prev: str) -> bool:
+    """True nur, wenn der Bildschirm der Vorgaengerin zuletzt ⏳ zeigt."""
+    res = _pp_quick(binary, ["pane", "read", prev, "--source", "recent-unwrapped"], 5)
+    if res is None or res[0] != 0:
+        _pp_log(f"handoff-cleanup: {prev} nicht lesbar, nichts geschlossen")
+        return False
+    mark = last_end_mark(res[1])
+    if mark != "⏳":
+        _pp_log(f"handoff-cleanup: {prev} letzte Marke {mark!r}, nichts geschlossen")
+        return False
+    return True
+
+
+def _hc_close(binary: str, prev: str, me: str) -> None:
+    """Ganzen Tab schliessen, wenn er nur Vorgaengerin + ihre Plan-Panes enthaelt; sonst
+    nur diese einzeln. Nie das eigene Pane, nie fremde Panes."""
+    panes = _pp_list(binary, os.environ.get("HERDR_WORKSPACE_ID", "").strip())
+    if panes is None:
+        _pp_log("handoff-cleanup: pane list fehlgeschlagen, nichts geschlossen")
+        return
+    entry = next((p for p in panes if p.get("pane_id") == prev), None)
+    if entry is None:
+        _pp_log(f"handoff-cleanup: {prev} nicht im Workspace, nichts geschlossen")
+        return
+    tab = entry.get("tab_id")
+    plans = [p["pane_id"] for p in panes
+             if isinstance(p.get("pane_id"), str) and p["pane_id"] not in (prev, me)
+             and _pp_tokens(p).get("owner") == prev and not p.get("agent")]
+    members = [p.get("pane_id") for p in panes if tab and p.get("tab_id") == tab]
+    if (isinstance(tab, str) and tab and me not in members
+            and all(pid == prev or pid in plans for pid in members)):
+        res = _pp_quick(binary, ["tab", "close", tab], 5)
+        ok = res is not None and res[0] == 0
+        _pp_log(f"handoff-cleanup: tab close {tab} {'OK' if ok else 'fehlgeschlagen'}")
+        return
+    for pid in plans + [prev]:
+        res = _pp_quick(binary, ["pane", "close", pid], 5)
+        ok = res is not None and res[0] == 0
+        _pp_log(f"handoff-cleanup: pane close {pid} {'OK' if ok else 'fehlgeschlagen'}")
+
+
+def run_handoff_cleanup(argv) -> int:
+    """CLI `handoff-cleanup <prev> [--timeout-ms N] [--grace S]` (#694); immer 0, stumm."""
+    lock = None
+    try:
+        parsed = _hc_parse(argv)
+        if parsed is None:
+            _pp_log("handoff-cleanup: ABBRUCH: ungueltige Argumente")
+            return 0
+        prev, timeout_ms, grace = parsed
+        me, binary = _pane(), _binary()
+        if me is None or binary is None or prev == me:
+            _pp_log("handoff-cleanup: ABBRUCH: kein Herdr oder Vorgaengerin = eigenes Pane")
+            return 0
+        path = _hc_lock(prev)
+        if not _hc_take_lock(path):
+            _pp_log(f"handoff-cleanup: {prev} läuft bereits")
+            return 0
+        lock = path
+        if _hc_settled(binary, prev, timeout_ms, grace) and _hc_handed_over(binary, prev):
+            _hc_close(binary, prev, me)
+    except BaseException as exc:
+        _pp_log(f"handoff-cleanup: ABBRUCH: Fehler {type(exc).__name__}")
+    finally:
+        if lock is not None:
+            try:
+                lock.unlink()
+            except Exception:
+                pass
+    return 0
 
 
 def _pp_active_name() -> "str | None":
@@ -990,13 +1237,15 @@ def run_plan_pane(argv) -> int:
 
 
 if __name__ == "__main__":
-    # Nur `plan-pane` und `plan-pane-close`; jeder andere Modus (auch entfernte
-    # aus alten Registrierungen) endet still mit Exit 0 (#663)
+    # Nur `plan-pane`, `plan-pane-close` und `handoff-cleanup` (#694); jeder andere
+    # Modus (auch entfernte aus alten Registrierungen) endet still mit Exit 0 (#663)
     try:
         if len(sys.argv) > 1 and sys.argv[1] == "plan-pane":
             run_plan_pane(sys.argv[2:])
         elif len(sys.argv) > 1 and sys.argv[1] == "plan-pane-close":
             run_plan_pane_close()
+        elif len(sys.argv) > 1 and sys.argv[1] == "handoff-cleanup":
+            run_handoff_cleanup(sys.argv[2:])
     except BaseException:
         pass
     sys.exit(0)

@@ -597,6 +597,11 @@ def main() -> None:
         herdr_bridge.open_plan_pane_for_active()
     except Exception:
         pass
+    try:  # #694: Nachfolgerin raeumt den Tab der Vorgaengerin nach ⏳ auf (Runner, detacht)
+        import herdr_bridge
+        herdr_bridge.start_predecessor_cleanup()
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.27.0] - 2026-11-26
+
+### Added — Übergabe im eigenen Tab, Nachfolgerin räumt auf (#694)
+- `core/hooks/herdr_bridge.py`: `start_session(prompt, cwd, label)` startet die Folgesitzung per `tab create` (Label „#M Titel“, `--env OPENSPEC_HANDOFF_PREV_PANE=<eigenes Pane>`, `--no-focus`); Rückfall `pane split` mit demselben Env; scheitert `pane run` im neuen Tab, wird er wieder geschlossen (`STARTED=no`).
+- Neu: `start_predecessor_cleanup()` (SessionStart, `session_banner.py`) startet detacht den Runner `herdr_bridge.py handoff-cleanup <prev>`: wartet bis 30 min auf idle/done, prüft nach 5 s nach, liest die letzte Endzustandsmarke; nur bei ⏳ schließt er den Tab der Vorgängerin (`tab close`), bei fremden Panes im Tab nur sie und ihre Plan-Panes. Sperre je Vorgänger-Pane, fail-open, stumm.
+- `core/hooks/workflow.py`: Startauftrag verlangt in der ersten Meldung einen Satz zum Ergebnis des Vorgänger-Issues; Tab-Label aus dem Titel-Cache (max. 40 Zeichen, ohne Steuerzeichen).
+- Befehlstexte `80-workflow`, `60-validate`: „neuer Tab“. Tests: `tests/test_handoff_tab_694.py`.
+
 ## [4.26.7] - 2026-11-26
 
 ### Fixed — Fast Track: Anzeige nennt nach der Freigabe /50-implement (#688)

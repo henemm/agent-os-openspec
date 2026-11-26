@@ -5901,7 +5901,16 @@ def _handoff_hooks_rel(root: Path) -> str:
     return str(hooks)
 
 
-def handoff_prompt(number: int, open_rest: "list[int]", auftrag: dict, hooks: str) -> str:
+def _handoff_label(number: int) -> str:
+    """Tab-Label `#M <Titel>` (#694) aus dem Titel-Cache; ohne Steuerzeichen, max. 40."""
+    title = str((cached_issue_brief(number) or {}).get("title") or "")
+    title = "".join(" " if c.isspace() else c for c in title)
+    title = " ".join(_re.sub(r"[\x00-\x1f\x7f]", "", title).split())
+    return f"#{number} {title}"[:40].strip()
+
+
+def handoff_prompt(number: int, open_rest: "list[int]", auftrag: dict, hooks: str,
+                   prev: "int | None" = None) -> str:
     """Startauftrag der frischen Sitzung (#667), ohne Gespraechswissen lesbar."""
     import shlex
     cmd = ["python3", f"{hooks}/workflow.py", "queue", "add",
@@ -5912,7 +5921,9 @@ def handoff_prompt(number: int, open_rest: "list[int]", auftrag: dict, hooks: st
     if auftrag.get("spur"):
         cmd += ["--spur", auftrag["spur"]]
     queue_add = " ".join(shlex.quote(part) for part in cmd)
-    return "\n".join([
+    report = ([f"Nenne in deiner ersten Meldung in einem Satz das Ergebnis von #{prev} "
+               "(Abschlusskommentar am Issue).", ""] if prev else [])
+    return "\n".join(report + [
         f"Bitte Issue #{number} in diesem Repo bearbeiten: beginne mit dem Befehl 00-intake "
         f"für #{number} (Kurzbefehl `00-intake` mit Argument `#{number}`; fehlt das Plugin, "
         "liegt der Befehlstext unter skills/00-intake/SKILL.md bzw. im Konsumenten-Projekt "
@@ -5984,7 +5995,7 @@ def cmd_handoff(args: list[str]) -> None:
     (+ `REASON=` bei no bzw. `WARN=` wenn der Start lief, der Vermerk aber
     scheiterte), bei HANDOFF != none der Startauftrag zwischen `PROMPT_BEGIN`
     und `PROMPT_END`. `--start` startet im Weg herdr eine neue Claude-Sitzung in
-    einem neuen Pane; `--mark` vermerkt einen Start (Cloud: nach `create_session`).
+    einem neuen Tab (#694); `--mark` vermerkt einen Start (Cloud: nach `create_session`).
     Vermerk im Auftragsfeld `handoff` (unter Sperre neu gelesen); derselbe Vermerk
     macht `--start` zu `STARTED=already`. Exit immer 0 (fail-open), ausser
     ungueltigen Argumenten (Usage auf stderr, Exit 1, keine Schreibung).
@@ -5997,7 +6008,7 @@ def cmd_handoff(args: list[str]) -> None:
         if route != "none":
             own = _handoff_own_issue()
             rest = [n for n in auftrag_open_issues(auftrag) if n != own]
-            prompt = handoff_prompt(nxt, rest, auftrag, _handoff_hooks_rel(root))
+            prompt = handoff_prompt(nxt, rest, auftrag, _handoff_hooks_rel(root), own)
     except Exception:
         route, prompt = "none", None
     print(f"HANDOFF={route}")
@@ -6029,7 +6040,7 @@ def cmd_handoff(args: list[str]) -> None:
                 started, reason = "already", ""
             elif route == "herdr":
                 import herdr_bridge
-                ok, reason = herdr_bridge.start_session(prompt, root)
+                ok, reason = herdr_bridge.start_session(prompt, root, _handoff_label(nxt))
                 if ok:
                     started = "yes"
                     try:
