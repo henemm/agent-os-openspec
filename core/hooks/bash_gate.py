@@ -1801,6 +1801,27 @@ def _commit_change_set(command: str) -> "tuple[list | None, list, str | None]":
     return sorted(set(files)), partial, None
 
 
+_QA_STAMP_PHASES = ("phase6_implement", "phase6b_adversary", "phase7_validate")
+
+
+def _require_qa_run_stamp(wf: dict, phase: str) -> None:
+    """Commit nur mit gueltigem `qa_run_stamp`, wenn `qa_gate.require_run` an ist (#404).
+
+    Feature-Workflows in phase6/6b/7 (Block 5c), feature-fast ab Phase 6. Die Pruefung
+    selbst steht nur in workflow.qa_run_stamp_problem; ein Ladefehler blockt (fail-closed).
+    """
+    fast = wf.get("workflow_type") == "feature-fast"
+    if phase not in _QA_STAMP_PHASES + (("phase8_complete",) if fast else ()):
+        return
+    try:
+        from workflow import qa_run_stamp_problem
+        reason = qa_run_stamp_problem(wf)
+    except Exception as exc:
+        reason = f"Stempel-Prüfung nicht verfügbar ({type(exc).__name__}: {exc}) — qa_gate.py --run"
+    if reason:
+        block(f"BLOCKED: Commit ohne gültigen Testlauf-Stempel — {reason}")
+
+
 def _require_dialog_evidence(wf: dict, verdict: str, command: str) -> None:
     """VERIFIED bzw. AMBIGUOUS+Override zaehlen nur mit gueltigem Dialog-Artefakt (#253),
     das jede Code-Datei des entstehenden Commits bindet (#259).
@@ -2274,6 +2295,7 @@ def main():
                         if not has_override:
                             block("BLOCKED: Adversary verdict missing or not VERIFIED. Run adversary validation first. "
                                   + gate_diagnostics(wf, verdict=(verdict or "keins")))
+            _require_qa_run_stamp(wf, phase)  # #404: nur bei qa_gate.require_run: true
 
             # 5d. E2E scope detection (informational — never blocks)
             scope = _detect_e2e_scope(

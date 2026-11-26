@@ -264,11 +264,16 @@ Some phase transitions happen automatically:
 ## QA Gate (Adversary Validation)
 
 ```bash
-# Validate test output and set adversary verdict — needs --checklist for commit/phase 8 (#253)
-python3 .claude/hooks/qa_gate.py docs/artifacts/feature/test-output.txt
-python3 .claude/hooks/qa_gate.py docs/artifacts/feature/test-output.txt --screenshot screenshot.png
-python3 .claude/hooks/qa_gate.py docs/artifacts/feature/test-output.txt --infra --no-visual "pure infrastructure"
+# Run qa_gate.test_command (config.yaml), validate it and set adversary verdict —
+# needs --checklist for commit/phase 8 (#253); output: docs/artifacts/<wf>/test-run-output.txt
+python3 .claude/hooks/qa_gate.py --run
+python3 .claude/hooks/qa_gate.py --run --screenshot screenshot.png
+python3 .claude/hooks/qa_gate.py --run --infra --no-visual "pure infrastructure"
 ```
+
+`qa_gate.require_run: true` (#404): commit and phase 8 need a green run stamp (`qa_run_stamp`)
+matching the current code and `qa_gate.test_command`; the legacy file mode `qa_gate.py <file>`
+is then refused.
 
 ## Migration from v2
 

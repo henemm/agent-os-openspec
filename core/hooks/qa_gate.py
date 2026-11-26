@@ -21,7 +21,9 @@ Usage:
 --run (#345): das Gate startet `qa_gate.test_command` aus config.yaml selbst
 (bash -o pipefail; nie ein Befehl von der Kommandozeile), Ausgabe fest nach
 docs/artifacts/<workflow>/test-run-output.txt. Exit != 0 ist BROKEN, bei Exit 0
-entscheidet die Textauswertung (unbekannt -> AMBIGUOUS).
+entscheidet die Textauswertung (unbekannt -> AMBIGUOUS). Der Stempel enthaelt
+zusaetzlich `code_sha256` (#404). Datei-Modus ist veraltet; bei
+`qa_gate.require_run: true` bricht er ab.
 
 Exit Codes: 0 = VERIFIED or AMBIGUOUS, 1 = BROKEN/FAILED
 """
@@ -503,10 +505,16 @@ def _pump(stream, out_file) -> None:
     Bricht stdout weg (`| head`), wird nur das Spiegeln abgeschaltet und fd 1 auf
     /dev/null gelegt; Datei und Pipe laufen bis zum Ende weiter (#345 F002).
     """
-    mirror = sys.stdout is not None
+    mirror, to_file = sys.stdout is not None, True
     for line in iter(stream.readline, b""):
-        out_file.write(line)
-        out_file.flush()
+        if to_file:  # #404 F002: Schreibfehler (Platte, BrokenPipe) leert die Pipe weiter
+            try:
+                out_file.write(line)
+                out_file.flush()
+            except OSError as exc:
+                to_file = False
+                print(f"Warnung: Artefaktdatei nicht beschreibbar ({exc}); Lauf geht weiter.",
+                      file=sys.stderr)
         if mirror:
             try:
                 sys.stdout.buffer.write(line)
@@ -517,16 +525,39 @@ def _pump(stream, out_file) -> None:
 
 
 def _kill_group(proc) -> None:
-    """Beendet die ganze Prozessgruppe des Laufs: erst SIGTERM, dann SIGKILL."""
+    """Beendet die ganze Prozessgruppe des Laufs: erst SIGTERM, dann SIGKILL.
+
+    #404 F002: nur solange der Leader nicht gereapt ist (`returncode is None`; kein
+    poll(), das reapt) — danach koennte die PID/Gruppen-ID einem fremden Prozess
+    gehoeren. Als ungereapter Zombie haelt der Leader die PGID fest, darum geht
+    SIGKILL immer noch an die Gruppe (Hintergrundkinder, die SIGTERM ignorieren).
+    """
     for sig in (signal.SIGTERM, signal.SIGKILL):
+        if proc.returncode is not None:
+            return
         try:
             os.killpg(proc.pid, sig)
         except (ProcessLookupError, PermissionError):
             pass
+        _leader_exited(proc.pid, 2)
+
+
+def _leader_exited(pid: int, timeout: float) -> bool:
+    """Wartet bis `timeout` auf das Ende des Leaders, OHNE ihn zu reapen (WNOWAIT, #404).
+
+    True = beendet (oder schon gereapt), False = laeuft noch.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
         try:
-            proc.wait(timeout=2)
-        except subprocess.TimeoutExpired:
-            pass
+            info = os.waitid(os.P_PID, pid, os.WEXITED | os.WNOWAIT | os.WNOHANG)
+        except ChildProcessError:
+            return True
+        if info is not None:
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.05)
 
 
 def run_and_capture(cmd: str, out_path, timeout: int) -> "tuple[int, bool]":
@@ -551,11 +582,9 @@ def run_and_capture(cmd: str, out_path, timeout: int) -> "tuple[int, bool]":
                                 start_new_session=True)
         reader = threading.Thread(target=_pump, args=(proc.stdout, out_file), daemon=True)
         reader.start()
-        timed_out = False
-        try:
-            proc.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            timed_out = True
+        # #404 F002: erst nach dem Gruppen-Kill reapen (proc.wait() am Ende)
+        timed_out = not _leader_exited(proc.pid, timeout)
+        if timed_out:
             _kill_group(proc)
         reader.join(timeout=5)
         if reader.is_alive():  # Hintergrundprozess haelt die Pipe offen
@@ -616,6 +645,23 @@ def _check_run_args(args: list) -> "int | None":
     return timeout
 
 
+def _names_secret_file(cmd: str) -> bool:
+    """Nennt der Testbefehl eine Secret-Datei? Muster aus secrets_guard, nicht kopiert (#404 F004).
+
+    Eingebaute Grundmuster gelten immer; jeder Pruef-Fehler zaehlt als Treffer (fail-closed).
+    """
+    try:
+        from config_loader import secrets_guard_patterns
+        from hook_utils import SECRETS_SENSITIVE_PATTERNS
+        from secrets_guard import _references_sensitive_file
+        sensitive, _always = secrets_guard_patterns()
+        patterns = list(SECRETS_SENSITIVE_PATTERNS) + [p for p in sensitive
+                                                       if p not in SECRETS_SENSITIVE_PATTERNS]
+        return _references_sensitive_file(cmd, patterns)
+    except Exception:
+        return True
+
+
 def _run_config(cli_timeout: "int | None") -> "tuple[str, int]":
     """Testbefehl und Timeout aus config.yaml (`qa_gate`), `--timeout` gewinnt."""
     from config_loader import load_config
@@ -626,6 +672,9 @@ def _run_config(cli_timeout: "int | None") -> "tuple[str, int]":
     if not isinstance(cmd, str) or not cmd.strip():
         _usage_error("Kein Testbefehl konfiguriert: qa_gate.test_command in config.yaml "
                      "setzen (z.B. \"python3 -m pytest tests/ -q\").")
+    if _names_secret_file(cmd):
+        _usage_error("qa_gate.test_command nennt eine Secret-/Credential-Datei (z.B. .env) — "
+                     "Befehl wird nicht ausgefuehrt (#404 F004). Testbefehl in config.yaml anpassen.")
     if cli_timeout is not None:
         return cmd, cli_timeout
     configured = section.get("run_timeout")
@@ -649,12 +698,42 @@ def _run_mode(cmd: str, timeout: int, wf_name: str) -> "tuple[str, str]":
     code, timed_out = run_and_capture(cmd, out_path, timeout)
     _write_stamp({"source": "run", "exit_code": code, "output_sha256": _sha256_file(out_path),
                   "output_path": str(out_path),
-                  "command_sha256": hashlib.sha256(cmd.encode()).hexdigest()})
+                  "command_sha256": hashlib.sha256(cmd.encode()).hexdigest(),
+                  "code_sha256": _code_sha256()})
     return _judge_run(code, timed_out, timeout, out_path)
 
 
+def _code_sha256() -> "str | None":
+    """Code-Stand fuer den Stempel (#404): change_set_hash des aktiven Workflows.
+
+    None ohne Git oder bei einem Fehler — die Pruefung vergleicht dann gegen den
+    aktuellen Stand und blockt bei Abweichung bzw. faellt auf mtime zurueck.
+    """
+    try:
+        from adversary_dialog import change_set_hash
+        from workflow import read_active_workflow_fast
+        found = read_active_workflow_fast()
+        return change_set_hash(found[1]) if found else None
+    except Exception as exc:
+        print(f"Warnung: code_sha256 nicht ermittelbar ({exc})", file=sys.stderr)
+        return None
+
+
 def _file_mode(args: list, wf_name: str) -> "tuple[str, str]":
-    """Bisheriger Datei-Modus; vermerkt zusaetzlich `source: "file"` (#345)."""
+    """Bisheriger Datei-Modus; vermerkt zusaetzlich `source: "file"` (#345).
+
+    #404: veraltet — Hinweis auf `--run`; bei `qa_gate.require_run: true` Abbruch (Exit 1).
+    """
+    try:
+        from workflow import qa_require_run
+        required = qa_require_run()
+    except Exception:
+        required = True  # Schalter nicht lesbar: fail-closed
+    if required:
+        _usage_error("Datei-Modus ist bei qa_gate.require_run: true abgeschaltet — "
+                     "Testlauf per `qa_gate.py --run` (Befehl aus qa_gate.test_command).")
+    print("Hinweis: Der Datei-Modus ist veraltet — besser `qa_gate.py --run` "
+          "(das Gate fuehrt qa_gate.test_command selbst aus, #404).")
     filepath = args[0]
     print(f"Validating test output: {filepath}")
     valid, message = validate_test_output(filepath, infra="--infra" in args)

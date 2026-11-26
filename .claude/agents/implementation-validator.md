@@ -51,20 +51,22 @@ python3 ${_H}/adversary_dialog.py scaffold <workflow-name> <spec-path> \
 
 ### Step 2: Run the Test Suite
 
-Execute the project's test suite:
+Execute the project's test suite through the QA gate (#404) — it runs `qa_gate.test_command`
+from `config.yaml` itself, writes `docs/artifacts/<workflow-name>/test-run-output.txt` and the
+run stamp `qa_run_stamp` (required for commit and phase 8 when `qa_gate.require_run: true`):
 
 ```bash
-# Detect and run the appropriate test framework
-# The test command should be configured in openspec.yaml under pre_commit.test_command
+python3 ${_H}/qa_gate.py --run
 ```
 
-Common test commands:
+Without a configured `qa_gate.test_command` the gate refuses; then run the suite directly and
+save the output under `docs/artifacts/<workflow-name>/`. Common test commands:
 - Python: `pytest --tb=short -q`
 - JavaScript: `npm test`
 - Go: `go test ./...`
 - Rust: `cargo test`
 
-**Save the FULL output** — the qa_gate hook will validate it.
+**Keep the FULL output** — `qa_gate.py --run` stores and validates it.
 
 **Failing tests that smell like a broken install:** never delete dependency directories (`rm -rf node_modules`, `.venv`, `vendor`). In a worktree they are often a symlink to the SHARED folder of the main repo — deleting them breaks every worktree and session. Reinstall in place instead (`npm ci` / `npm install`, `pip install --force-reinstall -r requirements.txt`, `composer install`). `bash_gate.py` blocks the deletion (#293).
 

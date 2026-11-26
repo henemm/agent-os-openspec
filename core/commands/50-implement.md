@@ -88,7 +88,7 @@ Agent(subagent_type="developer-agent", description="Implementieren", run_in_back
   Spec: [spec_file_path einfuegen]
   Betroffene Dateien: [affected_files aus workflow status]
   Test-Dateien: [test_files]
-  Test-Command: [test_command aus openspec.yaml oder CLAUDE.md]
+  Test-Command: [qa_gate.test_command aus config.yaml]
 
   Deine Aufgabe:
   1. Lies Spec vollstaendig — alle AC-N Acceptance Criteria verstehen
@@ -96,8 +96,7 @@ Agent(subagent_type="developer-agent", description="Implementieren", run_in_back
   3. Lies betroffene Dateien — aktueller Stand
   4. Schreibe minimalen Code um jeden failing Test gruen zu machen
   5. Fuehre Tests aus nach jeder wesentlichen Aenderung
-  6. Speichere finalen Test-Output:
-     [test_command] > docs/artifacts/[workflow]/test-green-output.txt 2>&1
+  6. Finaler Testlauf: python3 .claude/hooks/qa_gate.py --run
   7. Melde zurueck: Dateien geaendert, Tests gruen/rot, welche ACs erfuellt
 
   NICHT:
@@ -111,11 +110,11 @@ Agent(subagent_type="developer-agent", description="Implementieren", run_in_back
 
 ### Step 4: GREEN Artifacts registrieren
 
-Orchestrator registriert den gespeicherten Test-Output:
+Den finalen Lauf liefert `qa_gate.py --run` (#404; fehlt er, selbst starten). Orchestrator registriert den Test-Output:
 
 ```bash
 python3 .claude/hooks/workflow.py add-artifact test_output \
-    "docs/artifacts/[workflow]/test-green-output.txt" \
+    "docs/artifacts/[workflow]/test-run-output.txt" \
     "All tests PASSED" \
     phase6_implement
 ```
@@ -246,17 +245,17 @@ Ohne Stempel lehnt das Gate das Artifact ab. Aendert ein spaeterer Fix eine ziti
 #### 8d. QA-Gate mit Checklist-Validierung
 
 ```bash
-python3 .claude/hooks/qa_gate.py docs/artifacts/<workflow-name>/adversary-test-output.txt \
+python3 .claude/hooks/qa_gate.py --run \
     --checklist docs/artifacts/<workflow-name>/adversary-dialog.md \
     --screenshot docs/artifacts/<workflow-name>/adversary-screenshot.png
 
 # Fuer Infra-Tickets (ohne UI):
-python3 .claude/hooks/qa_gate.py docs/artifacts/<workflow-name>/adversary-test-output.txt \
+python3 .claude/hooks/qa_gate.py --run \
     --checklist docs/artifacts/<workflow-name>/adversary-dialog.md \
     --infra --no-visual "Infra-Ticket ohne UI"
 ```
 
-Ohne `--checklist` oeffnet `qa_gate.py` weder Commit noch Phase 8. Ausgaben immer unter `docs/artifacts/<workflow-name>/` ablegen, nie unter `/tmp`.
+`--run` fuehrt `qa_gate.test_command` aus `config.yaml` selbst aus (Ausgabe `docs/artifacts/<workflow-name>/test-run-output.txt`, Stempel `qa_run_stamp`); der Datei-Modus `qa_gate.py <datei>` ist veraltet und bei `qa_gate.require_run: true` abgeschaltet (#404). Ohne `--checklist` oeffnet `qa_gate.py` weder Commit noch Phase 8. Ausgaben immer unter `docs/artifacts/<workflow-name>/` ablegen, nie unter `/tmp`.
 
 **Verdict:** VERIFIED → Phase 7; BROKEN → zurueck zu Step 3 (neuer Fix + neuer Dialog, nach 3 Loops Eskalation an User); AMBIGUOUS → User-Review.
 

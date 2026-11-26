@@ -2,7 +2,7 @@
 
 A modular workflow enforcement system for Claude Code that ensures quality through spec-first development, TDD with real artifacts, and hook-enforced phase gating.
 
-**Version**: 4.25.5 · [Changelog](CHANGELOG.md) · [GitHub Issues](https://github.com/henemm/agent-os-openspec/issues)
+**Version**: 4.26.0 · [Changelog](CHANGELOG.md) · [GitHub Issues](https://github.com/henemm/agent-os-openspec/issues)
 
 ---
 
@@ -433,7 +433,7 @@ agent-os-openspec/
 │   │   ├── secrets_guard.py             # PreToolUse Bash + Read
 │   │   ├── secret_egress_guard.py       # PreToolUse (all tools)
 │   │   ├── workflow.py                  # Workflow State CLI
-│   │   ├── qa_gate.py                   # Test output validation
+│   │   ├── qa_gate.py                   # Test output validation; --run runs qa_gate.test_command (mandatory via qa_gate.require_run)
 │   │   ├── adversary_dialog.py          # Adversary dialog protocol
 │   │   ├── override_token.py            # Override token management
 │   │   ├── precondition_origins.py      # Standalone CLI tool (NOT a hook/gate): collects origin of test preconditions

@@ -38,7 +38,7 @@ Dispatche einen **Explore/Haiku Subagenten**:
 ```
 Agent(subagent_type="Explore", model="haiku", description="Validierungs-Kontext laden", run_in_background=true, prompt="
   Lies [spec_file] (AC-1 bis AC-N), docs/artifacts/<workflow-name>/adversary-dialog.md
-  (Verdict, Findings) und openspec.yaml (test_command).
+  (Verdict, Findings) und config.yaml (qa_gate.test_command).
   Gib zurück: spec_file_path, affected_files, test_command, Liste aller AC-N,
   adversary_verdict (VERIFIED / BROKEN / AMBIGUOUS).")
 ```
@@ -68,7 +68,7 @@ Dispatche **4 parallele Haiku-Agenten** im Vordergrund — alle vier in EINER Na
 
 ```
 Agent(subagent_type="general-purpose", model="haiku", description="TEST CHECK", run_in_background=false, prompt="
-  Fuehre ALLE Tests aus: [test_command]
+  Fuehre ALLE Tests aus: python3 .claude/hooks/qa_gate.py --run (ohne test_command: [test_command])
   Report: Anzahl passed/failed, Laufzeit, Fehlerdetails.")
 
 Agent(subagent_type="general-purpose", model="haiku", description="SPEC COMPLIANCE", run_in_background=false, prompt="
@@ -86,6 +86,8 @@ Agent(subagent_type="general-purpose", model="haiku", description="SCOPE CHECK",
   Wurden Dateien ausserhalb des Specs geaendert?
   Wurden mehr als 5 Dateien / 250 LoC geaendert?")
 ```
+
+Bei `qa_gate.require_run: true` nach jedem Auto-Fix `--run` wiederholen (#404).
 
 ### Step 2: Ergebnis-Auswertung
 

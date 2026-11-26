@@ -121,7 +121,11 @@ Kill-Switch: `config.yaml` → `adversary_coverage_gate.enabled: false`.
 
 ## 8d. QA-Gate mit Checklist-Validierung
 
-Ohne `--checklist` prueft `qa_gate.py` nur die Testausgabe — das oeffnet weder Commit noch Phase 8.
+`qa_gate.py --run` (#404) fuehrt `qa_gate.test_command` aus `config.yaml` selbst aus, schreibt
+`docs/artifacts/<workflow-name>/test-run-output.txt` und den Lauf-Stempel `qa_run_stamp`. Bei
+`qa_gate.require_run: true` verlangen Commit und Phase 8 einen gruenen, zum aktuellen Code und
+Testbefehl passenden Stempel; der Datei-Modus `qa_gate.py <datei>` ist veraltet und dann abgeschaltet.
+Ohne `--checklist` prueft `qa_gate.py` nur den Testlauf — das oeffnet weder Commit noch Phase 8.
 
 Ausgaben immer unter `docs/artifacts/<workflow-name>/` ablegen, nie unter `/tmp`: Schreibziele
 ausserhalb des Projekts blockt `secret_egress_guard` (Ausnahme: das eigene Sitzungs-Scratchpad).

@@ -196,7 +196,8 @@ phase6_implement → User-Freigabe ("go") → phase6b_adversary → Dialog → V
 - `post_bash.py` erkennt Test-Framework-Output und vermerkt ihn nur als Hinweis `last_test_run` — es setzt kein Verdict (#253)
 - `bash_gate.py` (bei `git commit`) und die Uebergaenge nach Phase 7 (`workflow.py phase phase7_validate`) und Phase 8 akzeptieren VERIFIED (bzw. AMBIGUOUS+Override) nur mit gueltigem, gestempeltem Dialog-Artefakt (`adversary_dialog.check_dialog_evidence`)
 - Abdeckungsprüfung (#259): der Hash-Block muss jede Code-Datei der Änderungsmenge binden — beim Commit der entstehende Commit (teilweise gestagt blockt), beim Wechsel nach Phase 7 und in Phase 8 alles seit `base_commit` bzw. `merge-base(origin/main, HEAD)`; `adversary_dialog.py required-files` listet sie, Kill-Switch `adversary_coverage_gate.enabled`
-- `qa_gate.py` validiert Test-Output + optional Adversary-Dialog-Checklist (`--checklist`)
+- `qa_gate.py` validiert Test-Output + optional Adversary-Dialog-Checklist (`--checklist`); `--run` führt `qa_gate.test_command` selbst aus und schreibt den Stempel `qa_run_stamp`. Schalter `qa_gate.require_run` (Standard `false`, #404): an = Commit und Phase 8 nur mit grünem, zu Code und Testbefehl passendem Stempel (`workflow.qa_run_stamp_problem`), Datei-Modus abgeschaltet
+- `post_bash.py` läuft auch unter `PostToolUseFailure` (Bash): ein roter Testlauf setzt `last_test_run` auf `failed` (#403)
 
 ### Fresh Eyes Inspector
 `fresh-eyes-inspector.md` — Unabhaengiger UI-Beobachter der Screenshots OHNE Bug-Kontext bewertet. Ergaenzt den Adversary-Dialog um eine neutrale Perspektive.

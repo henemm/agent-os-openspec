@@ -52,10 +52,18 @@ Nach jeder wesentlichen Aenderung:
 [test_command]
 ```
 
-Speichere finalen Output:
+Finaler Lauf durch das QA-Gate (#404) — es fuehrt `qa_gate.test_command` aus `config.yaml` selbst aus,
+schreibt die Ausgabe nach `docs/artifacts/[workflow]/test-run-output.txt` und den Lauf-Stempel
+`qa_run_stamp`, den Commit und Phase 8 bei `qa_gate.require_run: true` verlangen:
 ```bash
-[test_command] > docs/artifacts/[workflow]/test-green-output.txt 2>&1
+# Hook-Pfad (#462): (1) CLAUDE_PLUGIN_ROOT (2) installed_plugins.json (3) .claude/hooks — nie per find suchen
+_H="${CLAUDE_PLUGIN_ROOT:+${CLAUDE_PLUGIN_ROOT}/core/hooks}"
+if [ -z "$_H" ]; then _p="$(python3 -c 'import json,os;d=json.load(open(os.path.expanduser("~/.claude/plugins/installed_plugins.json")));print(next((e["installPath"] for k,v in d.get("plugins",{}).items() if k.startswith("agent-os-openspec@") for e in [next((x for x in v if x.get("scope")=="user"),v[0])]),""))' 2>/dev/null)"; [ -n "$_p" ] && [ -d "$_p/core/hooks" ] && _H="$_p/core/hooks"; fi
+_H="${_H:-.claude/hooks}"
+python3 ${_H}/qa_gate.py --run
 ```
+Gibt der Orchestrator den Hook-Pfad mit, gilt dieser.
+Ist kein `qa_gate.test_command` konfiguriert, meldet das Gate das; dann im Report vermerken.
 
 Schlaegt ein Lauf fehl und die Umgebung wirkt kaputt: Abhaengigkeits-Ordner (`node_modules`, `.venv`, `vendor`) **nie loeschen**. Im Worktree sind sie oft ein Symlink auf den GETEILTEN Ordner im Haupt-Repo — das Loeschen trifft alle Worktrees und Sitzungen. Stattdessen in place neu installieren (`npm ci` / `npm install`, `pip install --force-reinstall -r requirements.txt`, `composer install`). `bash_gate.py` blockt das Loeschen (#293).
 
@@ -70,7 +78,7 @@ Schlaegt ein Lauf fehl und die Umgebung wirkt kaputt: Abhaengigkeits-Ordner (`no
 ### Test-Ergebnisse
 - Bestanden: N
 - Fehlgeschlagen: 0
-- Test-Output: docs/artifacts/[workflow]/test-green-output.txt
+- Test-Output: docs/artifacts/[workflow]/test-run-output.txt (aus `qa_gate.py --run`)
 
 ### Erfuellte Acceptance Criteria
 - AC-1: [bewiesen durch Test X]

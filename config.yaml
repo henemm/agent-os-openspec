@@ -456,9 +456,14 @@ adversary_coverage_gate:
 
 # qa_gate --run (#345): fuehrt test_command selbst aus (nie von der Kommandozeile),
 # z.B. "python3 -m pytest tests/ -q"; leer = Abbruch. `--timeout <s>` > run_timeout.
+# test_command darf keine Secret-Datei nennen (.env, *.pem, ...), sonst Abbruch (#404).
+# require_run (#404): true = Commit und Phase 8 nur mit gruenem, zum aktuellen Code
+# und test_command passendem Lauf-Stempel (qa_gate.py --run); der Datei-Modus
+# `qa_gate.py <datei>` bricht dann ab. Braucht einen gesetzten test_command.
 qa_gate:
   test_command: ""
   run_timeout: 540
+  require_run: false
 
 # Aufwandsbremse je Stufe (Issue #250, Teil B)
 # Ueberschreitet ein Workflow Fix-Loops oder Phasen-Wiedereintritte seiner Stufe,

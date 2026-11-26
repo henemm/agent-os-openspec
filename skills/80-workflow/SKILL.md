@@ -280,11 +280,16 @@ Some phase transitions happen automatically:
 ## QA Gate (Adversary Validation)
 
 ```bash
-# Validate test output and set adversary verdict — needs --checklist for commit/phase 8 (#253)
-python3 ${_H}/qa_gate.py docs/artifacts/feature/test-output.txt
-python3 ${_H}/qa_gate.py docs/artifacts/feature/test-output.txt --screenshot screenshot.png
-python3 ${_H}/qa_gate.py docs/artifacts/feature/test-output.txt --infra --no-visual "pure infrastructure"
+# Run qa_gate.test_command (config.yaml), validate it and set adversary verdict —
+# needs --checklist for commit/phase 8 (#253); output: docs/artifacts/<wf>/test-run-output.txt
+python3 ${_H}/qa_gate.py --run
+python3 ${_H}/qa_gate.py --run --screenshot screenshot.png
+python3 ${_H}/qa_gate.py --run --infra --no-visual "pure infrastructure"
 ```
+
+`qa_gate.require_run: true` (#404): commit and phase 8 need a green run stamp (`qa_run_stamp`)
+matching the current code and `qa_gate.test_command`; the legacy file mode `qa_gate.py <file>`
+is then refused.
 
 ## Migration from v2
 
@@ -299,7 +304,7 @@ Beende deine letzte Nachricht in diesem Befehl mit diesen Zeilen, in dieser Reih
 
 ❗ Du: `/<befehl> #<N>` — <ein Halbsatz, warum>
 ℹ️ Status: Workflow `<name>` · Phase `<x>` von 8
-⚙ /80-workflow · agent-os-openspec 4.25.5
+⚙ /80-workflow · agent-os-openspec 4.26.0
 
 Die erste Zeile sagt, wer am Zug ist — GENAU EINMAL, nur hier in der Fußzeile, nie zusätzlich als Vokabular mitten im Fließtext davor — und steht in genau einer von drei Formen (es gibt keine vierte):
 

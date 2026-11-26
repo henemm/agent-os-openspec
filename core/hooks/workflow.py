@@ -2017,6 +2017,119 @@ def write_qa_run_stamp(stamp: dict) -> bool:
     return True
 
 
+QA_RUN_HINT = "Weg: python3 .claude/hooks/qa_gate.py --run (Testbefehl aus qa_gate.test_command)"
+
+
+def _qa_gate_section() -> dict:
+    """`qa_gate`-Abschnitt der Config; wirft bei einem Ladefehler (Aufrufer: fail-closed)."""
+    from config_loader import load_config
+    section = load_config().get("qa_gate") or {}
+    return section if isinstance(section, dict) else {}
+
+
+def qa_require_run() -> bool:
+    """Schalter `qa_gate.require_run` (#404): nur ein ausdrueckliches true schaltet ein."""
+    return _qa_gate_section().get("require_run") is True
+
+
+def qa_run_stamp_problem(data: dict) -> "str | None":
+    """EINZIGE Pruefstelle fuer `qa_run_stamp` (#404): None = passt oder Schalter aus.
+
+    Aufgerufen vom Commit-Gate (bash_gate.py) und von _validate_transition
+    (phase8_complete, damit auch `complete`). Sonst ein Klartext-Grund.
+    """
+    try:
+        section = _qa_gate_section()
+    except Exception as exc:
+        return f"qa_gate-Config nicht lesbar ({type(exc).__name__}: {exc}) — {QA_RUN_HINT}"
+    if section.get("require_run") is not True:
+        return None
+    cmd = section.get("test_command")
+    if not isinstance(cmd, str) or not cmd.strip():
+        return ("qa_gate.require_run ist an, aber kein qa_gate.test_command konfiguriert — "
+                "Testbefehl in config.yaml setzen oder qa_gate.require_run ausschalten")
+    stamp = data.get("qa_run_stamp")
+    if not isinstance(stamp, dict):
+        return f"kein qa_run_stamp — der Testlauf durch das QA-Gate fehlt. {QA_RUN_HINT}"
+    reason = _stamp_reason(stamp, cmd, data)
+    return f"qa_run_stamp ungültig — {reason}. {QA_RUN_HINT}" if reason else None
+
+
+def _stamp_reason(stamp: dict, cmd: str, data: dict) -> "str | None":
+    """Erster Befund am Stempel (Quelle, Exit-Code, Ausgabe, Testbefehl, Code-Stand)."""
+    if stamp.get("source") != "run":
+        return "Stempel stammt nicht aus `--run` (Datei-Modus zählt nicht)"
+    code = stamp.get("exit_code")
+    if type(code) is not int or code != 0:
+        return f"roter Lauf (exit_code {code!r})"
+    out_reason = _stamp_output_reason(stamp)
+    if out_reason:
+        return out_reason
+    if stamp.get("command_sha256") != _hashlib.sha256(cmd.encode()).hexdigest():
+        return "Testbefehl seit dem Lauf geändert (command_sha256 passt nicht zu qa_gate.test_command)"
+    return _stamp_code_reason(stamp, data)
+
+
+def _stamp_output_reason(stamp: dict) -> "str | None":
+    """Ausgabedatei: im Projekt, kein Symlink, Inhalt = output_sha256."""
+    from hook_utils import find_worktree_root
+    raw = stamp.get("output_path")
+    if not isinstance(raw, str) or not raw:
+        return "Ausgabedatei (output_path) fehlt im Stempel"
+    path = Path(raw)
+    root = os.path.realpath(find_worktree_root() or find_project_root())
+    real = os.path.realpath(path)
+    if not path.is_absolute() or os.path.commonpath([root, real]) != root:
+        return f"Ausgabedatei {raw} liegt außerhalb des Projekts"
+    if path.is_symlink() or not path.is_file():
+        return f"Ausgabedatei {raw} fehlt oder ist ein Symlink"
+    try:
+        digest = _hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError as exc:
+        return f"Ausgabedatei {raw} nicht lesbar ({exc})"
+    if digest != stamp.get("output_sha256"):
+        return f"Ausgabedatei {raw} nach dem Lauf verändert (output_sha256 passt nicht)"
+    return None
+
+
+def _stamp_code_reason(stamp: dict, data: dict) -> "str | None":
+    """Code-Stand: code_sha256 = change_set_hash; ohne git Stempelzeit >= neueste mtime."""
+    try:
+        import adversary_dialog as ad
+        current = ad.change_set_hash(data)
+    except Exception as exc:  # ChangeSetError & Co.: fail-closed
+        return f"Code-Stand nicht ermittelbar ({type(exc).__name__}: {exc})"
+    if current is not None:
+        if stamp.get("code_sha256") != current:
+            return "Code seit dem Lauf geändert (code_sha256 passt nicht zum aktuellen Stand)"
+        return None
+    try:
+        stamped = datetime.fromisoformat(str(stamp.get("timestamp"))).timestamp()
+    except (TypeError, ValueError):
+        return "Stempel ohne gültigen Zeitstempel (ohne git nötig für code_sha256-Ersatz)"
+    if _newest_code_mtime() > stamped:
+        return "Code seit dem Lauf geändert (ohne git: Code-Datei neuer als der Stempel, code_sha256 fehlt)"
+    return None
+
+
+def _newest_code_mtime() -> float:
+    """Neueste mtime aller Code-Dateien im Projekt (Ersatz ohne git, #404)."""
+    from config_loader import load_config
+    from hook_utils import find_worktree_root, is_gated_code_path
+    root = find_worktree_root() or find_project_root()
+    config, newest = load_config(), 0.0
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if not d.startswith(".") and d != "node_modules"]
+        for name in filenames:
+            full = os.path.join(dirpath, name)
+            if is_gated_code_path(os.path.relpath(full, root), config):
+                try:
+                    newest = max(newest, os.stat(full).st_mtime)
+                except OSError:
+                    pass
+    return newest
+
+
 def _set_active(name: str) -> None:
     """Set .active symlink and persist OPENSPEC_ACTIVE_WORKFLOW in settings.local.json.
 
@@ -3002,7 +3115,7 @@ def _validate_transition(data: dict, target: str) -> str | None:
                     return spec_err
         # #447: sonst waere das Evidence-Gate per `start --type feature-fast` umgehbar.
         if target == "phase8_complete":
-            return _evidence_reason(target, data)
+            return qa_run_stamp_problem(data) or _evidence_reason(target, data)  # #404
         return None
 
     current = data.get("current_phase", "phase0_idle")
@@ -3076,8 +3189,9 @@ def _validate_transition(data: dict, target: str) -> str | None:
             return f"Adversary verdict ohne gültigen Dialog-Nachweis — {reason}"
 
     if tgt_idx >= PHASES.index("phase8_complete"):
-        # #447: Evidence-Gate (opt-in) erst nach bestandenem Dialog-Check.
-        return _evidence_reason(target, data)
+        # #447: Evidence-Gate (opt-in) erst nach bestandenem Dialog-Check;
+        # #404: davor der Lauf-Stempel (nur bei qa_gate.require_run: true).
+        return qa_run_stamp_problem(data) or _evidence_reason(target, data)
 
     return None
 
