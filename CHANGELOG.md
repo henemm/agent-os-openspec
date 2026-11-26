@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.26.6] - 2026-11-26
+
 ### Fixed — Auto-Modus: ausgeliefertes Issue wird abgehakt und archiviert (#691)
 - `core/hooks/workflow.py`: `ship-status done|skipped` schließt einen Workflow in `phase8_complete` selbst ab (Log falls fehlend, Archiv, Abhaken im Auftrag, Ausgabe `ARCHIVED=<name>`); bereits archiviertes Ziel wird nur abgehakt. Aktiv-Zeiger nur gelöscht, wenn das Ziel der aktive Workflow ist. Fehler im Abschluss ändern weder Ausgabe noch Exit-Code. `complete` nutzt denselben Helfer `_finalize_archive`, Verhalten unverändert. `approvals [--auto] [<nr|name>]` liest danach das Archiv (ohne Ziel: jüngster ausgelieferte Workflow), damit /60-validate die automatischen Freigaben weiter meldet.
 - `core/commands/60-validate.md` Step 4: Hinweis, dass nach `ship-status done` kein `finish` nötig ist.
