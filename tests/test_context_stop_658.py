@@ -166,7 +166,7 @@ def _post_bash_note(root: Path, env: dict, tokens: int = 122_040) -> str:
 
 def test_auto_without_herdr_stop_off_with_reason(tmp_path):
     expected = ["CONTEXT_TOKENS=150000", "CONTEXT_CUT=on", "CONTEXT_THRESHOLD=100000",
-                "CONTEXT_REASON=AUTO_NO_CLEAR", "CONTEXT_STOP=off"]
+                "CONTEXT_REASON=AUTO_NO_CLEAR", "CONTEXT_HANDOFF=off", "CONTEXT_STOP=off"]
     cases = {
         # Cloud: Env-Schalter auto, kein Herdr
         "env-auto": ("", dict(autonomy="auto")),
@@ -180,15 +180,21 @@ def test_auto_without_herdr_stop_off_with_reason(tmp_path):
     for label, (config, kw) in cases.items():
         root = _project(tmp_path / label, config)
         _write_usage(root, OVER)
-        lines = _context(root, _env(root, **kw))
-        assert lines == expected, (label, lines)
+        env = _env(root, **kw)
+        # #696: mit Herdr-Pane und `claude` im PATH meldet context CONTEXT_HANDOFF=on
+        handoff = ("on" if kw.get("herdr") and shutil.which("claude", path=env.get("PATH"))
+                   and env.get("CLAUDE_CODE_REMOTE", "").lower() != "true" else "off")
+        want = [f"CONTEXT_HANDOFF={handoff}" if l.startswith("CONTEXT_HANDOFF=") else l
+                for l in expected]
+        lines = _context(root, env)
+        assert lines == want, (label, lines)
 
 
 # --- AC-3: Modus manual -> STOP on (mit oder ohne Herdr) --------------------------
 
 def test_manual_mode_stop_on(tmp_path):
     expected = ["CONTEXT_TOKENS=150000", "CONTEXT_CUT=on", "CONTEXT_THRESHOLD=100000",
-                "CONTEXT_STOP=on"]
+                "CONTEXT_HANDOFF=off", "CONTEXT_STOP=on"]
     cases = {
         "no-env": ("", dict()),                                  # nichts gesetzt = manual
         "env-manual": ("", dict(autonomy="manual")),
@@ -217,13 +223,15 @@ def test_below_threshold_cut_and_stop_off(tmp_path):
         _write_usage(root, UNDER)
         lines = _context(root, _env(root, **kw))
         assert lines == ["CONTEXT_TOKENS=50000", "CONTEXT_CUT=off",
-                         "CONTEXT_THRESHOLD=100000", "CONTEXT_STOP=off"], (label, lines)
+                         "CONTEXT_THRESHOLD=100000", "CONTEXT_HANDOFF=off",
+                         "CONTEXT_STOP=off"], (label, lines)
 
         # ohne jede Messung: unknown, ebenfalls off
         bare = _project(tmp_path / f"{label}-unknown", config)
         lines = _context(bare, _env(bare, **kw))
         assert lines == ["CONTEXT_TOKENS=unknown", "CONTEXT_CUT=off",
-                         "CONTEXT_THRESHOLD=100000", "CONTEXT_STOP=off"], (label, lines)
+                         "CONTEXT_THRESHOLD=100000", "CONTEXT_HANDOFF=off",
+                         "CONTEXT_STOP=off"], (label, lines)
 
 
 # --- AC-5: autarker Auftrag -> CUT off + AUTARK, STOP off --------------------------
@@ -240,7 +248,8 @@ def test_autark_stop_off(tmp_path):
         # ohne Sitzungskennung: Auftrag liegt besitzerlos in .claude/auftrag.json
         lines = _context(root, _env(root, session=None, **kw))
         assert lines == ["CONTEXT_TOKENS=150000", "CONTEXT_CUT=off",
-                         "CONTEXT_REASON=AUTARK", "CONTEXT_STOP=off"], (label, lines)
+                         "CONTEXT_REASON=AUTARK", "CONTEXT_HANDOFF=off",
+                         "CONTEXT_STOP=off"], (label, lines)
 
 
 # --- AC-6: Fehler im Entscheidungs-Helfer -> STOP folgt CUT ------------------------

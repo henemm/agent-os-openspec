@@ -607,7 +607,8 @@ def test_autark_keeps_chain_going(tmp_path):
     assert "CONTEXT_TOKENS=122040" in lines, lines
     assert "CONTEXT_CUT=off" in lines, lines
     assert "CONTEXT_REASON=AUTARK" in lines, lines
-    assert "CONTEXT_CUT=on" not in lines and len(lines) == 4, lines
+    assert "CONTEXT_CUT=on" not in lines and len(lines) == 5, lines  # + CONTEXT_HANDOFF (#696)
+    assert lines[-2] == "CONTEXT_HANDOFF=off", lines
     assert lines[-1] == "CONTEXT_STOP=off", lines  # #658
 
     # autoclear im Herdr-Pane mit Auto-/clear: off, kein Grenz-Vermerk
@@ -640,7 +641,8 @@ def test_without_autark_queue_behaviour_unchanged(tmp_path):
         assert "beende den Turn" in hint, (label, hint)
         lines = _context_lines(root)
         assert lines == ["CONTEXT_TOKENS=122040", "CONTEXT_CUT=on",
-                         "CONTEXT_THRESHOLD=100000", "CONTEXT_STOP=on"], (label, lines)
+                         "CONTEXT_THRESHOLD=100000", "CONTEXT_HANDOFF=off",
+                         "CONTEXT_STOP=on"], (label, lines)
 
         proj, env = _autoclear_case(tmp_path / f"ac-{label}")
         if auftrag is not None:
@@ -767,7 +769,8 @@ def test_kill_switch_disables_everything(tmp_path):
     hint = _post_bash_note(root)
     assert "beende den Turn" in hint, hint
     assert _context_lines(root) == ["CONTEXT_TOKENS=122040", "CONTEXT_CUT=on",
-                                    "CONTEXT_THRESHOLD=100000", "CONTEXT_STOP=on"]
+                                    "CONTEXT_THRESHOLD=100000", "CONTEXT_HANDOFF=off",
+                                    "CONTEXT_STOP=on"]
 
     # autoclear: wie ohne Auftrag (#662: stillgelegt, also off)
     proj, env = _autoclear_case(tmp_path / "ac", extra_config=KILL_CFG)

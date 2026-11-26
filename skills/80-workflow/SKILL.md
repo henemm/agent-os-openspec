@@ -97,6 +97,7 @@ Ausgabe `QUEUE=`, `AUTARK=`, `NEXT=` und bei offenem Auftrag `PROMPT=/00-intake 
 $WF handoff                 # Weg + Startauftrag
 $WF handoff --start         # Herdr: neue Sitzung im neuen Tab
 $WF handoff --mark cloud    # Start vermerken (nach create_session)
+$WF handoff --same --start  # #696: derselbe Workflow, frisch
 ```
 Ausgabe `HANDOFF=cloud|herdr|inline|none`, `NEXT=`, Startauftrag zwischen `PROMPT_BEGIN`/`PROMPT_END`.
 `--start` meldet `STARTED=yes|no|already`. Ist für `NEXT` schon ein Start vermerkt, folgt
@@ -110,7 +111,7 @@ Letzte Nachricht endet so (Gründe: `docs/befehle/fusszeile.md`):
 
 ❗ Du: `/<befehl> #<N>` — <ein Halbsatz, warum>
 ℹ️ Status: Workflow `<name>` · Phase `<x>` von 8
-⚙ /80-workflow · agent-os-openspec 4.27.0
+⚙ /80-workflow · agent-os-openspec 4.28.0
 
 Erste Zeile genau einmal, in einer Form: `✅ Erledigt: <was>. …` (abgeschlossen), `⏳ Läuft noch: <worauf gewartet wird>. …` (vorher `workflow.py waiting "…"`, danach `--clear`) oder `❗ Du: …` (PO ist dran, auch wenn du nur auf ihn wartest; dringend `‼️`). Genaue Zeile: `workflow.py endstate`.
 

@@ -132,7 +132,9 @@ Erst sichern, dann ist `/clear` gefahrlos.
 
 ---
 
-Vor dem Selbstaufruf zusätzlich `$WF context` ausführen (Kontext-Haushalt): Bei `CONTEXT_STOP=on` (Kontext über der wirksamen Schwelle `CONTEXT_THRESHOLD` aus `context_budget`: Grundkontext der Sitzung + `growth_tokens`, mindestens `clear_threshold_tokens`, Default 100.000 Token, nur im Modus manual) den Skill `50-implement` NICHT selbst aufrufen, sondern die Antwort mit dem Checkpoint und der ❗Du-Zeile `/50-implement #<N>` beenden — der Stand liegt auf der Platte, der PO tippt `/clear`. Bei `CONTEXT_STOP=off` oder `CONTEXT_TOKENS=unknown`: Kette unverändert selbst fortsetzen (#658).
+Vor dem Selbstaufruf zusätzlich `$WF context` ausführen (Kontext-Haushalt): Bei `CONTEXT_STOP=on` (über `CONTEXT_THRESHOLD`, Default 100.000 Token, nur Modus manual; Herleitung: docs/befehle/10-context.md) den Skill `50-implement` NICHT selbst aufrufen, sondern die Antwort mit dem Checkpoint und der ❗Du-Zeile `/50-implement #<N>` beenden — der Stand liegt auf der Platte, der PO tippt `/clear`. Bei `CONTEXT_STOP=off` oder `CONTEXT_TOKENS=unknown`: Kette unverändert selbst fortsetzen (#658).
+
+`CONTEXT_HANDOFF=on` (#696): `workflow.py handoff --same --start`; `STARTED=yes`/`already`: `50-implement` nicht aufrufen, Turn mit Checkpoint und ⏳-Zeile sofort beenden; `STARTED=no`: weiter.
 
 Ohne `/clear`: Rufe den Skill `50-implement` jetzt sofort selbst auf, ohne auf den User zu warten (gilt in jedem Autonomie-Modus, #472).
 Mit `/clear`: Wiedereinstieg über `/50-implement #<N>`.
@@ -148,7 +150,7 @@ Letzte Nachricht endet so (Gründe: `docs/befehle/fusszeile.md`):
 
 ❗ Du: `/<befehl> #<N>` — <ein Halbsatz, warum>
 ℹ️ Status: Workflow `<name>` · Phase `<x>` von 8
-⚙ /40-tdd-red · agent-os-openspec 4.27.0
+⚙ /40-tdd-red · agent-os-openspec 4.28.0
 
 Erste Zeile genau einmal, in einer Form: `✅ Erledigt: <was>. …` (abgeschlossen), `⏳ Läuft noch: <worauf gewartet wird>. …` (vorher `workflow.py waiting "…"`, danach `--clear`) oder `❗ Du: …` (PO ist dran, auch wenn du nur auf ihn wartest; dringend `‼️`). Genaue Zeile: `workflow.py endstate`.
 

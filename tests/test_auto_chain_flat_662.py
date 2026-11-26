@@ -432,8 +432,10 @@ def _ctx_lines(root: Path, env: dict) -> "list[str]":
 
 
 def test_context_auto_with_herdr_stop_off(tmp_path):
+    # #696: CONTEXT_HANDOFF=on nur, wenn `claude` im PATH liegt (Herdr-Pane, auto, eigene Messung)
+    handoff = "on" if shutil.which("claude", path=_clean_env().get("PATH")) else "off"
     expected = ["CONTEXT_TOKENS=150000", "CONTEXT_CUT=on", "CONTEXT_THRESHOLD=100000",
-                "CONTEXT_REASON=AUTO_NO_CLEAR", "CONTEXT_STOP=off"]
+                "CONTEXT_REASON=AUTO_NO_CLEAR", f"CONTEXT_HANDOFF={handoff}", "CONTEXT_STOP=off"]
     cases = {
         "env-auto-cfg-clear": (CLEAR_CFG, dict(autonomy="auto", switch=None)),
         "env-auto-env-clear": (HERDR_ONLY_CFG, dict(autonomy="auto", switch="1")),
@@ -453,7 +455,7 @@ def test_context_auto_with_herdr_stop_off(tmp_path):
 
 def test_context_manual_stop_on(tmp_path):
     expected = ["CONTEXT_TOKENS=150000", "CONTEXT_CUT=on", "CONTEXT_THRESHOLD=100000",
-                "CONTEXT_STOP=on"]
+                "CONTEXT_HANDOFF=off", "CONTEXT_STOP=on"]
     cases = {
         "manual-herdr-cfg-clear": (CLEAR_CFG, dict(autonomy="manual", herdr=True,
                                                    switch=None)),
