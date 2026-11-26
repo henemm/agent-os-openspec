@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Zielordner-Flag in allen Schreibweisen erkannt (#653)
+- `core/hooks/bash_gate.py`: neuer GNU-getopt-Zerleger `_target_dir_split` für `cp`, `mv`, `ln`, `install` erkennt den Zielordner in jeder Schreibweise: Kurzflag-Gruppen (`-vt D`, `-sft D`, `-Dt D`), angehängter Wert (`-tD`), `--target-directory` samt Abkürzungen ab `--t` (mit `=` oder Folgetoken), Permutation (Flag hinter den Quellen), `--` und mehrere Zielordner. Werte anderer Wertoptionen (`-S`, `--suffix`, `-m`/`-o`/`-g` bei `install` u. a.) zählen nicht als Ziel. Prüfungen 1b (Gate-Config) und 1c (Haupt-Ordner) blocken damit auch `cp -vt H x`, `cp --target-dir=H x`, `ln -sft H x`, `install -Dt H x`, `mv -tH x`.
+- `_copy_targets` und `_CONFIG_WRITERS` bleiben unverändert (Beweis-Sperre #448/#453); die zusätzlichen Ziele `DIR/<basename>` ergänzt `_config_write_targets`. `_into_dir_targets` und `_dir_removal_targets` (mv) bestimmen den Zielordner-Modus über denselben Zerleger. `_cp_target_dir` (#453) unverändert.
+- Known Limitations: abgekürzte Lang-Wertoptionen außer `--target-directory` (etwa `--suf`) gelten als wertlos (höchstens Fehlalarm); `POSIXLY_CORRECT` und BSD-Optionssätze werden nicht berücksichtigt; kein Sandbox-Ersatz (#416).
+
 ## [4.26.4] - 2026-11-26
 
 ### Fixed — Wackelige Tests: Herdr-Stub-Log und Laufzeitgrenze des Erwähnungs-Wächters (#671, #683)
