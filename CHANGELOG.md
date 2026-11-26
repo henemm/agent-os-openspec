@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.25.5] - 2026-11-26
+
+### Changed — Befehlstexte verschlankt, Schnitt 1: 50-implement und 60-validate (#674)
+- `core/commands/50-implement.md` 21 324 → 14 855 Bytes, `core/commands/60-validate.md` 27 481 → 20 139 Bytes; geladener Skill-Text 24 896 → 18 487 bzw. 30 938 → 23 596 Bytes (zusammen ≈ −3 800 Token je Durchlauf beider Phasen).
+- Begründungen, Historie und Sonderfälle wörtlich nach `docs/befehle/50-implement.md` und `docs/befehle/60-validate.md`; Ablauf, Pflichtschritte, Agent-Aufrufe und Ausgabe-Vorlagen bleiben im Befehl. Kein Gate-Verhalten geändert.
+- Größenwächter `tests/test_commands_slim_674.py`: Budget je Befehlstext (übrige Befehle auf heutige Größe gedeckelt). Weitere Schnitte: #677, #678 (Gesamtziel −40 %), #679 (Marker-Block, Hook-Hinweise).
+
 ## [4.25.4] - 2026-11-25
 
 ### Fixed — `workflow.py context` misst frische Sitzungen selbst (#675)
