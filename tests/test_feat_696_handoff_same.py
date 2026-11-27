@@ -589,7 +589,9 @@ def test_docs_changelog_and_version_consistent():
     assert "#696" in m.group(1), m.group(1)
 
     plugin = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text())
-    assert plugin.get("version") == "4.28.0", plugin.get("version")
+    # Seit 4.28.1 (#700) nicht mehr auf 4.28.0 festgenagelt: Versionen stimmen ueberein.
+    version = plugin.get("version")
+    assert version and tuple(map(int, version.split("."))) >= (4, 28, 0), version
     for name in ("CLAUDE.md", "README.md"):
         text = (REPO_ROOT / name).read_text(encoding="utf-8")
-        assert re.search(r"\*\*Version\*\*: 4\.28\.0\b", text), name
+        assert re.search(r"\*\*Version\*\*: " + re.escape(version) + r"\b", text), name
