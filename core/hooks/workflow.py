@@ -2494,6 +2494,7 @@ def record_transition(data: dict, target: str, trigger: str = "command") -> list
     })
     _log_phase_transition(data, target)
     data.pop("waiting_on", None)  # #550: kein veralteter Wartezustand nach dem Wechsel
+    data.pop("handoff_same", None)  # #700: Doppelstart-Vermerk gilt nur bis zum naechsten Wechsel
     if target in PHASES and PHASES.index(target) >= PHASES.index("phase4_approved"):
         # #647: Freigabe auf jedem Weg (cmd_phase, phase_listener, Auto) beendet die
         # Nacharbeit; ein Ruecksprung setzt das Flag vorher und zielt unter phase4.
@@ -4459,6 +4460,7 @@ def cmd_complete(args: list[str]) -> None:
         sys.exit(1)
     data["current_phase"] = "phase8_complete"
     data.pop("waiting_on", None)  # #550: Phasenwechsel leert den Wartezustand
+    data.pop("handoff_same", None)  # #700: Doppelstart-Vermerk gilt nur bis zum naechsten Wechsel
     _mark_ship_open(data)  # #612
     try:  # #250 B: Messung blockiert den Abschluss nie
         final = _final_loc(data)
@@ -6105,6 +6107,7 @@ def _handoff_same_start(name: str, data: dict, nxt: str, prompt: str) -> "tuple[
     Gleicher Vermerk `handoff_same` (Phase + NEXT) -> already ohne Start. Sonst
     Worktree-Wurzel als cwd, `herdr_bridge.start_session`; nur bei Erfolg Vermerk
     `handoff_same` und `waiting_on` (Endzustand ⏳) in den Workflow-State schreiben.
+    Der Vermerk wird bei jedem Phasenwechsel und bei `complete` verworfen (#700).
     """
     from datetime import timezone
     import herdr_bridge

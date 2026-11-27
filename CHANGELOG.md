@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.28.1] - 2026-11-27
+
+### Fixed — Übergabe an frische Sitzung nach Rücksprung (#700)
+- Die Übergabe an eine frische Sitzung (`handoff --same --start`, #696) bleibt nach einem Rücksprung in dieselbe Phase (etwa nach einem BROKEN-Urteil) nicht mehr hängen. Bisher meldete sie `STARTED=already`, obwohl keine Nachfolgerin lief, und der Workflow stand still.
+- `core/hooks/workflow.py`: `record_transition` und `cmd_complete` verwerfen den Doppelstart-Vermerk `handoff_same` wie schon `waiting_on` (#550). Innerhalb einer Phase ohne Wechsel bleibt der Schutz gegen Doppelstart bestehen. Tests: `tests/test_fix_700_handoff_same_reset.py`.
+
 ## [4.28.0] - 2026-11-26
 
 ### Added — Frische Sitzung am Phasenwechsel innerhalb eines Issues (#696)
