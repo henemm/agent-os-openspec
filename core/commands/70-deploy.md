@@ -16,6 +16,11 @@ python3 .claude/hooks/workflow.py status
 
 **Fasse dem User in 2 Sätzen zusammen, wo der Workflow steht**; vor `phase8_complete` erst den offenen Pflicht-Schritt nennen.
 
+## Step 0: Selbstaufruf nur bei deploy.autonomous (#707)
+
+Selbst aufgerufen (nicht vom PO getippt)? `python3 .claude/hooks/workflow.py deploy-config`: nur bei
+`autonomous: true` weiter, sonst STOP mit ❗ Du: `/70-deploy #N` (sperrt auch `skill_gate`).
+
 ## Step 1: Vorabprüfungen
 
 ```bash

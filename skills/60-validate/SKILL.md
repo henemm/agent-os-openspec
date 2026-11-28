@@ -128,8 +128,8 @@ Test Results, Spec Compliance / Regression / Scope, Result PASS / FAIL (Vorlage 
 ### Autonomen Weiterlauf prüfen (PFLICHT, vor der Ausgabe)
 
 Gibt es `/70-deploy` UND `deploy.autonomous: true` (`$WF deploy-config`) oder
-dokumentiert das Projekt (`CLAUDE.md`, `70-deploy.md`) Deploy **ohne Freigabe-Halt autonom**? Dann bindend: committen
-und `/70-deploy` **im selben Turn selbst aufrufen**, Ergebnis der Kette melden. Sonst fragen (Standard unten).
+dokumentiert das Projekt Deploy **ohne Freigabe-Halt autonom**? Dann bindend: committen, Skill `70-deploy` mit `#<N>`
+**im selben Turn selbst aufrufen**, Kette melden; bei Hook-Sperre: ❗ Du: `/70-deploy #<N>`. Sonst fragen.
 
 ### Beobachtbare Oberfläche prüfen (PFLICHT, vor der Ausgabe)
 
@@ -323,7 +323,7 @@ Letzte Nachricht endet so (Gründe: `docs/befehle/fusszeile.md`):
 
 ❗ Du: `/<befehl> #<N>` — <ein Halbsatz, warum>
 ℹ️ Status: Workflow `<name>` · Phase `<x>` von 8
-⚙ /60-validate · agent-os-openspec 4.28.1
+⚙ /60-validate · agent-os-openspec 4.29.0
 
 Erste Zeile genau einmal, in einer Form: `✅ Erledigt: <was>. …` (abgeschlossen), `⏳ Läuft noch: <worauf gewartet wird>. …` (vorher `workflow.py waiting "…"`, danach `--clear`) oder `❗ Du: …` (PO ist dran, auch wenn du nur auf ihn wartest; dringend `‼️`). Genaue Zeile: `workflow.py endstate`.
 

@@ -10,6 +10,16 @@ festgelegt hat**. Das Framework kennt deine Plattform nicht und rät sie nicht.
 > Der Ablauf steht in der Projekt-Config unter `deploy:` (`command`, `verify`, `rollback`).
 > Fehlt er, führt dieser Befehl **nichts** aus, sondern fragt ihn einmal ab (Step 2).
 
+## Selbstaufruf bei `deploy.autonomous` (#707)
+
+Der Skill trägt `disable-model-invocation: false`: Mit `deploy.autonomous: true` ruft Claude
+`/70-deploy #N` nach `/60-validate` selbst über das Skill-Tool auf. Ohne diesen Schalter blockt
+`core/hooks/skill_gate.py` (PreToolUse, Matcher `Skill`) den Aufruf, fail-closed; Step 0 ist der
+Text-Rückfall, falls der Hook nicht registriert ist. Der vom PO getippte `/70-deploy` läuft nicht
+über das Skill-Tool (Alias bleibt Vollkopie, `alias_sync.FULL_COPY_SKILLS`). In einer
+Worktree-Sitzung gilt für den Schalter der gemergte Stand (`origin/HEAD`), sofern die Config im
+Haupt-Ordner lokal unverändert ist; sonst der Haupt-Ordner (#153).
+
 ## Wiedereinstieg via Issue-Nummer (nach `/clear`)
 
 Der komplette State überlebt jeden `/clear` und jeden Worktree.

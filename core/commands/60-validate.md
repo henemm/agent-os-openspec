@@ -112,8 +112,8 @@ Test Results, Spec Compliance / Regression / Scope, Result PASS / FAIL (Vorlage 
 ### Autonomen Weiterlauf prüfen (PFLICHT, vor der Ausgabe)
 
 Gibt es `/70-deploy` UND `deploy.autonomous: true` (`python3 .claude/hooks/workflow.py deploy-config`) oder
-dokumentiert das Projekt (`CLAUDE.md`, `70-deploy.md`) Deploy **ohne Freigabe-Halt autonom**? Dann bindend: committen
-und `/70-deploy` **im selben Turn selbst aufrufen**, Ergebnis der Kette melden. Sonst fragen (Standard unten).
+dokumentiert das Projekt Deploy **ohne Freigabe-Halt autonom**? Dann bindend: committen, Skill `70-deploy` mit `#<N>`
+**im selben Turn selbst aufrufen**, Kette melden; bei Hook-Sperre: ❗ Du: `/70-deploy #<N>`. Sonst fragen.
 
 ### Beobachtbare Oberfläche prüfen (PFLICHT, vor der Ausgabe)
 

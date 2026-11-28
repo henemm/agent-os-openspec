@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.29.0] - 2026-11-28
+
+### Added — Claude darf bei `deploy.autonomous` selbst deployen (#707)
+- Mit `deploy.autonomous: true` ruft Claude nach `/60-validate` den Skill `70-deploy` selbst auf; der Workflow endet mit „✅ … fertig und deployt“. Ohne `autonomous` bleibt das Deploy beim PO, technisch erzwungen.
+- `skills/70-deploy/SKILL.md`: `disable-model-invocation: false`; neuer Hook `core/hooks/skill_gate.py` (PreToolUse, Matcher `Skill`) sperrt Claudes eigenen Aufruf von `70-deploy` (auch `agent-os-openspec:70-deploy`), solange `deploy.autonomous` nicht `true` ist (fail-closed). Der vom PO getippte `/70-deploy` läuft nicht über das Skill-Tool; der Alias bleibt Vollkopie (`alias_sync.FULL_COPY_SKILLS`). Registriert in `hooks/hooks.json` und im Cloud-Hookblock.
+- `70-deploy` Step 0 und `60-validate` „Autonomen Weiterlauf prüfen“ beschreiben Selbstaufruf und Rückfall (❗ Du: `/70-deploy #N`).
+
+### Fixed — `deploy.autonomous` wirkt in Worktree-Sitzungen nach dem Merge (#707)
+- `workflow.deploy_autonomous()` liest in einer Worktree-Sitzung den gemergten Stand (`refs/remotes/origin/HEAD`), solange die Config im Haupt-Ordner lokal unverändert ist; sonst wie bisher den Haupt-Ordner. Ein Zweig kann sich so nichts selbst erlauben (#153). Tests: `tests/test_deploy_selbst_707.py`.
+
 ## [4.28.1] - 2026-11-27
 
 ### Fixed — Übergabe an frische Sitzung nach Rücksprung (#700)

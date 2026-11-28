@@ -134,7 +134,7 @@ $WF auto-approve
 Meine Einschätzung: [nur bei Widerspruch zu einer Anmerkung — sonst weglassen]
 
 ❗ Du: `approved` — Freigabe der Spec, danach beginnt die Umsetzung
-⚙ PO-Briefing unabhängig erstellt · agent-os-openspec 4.28.1
+⚙ PO-Briefing unabhängig erstellt · agent-os-openspec 4.29.0
 
 ---
 

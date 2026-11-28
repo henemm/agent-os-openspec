@@ -100,6 +100,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != \"true\" ] || CLAUDE_PLUGIN_ROOT=\"${CLAUDE_PROJECT_DIR}\" python3 \"${CLAUDE_PROJECT_DIR}/core/hooks/skill_gate.py\"",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "PostToolUse": [

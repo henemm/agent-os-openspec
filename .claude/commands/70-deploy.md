@@ -1,6 +1,6 @@
 ---
 description: "Deploy to production"
-disable-model-invocation: true
+disable-model-invocation: false
 ---
 <!-- openspec-alias: do-not-treat-as-legacy-duplicate -->
 
@@ -32,6 +32,11 @@ $WF status
 ```
 
 **Fasse dem User in 2 Sätzen zusammen, wo der Workflow steht**; vor `phase8_complete` erst den offenen Pflicht-Schritt nennen.
+
+## Step 0: Selbstaufruf nur bei deploy.autonomous (#707)
+
+Selbst aufgerufen (nicht vom PO getippt)? `$WF deploy-config`: nur bei
+`autonomous: true` weiter, sonst STOP mit ❗ Du: `/70-deploy #N` (sperrt auch `skill_gate`).
 
 ## Step 1: Vorabprüfungen
 
@@ -105,7 +110,7 @@ Letzte Nachricht endet so (Gründe: `docs/befehle/fusszeile.md`):
 
 ❗ Du: `/<befehl> #<N>` — <ein Halbsatz, warum>
 ℹ️ Status: Workflow `<name>` · Phase `<x>` von 8
-⚙ /70-deploy · agent-os-openspec 4.28.1
+⚙ /70-deploy · agent-os-openspec 4.29.0
 
 Erste Zeile genau einmal, in einer Form: `✅ Erledigt: <was>. …` (abgeschlossen), `⏳ Läuft noch: <worauf gewartet wird>. …` (vorher `workflow.py waiting "…"`, danach `--clear`) oder `❗ Du: …` (PO ist dran, auch wenn du nur auf ihn wartest; dringend `‼️`). Genaue Zeile: `workflow.py endstate`.
 

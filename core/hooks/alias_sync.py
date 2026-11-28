@@ -40,9 +40,24 @@ def skill_names(skills_dir: Path) -> "list[str]":
     )
 
 
+# Skills, deren Alias immer Vollkopie bleibt, obwohl Claude sie aufrufen darf
+# (#707): der vom PO getippte `/70-deploy` darf nie ueber das Skill-Tool laufen,
+# sonst sperrte ihn skill_gate.py ohne `deploy.autonomous: true`.
+FULL_COPY_SKILLS = frozenset({"70-deploy"})
+# Name aus der von sync_skills.py erzeugten Zeile "⚙ /<name> · agent-os-openspec X"
+_NAME_MARKER_RE = re.compile(r"^⚙ /([\w-]+) · agent-os-openspec\b", re.MULTILINE)
+
+
 def embeds_full_skill(skill_text: str) -> bool:
-    """True, wenn der Alias den vollen Skill-Inhalt einbetten muss."""
-    return "disable-model-invocation: true" in skill_text
+    """True, wenn der Alias den vollen Skill-Inhalt einbetten muss.
+
+    Das gilt fuer `disable-model-invocation: true` (ein Text-Redirect scheitert
+    dort am Skill-Tool-Gate) und fuer FULL_COPY_SKILLS (#707), erkannt am
+    generierten Versions-Marker.
+    """
+    if "disable-model-invocation: true" in skill_text:
+        return True
+    return any(m in FULL_COPY_SKILLS for m in _NAME_MARKER_RE.findall(skill_text))
 
 
 def _frontmatter_close(lines: "list[str]") -> "int | None":
