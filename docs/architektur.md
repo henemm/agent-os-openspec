@@ -22,6 +22,7 @@ agent-os-openspec/
 │   │   ├── edit_verify.py               # PostToolUse Edit|Write: prueft ob Aenderung wirklich auf Disk landete
 │   │   ├── secrets_guard.py             # PreToolUse Bash+Read: blockt Zugriff auf .env/Credentials/Keys
 │   │   ├── mention_guard.py             # PreToolUse Bash: blockt nackte `@name` in gh-Texten (aus: OPENSPEC_MENTION_GUARD=0)
+│   │   ├── skill_gate.py                # PreToolUse Skill: /70-deploy nur bei deploy.autonomous (#707)
 │   │   ├── workflow.py                  # Workflow State CLI (isolierte JSON-Files)
 │   │   ├── qa_gate.py                   # QA-Gate: Test-Output validieren oder per --run konfigurierten Testbefehl selbst ausfuehren, Verdict setzen
 │   │   ├── adversary_dialog.py          # Adversary-Dialog: Spec-Checkliste, Tri-State-Verdict
@@ -282,6 +283,8 @@ Registrierung zentral in `hooks/hooks.json` (Plugin-Modus) bzw. `.claude/setting
 
 **PreToolUse Read:** `secrets_guard.py`
 
+**PreToolUse Skill:** `skill_gate.py` — sperrt den Skill `70-deploy` ohne `deploy.autonomous: true` (fail-closed, #707); alle anderen Skills gehen durch.
+
 **PostToolUse Bash:** `post_bash.py` → [module hooks]
   Intern: Test-Output-Detection → `last_test_run` (Hinweis, kein Verdict)
 
@@ -413,6 +416,7 @@ python3 /path/to/agent-os-openspec/setup.py --version
 | `core/hooks/edit_verify.py` | PostToolUse Edit/Write: prueft Edit tatsaechlich auf Disk gelandet |
 | `core/hooks/secrets_guard.py` | PreToolUse Bash+Read: blockt Zugriff auf .env/Credentials/Keys |
 | `core/hooks/secret_egress_guard.py` | PreToolUse (alle Tools): blockt ausgeschriebene .env-WERTE im Tool-Input; bei Bash zusaetzlich Umleitungsziele ausserhalb der Sicherheitszone (Projekt, `extra_allowed_write_dirs`, eigenes Sitzungs-Scratchpad) |
+| `core/hooks/skill_gate.py` | PreToolUse Skill: blockt Claudes Selbstaufruf von `70-deploy` ohne `deploy.autonomous: true` (#707) |
 | `core/hooks/workflow.py` | Workflow State CLI (isolierte JSON-Files pro Workflow) |
 | `core/hooks/qa_gate.py` | QA-Gate: Test-Output validieren oder per `--run` den konfigurierten Testbefehl (`qa_gate.test_command`) selbst ausfuehren, Verdict setzen |
 | `core/hooks/override_token.py` | Shared Override-Token Management (TTL, Multi-WF) |

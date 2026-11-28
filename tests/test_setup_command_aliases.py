@@ -42,8 +42,9 @@ def _full_copy(skill_text: str) -> str:
 
 
 def _is_model_invocable(name: str) -> bool:
+    """Redirect-Alias statt Vollkopie; 70-deploy bleibt trotz Flag false Vollkopie (#707)."""
     skill_text = (setup.FRAMEWORK_ROOT / "skills" / name / "SKILL.md").read_text()
-    return "disable-model-invocation: true" not in skill_text
+    return not setup.embeds_full_skill(skill_text)
 
 
 def test_generates_alias_file_per_skill_with_marker_and_redirect(tmp_path):

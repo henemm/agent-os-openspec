@@ -157,6 +157,8 @@ def test_changelog_and_version_consistent():
     assert "#700" in m.group(1), m.group(1)
 
     plugin = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text())
-    assert plugin.get("version") == "4.28.1", plugin.get("version")
+    # Seit 4.29.0 (#707) nicht mehr auf 4.28.1 festgenagelt: Versionen stimmen ueberein.
+    version = plugin.get("version")
+    assert version and tuple(map(int, version.split("."))) >= (4, 28, 1), version
     claude_md = (REPO_ROOT / "CLAUDE.md").read_text(encoding="utf-8")
-    assert "**Version**: 4.28.1" in claude_md, "CLAUDE.md-Versionszeile nicht 4.28.1"
+    assert "**Version**: " + version in claude_md, "CLAUDE.md-Versionszeile weicht von plugin.json ab"

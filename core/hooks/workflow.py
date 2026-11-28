@@ -4901,11 +4901,67 @@ def _status_target(ref: "str | None") -> "tuple[Path, dict, str]":
 
 
 def deploy_autonomous() -> bool:
-    """`deploy.autonomous: true` in der Projekt-Config (#550); jede Ausnahme -> False."""
+    """`deploy.autonomous: true` in der Projekt-Config (#550); jede Ausnahme -> False.
+
+    In einer Worktree-Sitzung gilt der gemergte Stand (#707), siehe
+    `_merged_deploy_autonomous`; sonst wie bisher der Haupt-Ordner.
+    """
     try:
+        merged = _merged_deploy_autonomous() if _in_worktree_session() else None
+        if merged is not None:
+            return merged
         return _deploy_block().get("autonomous") is True
     except Exception:
         return False
+
+
+def _in_worktree_session() -> bool:
+    """True, wenn CLAUDE_PROJECT_DIR oder das cwd in einem Git-Worktree liegt (#707)."""
+    from hook_utils import find_main_repo_from_worktree
+    env_dir = os.environ.get("CLAUDE_PROJECT_DIR", "").strip()
+    if env_dir and find_main_repo_from_worktree(Path(env_dir)) is not None:
+        return True
+    return _worktree_root_if_any() is not None
+
+
+def _git_out(main: Path, *args: str) -> "str | None":
+    """stdout eines lesenden git-Aufrufs im Haupt-Ordner, None bei Fehler (#707)."""
+    import subprocess
+    try:
+        res = subprocess.run(["git", "-C", str(main), *args], capture_output=True,
+                             text=True, timeout=5, stdin=subprocess.DEVNULL)
+    except Exception:
+        return None
+    return res.stdout if res.returncode == 0 else None
+
+
+def _merged_deploy_autonomous() -> "bool | None":
+    """`deploy.autonomous` aus dem gemergten Stand (origin/HEAD) fuer Worktrees (#707).
+
+    Grenzen kommen aus dem Haupt-Ordner (#153); ein Zweig kann sich also nichts
+    selbst erlauben. Damit ein bereits gemergtes `autonomous: true` sofort wirkt,
+    obwohl der Haupt-Ordner hinterherhinkt, zaehlt hier der Stand von
+    `refs/remotes/origin/HEAD` — aber nur, wenn die Config-Datei im Haupt-Ordner
+    lokal unveraendert ist. Lokale Aenderung, fehlendes origin/HEAD oder ein
+    Git-Fehler -> None, der Aufrufer nimmt dann den Haupt-Ordner-Wert.
+    """
+    import config_loader
+    main = config_loader.find_project_root()
+    cfg = config_loader._find_config_file(main)
+    if cfg is None or config_loader.yaml is None:
+        return None
+    rel = Path(cfg).resolve().relative_to(Path(main).resolve()).as_posix()
+    if _git_out(main, "status", "--porcelain", "--", rel) != "":
+        return None
+    ref = _git_out(main, "symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD")
+    if not ref or not ref.strip():
+        return None
+    text = _git_out(main, "show", f"{ref.strip()}:{rel}")
+    if text is None:
+        return None
+    data = config_loader.yaml.safe_load(text) or {}
+    block = data.get("deploy") if isinstance(data, dict) else None
+    return isinstance(block, dict) and block.get("autonomous") is True
 
 
 def cmd_waiting(args: list[str]) -> None:

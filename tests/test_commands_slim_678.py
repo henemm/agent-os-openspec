@@ -29,7 +29,7 @@ SMALL = [
 ]
 SMALL_BUDGET = 2048
 VALIDATE_BUDGET = 16384
-TOTAL_BUDGET = 83600  # #696: +600 fuer die CONTEXT_HANDOFF-Absaetze (Rest nach Kuerzung)
+TOTAL_BUDGET = 83850  # #696: +600 CONTEXT_HANDOFF-Absaetze; #707: +250 Step 0 in 70-deploy
 
 
 def _size(name: str) -> int:
