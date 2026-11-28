@@ -1,3 +1,9 @@
+---
+spec_file: docs/specs/feat-707-deploy-selbst.md
+spec_sha256: b370aba11e525211675af52099e75bc8a8ca18e0a84c5eeda30099aa6c927bb9
+spec_frozen_sha256: 3d84a1c89c1cebd973653c0fc494f303d2d411fa6e6a8f0c1b67e25ace72a941
+---
+
 # PO-Briefing: fix-707-deploy-selbst
 
 - **Spec:** docs/specs/feat-707-deploy-selbst.md
