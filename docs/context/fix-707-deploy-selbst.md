@@ -91,3 +91,14 @@ Hoch (Hook-/Gate-Code, Konfiguration). Rückfall bei fehlender Hook-Registrierun
 ### Open Questions
 
 Keine Produktfrage offen; Verhalten ohne `autonomous` bleibt unverändert.
+
+### Test-Übersicht (Explore)
+
+- Flag liegt nur in `skills/70-deploy/SKILL.md` (Frontmatter bleibt bei `sync_skills.py` erhalten).
+- Bleibt 70-deploy Vollkopie (feste Liste in `alias_sync`), bleiben `REDIRECT_COUNT=11`,
+  `test_alias_marker_position_251` (FULL_COPY_SKILL) und AC-3b in `test_setup_command_aliases` gültig;
+  die versionierte Kopie `.claude/commands/70-deploy.md` per `setup.py --refresh-aliases` neu erzeugen.
+- Neuer Hook: Cloud-Hookblock der Projekt-Settings per `scripts/sync_cloud_hooks.py` neu erzeugen
+  (`test_cloud_hooks_520`, `test_cloud_gates_522`, `release_check.py`); Skriptname `^[A-Za-z0-9_]+\.py$`.
+- `deploy_autonomous()`: End-to-End über `tests/test_endzustand_550.py:229-250` (Main-Sitzung, unverändert).
+- `docs/architektur.md:271-283` Hook-Liste um `Skill` ergänzen; `tests/test_gate_event_log_181.py` ggf. neuen Hook aufnehmen.
