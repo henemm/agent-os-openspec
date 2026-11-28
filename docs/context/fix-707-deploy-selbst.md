@@ -45,3 +45,49 @@ bereits gemergtes `deploy.autonomous: true` wirkt erst, wenn der Haupt-Ordner na
 - Text-Redirect statt Vollkopie würde für den PO-Aufruf `/70-deploy` einen Skill-Aufruf erzeugen, den eine Sperre dann fälschlich blockiert → Alias muss Vollkopie bleiben.
 - `~`-Alias schattet Projekt-Alias (#87) — config-abhängige Alias-Inhalte wären unzuverlässig.
 - Worktree darf sich die Deploy-Erlaubnis nicht im eigenen Zweig selbst geben (#153).
+
+## Analysis
+
+**Type:** Feature (Erweiterung bestehender Deploy-Kette) mit Bugfix-Anteil (Worktree-Config).
+
+**Belege (Doku Claude Code, hooks):** „a PreToolUse hook matching the `Skill` tool fires only when Claude
+calls the tool, but typing `/skillname` directly bypasses `PreToolUse`.“ Plugin-Skills heißen
+`<plugin>:<skill>`. Das Skill-Tool nimmt `{"skill": "<name>", "args": "..."}` (Tool-Schema der Sitzung).
+
+### Varianten
+
+| | V1 Skill-Sperre (Hook) | V2 Alias je Projekt | V3 Datei lesen + ausführen |
+|---|---|---|---|
+| PO-only ohne autonomous | technisch erzwungen | brüchig (`~` schattet, #87) | nur Text |
+| Wirkt sofort bei Config-Wechsel | ja | erst nach Alias-Refresh + Commit | ja |
+| Scope | ~6 Dateien + Tests, ~150 LoC | ~5 Dateien, viele Alias-Tests | 1 Datei |
+
+**Entscheidung: V1.**
+
+### Affected Files
+
+- CREATE `core/hooks/skill_gate.py` — PreToolUse, Matcher `Skill`: Skill-Name (ohne führendes `/`, ohne `agent-os-openspec:`) == `70-deploy` → nur erlaubt bei `deploy.autonomous: true`, sonst Exit 2 mit Hinweis „Deploy bleibt beim PO“. Fehler → blockieren (fail-closed). Andere Skills: immer erlaubt.
+- MODIFY `hooks/hooks.json` (+ Generat `.claude/settings.json` via `scripts/sync_cloud_hooks.py`).
+- MODIFY `core/commands/70-deploy.md` → `disable-model-invocation: false` + Step 0 (Selbstaufruf nur bei `autonomous: true`); Generate `skills/70-deploy/SKILL.md`, `.claude/commands/70-deploy.md`.
+- MODIFY `core/hooks/alias_sync.py` — 70-deploy bleibt Vollkopie (feste Liste), damit der PO-Aufruf `/70-deploy` nie über das Skill-Tool läuft.
+- MODIFY `core/hooks/workflow.py` `deploy_autonomous()` — Worktree-Regel (unten); gleiche Funktion nutzt die Sperre.
+- MODIFY `core/commands/60-validate.md` — Selbstaufruf heißt Skill `70-deploy`.
+- Tests: neu `tests/test_deploy_selbst_707.py`; Anpassungen laut Test-Übersicht.
+- Doku: `docs/befehle/70-deploy.md`, `docs/architektur.md` (Hook-Liste), CHANGELOG, Version 4.29.0.
+
+### Worktree-Regel (zweiter Befund)
+
+In einer Worktree-Sitzung gilt für `deploy.autonomous` der gemergte Stand: ist die Config-Datei im
+Haupt-Ordner unverändert gegenüber dessen HEAD, wird der Wert aus `git show <origin/HEAD>:<relpfad>`
+gelesen (Basiszweig über `refs/remotes/origin/HEAD`, kein geratener Name). Hat der Haupt-Ordner lokale
+Änderungen an der Datei, oder schlägt git fehl, gilt der Haupt-Ordner wie bisher. Ein Zweig kann sich so
+nichts selbst erlauben (#153 bleibt gewahrt): nur gemergter Stand zählt, auch ein Widerruf wirkt sofort.
+Nur dieser eine Schalter, nicht die ganze Config.
+
+### Risk
+
+Hoch (Hook-/Gate-Code, Konfiguration). Rückfall bei fehlender Hook-Registrierung: Step-0-Textregel.
+
+### Open Questions
+
+Keine Produktfrage offen; Verhalten ohne `autonomous` bleibt unverändert.
